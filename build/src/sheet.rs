@@ -566,7 +566,7 @@ pub fn register(engine: &mut Engine) {
         ["/// The currency symbol — `\"€\"` (the default), `\"$\"`, `\"£\"`, `\"CHF\"`."],
         |f: &mut Fmt, symbol: &str| {
             let mut out = f.clone();
-            out.symbol = symbol.to_owned();
+            symbol.clone_into(&mut out.symbol);
             out
         },
     );

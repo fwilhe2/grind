@@ -256,6 +256,6 @@ mod tests {
     #[test]
     fn a_millimetre_is_about_two_point_eight_points() {
         assert!((pt(25.4) - 72.0).abs() < 1e-9);
-        assert!((pt(210.0) - 595.2755905511812).abs() < 1e-9);
+        assert!((pt(210.0) - 595.275_590_551_181_2).abs() < 1e-9);
     }
 }

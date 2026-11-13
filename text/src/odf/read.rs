@@ -254,7 +254,7 @@ impl Builder {
             paragraph_styles: HashMap::new(),
             tab_stops: None,
             list_styles: HashMap::new(),
-            list_levels: Default::default(),
+            list_levels: std::collections::BTreeMap::default(),
             list_frames: Vec::new(),
             chains: 0,
             chain_of_style: HashMap::new(),
@@ -607,7 +607,7 @@ impl Builder {
         let mut block = Block::new(id, kind);
         block.style = style;
         // Its table cell, if one is open around it.
-        block.cell = self.cell.clone();
+        block.cell.clone_from(&self.cell);
         block.generated = self.generating;
         block.section = self.section;
         // Which list a list item, or a heading inside one, is in, for its label
@@ -1099,7 +1099,7 @@ impl MarginalInline {
     fn paragraph() -> Self {
         MarginalInline {
             closes: true,
-            look: Default::default(),
+            look: crate::marginal::Look::default(),
         }
     }
 
@@ -1234,7 +1234,7 @@ impl MarginalFrame {
         };
         let picture = crate::marginal::Picture {
             mime: String::new(),
-            data: Default::default(),
+            data: std::sync::Arc::default(),
             width: length("width")?,
             height: length("height")?,
             across: placed(field(1), field(2), "x"),
@@ -1268,7 +1268,7 @@ impl Context<Builder> for MarginalFrame {
         let Some(mime) = crate::picture::mime(&picture.data) else {
             return;
         };
-        picture.mime = mime.to_owned();
+        mime.clone_into(&mut picture.mime);
         if let Some(paragraph) = b.marginal.as_mut() {
             paragraph.pictures.push(picture);
         }
@@ -1695,7 +1695,7 @@ impl Context<Builder> for PageLayoutProps {
             && let Some(mime) = crate::picture::mime(&background.data)
             && b.page_backgrounds.len() < MAX_STYLES
         {
-            background.mime = mime.to_owned();
+            mime.clone_into(&mut background.mime);
             b.page_backgrounds.insert(self.layout.clone(), background);
         }
     }
@@ -1941,7 +1941,7 @@ impl Context<Builder> for LevelProps {
         if let Some(mut picture) = b.level_picture.take()
             && let Some(mime) = crate::picture::mime(&picture.data)
         {
-            picture.mime = mime.to_owned();
+            mime.clone_into(&mut picture.mime);
             b.list_pictures.insert(self.level, picture);
         }
     }
@@ -1987,7 +1987,7 @@ impl Context<Builder> for TextStyleDef {
                 .map(str::to_owned),
             color: attrs.get(Ns::Fo, "color").map(str::to_owned),
             background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
-            origin: Default::default(),
+            origin: crate::style::Origin::default(),
         };
         // Anything else on the element (superscript, a language, letter spacing) is unread, and
         // makes the style one a restyle must build from.

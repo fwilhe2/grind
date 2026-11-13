@@ -130,7 +130,7 @@ fn median(args: &mut Args) -> Answer {
     Ok(Value::number(if numbers.len() % 2 == 1 {
         numbers[half]
     } else {
-        (numbers[half - 1] + numbers[half]) / 2.0
+        f64::midpoint(numbers[half - 1], numbers[half])
     }))
 }
 

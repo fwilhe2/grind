@@ -76,7 +76,7 @@ pub fn mnemonic(title: &str) -> Option<char> {
     while let Some(c) = chars.next() {
         if c == '&' {
             match chars.next() {
-                Some('&') => continue,
+                Some('&') => {}
                 Some(letter) => return letter.to_lowercase().next(),
                 None => return None,
             }

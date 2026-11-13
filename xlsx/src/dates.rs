@@ -58,7 +58,7 @@ mod tests {
         assert_eq!(day(60.0), (1900, 2, 28), "1900-02-29 has nowhere to go");
         assert_eq!(day(61.0), (1900, 3, 1), "the first day both agree");
         assert_eq!(day(25569.0), (1970, 1, 1));
-        assert_eq!(day(2958465.0), (9999, 12, 31), "Excel's last day");
+        assert_eq!(day(2_958_465.0), (9999, 12, 31), "Excel's last day");
     }
 
     #[test]

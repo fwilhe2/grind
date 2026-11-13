@@ -492,7 +492,9 @@ struct Alt {
 
 impl Alt {
     fn advise(&mut self, title: &str) {
-        self.advice = grind_text::picture::advice(title).unwrap_or("").to_owned();
+        grind_text::picture::advice(title)
+            .unwrap_or("")
+            .clone_into(&mut self.advice);
         self.count = title.trim().chars().count();
     }
 }
@@ -605,7 +607,7 @@ fn register(
             // read as lifted off the window behind it where the compositor draws no shadow of its
             // own (Windows 10, a remote session).
             style: if smoke {
-                Default::default()
+                windows::Win32::UI::WindowsAndMessaging::WNDCLASS_STYLES::default()
             } else {
                 CS_DROPSHADOW
             },

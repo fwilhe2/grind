@@ -1366,7 +1366,7 @@ impl Ui {
         let Some((address, needle)) = found.split_once('\n') else {
             return;
         };
-        *self.needle.borrow_mut() = needle.to_owned();
+        needle.clone_into(&mut self.needle.borrow_mut());
         let at = address.split_once(':').and_then(|(block, offset)| {
             Some(Caret {
                 block: block.parse().ok()?,
@@ -1430,7 +1430,7 @@ impl Ui {
         else {
             return;
         };
-        *self.needle.borrow_mut() = what.clone();
+        (*self.needle.borrow_mut()).clone_from(&what);
         match self.app.replace(&what, &with) {
             Ok(0) => self.set_message(format!("“{what}” is not in the document")),
             Ok(n) => {

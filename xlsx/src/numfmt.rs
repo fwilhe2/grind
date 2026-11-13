@@ -373,8 +373,8 @@ impl Section {
 
     fn format(&self) -> Format {
         let mut format = Format::new(self.family());
-        format.parts = self.parts.clone();
-        format.color = self.color.clone();
+        format.parts.clone_from(&self.parts);
+        format.color.clone_from(&self.color);
         format
     }
 }
@@ -886,12 +886,12 @@ mod tests {
     #[test]
     fn text_between_placeholders_is_set_among_one_numbers_digits() {
         assert_eq!(
-            shows("#,##0.000\" \"###\" \"###", 6543210.12345678),
+            shows("#,##0.000\" \"###\" \"###", 6_543_210.123_456_78),
             "6,543,210.123 456 78"
         );
-        assert_eq!(shows("000-00-0000", 123456789.0), "123-45-6789");
+        assert_eq!(shows("000-00-0000", 123_456_789.0), "123-45-6789");
         assert_eq!(shows("000-00-0000", 1234.0), "000-00-1234");
-        assert_eq!(shows("(###) ###-####", 5551234567.0), "(555) 123-4567");
+        assert_eq!(shows("(###) ###-####", 5_551_234_567.0), "(555) 123-4567");
         assert_eq!(
             shows("0.00 \"kg\"", 2.5),
             "2.50 kg",

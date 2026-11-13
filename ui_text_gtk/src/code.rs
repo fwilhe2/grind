@@ -79,9 +79,9 @@ fn colours(palette: &crate::theme::Palette) -> [(TokenKind, gtk::gdk::RGBA); 6] 
 
 fn mix(a: gtk::gdk::RGBA, b: gtk::gdk::RGBA) -> gtk::gdk::RGBA {
     gtk::gdk::RGBA::new(
-        (a.red() + b.red()) / 2.0,
-        (a.green() + b.green()) / 2.0,
-        (a.blue() + b.blue()) / 2.0,
+        f32::midpoint(a.red(), b.red()),
+        f32::midpoint(a.green(), b.green()),
+        f32::midpoint(a.blue(), b.blue()),
         1.0,
     )
 }

@@ -896,7 +896,7 @@ impl<'a> Origin<'a> {
             source,
             edited,
             marks,
-            opened: Default::default(),
+            opened: std::cell::RefCell::default(),
             shift,
         }
     }
@@ -972,7 +972,8 @@ impl<'a> Origin<'a> {
             .map(|(id, at)| (at.range.start, *id))
             .collect();
         order.sort();
-        let mut placed: std::collections::HashMap<Option<usize>, Vec<&'a str>> = Default::default();
+        let mut placed: std::collections::HashMap<Option<usize>, Vec<&'a str>> =
+            std::collections::HashMap::new();
         for sibling in &self.source.siblings {
             let Some(bytes) = self
                 .source

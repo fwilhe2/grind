@@ -270,7 +270,8 @@ pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) 
     let mut out = Names {
         local: vec![BTreeSet::new(); document.sheets.len()],
     };
-    let mut definitions: std::collections::HashMap<String, usize> = Default::default();
+    let mut definitions: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     for defined in &workbook.names {
         *definitions.entry(defined.name.to_lowercase()).or_default() += 1;
     }

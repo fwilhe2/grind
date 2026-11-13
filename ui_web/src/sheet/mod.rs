@@ -1231,7 +1231,7 @@ impl Ui {
         let Some((address, needle)) = found.split_once('\n') else {
             return;
         };
-        *self.needle.borrow_mut() = needle.to_owned();
+        needle.clone_into(&mut self.needle.borrow_mut());
         if address.is_empty() {
             self.find_step(Towards::Here);
         } else {
@@ -1307,7 +1307,7 @@ impl Ui {
         else {
             return;
         };
-        *self.needle.borrow_mut() = what.clone();
+        (*self.needle.borrow_mut()).clone_from(&what);
         match self
             .app
             .replace(&Search::new(what.as_str()), &with, RecalcMode::Document)

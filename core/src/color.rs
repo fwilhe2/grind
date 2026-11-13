@@ -60,7 +60,7 @@ pub fn hsl((r, g, b): Rgb) -> (f64, f64, f64) {
     );
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
-    let l = (max + min) / 2.0;
+    let l = f64::midpoint(max, min);
     if (max - min).abs() < f64::EPSILON {
         return (0.0, 0.0, l);
     }

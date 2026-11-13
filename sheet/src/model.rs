@@ -982,7 +982,7 @@ pub struct Edits {
 impl Default for Edits {
     fn default() -> Self {
         Self {
-            cells: Default::default(),
+            cells: BTreeSet::default(),
             only_values: true,
             names: false,
         }

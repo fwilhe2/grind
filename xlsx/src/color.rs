@@ -279,7 +279,7 @@ pub fn tint(rgb: [u8; 3], tint: f64) -> [u8; 3] {
 fn to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
-    let l = (max + min) / 2.0;
+    let l = f64::midpoint(max, min);
     let d = max - min;
     if d == 0.0 {
         return (0.0, 0.0, l);

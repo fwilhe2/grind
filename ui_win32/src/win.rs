@@ -1596,7 +1596,7 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
         }
 
         let hwnd = CreateWindowExW(
-            Default::default(),
+            windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE::default(),
             PCWSTR(class.as_ptr()),
             PCWSTR(title.as_ptr()),
             WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_HSCROLL,
@@ -2493,7 +2493,7 @@ fn make_children(hwnd: HWND) {
         let font = Font::new(face(), scale(theme::text::BODY, dpi).round() as i32, false);
         let make = |id: usize| -> HWND {
             let Ok(edit) = CreateWindowExW(
-                Default::default(),
+                windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE::default(),
                 PCWSTR(class.as_ptr()),
                 PCWSTR::null(),
                 windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE(ES_AUTOHSCROLL as u32)
@@ -2623,7 +2623,7 @@ fn wheel(hwnd: HWND, wparam: WPARAM) {
             SPI_GETWHEELSCROLLLINES,
             0,
             Some(std::ptr::from_mut(&mut lines).cast()),
-            Default::default(),
+            windows::Win32::UI::WindowsAndMessaging::SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS::default(),
         );
     }
     if is_text(hwnd) {

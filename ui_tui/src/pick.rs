@@ -79,7 +79,7 @@ impl Pick {
             .and_then(|address| rows.iter().position(|row| row.address == address))
             .unwrap_or(0);
         self.open = true;
-        self.title = title.to_owned();
+        title.clone_into(&mut self.title);
         self.rows = rows;
         self.scroll = 0;
         self.empty = None;

@@ -540,12 +540,12 @@ impl App {
     /// every sheet and wrapping as `n` does, and what it might have been on the status line.
     fn step_misspelt(&mut self, forward: bool) {
         if self.checked.is_none() {
-            self.status = "spelling is off \u{2014} :spell auto turns it on".to_owned();
+            "spelling is off \u{2014} :spell auto turns it on".clone_into(&mut self.status);
             return;
         }
         let all = self.core.misspellings(None, None).unwrap_or_default();
         if all.is_empty() {
-            self.status = "no misspelt words".to_owned();
+            "no misspelt words".clone_into(&mut self.status);
             return;
         }
         let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
@@ -599,7 +599,7 @@ impl App {
     /// offered, or by the word given, one undo step (`App::correct`); the cell stays text.
     fn cmd_fix(&mut self, with: &str) {
         let Some(wrong) = self.misspelt_here() else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
+            "no misspelt word here \u{2014} ] goes to the next".clone_into(&mut self.status);
             return;
         };
         let with = match with.parse::<usize>() {
@@ -629,7 +629,7 @@ impl App {
     /// word list too (`grind_spell::personal`), which no document carries.
     fn accept_misspelt(&mut self, forever: bool) {
         let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
+            "no misspelt word here \u{2014} ] goes to the next".clone_into(&mut self.status);
             return;
         };
         speller.accept(&wrong.word);
@@ -652,7 +652,7 @@ impl App {
     fn cmd_find(&mut self, needle: &str) {
         if needle.is_empty() {
             self.find = Find::default();
-            self.status = "find cleared".to_owned();
+            "find cleared".clone_into(&mut self.status);
             return;
         }
         let hits: Vec<(usize, Pos)> = match self.core.find(&Search::new(needle)) {
@@ -688,12 +688,12 @@ impl App {
     fn cmd_substitute(&mut self, rest: &str) {
         let mut parts = rest.splitn(2, '/');
         let (Some(needle), Some(with)) = (parts.next(), parts.next()) else {
-            self.status = "usage: :s/old/new/".to_owned();
+            "usage: :s/old/new/".clone_into(&mut self.status);
             return;
         };
         let with = with.trim_suffix('/');
         if needle.is_empty() {
-            self.status = "usage: :s/old/new/".to_owned();
+            "usage: :s/old/new/".clone_into(&mut self.status);
             return;
         }
         // The last `:find`'s marks would be lying about a grid the replace just rewrote.
@@ -1004,7 +1004,7 @@ impl App {
     /// The register back, as a rectangle from the active cell.
     fn put(&mut self) {
         if self.register.is_empty() {
-            self.status = "nothing yanked".to_owned();
+            "nothing yanked".clone_into(&mut self.status);
             return;
         }
         self.put_text(&self.register.clone());
@@ -1137,8 +1137,8 @@ impl App {
         match grind_sheet::format::grouped(current.as_ref(), shown, None) {
             Some(format) => self.write_format(Some(format), "thousands grouping"),
             None => {
-                self.status =
-                    "only a number, a percentage or a currency has thousands to group".to_owned();
+                "only a number, a percentage or a currency has thousands to group"
+                    .clone_into(&mut self.status);
             }
         }
     }
@@ -1715,7 +1715,7 @@ impl App {
     /// (`chartpane.rs`). Reads and shows until a key asks for a change.
     fn cmd_charts(&mut self) {
         match self.chart_target() {
-            None => self.status = "no chart on this sheet \u{2014} :chart makes one".to_owned(),
+            None => "no chart on this sheet \u{2014} :chart makes one".clone_into(&mut self.status),
             Some(index) => {
                 self.chart_selected = Some((self.sheet, index));
                 self.chart_pane.open(index);
@@ -1975,7 +1975,8 @@ impl App {
         use grind_sheet::rule;
         let rules = self.core.rules(self.sheet).unwrap_or_default();
         if rules.is_empty() {
-            self.status = "no rule on this sheet \u{2014} :rule red =B2>100 makes one".to_owned();
+            "no rule on this sheet \u{2014} :rule red =B2>100 makes one"
+                .clone_into(&mut self.status);
             return;
         }
         let rows = rules
@@ -2078,12 +2079,12 @@ impl App {
     /// `:friendly` — the formula line's plain-words reading turned off, or back on.
     fn cmd_friendly(&mut self) {
         self.friendly = !self.friendly;
-        self.status = if self.friendly {
+        if self.friendly {
             "formulas read in plain words at rest — :friendly again shows them as stored"
         } else {
             "formulas shown as stored — :friendly again reads them in plain words"
         }
-        .to_owned();
+        .clone_into(&mut self.status);
     }
 
     /// `:filter` — an autofilter over the selection (or the table round one cell), or off again
@@ -2114,7 +2115,7 @@ impl App {
     fn cmd_rename_name(&mut self, args: &str) {
         let mut words = args.split_whitespace();
         let (Some(from), Some(to), None) = (words.next(), words.next(), words.next()) else {
-            self.status = "usage: :rename <old> <new>".to_owned();
+            "usage: :rename <old> <new>".clone_into(&mut self.status);
             return;
         };
         self.status = match self.core.rename_name(from, to) {
@@ -2146,7 +2147,7 @@ impl App {
         );
         crate::app::copy_to_terminal(&self.register);
         self.leave_visual();
-        self.status = "yanked the values as shown".to_owned();
+        "yanked the values as shown".clone_into(&mut self.status);
     }
 
     /// `:eval <formula>` — what it would come to, storing nothing. Display syntax, evaluated at
@@ -2333,7 +2334,7 @@ impl App {
     /// absolute, sheet-qualified form.
     fn cmd_name(&mut self, name: &str) {
         if name.is_empty() {
-            self.status = "usage: :name <name>".to_owned();
+            "usage: :name <name>".clone_into(&mut self.status);
             return;
         }
         let (start, end) = self.rect();
@@ -2356,7 +2357,7 @@ impl App {
         let sheet = self.core.sheet_name(self.sheet).unwrap_or_default();
         let reference = grind_sheet::a1::reference(Some(&sheet), start, end);
         let Ok(wanted) = grind_sheet::a1::as_definition(&self.core, &reference) else {
-            self.status = "no name here".to_owned();
+            "no name here".clone_into(&mut self.status);
             return;
         };
         // Exactly, not overlapping: a name is a handle on one range, and dropping one because the
@@ -2371,7 +2372,7 @@ impl App {
                 self.core.clear_name(&name);
                 self.status = format!("dropped {name} \u{2014} u brings it back");
             }
-            None => self.status = "no name covers exactly this".to_owned(),
+            None => "no name covers exactly this".clone_into(&mut self.status),
         }
     }
 
@@ -2410,7 +2411,7 @@ impl App {
                     if let Some(n) = words.next() {
                         name = Some(n.to_owned());
                     } else {
-                        self.status = USAGE.to_owned();
+                        USAGE.clone_into(&mut self.status);
                         return;
                     }
                 }
@@ -2427,7 +2428,7 @@ impl App {
             end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
         }
         if end.row <= start.row {
-            self.status = "select the rows to format, including their headings".to_owned();
+            "select the rows to format, including their headings".clone_into(&mut self.status);
             return;
         }
         let options = grind_sheet::TableOptions {
@@ -2570,7 +2571,7 @@ impl App {
             }
         };
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :new! to discard, :w to save".to_owned();
+            "unsaved changes — :new! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
@@ -2580,7 +2581,7 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:welcome!`.
     fn cmd_welcome(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :welcome! to discard, :w to save".to_owned();
+            "unsaved changes — :welcome! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.switch = Some(crate::app::Switch::Welcome);
@@ -2590,11 +2591,11 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:open!`.
     fn cmd_open(&mut self, path: &str, force: bool) {
         if path.is_empty() {
-            self.status = "usage: :open <path>".to_owned();
+            "usage: :open <path>".clone_into(&mut self.status);
             return;
         }
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :open! to discard, :w to save".to_owned();
+            "unsaved changes — :open! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         let path = std::path::PathBuf::from(path);
@@ -2606,7 +2607,7 @@ impl App {
 
     fn cmd_quit(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :q! to discard, :w to save".to_owned();
+            "unsaved changes — :q! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.quit = true;
@@ -2653,9 +2654,9 @@ impl App {
         };
         self.toggle_style(|style| {
             if background {
-                style.background = value.clone();
+                style.background.clone_from(&value);
             } else {
-                style.color = value.clone();
+                style.color.clone_from(&value);
             }
         });
     }

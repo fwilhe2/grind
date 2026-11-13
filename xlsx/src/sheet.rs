@@ -962,9 +962,9 @@ mod tests {
             styles,
             date_1904,
             null_date: date::DEFAULT_NULL_DATE,
-            names: &Default::default(),
+            names: &crate::workbook::Names::default(),
             renames: &[],
-            tables: &Default::default(),
+            tables: &crate::tables::Tables::default(),
             sheet_names: &[],
         };
         let mut sheet = Sheet::new("S");
@@ -975,7 +975,7 @@ mod tests {
             0,
             &mut sheet,
             &mut report,
-            &mut Default::default(),
+            &mut crate::names::Seen::default(),
         );
         (sheet, report)
     }
@@ -1307,9 +1307,9 @@ mod tests {
             styles,
             date_1904: false,
             null_date: date::DEFAULT_NULL_DATE,
-            names: &Default::default(),
+            names: &crate::workbook::Names::default(),
             renames: &[],
-            tables: &Default::default(),
+            tables: &crate::tables::Tables::default(),
             sheet_names: &[],
         };
         let mut sheet = Sheet::new("S");
@@ -1320,7 +1320,7 @@ mod tests {
             0,
             &mut sheet,
             &mut report,
-            &mut Default::default(),
+            &mut crate::names::Seen::default(),
         );
         (sheet, report)
     }

@@ -78,7 +78,7 @@ impl Client {
                     Ok(result) => return result,
                     Err(e) => panic!("{method}: {e:?}"),
                 },
-                _ => continue,
+                _ => {}
             }
         }
     }
@@ -90,7 +90,7 @@ impl Client {
                 Message::Notification(n) if n.method == "textDocument/publishDiagnostics" => {
                     return n.params["diagnostics"].as_array().expect("array").clone();
                 }
-                _ => continue,
+                _ => {}
             }
         }
     }

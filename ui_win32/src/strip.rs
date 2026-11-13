@@ -182,7 +182,7 @@ mod paint {
         gdi::triangle_down(
             dc,
             right - chevron / 2,
-            (top + bottom) / 2 - scale(1.0, look.dpi).round() as i32,
+            i32::midpoint(top, bottom) - scale(1.0, look.dpi).round() as i32,
             scale(7.0, look.dpi).round() as i32,
             theme.text_tertiary,
         );

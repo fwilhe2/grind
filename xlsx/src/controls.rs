@@ -145,7 +145,7 @@ fn place(sheet: &mut Sheet, control: Control, report: &mut Report) {
     };
     let top = f64::from(dy) * MM_PER_PX;
     let bottom = (row..row2.max(row)).map(height).sum::<f64>() + f64::from(dy2) * MM_PER_PX;
-    let at = Pos::new(sheet.row_holding(row, (top + bottom) / 2.0), col);
+    let at = Pos::new(sheet.row_holding(row, f64::midpoint(top, bottom)), col);
     let link = control.link.as_deref().and_then(|l| link(l, &sheet.name));
     if sheet.checkbox(at).is_some() || (control.link.is_some() && link.is_none()) {
         report.drop_one(Dropped::FormControl);

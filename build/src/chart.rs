@@ -282,8 +282,8 @@ pub fn register(engine: &mut Engine) {
         ],
         |c: &mut Chart, x: &str, y: &str| {
             c.with(|r| {
-                r.x = x.to_owned();
-                r.y = y.to_owned();
+                x.clone_into(&mut r.x);
+                y.clone_into(&mut r.y);
             })
         },
     );
@@ -294,8 +294,8 @@ pub fn register(engine: &mut Engine) {
         ["/// How big the chart is, as two ODF lengths — `.size(\"16cm\", \"9cm\")`."],
         |c: &mut Chart, width: &str, height: &str| {
             c.with(|r| {
-                r.width = width.to_owned();
-                r.height = height.to_owned();
+                width.clone_into(&mut r.width);
+                height.clone_into(&mut r.height);
             })
         },
     );

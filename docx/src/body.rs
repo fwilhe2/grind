@@ -659,7 +659,7 @@ fn hyperlink_target(instruction: &str) -> Option<String> {
         } else if url.is_none() && !before.trim_end().ends_with(['o', 't', 'm']) {
             url = Some(quoted.to_owned());
         }
-        before = parts.next().unwrap_or_default().to_owned();
+        parts.next().unwrap_or_default().clone_into(&mut before);
     }
     if url.is_none() && anchor.is_none() {
         // Unquoted: the first word that is not a switch.

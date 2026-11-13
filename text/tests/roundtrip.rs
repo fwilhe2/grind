@@ -36,7 +36,7 @@ fn text(s: &str) -> Run {
     Run::Text {
         text: s.to_owned(),
         style: None,
-        props: Default::default(),
+        props: CharStyle::default(),
         href: None,
     }
 }
@@ -239,7 +239,7 @@ fn tabs_breaks_bookmarks_and_links_survive() {
             Run::Text {
                 text: "the docs".to_owned(),
                 style: None,
-                props: Default::default(),
+                props: CharStyle::default(),
                 href: Some("https://example.invalid/a?b=1&c=2".to_owned()),
             },
             Run::Tab,
@@ -247,7 +247,7 @@ fn tabs_breaks_bookmarks_and_links_survive() {
             Run::Text {
                 text: "emphasised".to_owned(),
                 style: Some("Emph".to_owned()),
-                props: Default::default(),
+                props: CharStyle::default(),
                 href: None,
             },
         ],
@@ -299,7 +299,7 @@ fn the_output_carries_only_the_boilerplate_it_needs() {
         vec![Run::Text {
             text: "x".to_owned(),
             style: None,
-            props: Default::default(),
+            props: CharStyle::default(),
             href: Some("https://x/".to_owned()),
         }],
     )]);
@@ -791,7 +791,7 @@ fn cases() -> Vec<(String, Document)> {
                             line_through: Some("solid".to_owned()),
                             color: Some("#001f3f".to_owned()),
                             background: Some("#ffdc00".to_owned()),
-                            origin: Default::default(),
+                            origin: grind_text::style::Origin::default(),
                         },
                     ),
                     // The same formatting twice must pool into one declaration, and still be
@@ -822,7 +822,7 @@ fn cases() -> Vec<(String, Document)> {
                         style: None,
                         // An ampersand in a URL is escaped once, not twice, and LibreOffice is
                         // the only judge of that which counts.
-                        props: Default::default(),
+                        props: CharStyle::default(),
                         href: Some("https://example.invalid/a?b=1&c=2".to_owned()),
                     },
                     text(" then"),

@@ -162,7 +162,11 @@ mod tests {
                 .unwrap();
         }
         let fitted = fit_width(&app, 0, 0, &Fixed).unwrap();
-        let widest = width(&Fixed, "a much longer label", &Default::default());
+        let widest = width(
+            &Fixed,
+            "a much longer label",
+            &grind_core::style::TextStyle::default(),
+        );
         let mm = grind_sheet::style::length_mm(&fitted).unwrap();
         assert!((mm * PT_PER_MM - (widest + 2.0 * PAD_X + FIT_SLACK)).abs() < 0.01);
         assert_eq!(fit_width(&app, 0, 5, &Fixed), None, "an empty column");

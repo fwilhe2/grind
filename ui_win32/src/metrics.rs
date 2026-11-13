@@ -430,7 +430,7 @@ mod windows_impl {
                     rect.top,
                     match highlight {
                         Some(_) => ETO_OPAQUE,
-                        None => Default::default(),
+                        None => windows::Win32::Graphics::Gdi::ETO_OPTIONS::default(),
                     },
                     Some(&raw const rect),
                     PCWSTR(units.as_ptr()),

@@ -234,15 +234,18 @@ fn rounding_reads_a_value_to_fifteen_digits_before_it_steps() {
     assert_eq!(number("=ROUNDDOWN(0.999999999999999)"), 0.0);
     // ... and only below 10^11. A 16-digit integer is not "shown" as 15 digits and rounded
     // to a neighbour, and a large fraction is stepped as it is (`doc/ods-format.md` §4.1).
-    assert_eq!(number("=ROUNDDOWN(2^52+1)"), 4503599627370497.0);
-    assert_eq!(number("=ROUND(2^52+1;0)"), 4503599627370497.0);
+    assert_eq!(number("=ROUNDDOWN(2^52+1)"), 4_503_599_627_370_497.0);
+    assert_eq!(number("=ROUND(2^52+1;0)"), 4_503_599_627_370_497.0);
     assert_eq!(
         number("=ROUNDDOWN(123456789012345+0.67)"),
-        123456789012345.0
+        123_456_789_012_345.0
     );
-    assert_eq!(number("=ROUNDDOWN(99999999999999+0.96)"), 99999999999999.0);
-    assert_eq!(number("=ROUNDDOWN(10^11*(1-4E-16))"), 100000000000.0);
-    assert_eq!(number("=ROUNDDOWN(10^14*(1-4E-16))"), 99999999999999.0);
+    assert_eq!(
+        number("=ROUNDDOWN(99999999999999+0.96)"),
+        99_999_999_999_999.0
+    );
+    assert_eq!(number("=ROUNDDOWN(10^11*(1-4E-16))"), 100_000_000_000.0);
+    assert_eq!(number("=ROUNDDOWN(10^14*(1-4E-16))"), 99_999_999_999_999.0);
 }
 
 #[test]
@@ -482,8 +485,8 @@ fn sumproduct_multiplies_arrays_element_by_element_and_adds_the_products() {
     assert_eq!(number("=SUMPRODUCT([.B1:.B4];[.F1:.F4])"), 100.0);
     assert_eq!(number("=SUMPRODUCT([.B1:.B7];[.F1:.F7])"), 135.0);
     assert_eq!(number("=SUMPRODUCT([.B1:.B7])"), 135.0);
-    assert_eq!(number("=SUMPRODUCT([.B1:.C4];[.D1:.E4])"), 1391410.0);
-    assert_eq!(number("=SUMPRODUCT([.D1:.D4];[.B1:.B4])"), 1391410.0);
+    assert_eq!(number("=SUMPRODUCT([.B1:.C4];[.D1:.E4])"), 1_391_410.0);
+    assert_eq!(number("=SUMPRODUCT([.D1:.D4];[.B1:.B4])"), 1_391_410.0);
     assert_eq!(number("=SUMPRODUCT([.B5:.B6];[.F5:.F6])"), 5.0);
     assert_eq!(number("=SUMPRODUCT([.A1:.A2];[.B1:.B2])"), 0.0);
     assert_eq!(number("=SUMPRODUCT(2;3)"), 6.0);

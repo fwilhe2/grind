@@ -521,7 +521,7 @@ fn read_dword(path: &str, name: &str) -> Option<u32> {
 
     let path = HSTRING::from(path);
     let name = HSTRING::from(name);
-    let mut key = Default::default();
+    let mut key = windows::Win32::System::Registry::HKEY::default();
     // SAFETY: every pointer is to a live local that outlives the call, and the key is closed on
     // both paths below.
     unsafe {

@@ -164,8 +164,11 @@ fn read_level(r: &mut Reader, fonts: &Fonts) -> grind_ooxml::Result<Level> {
         match name.local.as_str() {
             _ if name.ns != grind_ooxml::names::Ns::Word => return Ok(Handled::No),
             "start" => level.start = attrs.int("val").unwrap_or(1),
-            "numFmt" => level.format = attrs.val().unwrap_or("decimal").to_owned(),
-            "lvlText" => level.text = attrs.val().unwrap_or_default().to_owned(),
+            "numFmt" => attrs
+                .val()
+                .unwrap_or("decimal")
+                .clone_into(&mut level.format),
+            "lvlText" => attrs.val().unwrap_or_default().clone_into(&mut level.text),
             "pPr" => {
                 r.children(|_, name, attrs| {
                     if name.w("ind") {

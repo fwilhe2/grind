@@ -678,8 +678,8 @@ fn draw_label(
         ));
     } else {
         snapshot.translate(&graphene::Point::new(
-            (x + (LABEL_SPACE + h) / 2.0) as f32,
-            (y + (along + w) / 2.0) as f32,
+            (x + f64::midpoint(LABEL_SPACE, h)) as f32,
+            (y + f64::midpoint(along, w)) as f32,
         ));
         snapshot.rotate(angle as f32);
     }

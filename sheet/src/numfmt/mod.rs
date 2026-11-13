@@ -935,7 +935,7 @@ mod tests {
 
     #[test]
     fn grouping_starts_above_a_thousand_and_the_sign_stays_outside() {
-        assert_eq!(render(&number(2, 2, true), 1234567.5), "1,234,567.50");
+        assert_eq!(render(&number(2, 2, true), 1_234_567.5), "1,234,567.50");
         assert_eq!(render(&number(0, 0, true), 1000.0), "1,000");
         assert_eq!(render(&number(0, 0, true), 999.0), "999");
         assert_eq!(render(&number(2, 2, true), -1234.5), "-1,234.50");
@@ -1204,18 +1204,18 @@ mod tests {
             f
         };
         let shows = |f: Format, n: f64| f.render(&CellValue::Number(n), EPOCH);
-        let big = 1234567890.0;
+        let big = 1_234_567_890.0;
         assert_eq!(
             shows(embedded(1, 0, false, &[(0, "A")]), big),
             "1234567890A"
         );
         assert_eq!(
-            shows(embedded(1, 0, true, &[(0, "X")]), 1234567.0),
+            shows(embedded(1, 0, true, &[(0, "X")]), 1_234_567.0),
             "1,234,567X",
             "after the whole digits, the grouping stays"
         );
         assert_eq!(
-            shows(embedded(1, 0, true, &[(9, "X")]), 1234567.0),
+            shows(embedded(1, 0, true, &[(9, "X")]), 1_234_567.0),
             "X1234567"
         );
         assert_eq!(
@@ -1247,7 +1247,7 @@ mod tests {
         assert!(all.contains(&"154.719".to_owned()) && all.contains(&"155".to_owned()));
         assert_eq!(all.last().map(String::as_str), Some("2E+02"));
         assert_eq!(
-            narrower(123456789012.0, None),
+            narrower(123_456_789_012.0, None),
             [
                 "1.23457E+11",
                 "1.2346E+11",

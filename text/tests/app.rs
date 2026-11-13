@@ -225,7 +225,7 @@ fn typed_text_takes_the_formatting_of_the_run_at_the_caret() {
     let styled = |text: &str, style: Option<&str>| grind_text::Run::Text {
         text: text.to_owned(),
         style: style.map(str::to_owned),
-        props: Default::default(),
+        props: grind_text::CharStyle::default(),
         href: None,
     };
     let doc = |app: &App| {

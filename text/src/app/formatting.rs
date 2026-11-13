@@ -213,7 +213,7 @@ impl App {
                 if block.style == style {
                     continue;
                 }
-                block.style = style.clone();
+                block.style.clone_from(&style);
                 batch.push(Action::SetBlock {
                     index,
                     block: Box::new(block),

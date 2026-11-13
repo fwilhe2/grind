@@ -232,10 +232,10 @@ pub fn restyle_chart(
                 if points.len() <= *n {
                     points.resize(n + 1, None);
                 }
-                points[*n] = color.clone();
+                points[*n].clone_from(color);
             }
             _ => match edited.series.get_mut(*n) {
-                Some(series) => series.color = color.clone(),
+                Some(series) => series.color.clone_from(color),
                 None => return Err(missing()),
             },
         }

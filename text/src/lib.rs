@@ -1019,10 +1019,10 @@ impl App {
 
             let id = state.doc.next_id();
             let mut second = Block::new(id, block.kind.clone());
-            second.style = block.style.clone();
+            second.style.clone_from(&block.style);
             // And its table cell: Return inside a cell makes a second block in that cell, or the
             // table would be cut in two at the caret (`model::Cell`).
-            second.cell = block.cell.clone();
+            second.cell.clone_from(&block.cell);
             second.runs = tail;
             if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
                 second.kind = BlockKind::Paragraph;

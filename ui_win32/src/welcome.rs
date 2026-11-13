@@ -453,7 +453,7 @@ mod windows_impl {
                 );
             }
 
-            let mid = (t + b) / 2;
+            let mid = i32::midpoint(t, b);
             {
                 let font = Font::new(frame.face, body_px, true);
                 let _font = Selected::font(dc, &font);

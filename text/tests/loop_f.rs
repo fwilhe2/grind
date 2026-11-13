@@ -526,7 +526,7 @@ fn spellable(block: &Block) -> Vec<Run> {
     // once separated stay apart on one side only.
     for run in &mut runs {
         if let Run::Text { props, .. } = run {
-            props.origin = Default::default();
+            props.origin = grind_text::style::Origin::default();
         }
     }
     grind_text::model::coalesce(&mut runs);

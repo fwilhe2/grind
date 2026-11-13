@@ -29,3 +29,6 @@ doc-valid-idents = [
     "WordprocessingML",
     "XLink",
 ]
+
+# A measured value is written as the oracle printed it: `292.447129909365`, not grouped in threes.
+unreadable-literal-lint-fractions = false

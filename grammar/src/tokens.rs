@@ -109,10 +109,8 @@ pub fn previous_word(tokens: &[Token], at: usize) -> Option<usize> {
 pub fn starts_sentence(tokens: &[Token], at: usize) -> bool {
     for token in tokens[..at].iter().rev() {
         match token.sort {
-            Sort::Space => continue,
-            Sort::Mark if matches!(token.text.as_str(), "(" | "\u{201c}" | "\u{2018}" | "\"") => {
-                continue;
-            }
+            Sort::Space => {}
+            Sort::Mark if matches!(token.text.as_str(), "(" | "\u{201c}" | "\u{2018}" | "\"") => {}
             Sort::Mark => return matches!(token.text.as_str(), "." | "!" | "?" | "\n"),
             Sort::Word | Sort::Opaque => return false,
         }

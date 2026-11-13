@@ -118,7 +118,10 @@ fn a_style_naming_nothing_declared_or_a_cycle_resolves_without_looping() {
 #[test]
 fn a_document_with_no_styles_resolves_to_nothing_stated() {
     let app = app("", "<text:p>a</text:p>");
-    assert_eq!(app.paragraph(0).unwrap().props, Default::default());
+    assert_eq!(
+        app.paragraph(0).unwrap().props,
+        grind_text::paragraph::ParagraphProps::default()
+    );
     assert!(!app.paragraph(0).unwrap().declared);
 }
 

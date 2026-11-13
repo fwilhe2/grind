@@ -1287,7 +1287,7 @@ mod windows_impl {
         let (left, top, right, bottom) = rect.edges();
         gdi::fill(dc, left, top, right, bottom, theme.card);
         let size = ((right - left) / 2).max(2);
-        let cx = (left + right) / 2;
+        let cx = i32::midpoint(left, right);
         let top2 = top + ((bottom - top) - size) / 2;
         for step in 0..size {
             let half = (size - step) / 2;
@@ -1570,7 +1570,7 @@ mod windows_impl {
         let (long, short, thick, step) = (unit(14.0), unit(9.0), unit(1.5).max(1), unit(4.0));
         let height = step * 3 + thick;
         let (left, top, right, bottom) = rect.edges();
-        let (cx, y0) = ((left + right) / 2, (top + bottom - height) / 2);
+        let (cx, y0) = (i32::midpoint(left, right), (top + bottom - height) / 2);
         for line in 0..4 {
             let w = match line % 2 {
                 0 => long,
@@ -1593,7 +1593,7 @@ mod windows_impl {
         let (long, short, thick, step) = (unit(14.0), unit(8.0), unit(1.5).max(1), unit(4.0));
         let height = step * 3 + thick;
         let (left, top, right, bottom) = rect.edges();
-        let (cx, y0) = ((left + right) / 2, (top + bottom - height) / 2);
+        let (cx, y0) = (i32::midpoint(left, right), (top + bottom - height) / 2);
         let x0 = cx - long / 2;
         for line in 0..4 {
             let (x, w) = match line {
@@ -1604,7 +1604,7 @@ mod windows_impl {
             gdi::fill(dc, x, y, x + w, y + thick, ink);
         }
         // The arrow, one column of fills a pixel narrower each step from its base.
-        let (mid, half) = (y0 + step + (step + thick) / 2, step);
+        let (mid, half) = (y0 + step + i32::midpoint(step, thick), step);
         let base = x0;
         let depth = long - short - unit(2.0);
         for i in 0..depth.max(1) {
@@ -1692,7 +1692,7 @@ mod windows_impl {
                 Align::Left => (left + pad, reach_right),
                 Align::Right => (reach_left, right - pad - 1),
                 Align::Center => {
-                    let middle = (left + right) / 2;
+                    let middle = i32::midpoint(left, right);
                     let half = (middle - reach_left).min(reach_right - middle);
                     (middle - half, middle + half)
                 }
@@ -1754,7 +1754,7 @@ mod windows_impl {
             | if elide {
                 DT_END_ELLIPSIS
             } else {
-                Default::default()
+                windows::Win32::Graphics::Gdi::DRAW_TEXT_FORMAT::default()
             }
             | match align {
                 Align::Left => DT_LEFT,

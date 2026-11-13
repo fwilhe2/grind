@@ -3855,8 +3855,8 @@ mod imp {
             let (width, height) = (f64::from(widget.width()), f64::from(widget.height()));
             let geom = self.geom();
             let (ax, ay) = anchor.unwrap_or((
-                (geom.header_w + width) / 2.0,
-                (geom.header_h + height) / 2.0,
+                f64::midpoint(geom.header_w, width),
+                f64::midpoint(geom.header_h, height),
             ));
             // The sheet point under the anchor, in content space, at the old scale. An
             // anchor inside the header band pins the first visible track instead.

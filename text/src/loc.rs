@@ -323,7 +323,7 @@ mod tests {
             block.runs.push(Run::Text {
                 text: (*text).to_owned(),
                 style: None,
-                props: Default::default(),
+                props: crate::style::CharStyle::default(),
                 href: None,
             });
             d.blocks.push(block);

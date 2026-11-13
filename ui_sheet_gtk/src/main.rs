@@ -2200,7 +2200,7 @@ fn name_row(
                         let to = entry.text();
                         match app.rename_name(&current.borrow(), to.trim()) {
                             Ok(uses) => {
-                                *current.borrow_mut() = to.trim().to_owned();
+                                to.trim().clone_into(&mut current.borrow_mut());
                                 row.set_title(to.trim());
                                 say(&format!("Renamed — {uses} use(s) rewritten"));
                             }

@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn text_never_contains_whitespace() {
         // §6.3.14 says so outright, and it is the easy one to break with a thousands group.
-        for n in [1234567.0, -0.5, 1e300, f64::MIN_POSITIVE] {
+        for n in [1_234_567.0, -0.5, 1e300, f64::MIN_POSITIVE] {
             let s = format_number(n);
             assert!(!s.contains(char::is_whitespace), "{s:?}");
         }

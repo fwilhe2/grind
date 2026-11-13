@@ -220,14 +220,14 @@ impl Builder {
             // "Sheet1".
             doc: Document {
                 sheets: Vec::new(),
-                names: Default::default(),
+                names: std::collections::BTreeMap::default(),
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
                 locale: None,
                 default_font_size: None,
                 source: None,
                 projection_source: None,
-                edits: Default::default(),
+                edits: crate::model::Edits::default(),
             },
             sheet: 0,
             row: 0,

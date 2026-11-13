@@ -1289,7 +1289,7 @@ impl Shell {
                 }
                 *self.backend.borrow_mut() = backend;
                 self.versions.borrow_mut().clear();
-                *self.name.borrow_mut() = name.clone();
+                (*self.name.borrow_mut()).clone_from(&name);
                 // A document arriving closes the code view: what is on screen is a projection of
                 // the document that just went away.
                 *self.source.borrow_mut() = None;
@@ -1642,7 +1642,7 @@ impl Shell {
         };
         match server::create(&name, &bytes).await {
             Ok(doc) => {
-                *self.name.borrow_mut() = doc.name.clone();
+                (*self.name.borrow_mut()).clone_from(&doc.name);
                 *self.backend.borrow_mut() = server::Backend::Remote {
                     id: doc.id,
                     etag: doc.etag,
@@ -1666,7 +1666,7 @@ impl Shell {
         };
         match server::rename(&id, &etag, &name).await {
             Ok(doc) => {
-                *self.name.borrow_mut() = doc.name.clone();
+                (*self.name.borrow_mut()).clone_from(&doc.name);
                 *self.backend.borrow_mut() = server::Backend::Remote {
                     id: doc.id,
                     etag: doc.etag,

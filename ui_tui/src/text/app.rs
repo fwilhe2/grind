@@ -592,7 +592,7 @@ impl App {
 
     fn yank(&mut self) {
         let Some((from, _)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_owned();
+            "nothing selected — v starts a selection".clone_into(&mut self.status);
             return;
         };
         match self.selected_text() {
@@ -608,7 +608,7 @@ impl App {
                 self.goal_x = None;
                 self.status = format!("yanked {count} character(s)");
             }
-            None => self.status = "nothing selected — v starts a selection".to_owned(),
+            None => "nothing selected — v starts a selection".clone_into(&mut self.status),
         }
     }
 
@@ -616,7 +616,7 @@ impl App {
     /// it splits a block, since a block *is* the paragraph and there is no character for one.
     fn put(&mut self) {
         if self.register.is_empty() {
-            self.status = "nothing yanked".to_owned();
+            "nothing yanked".clone_into(&mut self.status);
             return;
         }
         self.put_text(&self.register.clone());
@@ -672,7 +672,7 @@ impl App {
     /// a toggle asks, and `grind_text::format::Change::toggle` is every shell's answer to it.
     fn emphasise_selection(&mut self, emphasis: Emphasis) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_owned();
+            "nothing selected — v starts a selection".clone_into(&mut self.status);
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
@@ -682,7 +682,7 @@ impl App {
 
     fn set_selection_style(&mut self, style: &CharStyle, what: &str) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_owned();
+            "nothing selected — v starts a selection".clone_into(&mut self.status);
             return;
         };
         match self.core.set_char_style(from, to, style) {
@@ -1016,7 +1016,7 @@ impl App {
             "mark!" => self.cmd_unmark(),
             "table" => self.cmd_table("2 2"),
             #[cfg(feature = "pdf")]
-            "pdf" => self.status = "usage: :pdf <file>".to_owned(),
+            "pdf" => "usage: :pdf <file>".clone_into(&mut self.status),
             #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("pdf ") => self.cmd_pdf(rest.trim()),
             #[cfg(feature = "pdf")]
@@ -1155,7 +1155,7 @@ impl App {
     /// `:md-out <file>` — the selection's blocks, or the whole document, as CommonMark.
     fn cmd_md_out(&mut self, path: &str) {
         if path.is_empty() {
-            self.status = "usage: :md-out <file>".to_owned();
+            "usage: :md-out <file>".clone_into(&mut self.status);
             return;
         }
         let blocks = match self.anchor {
@@ -1181,7 +1181,7 @@ impl App {
     /// Write the document; whether it was written.
     fn cmd_write(&mut self, path: Option<&str>) -> bool {
         let Some(target) = path.map(PathBuf::from).or_else(|| self.path.clone()) else {
-            self.status = "no file name".to_owned();
+            "no file name".clone_into(&mut self.status);
             return false;
         };
         match self.core.save_file(&target) {
@@ -1217,7 +1217,7 @@ impl App {
             }
         };
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :new! to discard, :w to save".to_owned();
+            "unsaved changes — :new! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
@@ -1227,7 +1227,7 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:welcome!`.
     fn cmd_welcome(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :welcome! to discard, :w to save".to_owned();
+            "unsaved changes — :welcome! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.switch = Some(crate::app::Switch::Welcome);
@@ -1237,11 +1237,11 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:open!`.
     fn cmd_open(&mut self, path: &str, force: bool) {
         if path.is_empty() {
-            self.status = "usage: :open <path>".to_owned();
+            "usage: :open <path>".clone_into(&mut self.status);
             return;
         }
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :open! to discard, :w to save".to_owned();
+            "unsaved changes — :open! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         let path = std::path::PathBuf::from(path);
@@ -1253,7 +1253,7 @@ impl App {
 
     fn cmd_quit(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :q! to discard, :w to save".to_owned();
+            "unsaved changes — :q! to discard, :w to save".clone_into(&mut self.status);
             return;
         }
         self.quit = true;
@@ -1279,9 +1279,9 @@ impl App {
                 self.caret = Caret { block, offset: 1 };
                 self.anchor = None;
                 self.goal_x = None;
-                self.status = "a picture \u{2014} :alt says what it shows to someone who cannot \
+                "a picture \u{2014} :alt says what it shows to someone who cannot \
                                see it; u takes it back"
-                    .to_owned();
+                    .clone_into(&mut self.status);
             }
             Err(error) => self.status = error.to_string(),
         }
@@ -1300,7 +1300,7 @@ impl App {
     /// typed again from nothing.
     fn cmd_alt_edit(&mut self, long: bool) {
         let Some((_, image)) = self.picture_here() else {
-            self.status = "no picture beside the caret".to_owned();
+            "no picture beside the caret".clone_into(&mut self.status);
             return;
         };
         let (verb, now) = if long {
@@ -1318,7 +1318,7 @@ impl App {
     /// short or long, each half given or kept (`grind_text::picture::set_alt`).
     fn cmd_alt(&mut self, title: Option<&str>, description: Option<&str>) {
         let Some((at, image)) = self.picture_here() else {
-            self.status = "no picture beside the caret".to_owned();
+            "no picture beside the caret".clone_into(&mut self.status);
             return;
         };
         let title = title.map_or_else(|| image.title.unwrap_or_default(), str::to_owned);
@@ -1364,7 +1364,7 @@ impl App {
     /// survives an edit above it.
     fn cmd_mark(&mut self, name: &str) {
         if name.is_empty() {
-            self.status = "usage: :mark <name>".to_owned();
+            "usage: :mark <name>".clone_into(&mut self.status);
             return;
         }
         match self.core.set_bookmark(name, Some(self.caret.block)) {
@@ -1392,7 +1392,7 @@ impl App {
                 Ok(_) => self.status = format!("dropped #{name} \u{2014} u brings it back"),
                 Err(e) => self.status = e.to_string(),
             },
-            None => self.status = "no bookmark anchors here".to_owned(),
+            None => "no bookmark anchors here".clone_into(&mut self.status),
         }
     }
 
@@ -1409,7 +1409,7 @@ impl App {
             .and_then(|n| n.parse::<u32>().ok())
             .unwrap_or(2);
         if rows == 0 || columns == 0 {
-            self.status = "usage: :table <rows> <columns>".to_owned();
+            "usage: :table <rows> <columns>".clone_into(&mut self.status);
             return;
         }
         let at = self.caret.block;
@@ -1499,7 +1499,7 @@ impl App {
     fn cmd_find(&mut self, needle: &str) {
         if needle.is_empty() {
             self.find = Find::default();
-            self.status = "find cleared".to_owned();
+            "find cleared".clone_into(&mut self.status);
             return;
         }
         let hits: Vec<(usize, usize)> = self
@@ -1654,7 +1654,7 @@ impl App {
     /// (`grind_text::find::step`), and say what it might have been.
     fn step_misspelt(&mut self, forward: bool) {
         if self.checked.is_none() {
-            self.status = "spelling is off \u{2014} :spell auto turns it on".to_owned();
+            "spelling is off \u{2014} :spell auto turns it on".clone_into(&mut self.status);
             return;
         }
         let all = self.core.misspellings(0..usize::MAX);
@@ -1665,7 +1665,7 @@ impl App {
             grind_text::find::Towards::Previous
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
-            self.status = "no misspelt words".to_owned();
+            "no misspelt words".clone_into(&mut self.status);
             return;
         };
         self.caret = carets[at];
@@ -1701,7 +1701,7 @@ impl App {
                 self.fix_grammar(&flag, with);
                 return;
             }
-            self.status = "nothing to fix here \u{2014} ] or } goes to the next".to_owned();
+            "nothing to fix here \u{2014} ] or } goes to the next".clone_into(&mut self.status);
             return;
         };
         let with = match with.parse::<usize>() {
@@ -1733,7 +1733,7 @@ impl App {
     /// person's own word list too (`grind_spell::personal`), which no document carries.
     fn accept_misspelt(&mut self, forever: bool) {
         let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
+            "no misspelt word here \u{2014} ] goes to the next".clone_into(&mut self.status);
             return;
         };
         speller.accept(&wrong.word);
@@ -1787,7 +1787,7 @@ impl App {
     /// is wrong and what it might be.
     fn step_grammar(&mut self, forward: bool) {
         if !self.grammar_on() {
-            self.status = "grammar is off \u{2014} :grammar on turns it on".to_owned();
+            "grammar is off \u{2014} :grammar on turns it on".clone_into(&mut self.status);
             return;
         }
         let all = self.grammar_flags(0..usize::MAX);
@@ -1798,7 +1798,7 @@ impl App {
             grind_text::find::Towards::Previous
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
-            self.status = "no grammar findings".to_owned();
+            "no grammar findings".clone_into(&mut self.status);
             return;
         };
         self.caret = carets[at];
@@ -1888,7 +1888,8 @@ impl App {
             (Some("style"), Some(on)) => self.grammar.style = on == "on",
             (Some("ignore"), _) => {
                 let Some(flag) = self.grammar_here() else {
-                    self.status = "no grammar finding here \u{2014} } goes to the next".to_owned();
+                    "no grammar finding here \u{2014} } goes to the next"
+                        .clone_into(&mut self.status);
                     return;
                 };
                 self.grammar.ignored.push(flag.finding.rule.clone());
@@ -1914,12 +1915,12 @@ impl App {
     fn cmd_substitute(&mut self, rest: &str) {
         let mut parts = rest.splitn(2, '/');
         let (Some(needle), Some(with)) = (parts.next(), parts.next()) else {
-            self.status = "usage: :s/old/new/".to_owned();
+            "usage: :s/old/new/".clone_into(&mut self.status);
             return;
         };
         let with = with.trim_suffix('/');
         if needle.is_empty() {
-            self.status = "usage: :s/old/new/".to_owned();
+            "usage: :s/old/new/".clone_into(&mut self.status);
             return;
         }
         match self.core.replace(needle, with) {
@@ -1937,7 +1938,7 @@ impl App {
     /// screen, since a terminal has one font.
     fn cmd_char(&mut self, change: grind_text::format::Change) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_owned();
+            "nothing selected — v starts a selection".clone_into(&mut self.status);
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
@@ -1950,7 +1951,7 @@ impl App {
     /// are the same attribute.
     fn cmd_color(&mut self, name: &str, background: bool) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_owned();
+            "nothing selected — v starts a selection".clone_into(&mut self.status);
             return;
         };
         let value = match name {

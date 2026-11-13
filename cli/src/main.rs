@@ -870,7 +870,7 @@ fn finish(app: &App, cli: &Cli, file: &Path, changed: bool) -> Result<Report, Fa
     {
         app.stale()
     } else {
-        Default::default()
+        grind_sheet::Recalc::default()
     };
     if stale.changed > 0 {
         eprintln!(

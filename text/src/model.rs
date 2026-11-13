@@ -773,7 +773,7 @@ mod tests {
             block.runs.push(Run::Text {
                 text: (*text).to_owned(),
                 style: None,
-                props: Default::default(),
+                props: CharStyle::default(),
                 href: None,
             });
             d.blocks.push(block);
@@ -829,7 +829,7 @@ mod tests {
         block.runs.push(Run::Text {
             text: "über".to_owned(),
             style: None,
-            props: Default::default(),
+            props: CharStyle::default(),
             href: None,
         });
         block.runs.push(Run::Tab);
@@ -841,7 +841,7 @@ mod tests {
         Run::Text {
             text: text.to_owned(),
             style: style.map(str::to_owned),
-            props: Default::default(),
+            props: CharStyle::default(),
             href: None,
         }
     }
@@ -922,13 +922,13 @@ mod tests {
             Run::Text {
                 text: "a".to_owned(),
                 style: None,
-                props: Default::default(),
+                props: CharStyle::default(),
                 href: Some("x".to_owned()),
             },
             Run::Text {
                 text: "b".to_owned(),
                 style: None,
-                props: Default::default(),
+                props: CharStyle::default(),
                 href: Some("y".to_owned()),
             },
         ];
@@ -957,7 +957,7 @@ mod tests {
         block.runs.push(Run::Text {
             text: "hello".to_owned(),
             style: None,
-            props: Default::default(),
+            props: CharStyle::default(),
             href: None,
         });
         assert_eq!(block.text(), "hello");

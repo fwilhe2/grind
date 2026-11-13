@@ -43,10 +43,10 @@ impl Change {
             Change::Code(on) => {
                 style.font_family = on.then(|| MONOSPACE.to_owned());
             }
-            Change::Family(family) => style.font_family = family.clone(),
-            Change::Size(size) => style.font_size = size.clone(),
-            Change::Color(color) => style.color = color.clone(),
-            Change::Highlight(color) => style.background = color.clone(),
+            Change::Family(family) => style.font_family.clone_from(family),
+            Change::Size(size) => style.font_size.clone_from(size),
+            Change::Color(color) => style.color.clone_from(color),
+            Change::Highlight(color) => style.background.clone_from(color),
             Change::Clear => *style = CharStyle::default(),
         }
     }

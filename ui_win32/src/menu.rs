@@ -1515,8 +1515,8 @@ pub fn items_for(menu: &Menu, surface: Surface) -> Vec<Item> {
     let mut items: Vec<Item> = Vec::with_capacity(menu.items.len());
     for item in menu.items {
         match item {
-            Item::Verb { command, .. } if !applies(*command, surface) => continue,
-            Item::Separator if matches!(items.last(), None | Some(Item::Separator)) => continue,
+            Item::Verb { command, .. } if !applies(*command, surface) => {}
+            Item::Separator if matches!(items.last(), None | Some(Item::Separator)) => {}
             other => items.push(*other),
         }
     }
