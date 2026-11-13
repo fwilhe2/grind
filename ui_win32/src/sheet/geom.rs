@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn dpi_multiplies_every_width() {
-        let lengths = vec![(0, "25.4mm".to_string())];
+        let lengths = vec![(0, "25.4mm".to_owned())];
         let at_96 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], mm_to_px(96));
         let at_192 = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], mm_to_px(192));
         assert!((at_96.size_of(0) - 96.0).abs() < 1e-9);

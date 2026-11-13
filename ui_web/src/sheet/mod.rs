@@ -465,7 +465,7 @@ impl Ui {
                         .and_then(|_| self.app.input_text(self.sheet.get(), pos).ok())
                         .unwrap_or_else(|| match merge {
                             Some(m) => m.text.clone(),
-                            None => viewport.text(row, col).unwrap_or_default().to_string(),
+                            None => viewport.text(row, col).unwrap_or_default().to_owned(),
                         }),
                 };
                 // The words the checker underlines, in what the cell *shows*: not while it is

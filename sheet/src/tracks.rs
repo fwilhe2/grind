@@ -358,7 +358,7 @@ mod tests {
     /// over.
     #[test]
     fn a_documents_own_widths_decide_the_geometry() {
-        let lengths = vec![(0, "2.5cm".to_string()), (2, "10mm".to_string())];
+        let lengths = vec![(0, "2.5cm".to_owned()), (2, "10mm".to_owned())];
         let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], |mm| mm * PX_PER_MM);
         assert!((cols.size_of(0) - 25.0 * PX_PER_MM).abs() < 1e-9);
         assert!((cols.size_of(2) - 10.0 * PX_PER_MM).abs() < 1e-9);
@@ -369,7 +369,7 @@ mod tests {
     /// The unit is the shell's: one inch is 96 pixels on Windows at 100% and 72 points on a Mac.
     #[test]
     fn the_unit_is_whatever_the_shell_says_a_millimetre_is() {
-        let lengths = vec![(0, "25.4mm".to_string())];
+        let lengths = vec![(0, "25.4mm".to_owned())];
         let px = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], |mm| mm * PX_PER_MM);
         let pt = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], |mm| mm * 72.0 / 25.4);
         assert!((px.size_of(0) - 96.0).abs() < 1e-9);
@@ -379,7 +379,7 @@ mod tests {
     /// A length this build cannot parse must not become a hidden column.
     #[test]
     fn an_unreadable_length_falls_back_to_the_default() {
-        let lengths = vec![(0, "wide".to_string())];
+        let lengths = vec![(0, "wide".to_owned())];
         let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[], |mm| mm * PX_PER_MM);
         assert_eq!(cols.size_of(0), 80.0);
     }
@@ -388,7 +388,7 @@ mod tests {
     /// (`hidden-rows-cols.fods`).
     #[test]
     fn a_hidden_track_is_hidden_whatever_width_it_was_given() {
-        let lengths = vec![(1, "2.5cm".to_string())];
+        let lengths = vec![(1, "2.5cm".to_owned())];
         let cols = Sizes::from_lengths(80.0, MAX_COLS, &lengths, &[1], |mm| mm * PX_PER_MM);
         assert_eq!(cols.size_of(1), 0.0);
         assert!(cols.is_hidden(1));

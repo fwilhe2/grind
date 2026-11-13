@@ -120,9 +120,9 @@ impl Help {
             .take(height.saturating_sub(2))
             .map(|line| match line.starts_with(' ') || line.is_empty() {
                 // A section's own heading is the line that does not start indented.
-                true => Line::from(Span::raw(line.to_string())),
+                true => Line::from(Span::raw(line.to_owned())),
                 false => Line::from(Span::styled(
-                    line.to_string(),
+                    line.to_owned(),
                     Style::default().add_modifier(Modifier::BOLD),
                 )),
             })

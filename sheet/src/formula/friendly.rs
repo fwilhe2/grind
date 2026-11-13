@@ -161,13 +161,13 @@ fn param_alias(func: &str, raw: &str) -> String {
         .iter()
         .find(|(f, n, _)| f.eq_ignore_ascii_case(func) && *n == raw)
     {
-        return (*alias).to_string();
+        return (*alias).to_owned();
     }
     PARAM_ALIASES
         .iter()
         .find(|(n, _)| *n == raw)
-        .map(|(_, a)| (*a).to_string())
-        .unwrap_or_else(|| raw.to_string())
+        .map(|(_, a)| (*a).to_owned())
+        .unwrap_or_else(|| raw.to_owned())
 }
 
 /// A catalog `Syntax:` line's ordered parameter names, and how many at the end repeat as a

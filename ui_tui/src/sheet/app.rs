@@ -489,7 +489,7 @@ impl App {
                             choice.describe()
                         )
                     }
-                    None => "spelling is off \u{2014} :spell auto turns it on".to_string(),
+                    None => "spelling is off \u{2014} :spell auto turns it on".to_owned(),
                 }
             }
             "ignore" | "add" => self.accept_misspelt(arg == "add"),
@@ -541,12 +541,12 @@ impl App {
     /// every sheet and wrapping as `n` does, and what it might have been on the status line.
     fn step_misspelt(&mut self, forward: bool) {
         if self.checked.is_none() {
-            self.status = "spelling is off \u{2014} :spell auto turns it on".to_string();
+            self.status = "spelling is off \u{2014} :spell auto turns it on".to_owned();
             return;
         }
         let all = self.core.misspellings(None, None).unwrap_or_default();
         if all.is_empty() {
-            self.status = "no misspelt words".to_string();
+            self.status = "no misspelt words".to_owned();
             return;
         }
         let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
@@ -589,7 +589,7 @@ impl App {
             all.len(),
             wrong.word,
             match offers.is_empty() {
-                true => "no suggestions".to_string(),
+                true => "no suggestions".to_owned(),
                 false => offers.join("  "),
             }
         );
@@ -600,7 +600,7 @@ impl App {
     /// offered, or by the word given, one undo step (`App::correct`); the cell stays text.
     fn cmd_fix(&mut self, with: &str) {
         let Some(wrong) = self.misspelt_here() else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
             return;
         };
         let with = match with.parse::<usize>() {
@@ -611,7 +611,7 @@ impl App {
                     return;
                 }
             },
-            Err(_) => with.to_string(),
+            Err(_) => with.to_owned(),
         };
         match self
             .core
@@ -629,7 +629,7 @@ impl App {
     /// word list too (`grind_spell::personal`), which no document carries.
     fn accept_misspelt(&mut self, forever: bool) {
         let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
             return;
         };
         speller.accept(&wrong.word);
@@ -1004,7 +1004,7 @@ impl App {
     /// The register back, as a rectangle from the active cell.
     fn put(&mut self) {
         if self.register.is_empty() {
-            self.status = "nothing yanked".to_string();
+            self.status = "nothing yanked".to_owned();
             return;
         }
         self.put_text(&self.register.clone());
@@ -1188,7 +1188,7 @@ impl App {
     fn report(&mut self, when_nothing_happened: &str, changed: bool) {
         self.status = match changed {
             true => String::new(),
-            false => when_nothing_happened.to_string(),
+            false => when_nothing_happened.to_owned(),
         };
     }
 
@@ -2552,7 +2552,7 @@ impl App {
             self.status = match &self.imported {
                 // An imported workbook has no path on purpose; name the one it would take.
                 Some(name) => format!("no file name — :w {name}"),
-                None => "no file name".to_string(),
+                None => "no file name".to_owned(),
             };
             return false;
         };
@@ -2585,7 +2585,7 @@ impl App {
             }
         };
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :new! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :new! to discard, :w to save".to_owned();
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
@@ -2595,7 +2595,7 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:welcome!`.
     fn cmd_welcome(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :welcome! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :welcome! to discard, :w to save".to_owned();
             return;
         }
         self.switch = Some(crate::app::Switch::Welcome);
@@ -2605,11 +2605,11 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:open!`.
     fn cmd_open(&mut self, path: &str, force: bool) {
         if path.is_empty() {
-            self.status = "usage: :open <path>".to_string();
+            self.status = "usage: :open <path>".to_owned();
             return;
         }
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :open! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :open! to discard, :w to save".to_owned();
             return;
         }
         let path = std::path::PathBuf::from(path);
@@ -2621,7 +2621,7 @@ impl App {
 
     fn cmd_quit(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :q! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :q! to discard, :w to save".to_owned();
             return;
         }
         self.quit = true;
@@ -3145,7 +3145,7 @@ impl App {
                     // window's edge, which keeps its text.
                     let marked = role.is_some() && *width >= 2;
                     if let (true, Some(role)) = (marked, role) {
-                        spans.push(Span::styled(role.marker().to_string(), style));
+                        spans.push(Span::styled(role.marker().to_owned(), style));
                     }
                     let width = match marked {
                         true => usize::from(*width) - 1,
@@ -3384,7 +3384,7 @@ impl App {
                 Some(shown) => format!(":{buf}   → {shown}"),
                 None => format!(":{buf}"),
             },
-            Mode::Insert { .. } => "Enter commits, Esc cancels".to_string(),
+            Mode::Insert { .. } => "Enter commits, Esc cancels".to_owned(),
             // Short on purpose: the right-hand end of this bar is carrying the arithmetic, which
             // is what a reader with a range selected is actually looking at. The rest of the
             // Visual-mode keys are in `:help` and in `--help`, written once (`crate::help`).
@@ -3397,7 +3397,7 @@ impl App {
                 )
             }
             _ if !self.status.is_empty() => self.status.clone(),
-            _ => "hjkl move  i edit  v select  x clear  y/p yank put  u undo  :help".to_string(),
+            _ => "hjkl move  i edit  v select  x clear  y/p yank put  u undo  :help".to_owned(),
         };
         frame.render_widget(
             Paragraph::new(chrome::bar(
@@ -3812,10 +3812,10 @@ mod tests {
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let buffer = terminal.backend().buffer().clone();
         (0..width)
-            .map(|c| buffer[(c, height - 1)].symbol().to_string())
+            .map(|c| buffer[(c, height - 1)].symbol().to_owned())
             .collect::<String>()
             .trim_end()
-            .to_string()
+            .to_owned()
     }
 
     /// The whole screen as lines, for the checks that are about what is *drawn*.
@@ -3826,10 +3826,10 @@ mod tests {
         (0..height)
             .map(|r| {
                 (0..width)
-                    .map(|c| buffer[(c, r)].symbol().to_string())
+                    .map(|c| buffer[(c, r)].symbol().to_owned())
                     .collect::<String>()
                     .trim_end()
-                    .to_string()
+                    .to_owned()
             })
             .collect()
     }

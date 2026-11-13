@@ -227,7 +227,7 @@ impl Shell {
                 .flatten();
             let Some(typed) = typed else { return };
             let said = match grind_spell::personal::word(&typed) {
-                Err(why) => why.to_string(),
+                Err(why) => why.to_owned(),
                 Ok(word) => match add_word(&word) {
                     Err(why) => format!("{word} was not added: {why}"),
                     Ok(()) => {

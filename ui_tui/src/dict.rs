@@ -35,14 +35,14 @@ pub fn command(rest: &str, speller: Option<&Speller>) -> String {
     match verb {
         "add" => add(word, speller),
         "rm" | "remove" => remove(word, speller),
-        _ => "usage: :dict, :dict add WORD, :dict rm WORD".to_string(),
+        _ => "usage: :dict, :dict add WORD, :dict rm WORD".to_owned(),
     }
 }
 
 pub fn add(typed: &str, speller: Option<&Speller>) -> String {
     let word = match personal::word(typed) {
         Ok(word) => word,
-        Err(why) => return why.to_string(),
+        Err(why) => return why.to_owned(),
     };
     match personal::add(&word) {
         Ok(_) => {

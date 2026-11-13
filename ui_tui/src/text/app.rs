@@ -596,7 +596,7 @@ impl App {
 
     fn yank(&mut self) {
         let Some((from, _)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_string();
+            self.status = "nothing selected — v starts a selection".to_owned();
             return;
         };
         match self.selected_text() {
@@ -612,7 +612,7 @@ impl App {
                 self.goal_x = None;
                 self.status = format!("yanked {count} character(s)");
             }
-            None => self.status = "nothing selected — v starts a selection".to_string(),
+            None => self.status = "nothing selected — v starts a selection".to_owned(),
         }
     }
 
@@ -620,7 +620,7 @@ impl App {
     /// it splits a block, since a block *is* the paragraph and there is no character for one.
     fn put(&mut self) {
         if self.register.is_empty() {
-            self.status = "nothing yanked".to_string();
+            self.status = "nothing yanked".to_owned();
             return;
         }
         self.put_text(&self.register.clone());
@@ -676,7 +676,7 @@ impl App {
     /// a toggle asks, and `grind_text::format::Change::toggle` is every shell's answer to it.
     fn emphasise_selection(&mut self, emphasis: Emphasis) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_string();
+            self.status = "nothing selected — v starts a selection".to_owned();
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
@@ -686,7 +686,7 @@ impl App {
 
     fn set_selection_style(&mut self, style: &CharStyle, what: &str) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_string();
+            self.status = "nothing selected — v starts a selection".to_owned();
             return;
         };
         match self.core.set_char_style(from, to, style) {
@@ -850,7 +850,7 @@ impl App {
     fn history(&mut self, changed: bool, when_nothing_happened: &str) {
         self.status = match changed {
             true => String::new(),
-            false => when_nothing_happened.to_string(),
+            false => when_nothing_happened.to_owned(),
         };
         // History moves blocks around underneath the caret, so put it somewhere that exists.
         self.clamp_caret();
@@ -1000,8 +1000,8 @@ impl App {
             "names" => {
                 self.names = !self.names;
                 self.status = match self.names {
-                    true => "names on — :names to turn it off".to_string(),
-                    false => "names off".to_string(),
+                    true => "names on — :names to turn it off".to_owned(),
+                    false => "names off".to_owned(),
                 };
             }
             "words" => self.cmd_words(),
@@ -1019,7 +1019,7 @@ impl App {
             "mark!" => self.cmd_unmark(),
             "table" => self.cmd_table("2 2"),
             #[cfg(feature = "pdf")]
-            "pdf" => self.status = "usage: :pdf <file>".to_string(),
+            "pdf" => self.status = "usage: :pdf <file>".to_owned(),
             #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("pdf ") => self.cmd_pdf(rest.trim()),
             #[cfg(feature = "pdf")]
@@ -1158,7 +1158,7 @@ impl App {
     /// `:md-out <file>` — the selection's blocks, or the whole document, as CommonMark.
     fn cmd_md_out(&mut self, path: &str) {
         if path.is_empty() {
-            self.status = "usage: :md-out <file>".to_string();
+            self.status = "usage: :md-out <file>".to_owned();
             return;
         }
         let blocks = match self.anchor {
@@ -1184,7 +1184,7 @@ impl App {
     /// Write the document; whether it was written.
     fn cmd_write(&mut self, path: Option<&str>) -> bool {
         let Some(target) = path.map(PathBuf::from).or_else(|| self.path.clone()) else {
-            self.status = "no file name".to_string();
+            self.status = "no file name".to_owned();
             return false;
         };
         match self.core.save_file(&target) {
@@ -1220,7 +1220,7 @@ impl App {
             }
         };
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :new! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :new! to discard, :w to save".to_owned();
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
@@ -1230,7 +1230,7 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:welcome!`.
     fn cmd_welcome(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :welcome! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :welcome! to discard, :w to save".to_owned();
             return;
         }
         self.switch = Some(crate::app::Switch::Welcome);
@@ -1240,11 +1240,11 @@ impl App {
     /// this pane, so unsaved work is refused unless the verb is `:open!`.
     fn cmd_open(&mut self, path: &str, force: bool) {
         if path.is_empty() {
-            self.status = "usage: :open <path>".to_string();
+            self.status = "usage: :open <path>".to_owned();
             return;
         }
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :open! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :open! to discard, :w to save".to_owned();
             return;
         }
         let path = std::path::PathBuf::from(path);
@@ -1256,7 +1256,7 @@ impl App {
 
     fn cmd_quit(&mut self, force: bool) {
         if !force && self.unsaved() {
-            self.status = "unsaved changes — :q! to discard, :w to save".to_string();
+            self.status = "unsaved changes — :q! to discard, :w to save".to_owned();
             return;
         }
         self.quit = true;
@@ -1284,7 +1284,7 @@ impl App {
                 self.goal_x = None;
                 self.status = "a picture \u{2014} :alt says what it shows to someone who cannot \
                                see it; u takes it back"
-                    .to_string();
+                    .to_owned();
             }
             Err(error) => self.status = error.to_string(),
         }
@@ -1303,7 +1303,7 @@ impl App {
     /// typed again from nothing.
     fn cmd_alt_edit(&mut self, long: bool) {
         let Some((_, image)) = self.picture_here() else {
-            self.status = "no picture beside the caret".to_string();
+            self.status = "no picture beside the caret".to_owned();
             return;
         };
         let (verb, now) = match long {
@@ -1320,7 +1320,7 @@ impl App {
     /// short or long, each half given or kept (`grind_text::picture::set_alt`).
     fn cmd_alt(&mut self, title: Option<&str>, description: Option<&str>) {
         let Some((at, image)) = self.picture_here() else {
-            self.status = "no picture beside the caret".to_string();
+            self.status = "no picture beside the caret".to_owned();
             return;
         };
         let title = title.map_or_else(|| image.title.unwrap_or_default(), str::to_owned);
@@ -1328,11 +1328,11 @@ impl App {
             description.map_or_else(|| image.description.unwrap_or_default(), str::to_owned);
         self.status = match grind_text::picture::set_alt(&self.core, at, &title, &description) {
             Ok(()) if title.trim().is_empty() => {
-                "the picture has no alt text \u{2014} :alt <text> gives it some".to_string()
+                "the picture has no alt text \u{2014} :alt <text> gives it some".to_owned()
             }
             Ok(()) => match grind_text::picture::advice(&title) {
                 Some(advice) => format!("alt text set \u{2014} {advice}"),
-                None => "alt text set \u{2014} u takes it back".to_string(),
+                None => "alt text set \u{2014} u takes it back".to_owned(),
             },
             Err(e) => e.to_string(),
         };
@@ -1366,7 +1366,7 @@ impl App {
     /// survives an edit above it.
     fn cmd_mark(&mut self, name: &str) {
         if name.is_empty() {
-            self.status = "usage: :mark <name>".to_string();
+            self.status = "usage: :mark <name>".to_owned();
             return;
         }
         match self.core.set_bookmark(name, Some(self.caret.block)) {
@@ -1393,7 +1393,7 @@ impl App {
                 Ok(_) => self.status = format!("dropped #{name} \u{2014} u brings it back"),
                 Err(e) => self.status = e.to_string(),
             },
-            None => self.status = "no bookmark anchors here".to_string(),
+            None => self.status = "no bookmark anchors here".to_owned(),
         }
     }
 
@@ -1410,7 +1410,7 @@ impl App {
             .and_then(|n| n.parse::<u32>().ok())
             .unwrap_or(2);
         if rows == 0 || columns == 0 {
-            self.status = "usage: :table <rows> <columns>".to_string();
+            self.status = "usage: :table <rows> <columns>".to_owned();
             return;
         }
         let at = self.caret.block;
@@ -1500,7 +1500,7 @@ impl App {
     fn cmd_find(&mut self, needle: &str) {
         if needle.is_empty() {
             self.find = Find::default();
-            self.status = "find cleared".to_string();
+            self.status = "find cleared".to_owned();
             return;
         }
         let hits: Vec<(usize, usize)> = self
@@ -1529,7 +1529,7 @@ impl App {
     fn step_match(&mut self, forward: bool) {
         if !self.find.is_on() {
             self.status = match self.find.needle.is_empty() {
-                true => "nothing to step \u{2014} :find <text> first".to_string(),
+                true => "nothing to step \u{2014} :find <text> first".to_owned(),
                 false => format!("no match for {}", self.find.needle),
             };
             return;
@@ -1606,7 +1606,7 @@ impl App {
                             choice.describe()
                         )
                     }
-                    None => "spelling is off \u{2014} :spell auto turns it on".to_string(),
+                    None => "spelling is off \u{2014} :spell auto turns it on".to_owned(),
                 }
             }
             "ignore" | "add" => self.accept_misspelt(arg == "add"),
@@ -1655,7 +1655,7 @@ impl App {
     /// (`grind_text::find::step`), and say what it might have been.
     fn step_misspelt(&mut self, forward: bool) {
         if self.checked.is_none() {
-            self.status = "spelling is off \u{2014} :spell auto turns it on".to_string();
+            self.status = "spelling is off \u{2014} :spell auto turns it on".to_owned();
             return;
         }
         let all = self.core.misspellings(0..usize::MAX);
@@ -1665,7 +1665,7 @@ impl App {
             false => grind_text::find::Towards::Previous,
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
-            self.status = "no misspelt words".to_string();
+            self.status = "no misspelt words".to_owned();
             return;
         };
         self.caret = carets[at];
@@ -1686,7 +1686,7 @@ impl App {
             all.len(),
             wrong.word,
             match offers.is_empty() {
-                true => "no suggestions".to_string(),
+                true => "no suggestions".to_owned(),
                 false => offers.join("  "),
             }
         );
@@ -1700,7 +1700,7 @@ impl App {
                 self.fix_grammar(&flag, with);
                 return;
             }
-            self.status = "nothing to fix here \u{2014} ] or } goes to the next".to_string();
+            self.status = "nothing to fix here \u{2014} ] or } goes to the next".to_owned();
             return;
         };
         let with = match with.parse::<usize>() {
@@ -1711,7 +1711,7 @@ impl App {
                     return;
                 }
             },
-            Err(_) => with.to_string(),
+            Err(_) => with.to_owned(),
         };
         match self.core.correct(wrong.caret(), &wrong.word, &with) {
             Ok(()) => {
@@ -1731,7 +1731,7 @@ impl App {
     /// person's own word list too (`grind_spell::personal`), which no document carries.
     fn accept_misspelt(&mut self, forever: bool) {
         let (Some(wrong), Some(speller)) = (self.misspelt_here(), self.speller.clone()) else {
-            self.status = "no misspelt word here \u{2014} ] goes to the next".to_string();
+            self.status = "no misspelt word here \u{2014} ] goes to the next".to_owned();
             return;
         };
         speller.accept(&wrong.word);
@@ -1783,7 +1783,7 @@ impl App {
     /// is wrong and what it might be.
     fn step_grammar(&mut self, forward: bool) {
         if !self.grammar_on() {
-            self.status = "grammar is off \u{2014} :grammar on turns it on".to_string();
+            self.status = "grammar is off \u{2014} :grammar on turns it on".to_owned();
             return;
         }
         let all = self.grammar_flags(0..usize::MAX);
@@ -1793,7 +1793,7 @@ impl App {
             false => grind_text::find::Towards::Previous,
         };
         let Some(at) = grind_text::find::step(&carets, self.caret, towards) else {
-            self.status = "no grammar findings".to_string();
+            self.status = "no grammar findings".to_owned();
             return;
         };
         self.caret = carets[at];
@@ -1816,7 +1816,7 @@ impl App {
             all.len(),
             finding.message,
             match offers.is_empty() {
-                true => "no replacement".to_string(),
+                true => "no replacement".to_owned(),
                 false => offers.join("  "),
             }
         );
@@ -1832,7 +1832,7 @@ impl App {
                     return;
                 }
             },
-            Err(_) => with.to_string(),
+            Err(_) => with.to_owned(),
         };
         let range = flag.finding.range.clone();
         let covered: String = self
@@ -1868,8 +1868,8 @@ impl App {
         match (words.next(), words.next()) {
             (None, _) => {
                 self.status = match self.grammar.builtin {
-                    false => "grammar is off \u{2014} :grammar on turns it on".to_string(),
-                    true => "grammar by the built-in checker".to_string(),
+                    false => "grammar is off \u{2014} :grammar on turns it on".to_owned(),
+                    true => "grammar by the built-in checker".to_owned(),
                 };
                 return;
             }
@@ -1878,7 +1878,7 @@ impl App {
             (Some("style"), Some(on)) => self.grammar.style = on == "on",
             (Some("ignore"), _) => {
                 let Some(flag) = self.grammar_here() else {
-                    self.status = "no grammar finding here \u{2014} } goes to the next".to_string();
+                    self.status = "no grammar finding here \u{2014} } goes to the next".to_owned();
                     return;
                 };
                 self.grammar.ignored.push(flag.finding.rule.clone());
@@ -1904,12 +1904,12 @@ impl App {
     fn cmd_substitute(&mut self, rest: &str) {
         let mut parts = rest.splitn(2, '/');
         let (Some(needle), Some(with)) = (parts.next(), parts.next()) else {
-            self.status = "usage: :s/old/new/".to_string();
+            self.status = "usage: :s/old/new/".to_owned();
             return;
         };
         let with = with.trim_suffix('/');
         if needle.is_empty() {
-            self.status = "usage: :s/old/new/".to_string();
+            self.status = "usage: :s/old/new/".to_owned();
             return;
         }
         match self.core.replace(needle, with) {
@@ -1927,7 +1927,7 @@ impl App {
     /// screen, since a terminal has one font.
     fn cmd_char(&mut self, change: grind_text::format::Change) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_string();
+            self.status = "nothing selected — v starts a selection".to_owned();
             return;
         };
         let mut style = self.core.char_style(from, to).unwrap_or_default();
@@ -1940,7 +1940,7 @@ impl App {
     /// are the same attribute.
     fn cmd_color(&mut self, name: &str, background: bool) {
         let Some((from, to)) = self.selection() else {
-            self.status = "nothing selected — v starts a selection".to_string();
+            self.status = "nothing selected — v starts a selection".to_owned();
             return;
         };
         let value = match name {
@@ -2428,7 +2428,7 @@ impl App {
         // At the end of a line, and in an empty one, the caret has no character to sit on.
         if caret.is_some() && !drawn_caret {
             spans.push(Span::styled(
-                " ".to_string(),
+                " ".to_owned(),
                 Style::default().add_modifier(Modifier::REVERSED),
             ));
         }
@@ -2678,14 +2678,14 @@ impl App {
         let says = match &self.mode {
             Mode::Command { buf } => format!(":{buf}"),
             Mode::Insert => {
-                "**bold** *italic* __under__ ~~struck~~  `code`  # heading  - list".to_string()
+                "**bold** *italic* __under__ ~~struck~~  `code`  # heading  - list".to_owned()
             }
             Mode::Visual => {
-                "* bold  / italic  _ under  ~ struck  - plain  y yank  d delete".to_string()
+                "* bold  / italic  _ under  ~ struck  - plain  y yank  d delete".to_owned()
             }
             _ if !self.status.is_empty() => self.status.clone(),
             _ => "hjkl move  i/a/o insert  v select  x erase  X delete  J join  u undo  :help"
-                .to_string(),
+                .to_owned(),
         };
         // The caret's own address at the far end, and how much is selected when something is —
         // the two numbers a writer glances at, in the place they stay put.
@@ -2999,10 +2999,10 @@ mod tests {
         (0..height)
             .map(|r| {
                 (0..width)
-                    .map(|c| buffer[(c, r)].symbol().to_string())
+                    .map(|c| buffer[(c, r)].symbol().to_owned())
                     .collect::<String>()
                     .trim_end()
-                    .to_string()
+                    .to_owned()
             })
             .collect()
     }
@@ -3915,7 +3915,7 @@ mod tests {
         terminal.draw(|frame| app.draw(frame)).unwrap();
         let buffer = terminal.backend().buffer().clone();
         let row: String = (0..40)
-            .map(|c| buffer[(c, 1)].symbol().to_string())
+            .map(|c| buffer[(c, 1)].symbol().to_owned())
             .collect();
         assert!(row.contains("hello world"), "{row:?}");
         assert!(!row.contains('*'), "no markers on screen: {row:?}");
