@@ -1736,10 +1736,10 @@ mod tests {
     #[test]
     fn a_list_flattens_into_blocks_that_know_their_depth() {
         let doc = read(
-            r#"<text:list><text:list-item><text:p>one</text:p></text:list-item>
+            r"<text:list><text:list-item><text:p>one</text:p></text:list-item>
                  <text:list-item><text:p>two</text:p>
                    <text:list><text:list-item><text:p>two a</text:p></text:list-item></text:list>
-                 </text:list-item></text:list>"#,
+                 </text:list-item></text:list>",
         );
         let kinds: Vec<_> = doc.blocks.iter().map(|b| b.kind.clone()).collect();
         assert_eq!(
@@ -1755,7 +1755,7 @@ mod tests {
 
     #[test]
     fn tabs_and_breaks_are_elements_rather_than_characters() {
-        let doc = read(r#"<text:p>a<text:tab/>b<text:line-break/>c</text:p>"#);
+        let doc = read(r"<text:p>a<text:tab/>b<text:line-break/>c</text:p>");
         assert_matches!(doc.blocks[0].runs[1], Run::Tab);
         assert_eq!(doc.blocks[0].text(), "a\tb\nc");
     }
@@ -1811,7 +1811,7 @@ mod tests {
         let doc = read(r#"<text:h text:outline-level="9">deep</text:h>"#);
         assert_eq!(doc.blocks[0].outline_level(), Some(9));
         // A heading that says it is a heading is one, whatever else it fails to say.
-        let doc = read(r#"<text:h>no level</text:h>"#);
+        let doc = read(r"<text:h>no level</text:h>");
         assert_eq!(doc.blocks[0].outline_level(), Some(1));
     }
 

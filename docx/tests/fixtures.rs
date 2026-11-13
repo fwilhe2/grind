@@ -467,14 +467,14 @@ fn a_content_control_is_read_through() {
 /// A repeating section wraps its items' rows in content controls inside content controls.
 #[test]
 fn rows_and_cells_inside_nested_content_controls_are_read() {
-    let body = r#"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>head</w:t></w:r></w:p></w:tc></w:tr>
+    let body = r"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>head</w:t></w:r></w:p></w:tc></w:tr>
         <w:sdt><w:sdtPr><w15:repeatingSection/></w:sdtPr><w:sdtContent>
           <w:sdt><w:sdtPr><w15:repeatingSectionItem/></w:sdtPr><w:sdtContent>
             <w:tr><w:sdt><w:sdtContent><w:sdt><w:sdtContent>
               <w:tc><w:p><w:r><w:t>item</w:t></w:r></w:p></w:tc>
             </w:sdtContent></w:sdt></w:sdtContent></w:sdt></w:tr>
           </w:sdtContent></w:sdt>
-        </w:sdtContent></w:sdt></w:tbl>"#;
+        </w:sdtContent></w:sdt></w:tbl>";
     let body = body.replace(
         "<w:tbl>",
         r#"<w:tbl xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">"#,

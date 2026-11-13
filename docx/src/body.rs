@@ -1367,7 +1367,7 @@ mod tests {
             Some("#_Toc123")
         );
         assert_eq!(
-            hyperlink_target(r#"HYPERLINK https://example.invalid/x"#).as_deref(),
+            hyperlink_target(r"HYPERLINK https://example.invalid/x").as_deref(),
             Some("https://example.invalid/x")
         );
     }

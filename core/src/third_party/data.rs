@@ -3890,9 +3890,9 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
-    r#"This project is dual-licensed under the Unlicense and MIT licenses.
+    r"This project is dual-licensed under the Unlicense and MIT licenses.
 
-You may use this code under the terms of either license."#,
+You may use this code under the terms of either license.",
     r#"The MIT License (MIT)
 
 Copyright (c) 2015 Andrew Gallant
@@ -5484,7 +5484,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 
 3. This notice may not be removed or altered from any source distribution."#,
-    r#"The gtk-rs Project is licensed under the MIT license, see the LICENSE file or
+    r"The gtk-rs Project is licensed under the MIT license, see the LICENSE file or
 <http://opensource.org/licenses/MIT>.
 
 Copyrights in the gtk-rs Project project are retained by their contributors.
@@ -5497,7 +5497,7 @@ This project provides interoperability with various GNOME libraries but
 doesn't distribute any parts of them. Distributing compiled libraries and
 executables that link to those libraries may be subject to terms of the GNU
 LGPL or other licenses. For more information check the license of each GNOME
-library."#,
+library.",
     r#"Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
@@ -7393,11 +7393,11 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
-    r#"Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+    r"Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 option. All files in the project carrying such notice may not be
-copied, modified, or distributed except according to those terms."#,
+copied, modified, or distributed except according to those terms.",
     r#"Copyright (c) 2012-2013 Mozilla Foundation
 
 Permission is hereby granted, free of charge, to any
@@ -8022,7 +8022,7 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
-    r#"Copyright (c) 2024 Orson Peters
+    r"Copyright (c) 2024 Orson Peters
 
 This software is provided 'as-is', without any express or implied warranty. In
 no event will the authors be held liable for any damages arising from the use of
@@ -8040,7 +8040,7 @@ the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
     misrepresented as being the original software.
 
-3. This notice may not be removed or altered from any source distribution."#,
+3. This notice may not be removed or altered from any source distribution.",
     r#"Apache License
 
 Version 2.0, January 2004
@@ -9475,7 +9475,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"igerman98 - dictionaries for German language
+    r"igerman98 - dictionaries for German language
 Copyright (C) 1999-2016 Björn Jacke <bjoern@j3e.de>.
 
 Offered under the GNU General Public License version 2 or 3; used here under version 3, unmodified.
@@ -9711,7 +9711,7 @@ The hypothetical commands `show w' and `show c' should show the appropriate part
 
 You should also get your employer (if you work as a programmer) or school, if any, to sign a “copyright disclaimer” for the program, if necessary. For more information on this, and how to apply and follow the GNU GPL, see <https://www.gnu.org/licenses/>.
 
-The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>."#,
+The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>.",
     r#"MIT License
 
 Copyright (c) 2017 Maiddog
@@ -9780,7 +9780,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"Estensione linguistica italiana - Italian Writing Aids
+    r"Estensione linguistica italiana - Italian Writing Aids
 Copyright (C) 2010-2016 Andrea Pescetti.
 Portions Copyright (C) 2001-2008 Gianluca Turconi and other authors.
 
@@ -10017,7 +10017,7 @@ The hypothetical commands `show w' and `show c' should show the appropriate part
 
 You should also get your employer (if you work as a programmer) or school, if any, to sign a “copyright disclaimer” for the program, if necessary. For more information on this, and how to apply and follow the GNU GPL, see <https://www.gnu.org/licenses/>.
 
-The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>."#,
+The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>.",
     r#"                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -10241,8 +10241,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"kdl-rs
-Copyright 2020 Kat Marchán"#,
+    r"kdl-rs
+Copyright 2020 Kat Marchán",
     r#"(krilla packages no licence file; this is the standard text of the licence it states.)
 
 MIT License
@@ -10956,7 +10956,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"Short version for non-lawyers:
+    r"Short version for non-lawyers:
 
 `linux-raw-sys` is triple-licensed under Apache 2.0 with the LLVM Exception,
 Apache 2.0, and MIT terms.
@@ -10984,7 +10984,7 @@ is licensed under:
    <LICENSE-MIT> or
    <http://opensource.org/licenses/MIT>,
 
-at your option."#,
+at your option.",
     r#"                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -11471,13 +11471,13 @@ THE SOFTWARE."#,
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License."#,
-    r#"Copyright © 2018 Wesley Norris
+    r"Copyright © 2018 Wesley Norris
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."#,
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.",
     r#"                              Apache License
                         Version 2.0, January 2004
                      http://www.apache.org/licenses/
@@ -11810,7 +11810,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"Copyright 2013-2014 RAD Game Tools and Valve Software
+    r"Copyright 2013-2014 RAD Game Tools and Valve Software
 Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
 Copyright (c) 2020 Frommi
 Copyright (c) 2017-2024 oyvindln
@@ -11823,7 +11823,7 @@ Permission is granted to anyone to use this software for any purpose, including 
 
 2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 
-3. This notice may not be removed or altered from any source distribution."#,
+3. This notice may not be removed or altered from any source distribution.",
     r#"Copyright (c) 2014 Carl Lerche and other MIO contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -12411,7 +12411,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"===============================================================================
+    r"===============================================================================
 
 Copyright 2014-2020 The Rust Project Developers
 
@@ -12419,7 +12419,7 @@ Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
 option. All files in the project carrying such notice may not be
-copied, modified, or distributed except according to those terms."#,
+copied, modified, or distributed except according to those terms.",
     r#"The MIT License (MIT)
 
 Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
@@ -12484,7 +12484,7 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
-    r#"Polish spelling dictionary, generated 2008.12.06
+    r"Polish spelling dictionary, generated 2008.12.06
 Copyright (C) 2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project.
 
 Offered under the GPL, the LGPL, the MPL and Creative Commons ShareAlike, with no versions named; used here under the GNU GPL version 3, unmodified.
@@ -12720,7 +12720,7 @@ The hypothetical commands `show w' and `show c' should show the appropriate part
 
 You should also get your employer (if you work as a programmer) or school, if any, to sign a “copyright disclaimer” for the program, if necessary. For more information on this, and how to apply and follow the GNU GPL, see <https://www.gnu.org/licenses/>.
 
-The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>."#,
+The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <https://www.gnu.org/philosophy/why-not-lgpl.html>.",
     r#"                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -13025,7 +13025,7 @@ EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 "#,
-    r#"Copyrights in the Rand project are retained by their contributors. No
+    r"Copyrights in the Rand project are retained by their contributors. No
 copyright assignment is required to contribute to the Rand project.
 
 For full authorship information, see the version control history.
@@ -13036,7 +13036,7 @@ licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
 <LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
 
 The Rand project includes code from the Rust project
-published under these same licenses."#,
+published under these same licenses.",
     r#"                              Apache License
                         Version 2.0, January 2004
                      https://www.apache.org/licenses/
@@ -13995,7 +13995,7 @@ LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE A
 EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 USE OR OTHER DEALINGS IN THE SOFTWARE."#,
-    r#"Short version for non-lawyers:
+    r"Short version for non-lawyers:
 
 `rustix` is triple-licensed under Apache 2.0 with the LLVM Exception,
 Apache 2.0, and MIT terms.
@@ -14023,7 +14023,7 @@ is licensed under:
    <LICENSE-MIT> or
    <http://opensource.org/licenses/MIT>,
 
-at your option."#,
+at your option.",
     r#"Boost Software License - Version 1.0 - August 17th, 2003
 
 Permission is hereby granted, free of charge, to any person or organization
@@ -14426,13 +14426,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"Copyright 2012-2016 The Rust Project Developers.
+    r"Copyright 2012-2016 The Rust Project Developers.
 Copyright 2016-2026 Frank Denis.
 
 Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
-option."#,
+option.",
     r#"Copyright (c) 2019 Carl Lerche
 
 Permission is hereby granted, free of charge, to any
@@ -14458,7 +14458,7 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
-    r#"Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
+    r"Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
 
 This software is provided 'as-is', without any express or implied warranty. In
 no event will the authors be held liable for any damages arising from the use of
@@ -14476,7 +14476,7 @@ the following restrictions:
  2. Altered source versions must be plainly marked as such, and must not be
     misrepresented as being the original software.
 
- 3. This notice may not be removed or altered from any source distribution."#,
+ 3. This notice may not be removed or altered from any source distribution.",
     r#"Copyright (c) 2018 The Servo Project Developers
 
 Permission is hereby granted, free of charge, to any
@@ -15916,7 +15916,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE."#,
-    r#"        DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
+    r"        DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
                     Version 2, December 2004
 
  Copyleft (ↄ) meh. <meh@schizofreni.co> | http://meh.schizofreni.co
@@ -15928,7 +15928,7 @@ THE SOFTWARE."#,
             DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE
    TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
 
-  0. You just DO WHAT THE FUCK YOU WANT TO."#,
+  0. You just DO WHAT THE FUCK YOU WANT TO.",
     r#"Copyright (c) 2015 David Cuddeback
 
 Permission is hereby granted, free of charge, to any person obtaining
@@ -16149,7 +16149,7 @@ DEALINGS IN THE SOFTWARE."#,
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."#,
-    r#"MIT OR Apache-2.0"#,
+    r"MIT OR Apache-2.0",
     r#"                              Apache License
                         Version 2.0, January 2004
                      http://www.apache.org/licenses/
@@ -16391,21 +16391,21 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE."#,
-    r#"This project is copyright 2015, The Servo Project Developers (given in the
+    r"This project is copyright 2015, The Servo Project Developers (given in the
 file AUTHORS).
 
 Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 http://www.apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 http://opensource.org/licenses/MIT>, at your option. All files in the project
 carrying such notice may not be copied, modified, or distributed except
-according to those terms."#,
-    r#"Licensed under the Apache License, Version 2.0
+according to those terms.",
+    r"Licensed under the Apache License, Version 2.0
 <LICENSE-APACHE or
 http://www.apache.org/licenses/LICENSE-2.0> or the MIT
 license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
 at your option. All files in the project carrying such
 notice may not be copied, modified, or distributed except
-according to those terms."#,
+according to those terms.",
     r#"                              Apache License
                         Version 2.0, January 2004
                      http://www.apache.org/licenses/
@@ -17753,7 +17753,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"(C) 2024 Trifecta Tech Foundation
+    r"(C) 2024 Trifecta Tech Foundation
 
 This software is provided 'as-is', without any express or implied
 warranty. In no event will the authors be held liable for any damages
@@ -17771,7 +17771,7 @@ freely, subject to the following restrictions:
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
 
-3. This notice may not be removed or altered from any source distribution."#,
+3. This notice may not be removed or altered from any source distribution.",
     r#"                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -17994,7 +17994,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
-    r#"zlib License
+    r"zlib License
 
 (C) zune-image developers
 
@@ -18012,5 +18012,5 @@ freely, subject to the following restrictions:
    appreciated but is not required.
 2. Altered source versions must be plainly marked as such, and must not be
    misrepresented as being the original software.
-3. This notice may not be removed or altered from any source distribution."#,
+3. This notice may not be removed or altered from any source distribution.",
 ];
