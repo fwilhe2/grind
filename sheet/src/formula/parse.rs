@@ -328,13 +328,12 @@ impl Parser {
         let mut shapes = Vec::new();
         let mut deepest = 0;
         loop {
-            let (arg, shape) = match self.peek() {
-                Some(Token::Semi | Token::RParen) => (Expr::Empty, self.shape(self.pos, Vec::new)),
-                _ => {
-                    let (arg, depth, shape) = self.expr(0)?;
-                    deepest = deepest.max(depth);
-                    (arg, shape)
-                }
+            let (arg, shape) = if let Some(Token::Semi | Token::RParen) = self.peek() {
+                (Expr::Empty, self.shape(self.pos, Vec::new))
+            } else {
+                let (arg, depth, shape) = self.expr(0)?;
+                deepest = deepest.max(depth);
+                (arg, shape)
             };
             args.push(arg);
             if self.spanned {

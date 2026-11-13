@@ -472,23 +472,22 @@ impl<'a> Sheet<'a> {
 fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
     let mut kinds: Vec<Kind> = Vec::new();
     let kind_of = |kinds: &mut Vec<Kind>, name: Option<&str>, first: bool, left: bool| -> usize {
-        match kinds.iter().position(|kind| {
+        if let Some(at) = kinds.iter().position(|kind| {
             kind.name.as_deref() == name && kind.first == first && kind.left == left
         }) {
-            Some(at) => at,
-            None => {
-                kinds.push(Kind {
-                    name: name.map(str::to_owned),
-                    first,
-                    left,
-                    next: 0,
-                    master: 0,
-                    plain: 0,
-                    left_twin: 0,
-                    hand: None,
-                });
-                kinds.len() - 1
-            }
+            at
+        } else {
+            kinds.push(Kind {
+                name: name.map(str::to_owned),
+                first,
+                left,
+                next: 0,
+                master: 0,
+                plain: 0,
+                left_twin: 0,
+                hand: None,
+            });
+            kinds.len() - 1
         }
     };
     // A run opens on the master's first page where it has one.
@@ -554,12 +553,11 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
             grind_text::PageUsage::Right => Some(grind_text::page::Hand::Right),
             _ => None,
         });
-        let number = match masters.iter().position(|m| *m == name) {
-            Some(number) => number,
-            None => {
-                masters.push(name.clone());
-                masters.len() - 1
-            }
+        let number = if let Some(number) = masters.iter().position(|m| *m == name) {
+            number
+        } else {
+            masters.push(name.clone());
+            masters.len() - 1
         };
         let kind = &mut kinds[at];
         (kind.next, kind.plain, kind.left_twin) = (next, plain, left_twin);
@@ -1818,12 +1816,11 @@ fn figure(
     let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
     // The size the document gives it, or — for a picture that states none, as one imported
     // from Markdown does — its own pixels at 96 to the inch, the size a browser would draw it.
-    let (w, h) = match (length(&image.width), length(&image.height)) {
-        (Some(w), Some(h)) => (w, h),
-        _ => {
-            let (w, h) = intrinsic_pixels(&image.data)?;
-            (f64::from(w) * 0.75, f64::from(h) * 0.75)
-        }
+    let (w, h) = if let (Some(w), Some(h)) = (length(&image.width), length(&image.height)) {
+        (w, h)
+    } else {
+        let (w, h) = intrinsic_pixels(&image.data)?;
+        (f64::from(w) * 0.75, f64::from(h) * 0.75)
     };
     let (w, h) = (w.max(1.0), h.max(1.0));
     let width = w.min(measure.max(1.0));

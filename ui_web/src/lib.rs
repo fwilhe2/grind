@@ -1026,14 +1026,11 @@ impl Shell {
                 let buffer = JsFuture::from(response.array_buffer().ok()?).await.ok()?;
                 Some(js_sys::Uint8Array::new(&buffer))
             };
-            match fetched.await {
-                Some(bytes) => {
-                    fonts.push(&bytes);
-                }
-                None => {
-                    self.set_message(format!("Could not load {url}"));
-                    return None;
-                }
+            if let Some(bytes) = fetched.await {
+                fonts.push(&bytes);
+            } else {
+                self.set_message(format!("Could not load {url}"));
+                return None;
             }
         }
         *self.fonts.borrow_mut() = Some(fonts.clone());
@@ -1048,12 +1045,11 @@ impl Shell {
             .dyn_into()
             .ok()?;
         let promise: js_sys::Promise = loader.call0(&window).ok()?.dyn_into().ok()?;
-        match JsFuture::from(promise).await {
-            Ok(module) => Some(module),
-            Err(_) => {
-                self.set_message("Could not load the PDF module".to_owned());
-                None
-            }
+        if let Ok(module) = JsFuture::from(promise).await {
+            Some(module)
+        } else {
+            self.set_message("Could not load the PDF module".to_owned());
+            None
         }
     }
 

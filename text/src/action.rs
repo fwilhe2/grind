@@ -67,16 +67,15 @@ impl Document {
                 // produced.
                 let mut inverses = Vec::with_capacity(actions.len());
                 for action in actions {
-                    match self.apply(action) {
-                        Some(inverse) => inverses.push(inverse),
+                    if let Some(inverse) = self.apply(action) {
+                        inverses.push(inverse);
+                    } else {
                         // Half a batch would be a change with no inverse to undo it: take back
                         // what applied, so a failed batch leaves the blocks as they were.
-                        None => {
-                            for inverse in inverses.into_iter().rev() {
-                                self.apply(inverse);
-                            }
-                            return None;
+                        for inverse in inverses.into_iter().rev() {
+                            self.apply(inverse);
                         }
+                        return None;
                     }
                 }
                 inverses.reverse();

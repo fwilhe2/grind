@@ -543,14 +543,13 @@ fn section(code: &str) -> Section {
                     }
                     () => 0,
                 };
-                match eaten {
-                    0 => literal.push(c),
-                    _ => {
-                        flush!();
-                        out.time = true;
-                        tokens.push(Token::AmPm);
-                        out.parts.push(Part::AmPm);
-                    }
+                if eaten == 0 {
+                    literal.push(c);
+                } else {
+                    flush!();
+                    out.time = true;
+                    tokens.push(Token::AmPm);
+                    out.parts.push(Part::AmPm);
                 }
                 i += eaten.max(1);
             }

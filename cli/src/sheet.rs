@@ -142,14 +142,13 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             formulas,
         } => {
             let app = load(file, cli)?;
-            let (sheet, start, end) = match address {
-                Some(address) => a1::resolve(&app, &a1::parse(address).say()?).say()?,
+            let (sheet, start, end) = if let Some(address) = address {
+                a1::resolve(&app, &a1::parse(address).say()?).say()?
+            } else {
                 // No range given: everything the sheet uses.
-                None => {
-                    let (rows, cols) = app.used_extent(0).say()?;
-                    let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-                    (0, Pos::new(0, 0), last)
-                }
+                let (rows, cols) = app.used_extent(0).say()?;
+                let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+                (0, Pos::new(0, 0), last)
             };
             // `--formulas --names` is the one combination that means something together:
             // the formula column, read through the names. The rest are one column each.
@@ -300,17 +299,13 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             // A sheet with nothing in it has no rectangle at all, and its export is an empty
             // file rather than one blank line — `used_extent` reports 0×0 and the arithmetic
             // below would otherwise clamp that to the single cell A1.
-            let (sheet, start, end, empty) = match address {
-                Some(address) => {
-                    let (sheet, start, end) =
-                        a1::resolve(&app, &a1::parse(address).say()?).say()?;
-                    (sheet, start, end, false)
-                }
-                None => {
-                    let (rows, cols) = app.used_extent(0).say()?;
-                    let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-                    (0, Pos::new(0, 0), last, rows == 0 || cols == 0)
-                }
+            let (sheet, start, end, empty) = if let Some(address) = address {
+                let (sheet, start, end) = a1::resolve(&app, &a1::parse(address).say()?).say()?;
+                (sheet, start, end, false)
+            } else {
+                let (rows, cols) = app.used_extent(0).say()?;
+                let last = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+                (0, Pos::new(0, 0), last, rows == 0 || cols == 0)
             };
             let options = grind_sheet::csv::Export {
                 dialect: grind_sheet::csv::Dialect {
@@ -1088,18 +1083,17 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 return Err(format!("{address}: correct takes one cell, not a range").into());
             }
             let (sheet, pos, _) = a1::resolve(&app, &reference).say()?;
-            let offset = match at {
-                Some(offset) => *offset,
+            let offset = if let Some(offset) = at {
+                *offset
+            } else {
                 // The first time the word occurs *as a word*: `recieve` in `recieved` is not it.
-                None => {
-                    let text = app.input_text(sheet, pos).say()?;
-                    let chars: Vec<char> = text.chars().collect();
-                    grind_core::spell::words(&text)
-                        .into_iter()
-                        .find(|range| chars[range.clone()].iter().collect::<String>() == *word)
-                        .map(|range| range.start)
-                        .ok_or_else(|| format!("{address} has no word {word:?}"))?
-                }
+                let text = app.input_text(sheet, pos).say()?;
+                let chars: Vec<char> = text.chars().collect();
+                grind_core::spell::words(&text)
+                    .into_iter()
+                    .find(|range| chars[range.clone()].iter().collect::<String>() == *word)
+                    .map(|range| range.start)
+                    .ok_or_else(|| format!("{address} has no word {word:?}"))?
             };
             app.correct(sheet, pos, offset, word, with).say()?;
             finish(&app, cli, file, word != with)
@@ -1257,28 +1251,21 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
         } => {
             let app = load(file, cli)?;
             let sheet_index = chart_sheet(&app, sheet.as_deref())?;
-            let mut spec = match from {
-                Some(range) => {
-                    let qualified =
-                        grind_sheet::chart::parse_range(&app, sheet_index, range).say()?;
-                    let (on, start, end) =
-                        grind_sheet::chart::resolve_range(&app, &qualified).say()?;
-                    let guessed = app.suggest_chart(on, start, end, None).say()?;
-                    if guessed.spec.series.is_empty() && series.is_empty() {
-                        return Err(format!("nothing in {range} is a number to chart").into());
-                    }
-                    guessed.spec
+            let mut spec = if let Some(range) = from {
+                let qualified = grind_sheet::chart::parse_range(&app, sheet_index, range).say()?;
+                let (on, start, end) = grind_sheet::chart::resolve_range(&app, &qualified).say()?;
+                let guessed = app.suggest_chart(on, start, end, None).say()?;
+                if guessed.spec.series.is_empty() && series.is_empty() {
+                    return Err(format!("nothing in {range} is a number to chart").into());
                 }
-                None => {
-                    if series.is_empty() {
-                        return Err("give the chart a --series, or a table --from"
-                            .to_owned()
-                            .into());
-                    }
-                    grind_sheet::ChartSpec::new(
-                        r#type.map_or(grind_sheet::ChartKind::Bar, Into::into),
-                    )
+                guessed.spec
+            } else {
+                if series.is_empty() {
+                    return Err("give the chart a --series, or a table --from"
+                        .to_owned()
+                        .into());
                 }
+                grind_sheet::ChartSpec::new(r#type.map_or(grind_sheet::ChartKind::Bar, Into::into))
             };
             if let Some(kind) = r#type {
                 spec.kind = (*kind).into();

@@ -117,21 +117,20 @@ impl Editor {
         if href.is_empty() {
             return Err("A link needs somewhere to point".to_owned());
         }
-        let (from, to) = match self.span.get() {
-            Some(span) => span,
+        let (from, to) = if let Some(span) = self.span.get() {
+            span
+        } else {
             // Nothing to put it on: the target becomes its own text, the way pasting a URL
             // into a word processor's link box with nothing selected does.
-            None => {
-                let at = self.doc.caret();
-                self.app
-                    .insert_text(at, href)
-                    .map_err(|error| error.to_string())?;
-                let end = Caret {
-                    block: at.block,
-                    offset: at.offset + href.chars().count(),
-                };
-                (at, end)
-            }
+            let at = self.doc.caret();
+            self.app
+                .insert_text(at, href)
+                .map_err(|error| error.to_string())?;
+            let end = Caret {
+                block: at.block,
+                offset: at.offset + href.chars().count(),
+            };
+            (at, end)
         };
         self.app
             .set_link(from, to, Some(href))

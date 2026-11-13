@@ -463,15 +463,12 @@ impl Ui {
                 self,
                 move |action, _| {
                     let mut overlays = ui.grid.overlays();
-                    let on = match (names, roles) {
-                        (true, _) => {
-                            overlays.names = !overlays.names;
-                            overlays.names
-                        }
-                        _ => {
-                            overlays.roles = !overlays.roles;
-                            overlays.roles
-                        }
+                    let on = if let (true, _) = (names, roles) {
+                        overlays.names = !overlays.names;
+                        overlays.names
+                    } else {
+                        overlays.roles = !overlays.roles;
+                        overlays.roles
                     };
                     ui.grid.set_overlays(overlays);
                     action.set_state(&on.to_variant());

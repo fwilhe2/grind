@@ -784,16 +784,13 @@ impl Picker {
             "" => numfmt::DEFAULT_CURRENCY,
             symbol => symbol,
         };
-        match numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol) {
-            Some(index) => {
-                self.other.set_visible(false);
-                self.currencies[index].set_active(true);
-            }
-            None => {
-                self.other.set_label(symbol);
-                self.other.set_visible(true);
-                self.other.set_active(true);
-            }
+        if let Some(index) = numfmt::CURRENCIES.iter().position(|(s, _)| *s == symbol) {
+            self.other.set_visible(false);
+            self.currencies[index].set_active(true);
+        } else {
+            self.other.set_label(symbol);
+            self.other.set_visible(true);
+            self.other.set_active(true);
         }
     }
 

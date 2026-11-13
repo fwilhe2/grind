@@ -3057,20 +3057,17 @@ mod imp {
                     grind_sheet::ChartKind::Bar => point.filter(|_| only.is_active()),
                     _ => point,
                 };
-                match one {
-                    Some(p) => {
-                        if s.point_colors.len() <= p {
-                            s.point_colors.resize(p + 1, None);
-                        }
-                        s.point_colors[p] = picked;
+                if let Some(p) = one {
+                    if s.point_colors.len() <= p {
+                        s.point_colors.resize(p + 1, None);
                     }
-                    None => {
-                        s.color = picked;
-                        if let Some(p) = point
-                            && let Some(own) = s.point_colors.get_mut(p)
-                        {
-                            *own = None;
-                        }
+                    s.point_colors[p] = picked;
+                } else {
+                    s.color = picked;
+                    if let Some(p) = point
+                        && let Some(own) = s.point_colors.get_mut(p)
+                    {
+                        *own = None;
                     }
                 }
                 if let Err(error) = app.set_chart_style(
@@ -3411,26 +3408,23 @@ mod imp {
             else {
                 return;
             };
-            match with {
-                Some(with) => {
-                    let Some(app) = self.app.borrow().clone() else {
-                        return;
-                    };
-                    // Refused only when the cell changed under the open menu, and the cell then
-                    // shows what it holds.
-                    let _ = app.correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, with);
+            if let Some(with) = with {
+                let Some(app) = self.app.borrow().clone() else {
+                    return;
+                };
+                // Refused only when the cell changed under the open menu, and the cell then
+                // shows what it holds.
+                let _ = app.correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, with);
+            } else {
+                if let Some(speller) = self.speller.borrow().as_ref() {
+                    speller.accept(&wrong.word);
                 }
-                None => {
-                    if let Some(speller) = self.speller.borrow().as_ref() {
-                        speller.accept(&wrong.word);
-                    }
-                    // Ignore All is this session's; Add to Dictionary is the person's list, so
-                    // the next window knows the word too (`doc/spelling.md`, decision 5).
-                    if verb == "add" {
-                        let _ = grind_spell::personal::add(&wrong.word);
-                    }
-                    self.obj().queue_draw();
+                // Ignore All is this session's; Add to Dictionary is the person's list, so
+                // the next window knows the word too (`doc/spelling.md`, decision 5).
+                if verb == "add" {
+                    let _ = grind_spell::personal::add(&wrong.word);
                 }
+                self.obj().queue_draw();
             }
         }
 

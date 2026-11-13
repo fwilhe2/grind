@@ -493,8 +493,8 @@ impl App {
                 }
             }
             "ignore" | "add" => self.accept_misspelt(arg == "add"),
-            _ => match grind_spell::Setting::from_tag(arg) {
-                Some(setting) => {
+            _ => {
+                if let Some(setting) = grind_spell::Setting::from_tag(arg) {
                     self.spelling = setting;
                     self.status.clear();
                     let kept = grind_spell::preference::save(
@@ -508,8 +508,7 @@ impl App {
                     if let Err(why) = kept {
                         self.status = format!("{} \u{2014} not remembered: {why}", self.status);
                     }
-                }
-                None => {
+                } else {
                     let have: Vec<&str> = grind_spell::Language::ALL
                         .iter()
                         .map(|l| l.tag().split('-').next().unwrap_or(""))
@@ -519,7 +518,7 @@ impl App {
                         have.join("|")
                     );
                 }
-            },
+            }
         }
     }
 
@@ -604,13 +603,14 @@ impl App {
             return;
         };
         let with = match with.parse::<usize>() {
-            Ok(n) => match self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
-                Some(word) => word.clone(),
-                None => {
+            Ok(n) => {
+                if let Some(word) = self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
+                    word.clone()
+                } else {
                     self.status = format!("no suggestion {n} for {}", wrong.word);
                     return;
                 }
-            },
+            }
             Err(_) => with.to_owned(),
         };
         match self
@@ -941,15 +941,12 @@ impl App {
     // --- Visual mode ---
 
     fn toggle_visual(&mut self) {
-        match self.mode {
-            Mode::Visual => {
-                self.anchor = None;
-                self.mode = Mode::Normal;
-            }
-            _ => {
-                self.anchor = Some(self.active);
-                self.mode = Mode::Visual;
-            }
+        if let Mode::Visual = self.mode {
+            self.anchor = None;
+            self.mode = Mode::Normal;
+        } else {
+            self.anchor = Some(self.active);
+            self.mode = Mode::Visual;
         }
         self.status.clear();
     }
@@ -2409,13 +2406,14 @@ impl App {
                         None => Some(grind_sheet::TotalsFunction::Sum),
                     };
                 }
-                "--name" => match words.next() {
-                    Some(n) => name = Some(n.to_owned()),
-                    None => {
+                "--name" => {
+                    if let Some(n) = words.next() {
+                        name = Some(n.to_owned());
+                    } else {
                         self.status = USAGE.to_owned();
                         return;
                     }
-                },
+                }
                 _ => {
                     self.status = format!("{word}: unknown option \u{2014} {USAGE}");
                     return;
@@ -2485,15 +2483,14 @@ impl App {
     /// `:csv-out <file>` — the selection, or the whole used sheet. The name picks the dialect:
     /// `data.tsv` writes tabs (`Dialect::for_name`).
     fn cmd_csv_out(&mut self, path: &str) {
-        let (start, end) = match self.anchor {
-            Some(_) => self.rect(),
-            None => {
-                let (rows, cols) = self.core.used_extent(self.sheet).unwrap_or((0, 0));
-                if rows == 0 || cols == 0 {
-                    (Pos::new(0, 0), Pos::new(0, 0))
-                } else {
-                    (Pos::new(0, 0), Pos::new(rows - 1, cols - 1))
-                }
+        let (start, end) = if self.anchor.is_some() {
+            self.rect()
+        } else {
+            let (rows, cols) = self.core.used_extent(self.sheet).unwrap_or((0, 0));
+            if rows == 0 || cols == 0 {
+                (Pos::new(0, 0), Pos::new(0, 0))
+            } else {
+                (Pos::new(0, 0), Pos::new(rows - 1, cols - 1))
             }
         };
         let options = grind_sheet::csv::Export {
@@ -3245,13 +3242,12 @@ impl App {
                             },
                             &marks,
                         );
-                        match reach {
-                            0 => all,
-                            _ => {
-                                let (here, rest) = geom::split_pieces(all, width);
-                                carry = rest;
-                                here
-                            }
+                        if reach == 0 {
+                            all
+                        } else {
+                            let (here, rest) = geom::split_pieces(all, width);
+                            carry = rest;
+                            here
                         }
                     };
                     for (piece, marked) in pieces {

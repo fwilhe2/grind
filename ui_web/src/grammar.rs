@@ -90,17 +90,16 @@ impl crate::Shell {
                 setting.style = id == "grammar.style-on";
                 true
             }
-            "grammar.ignore" => match self.text.grammar_here() {
-                Some(flag) => {
+            "grammar.ignore" => {
+                if let Some(flag) = self.text.grammar_here() {
                     setting.ignored.push(flag.finding.rule.clone());
                     self.set_message(format!("{} is ignored", flag.finding.rule));
                     true
-                }
-                None => {
+                } else {
                     self.set_message("No grammar finding here".to_owned());
                     false
                 }
-            },
+            }
             "grammar.next" => {
                 self.text.next_grammar();
                 false

@@ -168,39 +168,36 @@ pub fn read(text: &str, raw: bool) -> Vec<Run> {
                 buffer.push(chars[at + 1]);
                 at += 2;
             }
-            '{' => match bookmark(&chars, at) {
-                Some((name, next)) => {
+            '{' => {
+                if let Some((name, next)) = bookmark(&chars, at) {
                     flush(&mut runs, &mut buffer);
                     runs.push(Run::Bookmark { name });
                     at = next;
-                }
-                None => {
+                } else {
                     buffer.push(c);
                     at += 1;
                 }
-            },
-            '[' => match bracketed(&chars, at) {
-                Some((run, next)) => {
+            }
+            '[' => {
+                if let Some((run, next)) = bracketed(&chars, at) {
                     flush(&mut runs, &mut buffer);
                     runs.push(run);
                     at = next;
-                }
-                None => {
+                } else {
                     buffer.push(c);
                     at += 1;
                 }
-            },
-            '*' | '_' | '~' | '`' => match marked(&chars, at) {
-                Some((run, next)) => {
+            }
+            '*' | '_' | '~' | '`' => {
+                if let Some((run, next)) = marked(&chars, at) {
                     flush(&mut runs, &mut buffer);
                     runs.push(run);
                     at = next;
-                }
-                None => {
+                } else {
                     buffer.push(c);
                     at += 1;
                 }
-            },
+            }
             _ => {
                 buffer.push(c);
                 at += 1;

@@ -142,18 +142,17 @@ fn parse_target(text: &str) -> Result<Target, ParseError> {
 
 /// Parse `p12:p20`, or a single location standing for one block.
 pub fn parse_range(text: &str) -> Result<Range, ParseError> {
-    match text.split_once(':') {
-        Some((start, end)) => Ok(Range {
+    if let Some((start, end)) = text.split_once(':') {
+        Ok(Range {
             start: parse(start)?,
             end: parse(end)?,
-        }),
-        None => {
-            let one = parse(text)?;
-            Ok(Range {
-                start: one.clone(),
-                end: one,
-            })
-        }
+        })
+    } else {
+        let one = parse(text)?;
+        Ok(Range {
+            start: one.clone(),
+            end: one,
+        })
     }
 }
 

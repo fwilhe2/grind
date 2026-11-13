@@ -2116,24 +2116,23 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .get(Ns::Text, "style-name")
                 .map(str::to_owned)
                 .or_else(|| b.list_frames.last().and_then(|(style, _)| style.clone()));
-            let chain = match b.list_frames.last() {
-                Some((_, chain)) => *chain,
-                None => {
-                    let continued = match (
-                        attrs.get(Ns::Text, "continue-list"),
-                        attrs.get(Ns::Text, "continue-numbering"),
-                    ) {
-                        (Some(id), _) => b.chain_of_id.get(id).copied(),
-                        (None, Some("true")) => b.chain_of_style.get(&style).copied(),
-                        _ => None,
-                    };
-                    let chain = continued.unwrap_or_else(|| {
-                        b.chains += 1;
-                        b.chains
-                    });
-                    b.chain_of_style.insert(style.clone(), chain);
-                    chain
-                }
+            let chain = if let Some((_, chain)) = b.list_frames.last() {
+                *chain
+            } else {
+                let continued = match (
+                    attrs.get(Ns::Text, "continue-list"),
+                    attrs.get(Ns::Text, "continue-numbering"),
+                ) {
+                    (Some(id), _) => b.chain_of_id.get(id).copied(),
+                    (None, Some("true")) => b.chain_of_style.get(&style).copied(),
+                    _ => None,
+                };
+                let chain = continued.unwrap_or_else(|| {
+                    b.chains += 1;
+                    b.chains
+                });
+                b.chain_of_style.insert(style.clone(), chain);
+                chain
             };
             if let Some(id) = attrs.get(Ns::Xml, "id") {
                 b.chain_of_id.insert(id.to_owned(), chain);
@@ -2292,12 +2291,11 @@ impl Table {
     ) -> Self {
         // `table:name` is optional (rng:15970), but the model tells tables apart by name, so a
         // unique one is generated.
-        let name = match name.map(str::trim).filter(|name| !name.is_empty()) {
-            Some(name) => name.to_owned(),
-            None => {
-                b.next_table += 1;
-                format!("Table{}", b.next_table)
-            }
+        let name = if let Some(name) = name.map(str::trim).filter(|name| !name.is_empty()) {
+            name.to_owned()
+        } else {
+            b.next_table += 1;
+            format!("Table{}", b.next_table)
         };
         let recorded = b.cell.is_none() && b.doc.source.is_some() && !span.is_empty();
         let mut columns_from = None;

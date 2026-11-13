@@ -194,16 +194,15 @@ pub fn as_definition(app: &App, reference: &Reference) -> Result<String> {
 /// `=` means a formula, anything else an address — `set`'s rule.
 pub fn definition(app: &App, target: &str) -> Result<String> {
     let target = target.trim();
-    match target.strip_prefix('=') {
-        Some(formula) => Ok(formula.to_owned()),
+    if let Some(formula) = target.strip_prefix('=') {
+        Ok(formula.to_owned())
+    } else {
         // Brackets are accepted, so a definition shown as stored can be typed back.
-        None => {
-            let bare = target
-                .strip_prefix('[')
-                .and_then(|rest| rest.strip_suffix(']'))
-                .unwrap_or(target);
-            as_definition(app, &parse(bare)?)
-        }
+        let bare = target
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+            .unwrap_or(target);
+        as_definition(app, &parse(bare)?)
     }
 }
 

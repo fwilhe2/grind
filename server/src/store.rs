@@ -129,14 +129,13 @@ impl Store {
         }
         grind_core::atomic::write(&path, bytes)?;
         let mut index = self.scan()?;
-        let id = match index.docs.iter().find(|(_, n)| *n == name) {
-            Some((id, _)) => id.clone(),
-            None => {
-                let id = fresh_id(&index);
-                index.docs.insert(id.clone(), name.to_owned());
-                self.save_index(&index)?;
-                id
-            }
+        let id = if let Some((id, _)) = index.docs.iter().find(|(_, n)| *n == name) {
+            id.clone()
+        } else {
+            let id = fresh_id(&index);
+            index.docs.insert(id.clone(), name.to_owned());
+            self.save_index(&index)?;
+            id
         };
         self.commit(&[name], &format!("Add {name}"));
         self.entry(&id, name)

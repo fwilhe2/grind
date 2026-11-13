@@ -26,9 +26,9 @@ pub fn score(haystack: &str, needle: &str) -> Option<(i32, Vec<usize>)> {
         score += match () {
             // `checked_sub`, because the first character of the haystack is position zero and
             // `found - 1` there is not a position at all.
-            _ if found.checked_sub(1) == previous && previous.is_some() => 6,
-            _ if boundary(found) => 5,
-            _ => 1,
+            () if found.checked_sub(1) == previous && previous.is_some() => 6,
+            () if boundary(found) => 5,
+            () => 1,
         };
         hits.push(found);
         previous = Some(found);

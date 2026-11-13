@@ -51,18 +51,17 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     // R6 first: a document whose blocks were only edited in place goes back as its file with those
     // elements replaced. Otherwise the body regenerates and is merged into the original
     // (`envelope::merge`), keeping what the model does not own.
-    let content = match splice(doc, form) {
-        Some(spliced) => spliced,
-        None => {
-            let reserved =
-                source.map_or_default(|source| envelope::automatic_style_names(&source.bytes));
-            let generated = content(doc, form, source, &reserved);
-            match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
-                Some(merged) => merged,
-                // An original too broken to merge into: write a whole document of our own, every
-                // style declared.
-                None => content(doc, form, None, &reserved).into_bytes(),
-            }
+    let content = if let Some(spliced) = splice(doc, form) {
+        spliced
+    } else {
+        let reserved =
+            source.map_or_default(|source| envelope::automatic_style_names(&source.bytes));
+        let generated = content(doc, form, source, &reserved);
+        match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
+            Some(merged) => merged,
+            // An original too broken to merge into: write a whole document of our own, every
+            // style declared.
+            None => content(doc, form, None, &reserved).into_bytes(),
         }
     };
     // Check whatever touched somebody's file before it replaces it: unreadable output, or output
@@ -160,32 +159,32 @@ fn owned(key: &str) -> bool {
     match () {
         // A block's own element: the model writes it, and its other attributes are put back
         // verbatim.
-        _ if is(TEXT, &["p", "h"]) => true,
+        () if is(TEXT, &["p", "h"]) => true,
         // A list opens with the attributes its `text:list` had in the file (`Origin::list`).
-        _ if is(TEXT, &["list", "list-item", "list-header"]) => true,
-        _ if is(TEXT, &["span"]) => attr(TEXT, "style-name"),
-        _ if is(TEXT, &["s"]) => attr(TEXT, "c"),
-        _ if is(TEXT, &["bookmark"]) => attr(TEXT, "name"),
+        () if is(TEXT, &["list", "list-item", "list-header"]) => true,
+        () if is(TEXT, &["span"]) => attr(TEXT, "style-name"),
+        () if is(TEXT, &["s"]) => attr(TEXT, "c"),
+        () if is(TEXT, &["bookmark"]) => attr(TEXT, "name"),
         // A hyperlink's target is the model's; how a viewer opens it is a hint.
-        _ if is(TEXT, &["a"]) => {
+        () if is(TEXT, &["a"]) => {
             attr(XLINK, "href")
                 || attr(XLINK, "type")
                 || attr(XLINK, "show")
                 || attr(OFFICE, "target-frame-name")
         }
-        _ if is(DRAW, &["frame"]) => {
+        () if is(DRAW, &["frame"]) => {
             attr(SVG, "width") || attr(SVG, "height") || attr(TEXT, "anchor-type")
         }
         // A package's picture is written back inline, so where it was stored goes.
-        _ if is(DRAW, &["image"]) => {
+        () if is(DRAW, &["image"]) => {
             attr(DRAW, "mime-type") || attribute.starts_with(&format!("{{{XLINK}}}"))
         }
-        _ if is(TABLE, &["table"]) => attr(TABLE, "name"),
-        _ if is(TABLE, &["table-column"]) => attr(TABLE, "number-columns-repeated"),
-        _ if is(TABLE, &["table-cell"]) => {
+        () if is(TABLE, &["table"]) => attr(TABLE, "name"),
+        () if is(TABLE, &["table-column"]) => attr(TABLE, "number-columns-repeated"),
+        () if is(TABLE, &["table-cell"]) => {
             attr(TABLE, "number-columns-spanned") || attr(TABLE, "number-rows-spanned")
         }
-        _ => false,
+        () => false,
     }
 }
 
@@ -761,36 +760,33 @@ fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) 
             open.push(section);
         }
         let here = doc.blocks[index].section;
-        match doc.blocks[index].cell {
-            None => {
-                let mut end = doc.blocks[index..]
-                    .iter()
-                    .position(|block| block.cell.is_some() || block.section != here)
-                    .map_or(doc.blocks.len(), |offset| index + offset);
-                // A kept element after one of these blocks ends the run, so a list it followed
-                // closes before it as in the file.
-                if let Some(at) = (index..end).find(|i| placed.contains_key(&Some(*i))) {
-                    end = at + 1;
-                }
-                blocks(out, &doc.blocks[index..end], 0, pool, origin);
-                carry(out, Some(end - 1));
-                index = end;
+        if doc.blocks[index].cell.is_none() {
+            let mut end = doc.blocks[index..]
+                .iter()
+                .position(|block| block.cell.is_some() || block.section != here)
+                .map_or(doc.blocks.len(), |offset| index + offset);
+            // A kept element after one of these blocks ends the run, so a list it followed
+            // closes before it as in the file.
+            if let Some(at) = (index..end).find(|i| placed.contains_key(&Some(*i))) {
+                end = at + 1;
             }
-            Some(_) => {
-                // The maximal run naming this table, asked of the model.
-                let range = doc.table(index).unwrap_or(index..index + 1);
-                // An untouched table goes back as the file's own bytes.
-                match origin.and_then(|origin| untouched_table(doc, range.clone(), origin)) {
-                    Some(bytes) => {
-                        let _ = writeln!(out, "{}{bytes}", pad(3, origin));
-                    }
-                    None => table(out, doc, range.clone(), pool, origin),
+            blocks(out, &doc.blocks[index..end], 0, pool, origin);
+            carry(out, Some(end - 1));
+            index = end;
+        } else {
+            // The maximal run naming this table, asked of the model.
+            let range = doc.table(index).unwrap_or(index..index + 1);
+            // An untouched table goes back as the file's own bytes.
+            match origin.and_then(|origin| untouched_table(doc, range.clone(), origin)) {
+                Some(bytes) => {
+                    let _ = writeln!(out, "{}{bytes}", pad(3, origin));
                 }
-                for i in range.clone() {
-                    carry(out, Some(i));
-                }
-                index = range.end;
+                None => table(out, doc, range.clone(), pool, origin),
             }
+            for i in range.clone() {
+                carry(out, Some(i));
+            }
+            index = range.end;
         }
     }
     for _ in open {
@@ -1034,18 +1030,15 @@ fn table(
             );
         }
     }
-    match recorded.filter(|r| r.columns.contains("table-column")) {
-        Some(recorded) => {
-            let _ = writeln!(out, "{}{}", pad(4, origin), recorded.columns);
-        }
-        None => {
-            // At least one `table:table-column` is required (`oneOrMore`, rng:14200).
-            let repeat = match columns.max(1) {
-                1 => String::new(),
-                n => format!(" table:number-columns-repeated=\"{n}\""),
-            };
-            let _ = writeln!(out, "{}<table:table-column{repeat}/>", pad(4, origin));
-        }
+    if let Some(recorded) = recorded.filter(|r| r.columns.contains("table-column")) {
+        let _ = writeln!(out, "{}{}", pad(4, origin), recorded.columns);
+    } else {
+        // At least one `table:table-column` is required (`oneOrMore`, rng:14200).
+        let repeat = match columns.max(1) {
+            1 => String::new(),
+            n => format!(" table:number-columns-repeated=\"{n}\""),
+        };
+        let _ = writeln!(out, "{}<table:table-column{repeat}/>", pad(4, origin));
     }
     let header = |row: u32| recorded.is_some_and(|r| r.header_rows.contains(&row));
     // A recorded cell's start tag with the model's spans and no repeat, since the model expanded
@@ -1095,48 +1088,45 @@ fn table(
                     .as_ref()
                     .filter(|c| c.row == row && c.column == column)
             });
-            match cell {
-                Some(cell) => {
-                    let open = cell_tag(row, column, "table:table-cell", Some(cell));
-                    let content: Vec<Block> = blocks_in
-                        .iter()
-                        .filter(|b| b.cell.as_ref().is_some_and(|c| c.is_same(cell)))
-                        .cloned()
-                        .collect();
-                    if content.iter().all(Block::is_empty) && content.len() <= 1 {
-                        // An empty cell in the schema's shortest form; read back it is one empty
-                        // paragraph, as LibreOffice reads it (`doc/odt-format.md` §5b).
-                        let _ = writeln!(out, "{}{open}/>", pad(5, origin));
-                    } else {
-                        let _ = writeln!(out, "{}{open}>", pad(5, origin));
-                        blocks(out, &content, 3, pool, origin);
-                        let _ = writeln!(out, "{}</table:table-cell>", pad(5, origin));
-                    }
-                    column += 1;
+            if let Some(cell) = cell {
+                let open = cell_tag(row, column, "table:table-cell", Some(cell));
+                let content: Vec<Block> = blocks_in
+                    .iter()
+                    .filter(|b| b.cell.as_ref().is_some_and(|c| c.is_same(cell)))
+                    .cloned()
+                    .collect();
+                if content.iter().all(Block::is_empty) && content.len() <= 1 {
+                    // An empty cell in the schema's shortest form; read back it is one empty
+                    // paragraph, as LibreOffice reads it (`doc/odt-format.md` §5b).
+                    let _ = writeln!(out, "{}{open}/>", pad(5, origin));
+                } else {
+                    let _ = writeln!(out, "{}{open}>", pad(5, origin));
+                    blocks(out, &content, 3, pool, origin);
+                    let _ = writeln!(out, "{}</table:table-cell>", pad(5, origin));
                 }
+                column += 1;
+            } else {
                 // Nothing names this position: covered by a span above or to the left (the covered
                 // element, counted as a column), or a gap (an empty cell).
-                None => {
-                    let element = if covered(blocks_in, row, column) {
-                        "table:covered-table-cell"
-                    } else {
-                        "table:table-cell"
-                    };
-                    // A position no block names is written as the file had it, when it had it.
-                    let element =
-                        recorded
-                            .and_then(|r| r.cells.get(&(row, column)))
-                            .map_or(element, |tag| {
-                                if tag.starts_with("<table:covered-table-cell") {
-                                    "table:covered-table-cell"
-                                } else {
-                                    "table:table-cell"
-                                }
-                            });
-                    let open = cell_tag(row, column, element, None);
-                    let _ = writeln!(out, "{}{open}/>", pad(5, origin));
-                    column += 1;
-                }
+                let element = if covered(blocks_in, row, column) {
+                    "table:covered-table-cell"
+                } else {
+                    "table:table-cell"
+                };
+                // A position no block names is written as the file had it, when it had it.
+                let element =
+                    recorded
+                        .and_then(|r| r.cells.get(&(row, column)))
+                        .map_or(element, |tag| {
+                            if tag.starts_with("<table:covered-table-cell") {
+                                "table:covered-table-cell"
+                            } else {
+                                "table:table-cell"
+                            }
+                        });
+                let open = cell_tag(row, column, element, None);
+                let _ = writeln!(out, "{}{open}/>", pad(5, origin));
+                column += 1;
             }
         }
         let _ = writeln!(out, "{}</table:table-row>", pad(4, origin));

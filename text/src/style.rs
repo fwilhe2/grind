@@ -305,15 +305,12 @@ pub fn readable_name(name: &str) -> String {
             .filter(|code| code.ends_with('_'))
             .and_then(|code| u8::from_str_radix(&code[..2], 16).ok())
             .filter(u8::is_ascii);
-        match decoded {
-            Some(byte) => {
-                out.push(char::from(byte));
-                rest = &tail[3..];
-            }
-            None => {
-                out.push('_');
-                rest = tail;
-            }
+        if let Some(byte) = decoded {
+            out.push(char::from(byte));
+            rest = &tail[3..];
+        } else {
+            out.push('_');
+            rest = tail;
         }
     }
     out.push_str(rest);

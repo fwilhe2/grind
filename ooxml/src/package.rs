@@ -95,15 +95,12 @@ fn percent_decode(s: &str) -> String {
                 u8::from_str_radix(hex, 16).ok()
             })
             .flatten();
-        match decoded {
-            Some(byte) => {
-                out.push(byte);
-                i += 3;
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
+        if let Some(byte) = decoded {
+            out.push(byte);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
         }
     }
     String::from_utf8_lossy_owned(out)

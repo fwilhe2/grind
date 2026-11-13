@@ -448,39 +448,36 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             let exported = app
                 .export_markdown(blocks, &pictures)
                 .map_err(|e| e.to_string())?;
-            match out {
-                Some(path) => {
-                    exported.save(path)?;
-                    let mut written = vec![show_path(path)];
-                    let base = path.parent().unwrap_or(Path::new(""));
-                    written.extend(
-                        exported
-                            .pictures
-                            .iter()
-                            .map(|p| show_path(&base.join(&p.path))),
-                    );
-                    text_lines(written)
-                }
-                None => {
-                    // To stdout, its pictures — when it has any — relative to here.
-                    for picture in &exported.pictures {
-                        let path = Path::new(&picture.path);
-                        if let Some(dir) = path.parent() {
-                            std::fs::create_dir_all(dir)
-                                .map_err(|e| format!("{}: {e}", dir.display()))?;
-                        }
-                        grind_core::atomic::write(path, &picture.data)
-                            .map_err(|e| format!("{}: {e}", path.display()))?;
+            if let Some(path) = out {
+                exported.save(path)?;
+                let mut written = vec![show_path(path)];
+                let base = path.parent().unwrap_or(Path::new(""));
+                written.extend(
+                    exported
+                        .pictures
+                        .iter()
+                        .map(|p| show_path(&base.join(&p.path))),
+                );
+                text_lines(written)
+            } else {
+                // To stdout, its pictures — when it has any — relative to here.
+                for picture in &exported.pictures {
+                    let path = Path::new(&picture.path);
+                    if let Some(dir) = path.parent() {
+                        std::fs::create_dir_all(dir)
+                            .map_err(|e| format!("{}: {e}", dir.display()))?;
                     }
-                    let markdown = exported.markdown;
-                    text_lines(
-                        markdown
-                            .trim_suffix('\n')
-                            .split('\n')
-                            .map(str::to_owned)
-                            .collect(),
-                    )
+                    grind_core::atomic::write(path, &picture.data)
+                        .map_err(|e| format!("{}: {e}", path.display()))?;
                 }
+                let markdown = exported.markdown;
+                text_lines(
+                    markdown
+                        .trim_suffix('\n')
+                        .split('\n')
+                        .map(str::to_owned)
+                        .collect(),
+                )
             }
         }
 

@@ -164,9 +164,9 @@ fn scroll_into_view(list: &HtmlElement, row: &HtmlElement) {
     let view = f64::from(list.client_height());
     let scroll = f64::from(list.scroll_top());
     let wanted = match () {
-        _ if top < scroll => top,
-        _ if top + height > scroll + view => top + height - view,
-        _ => return,
+        () if top < scroll => top,
+        () if top + height > scroll + view => top + height - view,
+        () => return,
     };
     list.set_scroll_top(wanted as i32);
 }

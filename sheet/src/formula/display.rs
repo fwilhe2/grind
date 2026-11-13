@@ -201,15 +201,12 @@ impl Canonical {
     /// points at the whole run.
     fn emit(&mut self, text: &str, src: usize, respelled: Option<usize>) {
         for (i, c) in text.char_indices() {
-            match respelled {
-                Some(end) => {
-                    self.origin.push(src);
-                    self.origin_end.push(end);
-                }
-                None => {
-                    self.origin.push(src + i);
-                    self.origin_end.push(src + i + c.len_utf8());
-                }
+            if let Some(end) = respelled {
+                self.origin.push(src);
+                self.origin_end.push(end);
+            } else {
+                self.origin.push(src + i);
+                self.origin_end.push(src + i + c.len_utf8());
             }
             self.out.push(c);
         }

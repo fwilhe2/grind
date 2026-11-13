@@ -61,15 +61,16 @@ pub fn present(parent: &impl IsA<gtk::Widget>, changed: impl Fn() + 'static) {
         let (entry, error, list, changed) = (entry.clone(), error, list, changed.clone());
         move || match grind_spell::personal::word(&entry.text()) {
             Err(why) => say(&error, why),
-            Ok(word) => match grind_spell::personal::add(&word) {
-                Err(why) => say(&error, &why.to_string()),
-                Ok(_) => {
+            Ok(word) => {
+                if let Err(why) = grind_spell::personal::add(&word) {
+                    say(&error, &why.to_string());
+                } else {
                     error.set_visible(false);
                     entry.set_text("");
                     changed();
                     fill(&list, &error, &changed);
                 }
-            },
+            }
         }
     };
     let on_enter = adding.clone();

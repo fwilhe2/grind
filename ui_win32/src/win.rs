@@ -2751,9 +2751,10 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
         None => {
             // SAFETY: one borrow; arithmetic.
             let grip = unsafe {
-                with_sheet(hwnd, |state| match state.chart_grab {
-                    Some(grab) => Some(grab.grip),
-                    None => {
+                with_sheet(hwnd, |state| {
+                    if let Some(grab) = state.chart_grab {
+                        Some(grab.grip)
+                    } else {
                         let charts = state.app.charts(state.sheet).unwrap_or_default();
                         let (x, y) = (f64::from(at.x), f64::from(at.y));
                         crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y)
@@ -6931,19 +6932,16 @@ fn write(hwnd: HWND, path: &Path) -> bool {
     // SAFETY: one borrow. `save_file` only reads the document: it notifies nothing, opens nothing,
     // dispatches nothing. No "Saved" banner: the title's `*` clearing is the confirmation.
     let failed = unsafe { with_pane(hwnd, |pane| pane.save_file(path).err()) }.flatten();
-    match failed {
-        Some(message) => {
-            dialog::error(
-                hwnd,
-                &format!("Could not save {}:\n\n{message}", path.display()),
-            );
-            false
-        }
-        None => {
-            add_recent(path);
-            refresh(hwnd);
-            true
-        }
+    if let Some(message) = failed {
+        dialog::error(
+            hwnd,
+            &format!("Could not save {}:\n\n{message}", path.display()),
+        );
+        false
+    } else {
+        add_recent(path);
+        refresh(hwnd);
+        true
     }
 }
 

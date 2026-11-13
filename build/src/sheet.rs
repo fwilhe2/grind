@@ -1111,14 +1111,13 @@ fn decoration(app: &App, sheet: usize, op: &Op, styles: &mut Layered) -> Result<
         // A name is document-level, but a script says it on the sheet whose cells it names, and
         // the definition is qualified with that sheet so it means the same range from anywhere.
         Op::Name { name, target } => {
-            let definition = match target.strip_prefix('=') {
-                Some(formula) => formula.to_owned(),
-                None => {
-                    let (sheet, start, end) = place(target)?;
-                    let named = app.sheet_name(sheet).map_err(say)?;
-                    let reference = a1::reference(Some(&named), start, end);
-                    a1::as_definition(app, &reference).map_err(say)?
-                }
+            let definition = if let Some(formula) = target.strip_prefix('=') {
+                formula.to_owned()
+            } else {
+                let (sheet, start, end) = place(target)?;
+                let named = app.sheet_name(sheet).map_err(say)?;
+                let reference = a1::reference(Some(&named), start, end);
+                a1::as_definition(app, &reference).map_err(say)?
             };
             app.set_name(name, &definition).map_err(say)
         }

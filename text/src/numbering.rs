@@ -207,18 +207,19 @@ pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
         let level = depth.max(1) as usize;
         let mark = match doc.list_marks.get(&block.id) {
             Some(mark) => mark.clone(),
-            None => match previous.get(level - 1).cloned().flatten() {
-                Some(before) => ListMark {
-                    start: None,
-                    header: false,
-                    first: true,
-                    ..before
-                },
-                None => {
+            None => {
+                if let Some(before) = previous.get(level - 1).cloned().flatten() {
+                    ListMark {
+                        start: None,
+                        header: false,
+                        first: true,
+                        ..before
+                    }
+                } else {
                     out.push(None);
                     continue;
                 }
-            },
+            }
         };
         previous.resize(level, None);
         previous[level - 1] = Some(mark.clone());

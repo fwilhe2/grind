@@ -1037,12 +1037,11 @@ mod tests {
             reference.start.row.expect("a row").index,
             reference.start.col.expect("a column").index,
         );
-        match text.strip_prefix('=') {
-            Some(_) => doc.sheets[0].set_formula(pos, text.to_owned()),
-            None => {
-                doc.sheets[0].clear_formula(pos);
-                doc.sheets[0].set(pos, CellValue::Number(text.parse().expect("a number")));
-            }
+        if text.strip_prefix('=').is_some() {
+            doc.sheets[0].set_formula(pos, text.to_owned());
+        } else {
+            doc.sheets[0].clear_formula(pos);
+            doc.sheets[0].set(pos, CellValue::Number(text.parse().expect("a number")));
         }
     }
 

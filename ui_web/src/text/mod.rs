@@ -499,16 +499,15 @@ impl Ui {
                     let Some((_, grid, cells)) = open.as_mut() else {
                         continue;
                     };
-                    match cells.get(&(cell.row, cell.column)) {
-                        Some(existing) => existing.clone(),
-                        None => {
-                            let box_ = self.dom.document.create_element("div")?;
-                            box_.set_class_name("tcell");
-                            box_.set_attribute("style", &table::placement(cell))?;
-                            grid.append_child(&box_)?;
-                            cells.insert((cell.row, cell.column), box_.clone());
-                            box_
-                        }
+                    if let Some(existing) = cells.get(&(cell.row, cell.column)) {
+                        existing.clone()
+                    } else {
+                        let box_ = self.dom.document.create_element("div")?;
+                        box_.set_class_name("tcell");
+                        box_.set_attribute("style", &table::placement(cell))?;
+                        grid.append_child(&box_)?;
+                        cells.insert((cell.row, cell.column), box_.clone());
+                        box_
                     }
                 }
             };

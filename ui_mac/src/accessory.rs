@@ -57,17 +57,14 @@ define_class!(
                 return;
             };
             let text = field.stringValue().to_string();
-            match place::locate(&pane.app, pane.sheet.get(), &text) {
-                Some(selection) => {
-                    pane.select(selection);
-                    // Back to the grid, where the next key belongs.
-                    pane.focus_grid();
-                }
-                None => {
-                    NSBeep();
-                    let shown = place::name_box(&pane.app, pane.sheet.get(), pane.selection.get());
-                    field.setStringValue(&NSString::from_str(&shown));
-                }
+            if let Some(selection) = place::locate(&pane.app, pane.sheet.get(), &text) {
+                pane.select(selection);
+                // Back to the grid, where the next key belongs.
+                pane.focus_grid();
+            } else {
+                NSBeep();
+                let shown = place::name_box(&pane.app, pane.sheet.get(), pane.selection.get());
+                field.setStringValue(&NSString::from_str(&shown));
             }
         }
     }

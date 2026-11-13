@@ -525,15 +525,12 @@ impl App {
     // --- Visual mode ---
 
     fn toggle_visual(&mut self) {
-        match self.mode {
-            Mode::Visual => {
-                self.anchor = None;
-                self.mode = Mode::Normal;
-            }
-            _ => {
-                self.anchor = Some(self.caret);
-                self.mode = Mode::Visual;
-            }
+        if let Mode::Visual = self.mode {
+            self.anchor = None;
+            self.mode = Mode::Normal;
+        } else {
+            self.anchor = Some(self.caret);
+            self.mode = Mode::Visual;
         }
         self.status.clear();
     }
@@ -1613,8 +1610,8 @@ impl App {
                 }
             }
             "ignore" | "add" => self.accept_misspelt(arg == "add"),
-            _ => match grind_spell::Setting::from_tag(arg) {
-                Some(setting) => {
+            _ => {
+                if let Some(setting) = grind_spell::Setting::from_tag(arg) {
                     self.spelling = setting;
                     self.status.clear();
                     let kept = self
@@ -1630,8 +1627,7 @@ impl App {
                     if let Err(why) = kept {
                         self.status = format!("{} \u{2014} not remembered: {why}", self.status);
                     }
-                }
-                None => {
+                } else {
                     let have: Vec<&str> = grind_spell::Language::ALL
                         .iter()
                         .map(|l| l.tag().split('-').next().unwrap_or(""))
@@ -1641,7 +1637,7 @@ impl App {
                         have.join("|")
                     );
                 }
-            },
+            }
         }
     }
 
@@ -1709,13 +1705,14 @@ impl App {
             return;
         };
         let with = match with.parse::<usize>() {
-            Ok(n) => match self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
-                Some(word) => word.clone(),
-                None => {
+            Ok(n) => {
+                if let Some(word) = self.core.suggest(&wrong.word).get(n.wrapping_sub(1)) {
+                    word.clone()
+                } else {
                     self.status = format!("no suggestion {n} for {}", wrong.word);
                     return;
                 }
-            },
+            }
             Err(_) => with.to_owned(),
         };
         match self.core.correct(wrong.caret(), &wrong.word, &with) {
@@ -1837,13 +1834,14 @@ impl App {
     /// `:fix N` or `:fix text` on a grammar finding: its Nth replacement, or the text given.
     fn fix_grammar(&mut self, flag: &grind_text::grammar::Flag, with: &str) {
         let with = match with.parse::<usize>() {
-            Ok(n) => match flag.finding.replacements.get(n.wrapping_sub(1)) {
-                Some(with) => with.clone(),
-                None => {
+            Ok(n) => {
+                if let Some(with) = flag.finding.replacements.get(n.wrapping_sub(1)) {
+                    with.clone()
+                } else {
                     self.status = format!("no replacement {n} here");
                     return;
                 }
-            },
+            }
             Err(_) => with.to_owned(),
         };
         let range = flag.finding.range.clone();

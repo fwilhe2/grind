@@ -241,19 +241,18 @@ fn every_corpus_formula_parses_and_survives_display_form() {
                                     Ok(back) => format!("{display}  ->  {back}"),
                                     Err(e) => format!("{display}  ->  {e}"),
                                 };
-                                match ambiguous(&canonical, &display) {
-                                    Some(reason) => *trip_excuses.entry(reason).or_default() += 1,
-                                    None => {
-                                        let entry = trip_failures
-                                            .entry(match &other {
-                                                Ok(_) => "came back different".to_owned(),
-                                                Err(e) => e.message.clone(),
-                                            })
-                                            .or_default();
-                                        entry.0 += 1;
-                                        if entry.1.len() < 3 {
-                                            entry.1.push(format!("{canonical}  ->  {message}"));
-                                        }
+                                if let Some(reason) = ambiguous(&canonical, &display) {
+                                    *trip_excuses.entry(reason).or_default() += 1;
+                                } else {
+                                    let entry = trip_failures
+                                        .entry(match &other {
+                                            Ok(_) => "came back different".to_owned(),
+                                            Err(e) => e.message.clone(),
+                                        })
+                                        .or_default();
+                                    entry.0 += 1;
+                                    if entry.1.len() < 3 {
+                                        entry.1.push(format!("{canonical}  ->  {message}"));
                                     }
                                 }
                             }

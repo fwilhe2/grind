@@ -266,12 +266,11 @@ impl Pane {
                 ) else {
                     return;
                 };
-                match verbs::locale(&typed) {
-                    Ok(locale) => self.app.set_locale(locale),
-                    Err(_) => {
-                        prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
-                        return;
-                    }
+                if let Ok(locale) = verbs::locale(&typed) {
+                    self.app.set_locale(locale)
+                } else {
+                    prompt::tell(mtm, "That is not a locale.", "A tag such as de-DE.");
+                    return;
                 }
             }
             // On: asked what to search for, listed in the sidebar. On already: off.
@@ -303,9 +302,10 @@ impl Pane {
                 let (start, end) = grind_sheet::nav::target(selection, used);
                 verbs::formulas_to_values(&self.app, sheet, start, end).map(|_| ())
             }
-            Command::Filter => match self.app.filter(sheet).ok().flatten() {
-                Some(_) => self.app.set_filter(sheet, None),
-                None => {
+            Command::Filter => {
+                if self.app.filter(sheet).ok().flatten().is_some() {
+                    self.app.set_filter(sheet, None)
+                } else {
                     let used = self.app.used_extent(sheet).unwrap_or((0, 0));
                     match filter::range(selection.rect(), used) {
                         Ok((start, end)) => self.app.set_filter(
@@ -318,7 +318,7 @@ impl Pane {
                         }
                     }
                 }
-            },
+            }
             _ => return,
         };
         match done {

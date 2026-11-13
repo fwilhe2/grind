@@ -443,13 +443,12 @@ impl Builder {
                     continue;
                 };
                 let key = (condition, apply.clone(), base);
-                let at = match keys.iter().position(|k| *k == key) {
-                    Some(at) => at,
-                    None => {
-                        keys.push(key);
-                        cells.push(Vec::new());
-                        keys.len() - 1
-                    }
+                let at = if let Some(at) = keys.iter().position(|k| *k == key) {
+                    at
+                } else {
+                    keys.push(key);
+                    cells.push(Vec::new());
+                    keys.len() - 1
                 };
                 cells[at].extend(
                     rects[style]

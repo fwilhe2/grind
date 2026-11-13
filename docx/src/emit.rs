@@ -127,12 +127,11 @@ pub fn write(input: Input, report: &mut Report) -> String {
                 && input.sections[m].landscape == section.landscape
                 && input.pages.get(m).map_or_default(Page::parts) == page.parts()
         });
-        let index = match found {
-            Some(index) => index,
-            None => {
-                masters.push(k);
-                masters.len() - 1
-            }
+        let index = if let Some(index) = found {
+            index
+        } else {
+            masters.push(k);
+            masters.len() - 1
         };
         master_of.push(master_name(index));
     }
@@ -416,38 +415,35 @@ impl Writer<'_, '_> {
             match block {
                 Block::Para(para) => {
                     let item = self.list_item(para);
-                    match item {
-                        Some((num, level)) => {
-                            let want = level + 1;
-                            if open.first().is_some_and(|first| *first != num) {
-                                close_lists(out, &mut open, 0, depth);
-                            }
-                            if open.len() > want {
-                                close_lists(out, &mut open, want, depth);
-                            }
-                            if open.len() == want {
-                                let at = depth + 2 * want - 1;
-                                let _ = writeln!(out, "{}</text:list-item>", pad(at));
-                                let _ = writeln!(out, "{}<text:list-item>", pad(at));
-                            }
-                            while open.len() < want {
-                                let at = depth + 2 * open.len();
-                                let attributes = if open.is_empty() {
-                                    self.list_attributes(num)
-                                } else {
-                                    String::new()
-                                };
-                                let _ = writeln!(out, "{}<text:list{attributes}>", pad(at));
-                                let _ = writeln!(out, "{}<text:list-item>", pad(at + 1));
-                                open.push(num);
-                            }
-                            self.report.list_items += 1;
-                            self.paragraph(out, para, depth + 2 * want);
-                        }
-                        None => {
+                    if let Some((num, level)) = item {
+                        let want = level + 1;
+                        if open.first().is_some_and(|first| *first != num) {
                             close_lists(out, &mut open, 0, depth);
-                            self.paragraph(out, para, depth);
                         }
+                        if open.len() > want {
+                            close_lists(out, &mut open, want, depth);
+                        }
+                        if open.len() == want {
+                            let at = depth + 2 * want - 1;
+                            let _ = writeln!(out, "{}</text:list-item>", pad(at));
+                            let _ = writeln!(out, "{}<text:list-item>", pad(at));
+                        }
+                        while open.len() < want {
+                            let at = depth + 2 * open.len();
+                            let attributes = if open.is_empty() {
+                                self.list_attributes(num)
+                            } else {
+                                String::new()
+                            };
+                            let _ = writeln!(out, "{}<text:list{attributes}>", pad(at));
+                            let _ = writeln!(out, "{}<text:list-item>", pad(at + 1));
+                            open.push(num);
+                        }
+                        self.report.list_items += 1;
+                        self.paragraph(out, para, depth + 2 * want);
+                    } else {
+                        close_lists(out, &mut open, 0, depth);
+                        self.paragraph(out, para, depth);
                     }
                 }
                 Block::Table(table) => {

@@ -278,34 +278,31 @@ impl Parser<'_> {
 
     fn prefix(&mut self) -> Result<(Expr, usize), Refusal> {
         self.space();
-        match self.peek() {
-            Some(sign @ ('-' | '+')) => {
-                self.at += 1;
-                let op = if sign == '-' { Op::Sub } else { Op::Add };
-                let (inner, depth) = self.nested(|p| p.expr(PREFIX_BP))?;
-                Ok((Expr::Prefix(op, Box::new(inner)), depth + 1))
-            }
-            _ => {
-                let (mut expr, mut depth) = self.primary()?;
-                // Postfix `%`, which may repeat: `A1%%` is a hundredth of a hundredth. Whitespace
-                // before it is looked past, not consumed: only the caller can tell an intersection
-                // from layout.
-                loop {
-                    let save = self.at;
-                    self.space();
-                    if self.peek() != Some('%') {
-                        self.at = save;
-                        break;
-                    }
-                    if depth >= MAX_DEPTH {
-                        return Err(Refusal::Syntax);
-                    }
-                    self.at += 1;
-                    expr = Expr::Postfix(Op::Percent, Box::new(expr));
-                    depth += 1;
+        if let Some(sign @ ('-' | '+')) = self.peek() {
+            self.at += 1;
+            let op = if sign == '-' { Op::Sub } else { Op::Add };
+            let (inner, depth) = self.nested(|p| p.expr(PREFIX_BP))?;
+            Ok((Expr::Prefix(op, Box::new(inner)), depth + 1))
+        } else {
+            let (mut expr, mut depth) = self.primary()?;
+            // Postfix `%`, which may repeat: `A1%%` is a hundredth of a hundredth. Whitespace
+            // before it is looked past, not consumed: only the caller can tell an intersection
+            // from layout.
+            loop {
+                let save = self.at;
+                self.space();
+                if self.peek() != Some('%') {
+                    self.at = save;
+                    break;
                 }
-                Ok((expr, depth))
+                if depth >= MAX_DEPTH {
+                    return Err(Refusal::Syntax);
+                }
+                self.at += 1;
+                expr = Expr::Postfix(Op::Percent, Box::new(expr));
+                depth += 1;
             }
+            Ok((expr, depth))
         }
     }
 
@@ -591,12 +588,11 @@ impl Parser<'_> {
         let save = self.at;
         let first = self.sheet_name()?;
         let second = if self.eat(':') {
-            match self.sheet_name() {
-                Some(name) => Some(name),
-                None => {
-                    self.at = save;
-                    return None;
-                }
+            if let Some(name) = self.sheet_name() {
+                Some(name)
+            } else {
+                self.at = save;
+                return None;
             }
         } else {
             None

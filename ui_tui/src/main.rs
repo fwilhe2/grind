@@ -197,30 +197,27 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
     // over the file it came from.
     let path = path.filter(|_| imported.is_none());
     let fail = |name: &str, e: &dyn std::fmt::Display| io::Error::other(format!("{name}: {e}"));
-    match kind {
-        DocumentKind::Text => {
-            let core = Arc::new(grind_text::App::new());
-            if let Some((name, bytes)) = &file {
-                core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
-            }
-            Ok(Pane::Text(Box::new(
-                text::app::App::new(core, redraw, path)
-                    .spelling()
-                    .grammar()
-                    .noticed(imported),
-            )))
+    if kind == DocumentKind::Text {
+        let core = Arc::new(grind_text::App::new());
+        if let Some((name, bytes)) = &file {
+            core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
         }
-        _ => {
-            let core = Arc::new(grind_sheet::App::new());
-            if let Some((name, bytes)) = &file {
-                core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
-            }
-            Ok(Pane::Sheet(Box::new(
-                sheet::app::App::new(core, redraw, path)
-                    .imported(imported)
-                    .spelling(),
-            )))
+        Ok(Pane::Text(Box::new(
+            text::app::App::new(core, redraw, path)
+                .spelling()
+                .grammar()
+                .noticed(imported),
+        )))
+    } else {
+        let core = Arc::new(grind_sheet::App::new());
+        if let Some((name, bytes)) = &file {
+            core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
         }
+        Ok(Pane::Sheet(Box::new(
+            sheet::app::App::new(core, redraw, path)
+                .imported(imported)
+                .spelling(),
+        )))
     }
 }
 

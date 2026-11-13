@@ -19,15 +19,15 @@ use crate::{App, BlockKind, BlockView, Caret, ImageView, Result};
 pub fn mime(bytes: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
     Some(match () {
-        _ if at(0, b"\x89PNG\r\n\x1a\n") => "image/png",
-        _ if at(0, b"\xff\xd8\xff") => "image/jpeg",
-        _ if at(0, b"GIF87a") || at(0, b"GIF89a") => "image/gif",
-        _ if at(0, b"II*\0") || at(0, b"MM\0*") => "image/tiff",
-        _ if at(0, b"RIFF") && at(8, b"WEBP") => "image/webp",
-        _ if at(0, b"BM") => "image/bmp",
-        _ if at(4, b"ftypheic") || at(4, b"ftypheix") || at(4, b"ftypmif1") => "image/heic",
-        _ if svg(bytes) => "image/svg+xml",
-        _ => return None,
+        () if at(0, b"\x89PNG\r\n\x1a\n") => "image/png",
+        () if at(0, b"\xff\xd8\xff") => "image/jpeg",
+        () if at(0, b"GIF87a") || at(0, b"GIF89a") => "image/gif",
+        () if at(0, b"II*\0") || at(0, b"MM\0*") => "image/tiff",
+        () if at(0, b"RIFF") && at(8, b"WEBP") => "image/webp",
+        () if at(0, b"BM") => "image/bmp",
+        () if at(4, b"ftypheic") || at(4, b"ftypheix") || at(4, b"ftypmif1") => "image/heic",
+        () if svg(bytes) => "image/svg+xml",
+        () => return None,
     })
 }
 

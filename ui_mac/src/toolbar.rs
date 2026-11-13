@@ -151,31 +151,28 @@ impl Toolbar {
                 // SAFETY: the target is this object, which answers the action, and the
                 // selector takes one sender.
                 let control = unsafe {
-                    match images {
-                        Some(images) => {
-                            NSSegmentedControl::segmentedControlWithImages_trackingMode_target_action(
-                                &NSArray::from_retained_slice(&images),
-                                mode,
-                                Some(target),
-                                Some(sel!(segmentChosen:)),
-                                mtm,
-                            )
-                        }
+                    if let Some(images) = images {
+                        NSSegmentedControl::segmentedControlWithImages_trackingMode_target_action(
+                            &NSArray::from_retained_slice(&images),
+                            mode,
+                            Some(target),
+                            Some(sel!(segmentChosen:)),
+                            mtm,
+                        )
+                    } else {
                         // A symbol this system does not have: the segments say what they do
                         // in words instead.
-                        None => {
-                            let labels: Vec<Retained<NSString>> = segments
-                                .iter()
-                                .map(|segment| NSString::from_str(segment.label))
-                                .collect();
-                            NSSegmentedControl::segmentedControlWithLabels_trackingMode_target_action(
-                                &NSArray::from_retained_slice(&labels),
-                                mode,
-                                Some(target),
-                                Some(sel!(segmentChosen:)),
-                                mtm,
-                            )
-                        }
+                        let labels: Vec<Retained<NSString>> = segments
+                            .iter()
+                            .map(|segment| NSString::from_str(segment.label))
+                            .collect();
+                        NSSegmentedControl::segmentedControlWithLabels_trackingMode_target_action(
+                            &NSArray::from_retained_slice(&labels),
+                            mode,
+                            Some(target),
+                            Some(sel!(segmentChosen:)),
+                            mtm,
+                        )
                     }
                 };
                 for (at, segment) in segments.iter().enumerate() {

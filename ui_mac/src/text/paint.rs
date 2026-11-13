@@ -263,49 +263,45 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
         let role = Role::of(&block.kind, block.style.as_deref());
 
         if let Some((image, caption)) = grind_text::picture_of(block) {
-            match frame.decoder.size(image) {
+            if let Some(size) = frame.decoder.size(image) {
                 // The picture fitted to the block's width, and its caption's lines under it in
                 // the block's own face — the room `face::lay_out` reserved for both.
-                Some(size) => {
-                    let (w, h) = picture::fitted(size, slot.width);
-                    ops.push(Op::Image {
-                        rect: Rect::new(x, slot.top, w, h),
-                        data: image.data.as_slice().into(),
-                    });
-                    if let Some(caption) = caption {
-                        let (_, metrics) =
-                            faces.of(slot.index, &block.kind, block.style.as_deref());
-                        let (lines, _) = picture::caption_lines(caption, slot.width, metrics);
-                        let top = slot.top + h + picture::CAPTION_GAP;
-                        for (text, line_top) in lines {
-                            ops.push(Op::Run {
-                                x,
-                                top: top + line_top,
-                                text,
-                                font: face::font(role, &Default::default()),
-                                color: palette.ink,
-                                underline: false,
-                                strike: false,
-                                clip: view,
-                            });
-                        }
-                    }
-                }
-                // Bytes nothing here can decode: outlined where the picture goes, and the rest of
-                // the document drawn — R5's tolerance, over a picture.
-                None => {
-                    let rect = Rect::new(x, slot.top, slot.width, slot.height.max(1.0));
-                    for edge in [
-                        Rect::new(rect.x, rect.y, rect.w, RULE),
-                        Rect::new(rect.x, rect.bottom() - RULE, rect.w, RULE),
-                        Rect::new(rect.x, rect.y, RULE, rect.h),
-                        Rect::new(rect.right() - RULE, rect.y, RULE, rect.h),
-                    ] {
-                        ops.push(Op::Fill {
-                            rect: edge,
-                            color: rule,
+                let (w, h) = picture::fitted(size, slot.width);
+                ops.push(Op::Image {
+                    rect: Rect::new(x, slot.top, w, h),
+                    data: image.data.as_slice().into(),
+                });
+                if let Some(caption) = caption {
+                    let (_, metrics) = faces.of(slot.index, &block.kind, block.style.as_deref());
+                    let (lines, _) = picture::caption_lines(caption, slot.width, metrics);
+                    let top = slot.top + h + picture::CAPTION_GAP;
+                    for (text, line_top) in lines {
+                        ops.push(Op::Run {
+                            x,
+                            top: top + line_top,
+                            text,
+                            font: face::font(role, &Default::default()),
+                            color: palette.ink,
+                            underline: false,
+                            strike: false,
+                            clip: view,
                         });
                     }
+                }
+            } else {
+                // Bytes nothing here can decode: outlined where the picture goes, and the rest of
+                // the document drawn — R5's tolerance, over a picture.
+                let rect = Rect::new(x, slot.top, slot.width, slot.height.max(1.0));
+                for edge in [
+                    Rect::new(rect.x, rect.y, rect.w, RULE),
+                    Rect::new(rect.x, rect.bottom() - RULE, rect.w, RULE),
+                    Rect::new(rect.x, rect.y, RULE, rect.h),
+                    Rect::new(rect.right() - RULE, rect.y, RULE, rect.h),
+                ] {
+                    ops.push(Op::Fill {
+                        rect: edge,
+                        color: rule,
+                    });
                 }
             }
             continue;

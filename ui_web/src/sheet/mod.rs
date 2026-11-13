@@ -545,18 +545,15 @@ impl Ui {
                 // Both overlays as two attributes and no extra elements: the stylesheet draws the
                 // marker and the hint with `content: attr(…)`. In role mode the document's own
                 // colours are suppressed (`doc/view-modes.md` §4.5).
-                match viewport.role(row, col) {
-                    Some(role) => {
-                        cell.set_attribute("data-role", role.name())?;
-                        if !role.marker().is_empty() {
-                            cell.set_attribute("data-mark", role.marker())?;
-                        }
+                if let Some(role) = viewport.role(row, col) {
+                    cell.set_attribute("data-role", role.name())?;
+                    if !role.marker().is_empty() {
+                        cell.set_attribute("data-mark", role.marker())?;
                     }
-                    None => {
-                        let css = css_of(style, numeric, dark);
-                        if !css.is_empty() {
-                            cell.set_attribute("style", &css)?;
-                        }
+                } else {
+                    let css = css_of(style, numeric, dark);
+                    if !css.is_empty() {
+                        cell.set_attribute("style", &css)?;
                     }
                 }
                 if overlays.names {

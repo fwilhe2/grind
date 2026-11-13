@@ -547,33 +547,31 @@ fn units(
                 let key = (cell.table.clone(), cell.row);
                 let top = slot.top - pad;
                 let bottom = lines.last().map_or(slot.bottom(), Line::bottom) + pad;
-                match (row.as_ref() == Some(&key), out.last_mut()) {
-                    (
-                        true,
-                        Some(Unit::Row {
-                            slots,
-                            top: t,
-                            bottom: b,
-                            ..
-                        }),
-                    ) => {
-                        slots.push((*slot, lines));
-                        *t = t.min(top);
-                        *b = b.max(bottom);
-                    }
-                    _ => {
-                        let header = faces.header_row(&key.0, key.1);
-                        out.push(Unit::Row {
-                            slots: vec![(*slot, lines)],
-                            top,
-                            bottom,
-                            cells: Vec::new(),
-                            table: key.0.clone(),
-                            header,
-                            kept: faces.row_kept(&key.0, key.1),
-                        });
-                        row = Some(key);
-                    }
+                if let (
+                    true,
+                    Some(Unit::Row {
+                        slots,
+                        top: t,
+                        bottom: b,
+                        ..
+                    }),
+                ) = (row.as_ref() == Some(&key), out.last_mut())
+                {
+                    slots.push((*slot, lines));
+                    *t = t.min(top);
+                    *b = b.max(bottom);
+                } else {
+                    let header = faces.header_row(&key.0, key.1);
+                    out.push(Unit::Row {
+                        slots: vec![(*slot, lines)],
+                        top,
+                        bottom,
+                        cells: Vec::new(),
+                        table: key.0.clone(),
+                        header,
+                        kept: faces.row_kept(&key.0, key.1),
+                    });
+                    row = Some(key);
                 }
             }
         }

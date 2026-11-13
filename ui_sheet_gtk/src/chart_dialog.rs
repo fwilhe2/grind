@@ -73,12 +73,11 @@ pub fn present(
         None => None,
     };
     let this = Dialog::build(app, grid, editing);
-    match &existing {
-        Some(chart) => this.open_on(chart),
-        None => {
-            let (start, end) = grid.selection().rect();
-            this.open_on_block(start, end);
-        }
+    if let Some(chart) = &existing {
+        this.open_on(chart);
+    } else {
+        let (start, end) = grid.selection().rect();
+        this.open_on_block(start, end);
     }
     // The dialog holds itself for as long as it is open, and lets go when it closes — every
     // signal handler below holds it weakly, so this is the one strong reference.
@@ -708,21 +707,20 @@ impl Dialog {
             },
             ..spec
         };
-        let result = match self.editing {
-            Some(index) => self.app.edit_chart(self.sheet, index, &spec),
-            None => {
-                let (start, end) = self
-                    .block
-                    .get()
-                    .unwrap_or_else(|| self.grid.selection().rect());
-                let (x, y) = self.grid.anchor_beside(start, end);
-                self.app
-                    .add_chart(self.sheet, &spec, &x, &y, NEW_WIDTH, NEW_HEIGHT)
-                    .inspect(|()| {
-                        let count = self.app.charts(self.sheet).map_or(0, |c| c.len());
-                        self.grid.reveal_chart(count.saturating_sub(1));
-                    })
-            }
+        let result = if let Some(index) = self.editing {
+            self.app.edit_chart(self.sheet, index, &spec)
+        } else {
+            let (start, end) = self
+                .block
+                .get()
+                .unwrap_or_else(|| self.grid.selection().rect());
+            let (x, y) = self.grid.anchor_beside(start, end);
+            self.app
+                .add_chart(self.sheet, &spec, &x, &y, NEW_WIDTH, NEW_HEIGHT)
+                .inspect(|()| {
+                    let count = self.app.charts(self.sheet).map_or(0, |c| c.len());
+                    self.grid.reveal_chart(count.saturating_sub(1));
+                })
         };
         match result {
             Ok(()) => {
@@ -767,50 +765,45 @@ mod imp {
             let widget = self.obj();
             let (w, h) = (f64::from(widget.width()), f64::from(widget.height()));
             let palette = crate::theme::Palette::of(&*widget);
-            match &*self.drawn.borrow() {
-                Some((chart, data)) => {
-                    let color = |series: usize, point: Option<usize>| {
-                        crate::theme::color(&grind_sheet::effective_color(chart, series, point))
-                            .unwrap_or(palette.foreground)
-                    };
-                    crate::chart::draw(
-                        &*widget,
-                        snapshot,
-                        Rect {
-                            x: 0.0,
-                            y: 0.0,
-                            w,
-                            h,
-                        },
-                        chart,
-                        data,
-                        &crate::chart::Painter {
-                            background: palette.background,
-                            // The card is the frame; a second one inside it is a double line.
-                            border: gtk::gdk::RGBA::TRANSPARENT,
-                            foreground: palette.foreground,
-                            grid: palette.lines,
-                            color: &color,
-                        },
-                    );
-                }
-                None => {
-                    let layout = widget.create_pango_layout(Some(&self.message.borrow()));
-                    layout.set_width(((w - 48.0).max(1.0) * f64::from(gtk::pango::SCALE)) as i32);
-                    layout.set_alignment(gtk::pango::Alignment::Center);
-                    layout.set_wrap(gtk::pango::WrapMode::WordChar);
-                    let (_, text_h) = layout.pixel_size();
-                    snapshot.save();
-                    snapshot.translate(&gtk::graphene::Point::new(
-                        24.0,
-                        ((h - f64::from(text_h)) / 2.0) as f32,
-                    ));
-                    snapshot.append_layout(
-                        &layout,
-                        &crate::theme::with_alpha(palette.foreground, 0.55),
-                    );
-                    snapshot.restore();
-                }
+            if let Some((chart, data)) = &*self.drawn.borrow() {
+                let color = |series: usize, point: Option<usize>| {
+                    crate::theme::color(&grind_sheet::effective_color(chart, series, point))
+                        .unwrap_or(palette.foreground)
+                };
+                crate::chart::draw(
+                    &*widget,
+                    snapshot,
+                    Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        w,
+                        h,
+                    },
+                    chart,
+                    data,
+                    &crate::chart::Painter {
+                        background: palette.background,
+                        // The card is the frame; a second one inside it is a double line.
+                        border: gtk::gdk::RGBA::TRANSPARENT,
+                        foreground: palette.foreground,
+                        grid: palette.lines,
+                        color: &color,
+                    },
+                );
+            } else {
+                let layout = widget.create_pango_layout(Some(&self.message.borrow()));
+                layout.set_width(((w - 48.0).max(1.0) * f64::from(gtk::pango::SCALE)) as i32);
+                layout.set_alignment(gtk::pango::Alignment::Center);
+                layout.set_wrap(gtk::pango::WrapMode::WordChar);
+                let (_, text_h) = layout.pixel_size();
+                snapshot.save();
+                snapshot.translate(&gtk::graphene::Point::new(
+                    24.0,
+                    ((h - f64::from(text_h)) / 2.0) as f32,
+                ));
+                snapshot
+                    .append_layout(&layout, &crate::theme::with_alpha(palette.foreground, 0.55));
+                snapshot.restore();
             }
         }
     }

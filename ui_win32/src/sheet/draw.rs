@@ -589,12 +589,11 @@ mod windows_impl {
                     };
                     // An indent (`fo:margin-left`) moves text in from the leading edge — not text
                     // set against the right one, which a left margin does not reach.
-                    let text_left = match look.align {
-                        Align::Right => text_left,
-                        _ => {
-                            let px = crate::sheet::geom::scale(look.indent_mm * 96.0 / 25.4, g.dpi);
-                            (text_left + px.round() as i32).min(text_right)
-                        }
+                    let text_left = if look.align == Align::Right {
+                        text_left
+                    } else {
+                        let px = crate::sheet::geom::scale(look.indent_mm * 96.0 / 25.4, g.dpi);
+                        (text_left + px.round() as i32).min(text_right)
                     };
                     // Text too wide keeps going until it meets something — rightwards from the
                     // start, leftwards from the end, both ways from the middle — as LibreOffice

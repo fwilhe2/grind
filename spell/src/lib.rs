@@ -912,10 +912,10 @@ pub mod personal {
     pub fn word(typed: &str) -> Result<String, &'static str> {
         let word = normalise(typed.trim());
         match () {
-            _ if word.is_empty() => Err("type a word to add"),
-            _ if word.chars().any(char::is_whitespace) => Err("one word at a time"),
-            _ if word.starts_with('#') => Err("a word cannot begin with #, which marks a comment"),
-            _ => Ok(word),
+            () if word.is_empty() => Err("type a word to add"),
+            () if word.chars().any(char::is_whitespace) => Err("one word at a time"),
+            () if word.starts_with('#') => Err("a word cannot begin with #, which marks a comment"),
+            () => Ok(word),
         }
     }
 

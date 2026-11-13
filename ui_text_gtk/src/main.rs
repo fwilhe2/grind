@@ -777,12 +777,11 @@ impl Ui {
             glib::clone!(
                 #[strong(rename_to = ui)]
                 self,
-                move |result| match result.ok().and_then(|file| file.path()) {
-                    Some(path) => ui.write(&path),
-                    None => {
-                        ui.closing.set(false);
-                        ui.markdown_twin.set(false);
-                    }
+                move |result| if let Some(path) = result.ok().and_then(|file| file.path()) {
+                    ui.write(&path);
+                } else {
+                    ui.closing.set(false);
+                    ui.markdown_twin.set(false);
                 }
             ),
         );
@@ -1962,17 +1961,14 @@ fn open_path(app: &App, path: &Path) -> Result<Option<String>, String> {
     {
         return Err("not a text document".to_owned());
     }
-    match grind_open::import_file(path, &bytes).transpose()? {
-        Some(imported) => {
-            app.open_bytes(&imported.name, &imported.odf)
-                .map_err(|error| error.to_string())?;
-            Ok(Some(imported.summary))
-        }
-        None => {
-            app.open_bytes(&path.display().to_string(), &bytes)
-                .map_err(|error| error.to_string())?;
-            Ok(None)
-        }
+    if let Some(imported) = grind_open::import_file(path, &bytes).transpose()? {
+        app.open_bytes(&imported.name, &imported.odf)
+            .map_err(|error| error.to_string())?;
+        Ok(Some(imported.summary))
+    } else {
+        app.open_bytes(&path.display().to_string(), &bytes)
+            .map_err(|error| error.to_string())?;
+        Ok(None)
     }
 }
 

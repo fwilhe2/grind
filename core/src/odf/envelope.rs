@@ -656,44 +656,41 @@ pub fn patch_style(
             .iter()
             .map(|(name, value)| (name.as_str(), value.as_deref()))
             .collect();
-        match children.iter().find(|(name, _, _)| name == child) {
-            Some((_, _, whole)) => {
-                let patched = set_attributes(&element[whole.clone()], &changes);
-                let bare = format!("<{child}/>");
-                let open = format!("<{child}></{child}>");
-                let replacement = if patched.trim() == bare || patched.trim() == open {
-                    String::new()
-                } else {
-                    patched
-                };
-                edits.push((whole.clone(), replacement));
+        if let Some((_, _, whole)) = children.iter().find(|(name, _, _)| name == child) {
+            let patched = set_attributes(&element[whole.clone()], &changes);
+            let bare = format!("<{child}/>");
+            let open = format!("<{child}></{child}>");
+            let replacement = if patched.trim() == bare || patched.trim() == open {
+                String::new()
+            } else {
+                patched
+            };
+            edits.push((whole.clone(), replacement));
+        } else {
+            let set: String = changes
+                .iter()
+                .filter_map(|(name, value)| {
+                    value.map(|v| format!(" {name}=\"{}\"", crate::odf::xml::esc(v)))
+                })
+                .collect();
+            if set.is_empty() {
+                continue;
             }
-            None => {
-                let set: String = changes
-                    .iter()
-                    .filter_map(|(name, value)| {
-                        value.map(|v| format!(" {name}=\"{}\"", crate::odf::xml::esc(v)))
-                    })
-                    .collect();
-                if set.is_empty() {
-                    continue;
-                }
-                // Before the first sibling that comes after it in `order`, or the first child
-                // that is no property element at all (a `style:map`), or the close.
-                let rank = order.iter().position(|o| o == child).unwrap_or(order.len());
-                let at = children
-                    .iter()
-                    .find(|(name, _, _)| {
-                        order
-                            .iter()
-                            .position(|o| o == name)
-                            .is_none_or(|r| r > rank)
-                    })
-                    .map(|(_, start, _)| start.start)
-                    .or_else(|| close.as_ref().map(|c| c.start))
-                    .unwrap_or(start_tag.end);
-                added.push((at, format!("<{child}{set}/>")));
-            }
+            // Before the first sibling that comes after it in `order`, or the first child
+            // that is no property element at all (a `style:map`), or the close.
+            let rank = order.iter().position(|o| o == child).unwrap_or(order.len());
+            let at = children
+                .iter()
+                .find(|(name, _, _)| {
+                    order
+                        .iter()
+                        .position(|o| o == name)
+                        .is_none_or(|r| r > rank)
+                })
+                .map(|(_, start, _)| start.start)
+                .or_else(|| close.as_ref().map(|c| c.start))
+                .unwrap_or(start_tag.end);
+            added.push((at, format!("<{child}{set}/>")));
         }
     }
     for (at, text) in added {
@@ -1094,16 +1091,15 @@ pub fn repackage(
                 w.start_file(name.as_str(), deflated).map_err(zip)?;
                 w.write_all(manifest.as_deref().unwrap_or_default().as_bytes())?;
             }
-            _ => match replace.iter().find(|(path, _)| path == name) {
-                Some((_, bytes)) => {
+            _ => {
+                if let Some((_, bytes)) = replace.iter().find(|(path, _)| path == name) {
                     w.start_file(name.as_str(), deflated).map_err(zip)?;
                     w.write_all(bytes)?;
-                }
-                None => {
+                } else {
                     let file = archive.by_index_raw(i).map_err(zip)?;
                     w.raw_copy_file(file).map_err(zip)?;
                 }
-            },
+            }
         }
         written.insert(name.clone());
     }

@@ -374,24 +374,21 @@ mod gdi_half {
                     return;
                 }
                 let pen = stroke.map(|(color, width)| Pen::solid(rgb(color), width.round() as i32));
-                match fill {
-                    Some(color) => {
-                        let brush = Brush::solid(rgb(color));
-                        let outline = pen.unwrap_or_else(|| Pen::solid(rgb(color), 1));
-                        let _brush = Selected::brush(dc, &brush);
-                        let _pen = Selected::pen(dc, &outline);
-                        // SAFETY: the DC is live and the points a local slice.
-                        unsafe {
-                            let _ = Polygon(dc, &points);
-                        }
+                if let Some(color) = fill {
+                    let brush = Brush::solid(rgb(color));
+                    let outline = pen.unwrap_or_else(|| Pen::solid(rgb(color), 1));
+                    let _brush = Selected::brush(dc, &brush);
+                    let _pen = Selected::pen(dc, &outline);
+                    // SAFETY: the DC is live and the points a local slice.
+                    unsafe {
+                        let _ = Polygon(dc, &points);
                     }
-                    None => {
-                        let Some(pen) = pen else { return };
-                        let _pen = Selected::pen(dc, &pen);
-                        // SAFETY: as above.
-                        unsafe {
-                            let _ = Polyline(dc, &points);
-                        }
+                } else {
+                    let Some(pen) = pen else { return };
+                    let _pen = Selected::pen(dc, &pen);
+                    // SAFETY: as above.
+                    unsafe {
+                        let _ = Polyline(dc, &points);
                     }
                 }
             }

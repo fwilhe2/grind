@@ -469,12 +469,11 @@ impl Format {
                     // (`date::seconds_of_day`), or `09:15:00` stored as 46113.385416666664 prints
                     // its seconds as 60. A format asking for fractional seconds keeps the
                     // unrounded remainder, the digit it exists to show.
-                    let s = match decimals {
-                        0 => seconds.rem_euclid(60) as f64,
-                        _ => {
-                            let exact = (n - n.floor()) * 86_400.0;
-                            exact - (exact / 60.0).floor() * 60.0
-                        }
+                    let s = if decimals == &0 {
+                        seconds.rem_euclid(60) as f64
+                    } else {
+                        let exact = (n - n.floor()) * 86_400.0;
+                        exact - (exact / 60.0).floor() * 60.0
                     };
                     let width = usize::from(*long)
                         + 1

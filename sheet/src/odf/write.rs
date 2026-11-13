@@ -416,7 +416,7 @@ fn owned(key: &str) -> bool {
         return true;
     }
     match () {
-        _ if is(TABLE, &["table-cell", "covered-table-cell"]) => {
+        () if is(TABLE, &["table-cell", "covered-table-cell"]) => {
             attr(TABLE, "number-columns-spanned")
                 || attr(TABLE, "number-rows-spanned")
                 || attr(OFFICE, "value-type")
@@ -430,21 +430,21 @@ fn owned(key: &str) -> bool {
                 || attr(TABLE, "number-columns-repeated")
                 || attr(TABLE, "style-name")
         }
-        _ if is(TABLE, &["table-row"]) => {
+        () if is(TABLE, &["table-row"]) => {
             attr(TABLE, "style-name")
                 || attr(TABLE, "number-rows-repeated")
                 || attr(TABLE, "visibility")
         }
-        _ if is(TABLE, &["table-column"]) => {
+        () if is(TABLE, &["table-column"]) => {
             attr(TABLE, "style-name")
                 || attr(TABLE, "number-columns-repeated")
                 || attr(TABLE, "visibility")
                 || attr(TABLE, "default-cell-style-name")
         }
         // The rest of a table's start tag is kept whatever happens to its name.
-        _ if is(TABLE, &["table"]) => true,
-        _ if is(TABLE, &["named-expression", "named-range"]) => true,
-        _ if is(
+        () if is(TABLE, &["table"]) => true,
+        () if is(TABLE, &["named-expression", "named-range"]) => true,
+        () if is(
             TABLE,
             &[
                 "database-range",
@@ -456,17 +456,17 @@ fn owned(key: &str) -> bool {
         {
             true
         }
-        _ if is(
+        () if is(
             CALCEXT,
             &["conditional-formats", "conditional-format", "condition"],
         ) =>
         {
             true
         }
-        _ if is(TABLE, &["calculation-settings"]) => attr(TABLE, "null-year"),
-        _ if is(TABLE, &["null-date"]) => true,
-        _ if is(TEXT, &["s"]) => attr(TEXT, "c"),
-        _ => false,
+        () if is(TABLE, &["calculation-settings"]) => attr(TABLE, "null-year"),
+        () if is(TABLE, &["null-date"]) => true,
+        () if is(TEXT, &["s"]) => attr(TEXT, "c"),
+        () => false,
     }
 }
 
@@ -709,30 +709,27 @@ fn content(
     }
     out.push_str(" <office:body>\n  <office:spreadsheet>\n");
     let mut objects = Objects::new(form, taken.clone());
-    match (origin, &plans) {
-        (Some(source), Some(plans)) => {
-            // The file's own content follows its own start tag, whitespace and all.
-            out.pop();
-            out.push_str(&origin_body(doc, source, plans, &pool, &mut objects));
-            out.push('\n');
+    if let (Some(source), Some(plans)) = (origin, &plans) {
+        // The file's own content follows its own start tag, whitespace and all.
+        out.pop();
+        out.push_str(&origin_body(doc, source, plans, &pool, &mut objects));
+        out.push('\n');
+    } else {
+        out.push_str(&calculation_settings(doc));
+        for sheet in &doc.sheets {
+            table(
+                &mut out,
+                sheet,
+                doc.null_date,
+                doc.locale.as_ref(),
+                &pool,
+                &mut objects,
+            );
         }
-        _ => {
-            out.push_str(&calculation_settings(doc));
-            for sheet in &doc.sheets {
-                table(
-                    &mut out,
-                    sheet,
-                    doc.null_date,
-                    doc.locale.as_ref(),
-                    &pool,
-                    &mut objects,
-                );
-            }
-            out.push_str(&named_expressions(doc));
-            // §9.4, and `table-database-ranges` is `table-functions`' second member — so after
-            // the names, for the same schema reason. One range per sheet: [`Sheet::filter`].
-            database_ranges(&mut out, doc);
-        }
+        out.push_str(&named_expressions(doc));
+        // §9.4, and `table-database-ranges` is `table-functions`' second member — so after
+        // the names, for the same schema reason. One range per sheet: [`Sheet::filter`].
+        database_ranges(&mut out, doc);
     }
     let _ = write!(out, "  </office:spreadsheet>\n </office:body>\n</{root}>\n");
     (out, objects.documents)
@@ -1066,38 +1063,35 @@ fn origin_body(
     let mut cursor_is_end = false;
     let anchor = source.tables.first().map_or(cursor, |t| t.range.start);
     for (plan, sheet) in plans.iter().zip(&doc.sheets) {
-        match plan.table {
-            Some(ti) => {
-                let t = &source.tables[ti];
-                let text = patched_table(doc, sheet, t, plan, source, pool, objects);
-                patches.push((t.range.clone(), text));
-                cursor = t.range.end;
-                cursor_is_end = true;
-            }
-            None => {
-                let mut text = String::new();
-                table(
-                    &mut text,
-                    sheet,
-                    doc.null_date,
-                    doc.locale.as_ref(),
-                    pool,
-                    objects,
-                );
-                let placed = beside(bytes, anchor, &text);
-                // After a table: a line of its own following it. Before the first: ahead of
-                // it, on a line of its own, and the newline goes after.
-                let placed = if cursor_is_end {
-                    placed
-                } else {
-                    format!(
-                        "{}\n{}",
-                        placed.trim_start_matches('\n'),
-                        indent_of(bytes, cursor)
-                    )
-                };
-                patches.push((cursor..cursor, placed));
-            }
+        if let Some(ti) = plan.table {
+            let t = &source.tables[ti];
+            let text = patched_table(doc, sheet, t, plan, source, pool, objects);
+            patches.push((t.range.clone(), text));
+            cursor = t.range.end;
+            cursor_is_end = true;
+        } else {
+            let mut text = String::new();
+            table(
+                &mut text,
+                sheet,
+                doc.null_date,
+                doc.locale.as_ref(),
+                pool,
+                objects,
+            );
+            let placed = beside(bytes, anchor, &text);
+            // After a table: a line of its own following it. Before the first: ahead of
+            // it, on a line of its own, and the newline goes after.
+            let placed = if cursor_is_end {
+                placed
+            } else {
+                format!(
+                    "{}\n{}",
+                    placed.trim_start_matches('\n'),
+                    indent_of(bytes, cursor)
+                )
+            };
+            patches.push((cursor..cursor, placed));
         }
     }
     let tables_end = source.tables.last().map(|t| t.range.end);
@@ -1214,16 +1208,13 @@ fn patched_table(
     if sheet.origin.columns {
         let mut ours = String::new();
         write_columns(&mut ours, sheet, pool, Some(t));
-        match (t.columns.first(), t.columns.last()) {
-            (Some(first), Some(last)) => {
-                let block = beside(bytes, first.start, &ours);
-                patches.push((first.start..last.end, block.trim_start().to_owned()));
-            }
-            _ => {
-                let at = t.shapes.as_ref().map_or(t.start.end, |r| r.end);
-                let next = t.rows.first().map_or(at, |r| r.range.start);
-                patches.push((at..at, beside(bytes, next, &ours)));
-            }
+        if let (Some(first), Some(last)) = (t.columns.first(), t.columns.last()) {
+            let block = beside(bytes, first.start, &ours);
+            patches.push((first.start..last.end, block.trim_start().to_owned()));
+        } else {
+            let at = t.shapes.as_ref().map_or(t.start.end, |r| r.end);
+            let next = t.rows.first().map_or(at, |r| r.range.start);
+            patches.push((at..at, beside(bytes, next, &ours)));
         }
     }
 
@@ -1359,26 +1350,25 @@ fn patched_forms(
     if fresh.is_empty() {
         return patches;
     }
-    match t.form_end {
-        Some(at) => patches.push((at..at, fresh)),
-        None => {
-            // No `form:form` with room in it: one of our own, before the forms element closes —
-            // or the whole element again when the file wrote it self-closed.
-            let element = &bytes[forms.clone()];
-            if element.ends_with(b"/>") {
-                let mut ours = String::new();
-                write_forms(&mut ours, sheet);
-                patches.push((forms.clone(), ours.trim().to_owned()));
-            } else {
-                let close = element
-                    .iter()
-                    .rposition(|c| *c == b'<')
-                    .map_or(forms.end, |p| forms.start + p);
-                patches.push((
-                    close..close,
-                    format!("<form:form form:name=\"Form\">{fresh}</form:form>"),
-                ));
-            }
+    if let Some(at) = t.form_end {
+        patches.push((at..at, fresh));
+    } else {
+        // No `form:form` with room in it: one of our own, before the forms element closes —
+        // or the whole element again when the file wrote it self-closed.
+        let element = &bytes[forms.clone()];
+        if element.ends_with(b"/>") {
+            let mut ours = String::new();
+            write_forms(&mut ours, sheet);
+            patches.push((forms.clone(), ours.trim().to_owned()));
+        } else {
+            let close = element
+                .iter()
+                .rposition(|c| *c == b'<')
+                .map_or(forms.end, |p| forms.start + p);
+            patches.push((
+                close..close,
+                format!("<form:form form:name=\"Form\">{fresh}</form:form>"),
+            ));
         }
     }
     patches
@@ -1423,22 +1413,21 @@ fn split_row(
         let patched = patched_row(
             sheet, doc, e, *row, patch, &tag, &cells, width, source, pool, tp,
         );
-        pieces.push(match patched {
-            Some(text) => text,
+        pieces.push(if let Some(text) = patched {
+            text
+        } else {
             // A written column the file's row cannot place — inside a merge's covered half —
             // and so the row from the model, whose losses the guard then names.
-            None => {
-                let mut ours = String::new();
-                write_rows(
-                    &mut ours,
-                    sheet,
-                    *row..row + 1,
-                    doc.null_date,
-                    pool,
-                    &visibility,
-                );
-                ours.trim().to_owned()
-            }
+            let mut ours = String::new();
+            write_rows(
+                &mut ours,
+                sheet,
+                *row..row + 1,
+                doc.null_date,
+                pool,
+                &visibility,
+            );
+            ours.trim().to_owned()
         });
         cursor = row + 1;
     }
@@ -2220,12 +2209,11 @@ impl<'a> Pool<'a> {
             }
             if let Some(scope) = scope {
                 for (pos, base) in &scope.bases {
-                    let at = match pool.bases.iter().position(|b| b == base) {
-                        Some(at) => at,
-                        None => {
-                            pool.bases.push(base.clone());
-                            pool.bases.len() - 1
-                        }
+                    let at = if let Some(at) = pool.bases.iter().position(|b| b == base) {
+                        at
+                    } else {
+                        pool.bases.push(base.clone());
+                        pool.bases.len() - 1
                     };
                     pool.based
                         .entry(sheet.name.as_str())
@@ -2506,18 +2494,15 @@ fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'s
             value(s.map(|s| &s.rotation)),
         ),
     ];
-    match s.and_then(|s| s.uniform_border()) {
-        Some(border) => {
-            cell.push(("fo:border".to_owned(), Some(border.to_owned())));
-            for edge in EDGES {
-                cell.push((format!("fo:border-{edge}"), None));
-            }
+    if let Some(border) = s.and_then(|s| s.uniform_border()) {
+        cell.push(("fo:border".to_owned(), Some(border.to_owned())));
+        for edge in EDGES {
+            cell.push((format!("fo:border-{edge}"), None));
         }
-        None => {
-            cell.push(("fo:border".to_owned(), None));
-            for (i, edge) in EDGES.iter().enumerate() {
-                cell.push((format!("fo:border-{edge}"), value(s.map(|s| &s.borders[i]))));
-            }
+    } else {
+        cell.push(("fo:border".to_owned(), None));
+        for (i, edge) in EDGES.iter().enumerate() {
+            cell.push((format!("fo:border-{edge}"), value(s.map(|s| &s.borders[i]))));
         }
     }
     vec![
