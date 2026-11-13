@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # Streaming, namespace-aware XML. Resolves to (uri, local-name) and keeps a scope stack —
 # exactly what doc/ods-format.md §8.1 requires. Never match on prefixes.

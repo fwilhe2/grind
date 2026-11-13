@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 # cdylib is what `cargo build --target wasm32-unknown-unknown` turns into a `.wasm`
 # module; rlib keeps `cargo test` working on the host, where the keymap and the

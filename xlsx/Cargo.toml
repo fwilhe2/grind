@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # The filter *produces* a `grind_sheet::Document` and reaches it through the model's public
 # API only. Nothing goes the other way: no Excel vocabulary is added to that crate (R1), and

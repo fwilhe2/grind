@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # The Checker trait this crate implements, and what a word is.
 grind-core = { path = "../core" }

@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # The [GENERIC] half: packaging, namespaces, the context stack, style primitives, `kind`.
 # Everything this crate adds is the office:text content model (doc/odt-format.md).

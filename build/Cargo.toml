@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # The two applications, because a generator's whole output is one of their documents. The
 # arrow points *this* way and never the other: R11 is that nothing on a read path depends on

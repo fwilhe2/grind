@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # What a document is and where its addresses are in the file it was read from — every answer
 # this server gives comes from the core; it holds no knowledge of its own.

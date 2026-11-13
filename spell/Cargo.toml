@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 # The dictionaries are compiled in by default — twelve megabytes, which every native binary
 # that checks spelling carries. The browser shell turns this off and *fetches* the one it needs
 # (`provide`), the way `grind-print`'s fonts are fetched, rather than shipping seven.

@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 grind-core = { path = "../core" }
 grind-sheet = { path = "../sheet" }

@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 # The [GENERIC] half: packaging, namespaces, the context stack, style primitives, `kind`.
 # doc/ods-format.md marked those sections generic from the start; §10 predicted the split.

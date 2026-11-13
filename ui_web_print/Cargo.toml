@@ -10,6 +10,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[lints]
+workspace = true
+
 [lib]
 # The second module of `ui_web` (doc/pdf-export.md §7): `grind-print` costs the browser bundle
 # about four megabytes, so it is a module of its own, fetched the first time somebody exports or
