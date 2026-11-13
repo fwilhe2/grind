@@ -187,16 +187,13 @@ impl Layout {
         };
         let origin = self.xs[line.start];
         let x = x - self.indent_of(line.start);
-        let mut best = line.start;
-        let mut best_d = f32::INFINITY;
-        for offset in line.start..=line.end {
-            let d = (self.xs[offset] - origin - x).abs();
-            if d < best_d {
-                best_d = d;
-                best = offset;
-            }
-        }
-        best
+        // The first of equally near offsets, which `min_by` keeps.
+        (line.start..=line.end)
+            .min_by(|&a, &b| {
+                let distance = |offset: usize| (self.xs[offset] - origin - x).abs();
+                distance(a).total_cmp(&distance(b))
+            })
+            .unwrap_or(line.start)
     }
 
     /// Move a caret `delta` lines, keeping as close to `goal_x` as the target line allows. `None`
