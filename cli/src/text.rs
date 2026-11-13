@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `grind text …`: one arm per subcommand, each a few lines driving [`TextApp`].
+//! `grind text …`: one arm per subcommand, each driving [`TextApp`].
 
 use super::*;
 
@@ -917,18 +917,10 @@ fn describe_kind(kind: &grind_text::BlockKind) -> String {
     }
 }
 
-/// `--show` for both `style` and `format`: one cell's styling, its format, or both.
-///
-/// One cell rather than a rectangle, because the answer for a rectangle is either "they
-/// agree" or a list, and a caller that wants the list already has `sheet view`. It reads and
-/// writes nothing, so no `finish` and no `stale` warning.
-/// `grind text format --show`, as lines: one `property<TAB>value` per property that is set,
-/// and nothing at all for a plain span.
-///
-/// The values are ODF's own, unchanged — `bold`, `12pt`, `#001f3f` — because that is what the
-/// model carries and re-spelling them here would invent a second vocabulary for a shell to
-/// parse. Properties the span does not agree about are absent, which is the same answer a
-/// toolbar shows over a mixed selection (`grind_text::App::char_style`).
+/// `grind text format --show`, as lines: one `property<TAB>value` per property that is set, and
+/// nothing for a plain span. The values are ODF's own (`bold`, `12pt`, `#001f3f`); a property
+/// the span does not agree about is absent, as over a mixed selection
+/// (`grind_text::App::char_style`).
 fn describe_char_style(style: &grind_text::CharStyle) -> Vec<String> {
     [
         ("font", &style.font_family),

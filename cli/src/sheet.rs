@@ -1,16 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
-//! `grind sheet …`: one arm per subcommand, each a few lines driving [`App`].
+//! `grind sheet …`: one arm per subcommand, each driving [`App`].
 
 use super::*;
 
-/// What kind of document a file holds, or a diagnostic naming what it is instead.
-///
-/// The whole point of doing this *before* opening: §8's reader is tolerant by construction, so
-/// handing it a document of the wrong kind produces an empty one rather than an error. A user
-/// who typed the wrong subcommand deserves to be told which one is right, not handed a
-/// spreadsheet with no cells in it.
 /// [`load`], with spelling checked the way the person has said spreadsheets should be
 /// (`grind sheet spelling`) — what `lint` opens with, so its `misspelt` rule has something to ask,
 /// and stays silent once spelling is turned off.
