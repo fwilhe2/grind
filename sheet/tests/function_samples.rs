@@ -69,8 +69,7 @@ fn dir() -> PathBuf {
 /// Every sample document, by file name.
 fn documents() -> Vec<(String, Document)> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(dir())
-        .map(|entries| entries.flatten().map(|e| e.path()).collect())
-        .unwrap_or_default();
+        .map_or_default(|entries| entries.flatten().map(|e| e.path()).collect());
     paths.retain(|p| p.extension().is_some_and(|e| e == "fods"));
     paths.sort();
     paths

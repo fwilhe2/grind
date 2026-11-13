@@ -282,8 +282,7 @@ impl Built {
         let viewport = app.get_viewport(index..index + 1);
         Ok(viewport
             .get(index)
-            .map(|block| block.text.as_str())
-            .unwrap_or_default()
+            .map_or_default(|block| block.text.as_str())
             .into())
     }
 

@@ -805,8 +805,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
                         let text = viewport
                             .iter()
                             .find(|view| view.index == flag.block)
-                            .map(|view| view.text.as_str())
-                            .unwrap_or_default();
+                            .map_or_default(|view| view.text.as_str());
                         let range = flag.finding.range.clone();
                         let covered: String =
                             text.chars().skip(range.start).take(range.len()).collect();

@@ -97,7 +97,7 @@ fn import(bytes: &[u8]) -> (Document, grind_docx::Report) {
 }
 
 fn texts(doc: &Document) -> Vec<String> {
-    doc.blocks.iter().map(|b| b.text()).collect()
+    doc.blocks.iter().map(grind_text::Block::text).collect()
 }
 
 fn kinds(doc: &Document) -> Vec<BlockKind> {

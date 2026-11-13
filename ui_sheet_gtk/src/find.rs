@@ -186,15 +186,15 @@ impl Find {
         });
         find.whole_cell.connect_toggled(move |_| here());
         one.connect_clicked({
-            let one = on(&find, |f| f.replace_one());
+            let one = on(&find, Find::replace_one);
             move |_| one()
         });
         find.with.connect_activate({
-            let one = on(&find, |f| f.replace_one());
+            let one = on(&find, Find::replace_one);
             move |_| one()
         });
         all.connect_clicked({
-            let all = on(&find, |f| f.replace_all());
+            let all = on(&find, Find::replace_all);
             move |_| all()
         });
 

@@ -355,8 +355,10 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                         match grind_sheet::formula::display::from_display(&text) {
                             Ok(canonical) => (
                                 app.preview(grid.sheet(), grid.selection().active, &canonical)
-                                    .map(|value| format!("= {}", show_value(&app, &value)))
-                                    .unwrap_or_else(|error| format!("= {error}")),
+                                    .map_or_else(
+                                        |error| format!("= {error}"),
+                                        |value| format!("= {}", show_value(&app, &value)),
+                                    ),
                                 false,
                             ),
                             Err(error) => (

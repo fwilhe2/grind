@@ -294,10 +294,10 @@ mod mac {
 }
 
 fn main() -> std::process::ExitCode {
-    let out = std::env::args()
-        .nth(1)
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::env::temp_dir().join("grind-probe"));
+    let out = std::env::args().nth(1).map_or_else(
+        || std::env::temp_dir().join("grind-probe"),
+        std::path::PathBuf::from,
+    );
     #[cfg(target_os = "macos")]
     {
         match mac::run(&out) {

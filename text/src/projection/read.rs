@@ -173,7 +173,7 @@ fn number(node: &KdlNode, index: usize) -> Result<u32> {
         .iter()
         .filter(|e| e.name().is_none())
         .nth(index)
-        .map(|e| e.value())
+        .map(grind_core::projection::kdl::KdlEntry::value)
     {
         Some(KdlValue::Integer(n)) => u32::try_from(*n).map_err(|_| {
             at(

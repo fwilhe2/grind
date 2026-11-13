@@ -151,8 +151,7 @@ pub fn nowhere(_: &str) -> Option<Vec<u8>> {
 pub fn beside(markdown: &std::path::Path) -> impl Fn(&str) -> Option<Vec<u8>> + use<> {
     let dir = markdown
         .parent()
-        .map(std::path::Path::to_path_buf)
-        .unwrap_or_default();
+        .map_or_default(std::path::Path::to_path_buf);
     move |target: &str| {
         let relative = std::path::Path::new(target);
         if target.contains(':') || relative.is_absolute() || target.starts_with(['/', '\\']) {
@@ -737,7 +736,7 @@ fn is_blank(block: &Block) -> bool {
 }
 
 fn fence(blocks: &[Block]) -> String {
-    let lines: Vec<String> = blocks.iter().map(|b| b.text()).collect();
+    let lines: Vec<String> = blocks.iter().map(super::model::Block::text).collect();
     // The fence must be longer than any run of backticks inside.
     let longest = lines.iter().map(|l| run_of(l, '`')).max().unwrap_or(0);
     let fence = "`".repeat((longest + 1).max(3));

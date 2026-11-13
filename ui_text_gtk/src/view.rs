@@ -632,7 +632,7 @@ mod imp {
                 #[weak(rename_to = doc)]
                 widget,
                 move |_, with| {
-                    if let Some(with) = with.and_then(|v| v.get::<String>()) {
+                    if let Some(with) = with.and_then(gtk::glib::Variant::get::<String>) {
                         doc.imp().correct(&with);
                     }
                 }
@@ -659,7 +659,7 @@ mod imp {
                 #[weak(rename_to = doc)]
                 widget,
                 move |_, with| {
-                    if let Some(with) = with.and_then(|v| v.get::<String>()) {
+                    if let Some(with) = with.and_then(gtk::glib::Variant::get::<String>) {
                         doc.imp().correct_grammar(&with);
                     }
                 }
@@ -972,7 +972,7 @@ mod imp {
             self.vadjustment
                 .borrow()
                 .as_ref()
-                .map_or(0.0, |a| a.value())
+                .map_or(0.0, gtk::prelude::AdjustmentExt::value)
         }
 
         fn palette(&self) -> Palette {
@@ -1270,12 +1270,12 @@ mod imp {
             let settings = gtk::Settings::default();
             let window = settings
                 .as_ref()
-                .map_or(400, |s| s.gtk_double_click_time())
+                .map_or(400, gtk::Settings::gtk_double_click_time)
                 .max(1) as u32;
             let distance = f64::from(
                 settings
                     .as_ref()
-                    .map_or(5, |s| s.gtk_double_click_distance())
+                    .map_or(5, gtk::Settings::gtk_double_click_distance)
                     .max(1),
             );
             let count = match self.presses.get() {
@@ -1399,14 +1399,13 @@ mod imp {
             let covered: String = app
                 .get_viewport(flag.block..flag.block + 1)
                 .get(flag.block)
-                .map(|view| {
+                .map_or_default(|view| {
                     view.text
                         .chars()
                         .skip(range.start)
                         .take(range.len())
                         .collect()
-                })
-                .unwrap_or_default();
+                });
             match app.correct(flag.caret(), &covered, with) {
                 Ok(()) => {
                     self.anchor.set(None);
@@ -2299,7 +2298,7 @@ mod tests {
             attrs
                 .attributes()
                 .iter()
-                .map(|attr| attr.type_())
+                .map(gtk::pango::Attribute::type_)
                 .collect::<Vec<_>>()
         };
         let link = drawn(9, 13);
@@ -3003,8 +3002,11 @@ mod tests {
             face.size(),
             crate::metrics::Paper::LIGHT,
         );
-        let kinds: Vec<pango::AttrType> =
-            attrs.attributes().iter().map(|attr| attr.type_()).collect();
+        let kinds: Vec<pango::AttrType> = attrs
+            .attributes()
+            .iter()
+            .map(gtk::pango::Attribute::type_)
+            .collect();
         for wanted in [
             pango::AttrType::Foreground,
             pango::AttrType::Background,

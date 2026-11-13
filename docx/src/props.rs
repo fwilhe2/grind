@@ -403,7 +403,7 @@ fn language(tag: &str) -> Option<(String, String)> {
     let country = parts
         .next()
         .filter(|c| c.len() == 2 && c.chars().all(|c| c.is_ascii_alphabetic()))
-        .map_or("none".to_owned(), |c| c.to_ascii_uppercase());
+        .map_or("none".to_owned(), str::to_ascii_uppercase);
     Some((language.to_ascii_lowercase(), country))
 }
 

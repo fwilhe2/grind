@@ -58,8 +58,7 @@ impl Function {
             .returns
             .as_deref()
             .filter(|r| *r != "()")
-            .map(|r| format!(" -> {r}"))
-            .unwrap_or_default();
+            .map_or_default(|r| format!(" -> {r}"));
         if self.property {
             format!("{receiver}{}{returns}", self.name)
         } else {

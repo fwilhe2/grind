@@ -629,8 +629,7 @@ impl App {
             .doc
             .projection_source
             .as_deref()
-            .map(grind_core::projection::Source::anchors)
-            .unwrap_or_default()
+            .map_or_default(grind_core::projection::Source::anchors)
     }
 
     pub fn block_count(&self) -> usize {
@@ -1408,7 +1407,7 @@ fn lay_out_indented(
             Run::Text { style, props, .. } => {
                 paragraph::shown(named, style.as_deref(), props).metrics()
             }
-            _ => run.props().map(CharStyle::metrics).unwrap_or_default(),
+            _ => run.props().map_or_default(CharStyle::metrics),
         })
         .collect();
     let mut fragments: Vec<layout::Fragment<'_>> = block

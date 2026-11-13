@@ -103,7 +103,10 @@ impl Server {
     }
 
     fn api(&self, request: &Request, rest: &str) -> Response {
-        let store = self.store.lock().unwrap_or_else(|e| e.into_inner());
+        let store = self
+            .store
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let segments: Vec<&str> = rest.split('/').collect();
         // A HEAD is a GET whose body the HTTP layer drops: what it is for is the `ETag`.
         let method = match request.method.as_str() {

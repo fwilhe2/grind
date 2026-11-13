@@ -231,7 +231,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     figure_look(app, view),
                 ) {
                     figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
-                    let length = view.runs.last().map_or(0, |run| run.end());
+                    let length = view.runs.last().map_or(0, grind_text::RunView::end);
                     cover(caret(piece.index, 0), caret(piece.index, length));
                     continue;
                 }
@@ -453,7 +453,7 @@ impl<'a> Sheet<'a> {
         let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
         Sheet {
             geometry,
-            lines: master.as_ref().map(|m| m.lines.clone()).unwrap_or_default(),
+            lines: master.as_ref().map_or_default(|m| m.lines.clone()),
             background: master.as_ref().and_then(|m| m.background.clone()),
             header,
             footer,
@@ -739,7 +739,11 @@ fn paragraph_frames(
     let views: Vec<&BlockView> = viewport.iter().collect();
     let looks: Vec<_> = props
         .iter()
-        .map(|props| props.as_ref().and_then(|props| props.look()))
+        .map(|props| {
+            props
+                .as_ref()
+                .and_then(grind_text::paragraph::ParagraphProps::look)
+        })
         .collect();
     let joined = |at: usize| -> bool {
         let (Some(a), Some(b)) = (&props[at], &props[at + 1]) else {
@@ -1515,7 +1519,7 @@ impl<'a> Marginal<'a> {
                 ];
                 let looks = paragraph
                     .pieces(1, 1)
-                    .map(|(_, look)| look.map(|look| app.shown(look)).unwrap_or_default())
+                    .map(|(_, look)| look.map_or_default(|look| app.shown(look)))
                     .collect();
                 MarginalParagraph {
                     paragraph: paragraph.clone(),
@@ -1706,7 +1710,7 @@ impl<'a> Marginal<'a> {
                         let look = look(from);
                         let style = paragraph
                             .face
-                            .style(&look.map(grind_text::CharStyle::metrics).unwrap_or_default());
+                            .style(&look.map_or_default(grind_text::CharStyle::metrics));
                         let ink = look
                             .and_then(|look| look.color.as_deref())
                             .and_then(Rgb::parse)

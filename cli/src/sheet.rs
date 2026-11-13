@@ -77,7 +77,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 let locale = app.locale();
                 let shown = locale
                     .as_ref()
-                    .map_or_else(|| "none".to_owned(), |l| l.tag());
+                    .map_or_else(|| "none".to_owned(), grind_sheet::locale::Locale::tag);
                 let sample = grind_sheet::locale::sample(locale.as_ref());
                 return Ok(Report::Text(TextReport {
                     lines: vec![format!("{shown}\t{sample}")],
@@ -1199,9 +1199,10 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                     name: info.name,
                     syntax: info.signature,
                     // The alias is the head: `Present Value(Rate; Number Of Periods; …)`.
-                    call: friendly::signature(info.name)
-                        .map(|(head, params)| format!("{head}({})", params.join("; ")))
-                        .unwrap_or_else(|| info.name.to_owned()),
+                    call: friendly::signature(info.name).map_or_else(
+                        || info.name.to_owned(),
+                        |(head, params)| format!("{head}({})", params.join("; ")),
+                    ),
                     category: funcs::category(info),
                     summary: info.brief,
                     section: info.section,
@@ -1275,9 +1276,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                             .into());
                     }
                     grind_sheet::ChartSpec::new(
-                        r#type
-                            .map(Into::into)
-                            .unwrap_or(grind_sheet::ChartKind::Bar),
+                        r#type.map_or(grind_sheet::ChartKind::Bar, Into::into),
                     )
                 }
             };
@@ -1784,7 +1783,9 @@ fn cells(
                 } else {
                     None
                 },
-                role: viewport.role(row, col).map(|r| r.name()),
+                role: viewport
+                    .role(row, col)
+                    .map(grind_sheet::view::CellRole::name),
                 name: viewport.name_at(row, col).map(str::to_owned),
             });
         }

@@ -309,9 +309,7 @@ struct Embedded {
 /// declarations it inherited from the root put on its own, since a part of a package declares
 /// its own.
 fn embedded(flat: &[u8]) -> Result<(Vec<Embedded>, Vec<Part>)> {
-    let declarations = envelope::scan(flat)
-        .map(|tree| tree.declarations)
-        .unwrap_or_default();
+    let declarations = envelope::scan(flat).map_or_default(|tree| tree.declarations);
     let mut reader = NsReader::from_reader(flat);
     reader.config_mut().trim_text(false);
     let shift = super::xml::bom_len(flat);
@@ -415,7 +413,7 @@ fn root_attribute(tag: &[u8], uri: &str, local: &str) -> Option<String> {
             .then(|| {
                 attr.normalized_value(XmlVersion::Implicit1_0)
                     .ok()
-                    .map(|v| v.into_owned())
+                    .map(std::borrow::Cow::into_owned)
             })
             .flatten()
     })
@@ -484,7 +482,7 @@ impl Archive {
                         let value = attr
                             .normalized_value(XmlVersion::Implicit1_0)
                             .ok()
-                            .map(|v| v.into_owned());
+                            .map(std::borrow::Cow::into_owned);
                         match local.as_ref() {
                             "full-path" => path = value,
                             "media-type" => media = value,
@@ -804,7 +802,7 @@ fn inline(
                     href = attr
                         .normalized_value(XmlVersion::Implicit1_0)
                         .ok()
-                        .map(|v| v.into_owned());
+                        .map(std::borrow::Cow::into_owned);
                 }
             }
         }

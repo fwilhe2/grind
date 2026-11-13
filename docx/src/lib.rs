@@ -93,24 +93,20 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
 
     let fonts = target(RelType::Theme)
         .and_then(|part| package.part(&part))
-        .map(|bytes| styles::read_fonts(&bytes))
-        .unwrap_or_default();
+        .map_or_default(|bytes| styles::read_fonts(&bytes));
     let styles = match target(RelType::Styles).and_then(|part| package.part(&part)) {
         Some(bytes) => styles::read(&bytes, &fonts),
         None => styles::read(b"", &fonts),
     };
     let numbering = target(RelType::Numbering)
         .and_then(|part| package.part(&part))
-        .map(|bytes| numbering::read(&bytes, &fonts))
-        .unwrap_or_default();
+        .map_or_default(|bytes| numbering::read(&bytes, &fonts));
     let fonts_table = target(RelType::FontTable)
         .and_then(|part| package.part(&part))
-        .map(|bytes| styles::read_font_table(&bytes))
-        .unwrap_or_default();
+        .map_or_default(|bytes| styles::read_font_table(&bytes));
     let settings = target(RelType::Settings)
         .and_then(|part| package.part(&part))
-        .map(|bytes| settings(&bytes))
-        .unwrap_or_default();
+        .map_or_default(|bytes| settings(&bytes));
     let default_tab = settings.default_tab;
     let note_formats = settings.note_formats.clone();
     if rels

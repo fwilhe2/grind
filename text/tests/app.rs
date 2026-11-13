@@ -736,7 +736,7 @@ fn find_reports_addresses_a_user_can_type_back_in() {
 fn finding_ignoring_case_counts_characters_not_bytes() {
     let app = app(&["Über die Brücke, über den Fluss", "ÜBER alles"]);
     let hits = app.find_ignoring_case("über");
-    let addresses: Vec<String> = hits.iter().map(|m| m.address()).collect();
+    let addresses: Vec<String> = hits.iter().map(grind_text::Match::address).collect();
     assert_eq!(addresses, ["p1+0", "p1+17", "p2+0"]);
     assert_eq!(
         app.find("über").len(),

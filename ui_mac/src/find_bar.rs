@@ -92,8 +92,7 @@ impl FindBar {
             .parts
             .borrow()
             .as_ref()
-            .map(|parts| parts.needle.stringValue().to_string())
-            .unwrap_or_default()
+            .map_or_default(|parts| parts.needle.stringValue().to_string())
     }
 
     fn say(&self, said: &str) {
@@ -168,8 +167,7 @@ impl FindBar {
             .parts
             .borrow()
             .as_ref()
-            .map(|parts| parts.with.stringValue().to_string())
-            .unwrap_or_default();
+            .map_or_default(|parts| parts.with.stringValue().to_string());
         if let Some(findable) = self.ivars().findable.upgrade() {
             let said = findable.replace_every(&needle, &with);
             self.say(&said);

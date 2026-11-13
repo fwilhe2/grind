@@ -244,7 +244,7 @@ impl<'a> Engine<'a> {
             seen: HashMap::new(),
         });
         let operand = self.operand(expr, at);
-        let seen = self.recorder.take().map(|r| r.seen).unwrap_or_default();
+        let seen = self.recorder.take().map_or_default(|r| r.seen);
         let value = self.scalar(operand, at);
         self.depth -= 1;
         self.visiting.remove(&at);

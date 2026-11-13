@@ -24,7 +24,7 @@ fn file() -> Option<PathBuf> {
 
 /// The recent documents that still exist, newest first.
 pub fn list() -> Vec<PathBuf> {
-    file().map(|file| read(&file)).unwrap_or_default()
+    file().map_or_default(|file| read(&file))
 }
 
 /// Put `path` at the head of the list.

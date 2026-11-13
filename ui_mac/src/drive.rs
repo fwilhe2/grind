@@ -587,7 +587,7 @@ mod mac {
             .unwrap_or_default();
         Ok(format!(
             "a11y: role {:?}, value {:?}, selected {}+{}, line {line}, announced {announced:?}",
-            role.map(|role| role.to_string()).unwrap_or_default(),
+            role.map_or_default(|role| role.to_string()),
             value.unwrap_or_default(),
             range.location,
             range.length,
@@ -621,7 +621,7 @@ mod mac {
     /// selection is — what drives assert on.
     fn transcript(app: &NSApplication, document: Option<&NSDocument>) -> String {
         let title = window(app).map_or_else(|_| "no window".to_owned(), |w| w.title().to_string());
-        let edited = document.is_some_and(|document| document.isDocumentEdited());
+        let edited = document.is_some_and(objc2_app_kit::NSDocument::isDocumentEdited);
         let selection = document
             .and_then(|document| document.downcast_ref::<Document>())
             .map_or_else(|| "no grid".to_owned(), Document::selection_text);

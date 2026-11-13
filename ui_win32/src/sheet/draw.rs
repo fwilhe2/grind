@@ -686,8 +686,7 @@ mod windows_impl {
                 let text = frame
                     .formula_text
                     .get(&(row, col))
-                    .map(String::as_str)
-                    .unwrap_or(&m.text);
+                    .map_or(m.text.as_str(), String::as_str);
                 if text.is_empty() {
                     continue;
                 }

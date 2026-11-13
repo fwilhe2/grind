@@ -712,7 +712,7 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
         out.lost.insert(Unspellable::Scaling);
     }
     // An exponent or a solidus turns the whole run into a part this model does not have.
-    let next = chars.get(i).map(|c| c.to_ascii_lowercase());
+    let next = chars.get(i).map(char::to_ascii_lowercase);
     if next == Some('e') && matches!(chars.get(i + 1), Some('+' | '-')) {
         out.lost.insert(Unspellable::Scientific);
     }

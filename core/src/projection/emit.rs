@@ -341,7 +341,10 @@ mod tests {
         assert_eq!(leaf.name().value(), "leaf");
         assert_eq!(leaf.entries()[1].value().as_string(), Some("Region"));
         assert_eq!(leaf.entries()[2].value().as_float(), Some(4200.0));
-        assert_eq!(leaf.get("bold").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            leaf.get("bold").and_then(kdl::KdlValue::as_bool),
+            Some(true)
+        );
     }
 
     #[test]

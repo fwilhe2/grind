@@ -618,14 +618,11 @@ fn second(got: &CellValue, want: f64) -> Option<()> {
 }
 
 fn strings(value: &serde_json::Value) -> BTreeSet<String> {
-    value
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .map(|v| v.as_str().expect("a string").to_owned())
-                .collect()
-        })
-        .unwrap_or_default()
+    value.as_array().map_or_default(|a| {
+        a.iter()
+            .map(|v| v.as_str().expect("a string").to_owned())
+            .collect()
+    })
 }
 
 /// `Dropped` by the name the manifest spells it with — which is this crate's own variant

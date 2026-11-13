@@ -294,8 +294,7 @@ impl Server<'_> {
                         let hints = doc
                             .grind
                             .as_ref()
-                            .map(|g| grind::inlay_hints(g, lines, p.range))
-                            .unwrap_or_default();
+                            .map_or_default(|g| grind::inlay_hints(g, lines, p.range));
                         serde_json::to_value(hints)
                     })
                 }),

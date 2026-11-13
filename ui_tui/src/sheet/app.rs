@@ -1309,8 +1309,7 @@ impl App {
         let caret = text
             .char_indices()
             .nth(*cursor)
-            .map(|(at, _)| at)
-            .unwrap_or(text.len());
+            .map_or(text.len(), |(at, _)| at);
         let names: Vec<String> = self
             .core
             .names()
@@ -1744,8 +1743,7 @@ impl App {
                     .title
                     .as_deref()
                     .filter(|title| !title.is_empty())
-                    .map(|title| format!(" \u{201c}{title}\u{201d}"))
-                    .unwrap_or_default();
+                    .map_or_default(|title| format!(" \u{201c}{title}\u{201d}"));
                 format!(
                     " {}  {:?}{title} \u{b7} {:.1} \u{d7} {:.1} cm at {}",
                     index + 1,
@@ -1990,8 +1988,7 @@ impl App {
                 address: r
                     .ranges
                     .first()
-                    .map(|&(a, b)| rule::range_hint(a, b))
-                    .unwrap_or_default(),
+                    .map_or_default(|&(a, b)| rule::range_hint(a, b)),
                 label: format!(
                     "{}  {}  {}  {}",
                     index + 1,
@@ -2014,8 +2011,7 @@ impl App {
             .iter()
             .filter_map(|info| {
                 let friendly = grind_sheet::formula::friendly::signature(info.name)
-                    .map(|(head, _)| head)
-                    .unwrap_or_else(|| info.name.to_owned());
+                    .map_or_else(|| info.name.to_owned(), |(head, _)| head);
                 (info.name.to_uppercase().contains(&wanted)
                     || friendly.to_uppercase().contains(&wanted))
                 .then(|| crate::pick::Row {
@@ -3582,7 +3578,7 @@ fn indent_cells(style: Option<&CellStyle>, numeric: bool) -> usize {
     match alignment(style, numeric) {
         Align::Right => 0,
         _ => style
-            .and_then(|s| s.indent_mm())
+            .and_then(grind_sheet::style::CellStyle::indent_mm)
             .map_or(0, |mm| (mm / geom::MM_PER_CELL).round() as usize),
     }
 }

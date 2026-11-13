@@ -1172,8 +1172,7 @@ impl Ui {
             .iter()
             .filter_map(|info| {
                 let friendly = grind_sheet::formula::friendly::signature(info.name)
-                    .map(|(head, _)| head)
-                    .unwrap_or_else(|| info.name.to_owned());
+                    .map_or_else(|| info.name.to_owned(), |(head, _)| head);
                 (info.name.to_uppercase().contains(&query)
                     || friendly.to_uppercase().contains(&query))
                 .then(|| {
@@ -1288,8 +1287,7 @@ impl Ui {
     fn hits(&self, needle: &str) -> Vec<(usize, Pos)> {
         self.app
             .find(&Search::new(needle))
-            .map(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect())
-            .unwrap_or_default()
+            .map_or_default(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect())
     }
 
     /// *Replace in every cell…* — two questions, then `App::replace` over every sheet in one
@@ -2321,7 +2319,7 @@ impl Ui {
     /// unmarked number is shown and how a typed one is read; empty takes it away. One undo step
     /// (`App::set_locale`, `grind sheet locale`'s call).
     fn document_locale(&self) {
-        let now = self.app.locale().map(|l| l.tag()).unwrap_or_default();
+        let now = self.app.locale().map_or_default(|l| l.tag());
         let Some(typed) = self.ask("A locale tag such as de-DE; empty for none", &now) else {
             return;
         };

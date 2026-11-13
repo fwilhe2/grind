@@ -294,10 +294,10 @@ impl Pane {
         }
         let path = self.suggested();
         match &path {
-            Some(path) => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string()),
+            Some(path) => path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            ),
             None => "Untitled".to_owned(),
         }
     }
@@ -940,14 +940,13 @@ impl Text {
         self.app
             .get_viewport(flag.block..flag.block + 1)
             .get(flag.block)
-            .map(|view| {
+            .map_or_default(|view| {
                 view.text
                     .chars()
                     .skip(range.start)
                     .take(range.len())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// Choose a spelling setting, remember it for every text document, and apply it.
@@ -1168,8 +1167,7 @@ impl Text {
         self.app
             .get_viewport(index..index + 1)
             .get(index)
-            .map(|view| view.text.clone())
-            .unwrap_or_default()
+            .map_or_default(|view| view.text.clone())
     }
 
     /// Where a motion lands, without moving anything. Every vertical answer is
@@ -1266,8 +1264,7 @@ impl Text {
         let height = self
             .fonts
             .as_ref()
-            .map(|fonts| fonts.body_px() * 1.3)
-            .unwrap_or(20.0)
+            .map_or(20.0, |fonts| fonts.body_px() * 1.3)
             .max(1.0);
         ((self.page.body().h / height) as isize - 1).max(1)
     }
@@ -2765,7 +2762,7 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
                 })
             }
             .flatten();
-            match grip.map(|grip| grip.cursor()) {
+            match grip.map(grind_sheet::chart_frame::Grip::cursor) {
                 Some("move") => IDC_SIZEALL,
                 Some("ns-resize") => IDC_SIZENS,
                 Some("ew-resize") => IDC_SIZEWE,
@@ -4720,26 +4717,26 @@ fn fit_tracks(hwnd: HWND, fit: Fit) {
             let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
             let widths = cols
                 .map(|col| {
-                    let widest = state
-                        .app
-                        .get_viewport(sheet, 0..used, col..col + 1)
-                        .map(|view| {
-                            (0..used)
-                                .filter_map(|row| {
-                                    let text =
-                                        view.text(row, col).filter(|text| !text.is_empty())?;
-                                    let heavy = view.style(row, col).is_some_and(|style| {
-                                        grind_sheet::format::Toggle::Bold.is_on(style)
-                                    });
-                                    let _font = gdi::Selected::font(
-                                        dc,
-                                        if heavy { &bold } else { &regular },
-                                    );
-                                    Some(f64::from(gdi::text_width(dc, text)))
-                                })
-                                .fold(0.0, f64::max)
-                        })
-                        .unwrap_or(0.0);
+                    let widest =
+                        state
+                            .app
+                            .get_viewport(sheet, 0..used, col..col + 1)
+                            .map_or(0.0, |view| {
+                                (0..used)
+                                    .filter_map(|row| {
+                                        let text =
+                                            view.text(row, col).filter(|text| !text.is_empty())?;
+                                        let heavy = view.style(row, col).is_some_and(|style| {
+                                            grind_sheet::format::Toggle::Bold.is_on(style)
+                                        });
+                                        let _font = gdi::Selected::font(
+                                            dc,
+                                            if heavy { &bold } else { &regular },
+                                        );
+                                        Some(f64::from(gdi::text_width(dc, text)))
+                                    })
+                                    .fold(0.0, f64::max)
+                            });
                     (col, grind_sheet::fit::width(widest, pad, to_mm))
                 })
                 .collect();
@@ -4802,11 +4799,9 @@ fn find_calculation(hwnd: HWND) {
 /// reads numbers. `grind_sheet::verbs::locale` reads the tag, `App::set_locale` is one undo step.
 fn document_locale(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
-    let Some(now) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state.app.locale().map(|l| l.tag()).unwrap_or_default()
-        })
-    }) else {
+    let Some(now) =
+        (unsafe { with_sheet(hwnd, |state| state.app.locale().map_or_default(|l| l.tag())) })
+    else {
         return;
     };
     let Some(typed) = dialog::prompt(
@@ -5878,8 +5873,7 @@ fn find_step(hwnd: HWND, towards: find::Towards) {
             let hits: Vec<(usize, Pos)> = state
                 .app
                 .find(&find::Search::new(state.needle.as_str()))
-                .map(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect())
-                .unwrap_or_default();
+                .map_or_default(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect());
             let here = (state.sheet, state.selection.active);
             let said = match find::step(&hits, here, towards) {
                 Some(index) => {
@@ -5913,7 +5907,7 @@ fn text_next_misspelling(hwnd: HWND) {
                 return None;
             };
             let all = text.app.misspellings(0..usize::MAX);
-            let carets: Vec<Caret> = all.iter().map(|m| m.caret()).collect();
+            let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
             let (_, at) = text::keymap::ordered(text.anchor, text.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
@@ -6413,7 +6407,7 @@ fn text_next_grammar(hwnd: HWND) {
     let found = unsafe {
         with_text(hwnd, |text| {
             let all = text.grammar_flags(0..usize::MAX);
-            let carets: Vec<Caret> = all.iter().map(|f| f.caret()).collect();
+            let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
             let (_, at) = text::keymap::ordered(text.anchor, text.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
@@ -7687,7 +7681,7 @@ fn text_scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
             (
                 text.page.scroll,
                 text.page.body().h,
-                text.fonts.as_ref().map(Fonts::body_px).unwrap_or(15.0) * 1.3,
+                text.fonts.as_ref().map_or(15.0, Fonts::body_px) * 1.3,
             )
         })
     }) else {
@@ -7714,7 +7708,7 @@ fn text_wheel(hwnd: HWND, notches: f64, lines: u32) {
     let Some((line, page)) = (unsafe {
         with_text(hwnd, |text| {
             (
-                text.fonts.as_ref().map(Fonts::body_px).unwrap_or(15.0) * 1.3,
+                text.fonts.as_ref().map_or(15.0, Fonts::body_px) * 1.3,
                 text.page.body().h,
             )
         })
@@ -9291,8 +9285,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .app
         .get_viewport(state.caret.block..state.caret.block + 1)
         .get(state.caret.block)
-        .map(|block| text::status::describe(&block.kind, block.style.as_deref()))
-        .unwrap_or_default();
+        .map_or_default(|block| text::status::describe(&block.kind, block.style.as_deref()));
     // The language is the picker's to say, at the bar's end (`Page::status_picker`).
     let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
     // The word still being typed is not underlined: the caret at its end with nothing selected

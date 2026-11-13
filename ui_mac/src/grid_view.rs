@@ -947,10 +947,9 @@ define_class!(
                 .filter(pane.sheet.get())
                 .ok()
                 .flatten()
-                .map(|filter| {
+                .map_or_default(|filter| {
                     crate::sheet::filter::ops(&filter, &pane.grid.borrow(), &view, &palette)
-                })
-                .unwrap_or_default();
+                });
             let charts = crate::sheet::chart::charts(
                 &pane.app,
                 pane.sheet.get(),
@@ -1025,7 +1024,7 @@ define_class!(
         fn insert_text(&self, text: &AnyObject) {
             let typed = text
                 .downcast_ref::<NSString>()
-                .map(|text| text.to_string())
+                .map(std::string::ToString::to_string)
                 .or_else(|| {
                     text.downcast_ref::<NSAttributedString>()
                         .map(|text| text.string().to_string())
@@ -1088,9 +1087,7 @@ define_class!(
         #[unsafe(method(changeColor:))]
         fn change_color(&self, sender: Option<&AnyObject>) {
             let color = sender
-                .and_then(|sender| sender.downcast_ref::<NSColorPanel>())
-                .map(NSColorPanel::color)
-                .unwrap_or_else(|| NSColorPanel::sharedColorPanel(self.mtm()).color());
+                .and_then(|sender| sender.downcast_ref::<NSColorPanel>()).map_or_else(|| NSColorPanel::sharedColorPanel(self.mtm()).color(), NSColorPanel::color);
             self.ivars().change_color(&color);
         }
 
@@ -1127,7 +1124,7 @@ define_class!(
         fn perform_find_panel_action(&self, sender: Option<&AnyObject>) {
             let tag = sender
                 .and_then(|sender| sender.downcast_ref::<NSMenuItem>())
-                .map_or(0, |item| item.tag());
+                .map_or(0, objc2_app_kit::NSMenuItem::tag);
             self.ivars().find_panel_action(tag);
         }
 

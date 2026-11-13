@@ -255,11 +255,7 @@ impl Pane {
                 return;
             }
             Command::DocumentLocale => {
-                let now = self
-                    .app
-                    .locale()
-                    .map(|locale| locale.tag())
-                    .unwrap_or_default();
+                let now = self.app.locale().map_or_default(|locale| locale.tag());
                 let Some(typed) = prompt::ask(
                     mtm,
                     "Document Locale",
@@ -767,8 +763,7 @@ impl Pane {
                     .names()
                     .into_iter()
                     .find(|(defined, _)| defined.eq_ignore_ascii_case(name))
-                    .map(|(_, expression)| verbs::shown_definition(&expression))
-                    .unwrap_or_default();
+                    .map_or_default(|(_, expression)| verbs::shown_definition(&expression));
                 let Some(typed) = prompt::ask(
                     mtm,
                     "Redefine Name",

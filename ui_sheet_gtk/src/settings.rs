@@ -42,7 +42,7 @@ pub fn label(choice: Option<&Locale>) -> String {
 pub fn label_of(locale: &Locale) -> String {
     locale
         .name()
-        .map_or_else(|| locale.tag(), |name| name.to_owned())
+        .map_or_else(|| locale.tag(), std::borrow::ToOwned::to_owned)
 }
 
 /// What a locale does to a number, in one line: a grouped two-decimal figure and a plain one.

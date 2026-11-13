@@ -527,12 +527,11 @@ pub fn automatic_style_names(original: &[u8]) -> HashSet<String> {
         return HashSet::new();
     };
     tree.find_top("automatic-styles")
-        .map(|(index, _)| {
+        .map_or_default(|(index, _)| {
             tree.children(index)
                 .filter_map(|n| n.name.clone())
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// The `style:text-properties` start tag inside the depth-two element `parent` of `bytes`'
@@ -919,9 +918,7 @@ pub fn losses_allowing(
         }
     }
     let after = body_vocabulary(output)?;
-    let prefixes: Vec<(String, String)> = scan(original)
-        .map(|tree| tree.declarations)
-        .unwrap_or_default();
+    let prefixes: Vec<(String, String)> = scan(original).map_or_default(|tree| tree.declarations);
     let spell = |key: &str| {
         let mut out = key.to_owned();
         for (prefix, uri) in &prefixes {

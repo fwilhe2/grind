@@ -110,14 +110,12 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .theme_part
         .as_deref()
         .and_then(|part| package.part(part))
-        .map(|bytes| theme::read(&bytes))
-        .unwrap_or_default();
+        .map_or_default(|bytes| theme::read(&bytes));
     let styles = book
         .styles_part
         .as_deref()
         .and_then(|part| package.part(part))
-        .map(|bytes| styles::read(&bytes, &theme))
-        .unwrap_or_default();
+        .map_or_default(|bytes| styles::read(&bytes, &theme));
     let size = styles.default_size();
     document.default_font_size =
         (size != grind_sheet::look::DEFAULT_FONT_PT).then(|| format!("{size}pt"));
@@ -125,8 +123,7 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         .strings_part
         .as_deref()
         .and_then(|part| package.part(part))
-        .map(|bytes| strings::read(&bytes))
-        .unwrap_or_default();
+        .map_or_default(|bytes| strings::read(&bytes));
     let renames = report.renamed.clone();
     let sheet_names: Vec<String> = book.sheets.iter().map(|s| s.name.clone()).collect();
     let mut tables = tables::Tables::default();

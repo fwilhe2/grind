@@ -40,10 +40,7 @@ fn edits(app: &App) -> Vec<Edit> {
         out.push((
             "enter",
             Box::new(move |app: &App| {
-                let len = app
-                    .input_text(index)
-                    .map(|t| t.chars().count())
-                    .unwrap_or(0);
+                let len = app.input_text(index).map_or(0, |t| t.chars().count());
                 app.split_block(Caret {
                     block: index,
                     offset: len / 2,
@@ -53,10 +50,7 @@ fn edits(app: &App) -> Vec<Edit> {
         out.push((
             "bold",
             Box::new(move |app: &App| {
-                let len = app
-                    .input_text(index)
-                    .map(|t| t.chars().count())
-                    .unwrap_or(0);
+                let len = app.input_text(index).map_or(0, |t| t.chars().count());
                 let bold = CharStyle {
                     font_weight: Some("bold".into()),
                     ..CharStyle::default()

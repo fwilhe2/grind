@@ -301,10 +301,10 @@ pub fn save_path(owner: HWND, suggested: Option<&Path>, kind: DocumentKind) -> O
     let filters = save_filters(kind);
     let specs = specs(&filters);
     let flat_extension = Form::Flat.extension(kind);
-    let name = suggested
-        .and_then(|path| path.file_name())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| format!("Untitled.{flat_extension}"));
+    let name = suggested.and_then(|path| path.file_name()).map_or_else(
+        || format!("Untitled.{flat_extension}"),
+        |name| name.to_string_lossy().into_owned(),
+    );
     let name = gdi::wide(&name);
     let extension = gdi::wide(flat_extension);
     // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**

@@ -143,8 +143,7 @@ pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)
         .start
         .col
         .zip(reference.start.row)
-        .map(|(c, r)| (c.absolute, r.absolute))
-        .unwrap_or((false, false));
+        .map_or((false, false), |(c, r)| (c.absolute, r.absolute));
     let (col, row) = match (col, row) {
         (false, false) => (true, true),
         (true, true) => (false, true),

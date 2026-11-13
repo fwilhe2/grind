@@ -152,7 +152,7 @@ pub fn run(oracle: &Oracle) {
             &mut inputs,
         );
     }
-    inputs.sort_by_key(|p| p.file_name().map(|n| n.to_owned()));
+    inputs.sort_by_key(|p| p.file_name().map(std::borrow::ToOwned::to_owned));
 
     let vendored_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
     let corpus = inputs.len() > vendored;

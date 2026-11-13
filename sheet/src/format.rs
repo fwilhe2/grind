@@ -412,7 +412,7 @@ impl Preset {
             Some(Preset::DateTime) => return "Date Time".to_owned(),
             Some(preset) => preset,
         };
-        let symbol = format.map(|f| f.preset_params().3).unwrap_or_default();
+        let symbol = format.map_or_default(|f| f.preset_params().3);
         match preset {
             Preset::Number => "123".to_owned(),
             Preset::Percent => "%".to_owned(),

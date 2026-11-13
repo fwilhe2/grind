@@ -48,8 +48,7 @@ const DIVERGES: &[(&str, &str, &str)] = &[
 fn workbooks() -> Vec<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/corpus/functions");
     let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .map(|entries| entries.flatten().map(|e| e.path()).collect())
-        .unwrap_or_default();
+        .map_or_default(|entries| entries.flatten().map(|e| e.path()).collect());
     paths.retain(|p| p.extension().is_some_and(|e| e == "xlsx"));
     paths.sort();
     paths

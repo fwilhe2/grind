@@ -168,9 +168,7 @@ pub fn ask(
     saved.then(|| {
         (
             field.stringValue().to_string(),
-            long_view
-                .map(|view| view.string().to_string())
-                .unwrap_or_default(),
+            long_view.map_or_default(|view| view.string().to_string()),
         )
     })
 }

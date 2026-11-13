@@ -502,7 +502,7 @@ impl Ui {
             #[strong(rename_to = ui)]
             self,
             move |action, target| {
-                let Some(target) = target.and_then(|t| t.get::<String>()) else {
+                let Some(target) = target.and_then(gtk::glib::Variant::get::<String>) else {
                     return;
                 };
                 action.set_state(&target.to_variant());

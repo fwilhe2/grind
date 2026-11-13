@@ -1064,11 +1064,7 @@ fn origin_body(
         .map(|part| part.range.start);
     let mut cursor = first_table.or(epilogue).unwrap_or(inner.end);
     let mut cursor_is_end = false;
-    let anchor = source
-        .tables
-        .first()
-        .map(|t| t.range.start)
-        .unwrap_or(cursor);
+    let anchor = source.tables.first().map_or(cursor, |t| t.range.start);
     for (plan, sheet) in plans.iter().zip(&doc.sheets) {
         match plan.table {
             Some(ti) => {
@@ -1728,8 +1724,7 @@ fn remerge(
                     pool.attr(look)
                 } else {
                     tag_attr(&element.keep, &styled)
-                        .map(|s| format!(" table:style-name=\"{s}\""))
-                        .unwrap_or_default()
+                        .map_or_default(|s| format!(" table:style-name=\"{s}\""))
                 };
                 let spans = match m {
                     Merging::Anchor(span) => spanned(span),
@@ -1993,7 +1988,11 @@ fn common_styles(doc: &Document) -> Option<String> {
     }
     // Each conditional-format rule's style, once by name (`rule_style_name`).
     let mut declared = HashSet::new();
-    for rule in doc.sheets.iter().flat_map(|sheet| sheet.rules()) {
+    for rule in doc
+        .sheets
+        .iter()
+        .flat_map(super::super::model::Sheet::rules)
+    {
         let name = rule_style_name(&rule.style);
         if declared.insert(name.clone()) {
             let _ = write!(
@@ -2052,7 +2051,7 @@ fn database_ranges(out: &mut String, doc: &Document) {
         if !filter.keep.is_empty() {
             out.push_str("     <table:filter>\n      <table:filter-and>\n");
             for (field, values) in &filter.keep {
-                let first = values.iter().next().map(String::as_str).unwrap_or_default();
+                let first = values.iter().next().map_or_default(String::as_str);
                 let _ = writeln!(
                     out,
                     "       <table:filter-condition table:field-number=\"{field}\" \
@@ -2444,7 +2443,7 @@ impl<'a> Pool<'a> {
             match (style, maps) {
                 (None, "") => out.push_str("/>\n"),
                 (style, maps) => {
-                    let props = style.map(properties).unwrap_or_default();
+                    let props = style.map_or_default(properties);
                     let _ = writeln!(out, ">{props}{maps}</style:style>");
                 }
             }
@@ -2490,7 +2489,7 @@ const PROPERTY_ORDER: [&str; 3] = [
 /// restyle may change. Must name every attribute `properties` does, or a cleared property would
 /// survive on the old style.
 fn owned_properties(style: Option<&CellStyle>) -> Vec<envelope::PropertyPatch<'static>> {
-    let value = |v: Option<&Option<String>>| v.and_then(|v| v.clone());
+    let value = |v: Option<&Option<String>>| v.and_then(std::clone::Clone::clone);
     let s = style;
     let mut cell = vec![
         (
@@ -2898,8 +2897,7 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
         let label = series
             .label
             .as_deref()
-            .map(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)))
-            .unwrap_or_default();
+            .map_or_default(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)));
         let _ = writeln!(
             out,
             "           <chart:series chart:class=\"{}\" \

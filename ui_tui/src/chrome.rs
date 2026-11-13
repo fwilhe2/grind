@@ -118,10 +118,10 @@ pub fn badge(what: &str) -> Span<'static> {
 /// and would push out the sheet strip and the heading path. `:w` still reports the whole path.
 pub fn file_name(path: Option<&std::path::Path>) -> String {
     match path {
-        Some(path) => path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string()),
+        Some(path) => path.file_name().map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        ),
         None => "untitled".to_owned(),
     }
 }
@@ -216,7 +216,12 @@ pub fn bar(
     right: Vec<Span<'static>>,
 ) -> Line<'static> {
     let width = usize::from(width);
-    let sum = |spans: &[Span<'static>]| spans.iter().map(|span| span.width()).sum::<usize>();
+    let sum = |spans: &[Span<'static>]| {
+        spans
+            .iter()
+            .map(ratatui::prelude::Span::width)
+            .sum::<usize>()
+    };
     let mut left = left;
     let mut right = right;
     // The right-hand end gives way a span at a time, first span first, so a caller puts what

@@ -37,7 +37,7 @@ fn addresses(app: &App, search: &Search) -> Vec<String> {
     app.find(search)
         .unwrap()
         .iter()
-        .map(|hit| hit.address())
+        .map(grind_sheet::find::Hit::address)
         .collect()
 }
 

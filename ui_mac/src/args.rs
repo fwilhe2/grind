@@ -177,7 +177,7 @@ mod tests {
     use std::assert_matches;
 
     fn parse_str(args: &[&str]) -> Command {
-        parse(args.iter().map(|a| a.to_string()))
+        parse(args.iter().map(std::string::ToString::to_string))
     }
 
     fn open(args: &[&str]) -> (Option<DocumentKind>, Option<PathBuf>, Option<PathBuf>) {

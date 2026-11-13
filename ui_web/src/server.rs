@@ -123,8 +123,7 @@ fn list_of(value: &JsValue, key: &str) -> Vec<JsValue> {
     Reflect::get(value, &key.into())
         .ok()
         .and_then(|v| v.dyn_into::<js_sys::Array>().ok())
-        .map(|a| a.iter().collect())
-        .unwrap_or_default()
+        .map_or_default(|a| a.iter().collect())
 }
 
 fn doc(value: &JsValue) -> Option<Doc> {
@@ -211,9 +210,7 @@ pub async fn create(name: &str, bytes: &[u8]) -> Result<Doc, String> {
 }
 
 pub async fn rename(id: &str, etag: &str, name: &str) -> Result<Doc, Refused> {
-    let body = JSON::stringify(&js_object(&[("name", name)]))
-        .map(String::from)
-        .unwrap_or_default();
+    let body = JSON::stringify(&js_object(&[("name", name)])).map_or_default(String::from);
     let path = format!("docs/{}", path_segment(id));
     written(request("PATCH", &path, Some(etag), Some(body.as_bytes())).await?)
 }
@@ -258,9 +255,7 @@ pub async fn at(id: &str, rev: &str) -> Result<Vec<u8>, String> {
 
 /// Put `rev` back as the current version, over the version `etag`.
 pub async fn restore(id: &str, etag: &str, rev: &str) -> Result<Doc, Refused> {
-    let body = JSON::stringify(&js_object(&[("rev", rev)]))
-        .map(String::from)
-        .unwrap_or_default();
+    let body = JSON::stringify(&js_object(&[("rev", rev)])).map_or_default(String::from);
     let path = format!("docs/{}/restore", path_segment(id));
     written(request("POST", &path, Some(etag), Some(body.as_bytes())).await?)
 }

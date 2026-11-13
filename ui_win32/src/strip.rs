@@ -79,8 +79,7 @@ pub fn colour_choices() -> Vec<String> {
             let mut chars = name.chars();
             chars
                 .next()
-                .map(|first| first.to_uppercase().chain(chars).collect())
-                .unwrap_or_default()
+                .map_or_default(|first| first.to_uppercase().chain(chars).collect())
         }))
         .collect()
 }

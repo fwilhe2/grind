@@ -132,10 +132,7 @@ impl Face {
         self.ctx
             .as_ref()
             .and_then(|ctx| ctx.measure_text(c.encode_utf8(&mut buffer)).ok())
-            .map(|metrics| metrics.width() as f32)
-            // No canvas to ask. Half the font size is a plausible advance, which is all a
-            // headless run needs and more than it checks.
-            .unwrap_or((self.size / 2.0) as f32)
+            .map_or((self.size / 2.0) as f32, |metrics| metrics.width() as f32)
     }
 }
 
@@ -668,8 +665,7 @@ impl Ui {
         };
         let here = self
             .block_at(caret.block)
-            .map(|block| describe(&block.kind, block.style.as_deref()))
-            .unwrap_or_default();
+            .map_or_default(|block| describe(&block.kind, block.style.as_deref()));
         let words = match (counts.words, counts.reading_minutes()) {
             (_, 0) => "0 words".to_owned(),
             (1, minutes) => format!("1 word · {minutes} min read"),
@@ -991,14 +987,13 @@ impl Ui {
         self.app
             .get_viewport(flag.block..flag.block + 1)
             .get(flag.block)
-            .map(|view| {
+            .map_or_default(|view| {
                 view.text
                     .chars()
                     .skip(range.start)
                     .take(range.len())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     fn grammar_entries(&self, query: &str) -> Vec<Entry> {

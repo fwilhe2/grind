@@ -169,8 +169,7 @@ fn param_alias(func: &str, raw: &str) -> String {
     PARAM_ALIASES
         .iter()
         .find(|(n, _)| *n == raw)
-        .map(|(_, a)| (*a).to_owned())
-        .unwrap_or_else(|| raw.to_owned())
+        .map_or_else(|| raw.to_owned(), |(_, a)| (*a).to_owned())
 }
 
 /// A catalog `Syntax:` line's ordered parameter names, and how many at the end repeat as a

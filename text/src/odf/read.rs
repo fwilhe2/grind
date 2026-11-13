@@ -463,8 +463,7 @@ impl Builder {
                         lines: self
                             .master_marginals
                             .get(&master.0)
-                            .map(|m| m.lines.clone())
-                            .unwrap_or_default(),
+                            .map_or_default(|m| m.lines.clone()),
                         next: self.master_next.get(&master.0).cloned(),
                     },
                 )
@@ -684,14 +683,13 @@ impl Builder {
             .blocks
             .last()
             .filter(|block| block.id == id)
-            .map(|block| {
+            .map_or_default(|block| {
                 let depth = match block.kind {
                     BlockKind::ListItem { depth } => depth,
                     _ => 0,
                 };
                 (depth, block.cell.clone())
-            })
-            .unwrap_or_default();
+            });
         if let Some(source) = self.doc.source.as_deref_mut() {
             source.blocks.insert(
                 id,
@@ -2170,14 +2168,16 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .and_then(|source| source.bytes.get(attrs.span()))
                 .and_then(|tag| std::str::from_utf8(tag).ok())
                 .filter(|tag| !tag.trim_end().ends_with("/>"))
-                .map(str::to_owned)
-                .unwrap_or_else(|| {
-                    let name = attrs.get(Ns::Text, "name").unwrap_or("Section");
-                    format!(
-                        "<text:section text:name=\"{}\">",
-                        name.replace('"', "&quot;")
-                    )
-                });
+                .map_or_else(
+                    || {
+                        let name = attrs.get(Ns::Text, "name").unwrap_or("Section");
+                        format!(
+                            "<text:section text:name=\"{}\">",
+                            name.replace('"', "&quot;")
+                        )
+                    },
+                    str::to_owned,
+                );
             let parent = b.section;
             let range = b
                 .doc

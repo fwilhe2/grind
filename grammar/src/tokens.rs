@@ -126,8 +126,7 @@ pub fn cased(word: &str, like: &str) -> String {
         let mut chars = word.chars();
         chars
             .next()
-            .map(|c| c.to_uppercase().chain(chars).collect())
-            .unwrap_or_default()
+            .map_or_default(|c| c.to_uppercase().chain(chars).collect())
     } else {
         word.to_owned()
     }

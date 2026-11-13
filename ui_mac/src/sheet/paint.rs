@@ -422,7 +422,7 @@ pub fn cells(
                 }
             }
             // Turned text is turned about the cell's middle and kept inside it.
-            if let Some(degrees) = style.and_then(|s| s.rotation_degrees()) {
+            if let Some(degrees) = style.and_then(grind_sheet::style::CellStyle::rotation_degrees) {
                 let text_style = look::text_style(style);
                 ops.push(Op::Turned {
                     centre: (cell.x + cell.w / 2.0, cell.y + cell.h / 2.0),
@@ -727,7 +727,7 @@ fn cell_text(
     // An indent (`fo:margin-left`), in points, from the leading edge of text not set against
     // the right one.
     let indent = style
-        .and_then(|s| s.indent_mm())
+        .and_then(grind_sheet::style::CellStyle::indent_mm)
         .map_or(0.0, |mm| mm * 72.0 / 25.4);
     let x = match look::align(value, style) {
         look::Align::Left => cell.x + PAD_X + indent,

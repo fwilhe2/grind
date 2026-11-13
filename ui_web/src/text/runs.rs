@@ -103,7 +103,7 @@ pub fn cut_marked(
             });
             Piece {
                 range: start..end,
-                props: run.map(|run| run.shown.clone()).unwrap_or_default(),
+                props: run.map_or_default(|run| run.shown.clone()),
                 href: run.and_then(|run| run.href.clone()),
                 selected: selection
                     .as_ref()

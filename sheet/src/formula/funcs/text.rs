@@ -15,8 +15,8 @@ type Answer = Result<Value, FormulaError>;
 pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     Some(match name {
         "LEN" => len(args),
-        "LOWER" => map(args, |s| s.to_lowercase()),
-        "UPPER" => map(args, |s| s.to_uppercase()),
+        "LOWER" => map(args, str::to_lowercase),
+        "UPPER" => map(args, str::to_uppercase),
         "PROPER" => map(args, proper),
         "TRIM" => map(args, trim),
         "LEFT" => end(args, true),

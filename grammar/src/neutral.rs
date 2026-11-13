@@ -39,7 +39,7 @@ pub fn repeated_word(tokens: &[Token], language: Option<Language>, out: &mut Vec
         }
         let word = second.lower();
         if word != first.lower()
-            || word.chars().any(|c| c.is_numeric())
+            || word.chars().any(char::is_numeric)
             || first.text.chars().next().is_some_and(char::is_uppercase)
                 && second.text.chars().next().is_some_and(char::is_uppercase)
             || doubled(language, &word)

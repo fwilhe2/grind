@@ -27,8 +27,7 @@ fn storage() -> Option<web_sys::Storage> {
 pub fn names() -> Vec<String> {
     storage()
         .and_then(|s| s.get_item(INDEX).ok().flatten())
-        .map(|text| text.lines().map(str::to_owned).collect())
-        .unwrap_or_default()
+        .map_or_default(|text| text.lines().map(str::to_owned).collect())
 }
 
 /// The bytes kept for the `n`th name.

@@ -263,8 +263,7 @@ impl<'p, 'a> Ctx<'p, 'a> {
         }
         let found = self.package.part(target).map(|bytes| {
             let mime = grind_text::picture::mime(&bytes)
-                .map(str::to_owned)
-                .unwrap_or_else(|| by_extension(target).to_owned());
+                .map_or_else(|| by_extension(target).to_owned(), str::to_owned);
             (bytes, mime)
         });
         self.images.insert(target.to_owned(), found.clone());

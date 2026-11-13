@@ -541,7 +541,7 @@ pub fn watch(pane: &Rc<TextPane>) {
 fn string_of(object: &AnyObject) -> String {
     object
         .downcast_ref::<NSString>()
-        .map(|text| text.to_string())
+        .map(std::string::ToString::to_string)
         .or_else(|| {
             object
                 .downcast_ref::<NSAttributedString>()
@@ -775,9 +775,7 @@ define_class!(
         #[unsafe(method(changeColor:))]
         fn change_color(&self, sender: Option<&AnyObject>) {
             let color = sender
-                .and_then(|sender| sender.downcast_ref::<NSColorPanel>())
-                .map(NSColorPanel::color)
-                .unwrap_or_else(|| NSColorPanel::sharedColorPanel(self.mtm()).color());
+                .and_then(|sender| sender.downcast_ref::<NSColorPanel>()).map_or_else(|| NSColorPanel::sharedColorPanel(self.mtm()).color(), NSColorPanel::color);
             self.ivars().change_color(&color);
         }
 
@@ -791,7 +789,7 @@ define_class!(
         fn perform_find_panel_action(&self, sender: Option<&AnyObject>) {
             let tag = sender
                 .and_then(|sender| sender.downcast_ref::<NSMenuItem>())
-                .map_or(0, |item| item.tag());
+                .map_or(0, objc2_app_kit::NSMenuItem::tag);
             self.ivars().find_panel_action(tag);
         }
 

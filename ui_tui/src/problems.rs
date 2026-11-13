@@ -72,7 +72,7 @@ impl Problems {
                 // An address is what a finding is *for*: going to it closes the pane, because
                 // the next thing the reader wants is the document. A finding about the whole
                 // document has no address and stays put rather than jumping somewhere invented.
-                let address = self.selected().map(|d| d.at.clone()).unwrap_or_default();
+                let address = self.selected().map_or_default(|d| d.at.clone());
                 if address.is_empty() {
                     return Nav::Stayed;
                 }

@@ -1662,7 +1662,7 @@ impl App {
             return;
         }
         let all = self.core.misspellings(0..usize::MAX);
-        let carets: Vec<Caret> = all.iter().map(|m| m.caret()).collect();
+        let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
         let towards = if forward {
             grind_text::find::Towards::Next
         } else {
@@ -1794,7 +1794,7 @@ impl App {
             return;
         }
         let all = self.grammar_flags(0..usize::MAX);
-        let carets: Vec<Caret> = all.iter().map(|f| f.caret()).collect();
+        let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
         let towards = if forward {
             grind_text::find::Towards::Next
         } else {
@@ -1851,14 +1851,13 @@ impl App {
             .core
             .get_viewport(flag.block..flag.block + 1)
             .get(flag.block)
-            .map(|view| {
+            .map_or_default(|view| {
                 view.text
                     .chars()
                     .skip(range.start)
                     .take(range.len())
                     .collect()
-            })
-            .unwrap_or_default();
+            });
         match self.core.correct(flag.caret(), &covered, &with) {
             Ok(()) => {
                 self.caret = Caret {
@@ -2128,8 +2127,7 @@ impl App {
             }
             let kind = kinds
                 .get(block)
-                .map(|view| view.kind.clone())
-                .unwrap_or(BlockKind::Paragraph);
+                .map_or(BlockKind::Paragraph, |view| view.kind.clone());
             let indent = indent_of(&kind);
             let measure = self.measures.measure(block, &kind);
             if let Ok(layout) = self.core.layout_block(block, measure, &Cells) {
@@ -2264,8 +2262,7 @@ impl App {
         let line = self
             .core
             .layout_block(self.caret.block, self.measure(self.caret.block), &Cells)
-            .map(|l| l.line_at(self.caret.offset))
-            .unwrap_or(0);
+            .map_or(0, |l| l.line_at(self.caret.offset));
         let here = (self.caret.block, line);
         if here < self.top {
             self.top = here;
@@ -2400,9 +2397,7 @@ impl App {
                 .is_some_and(|sel| sel.start <= start && end <= sel.end);
             let under_caret = caret == Some(start);
             drawn_caret |= under_caret;
-            let mut style = run
-                .map(|run| terminal_style(&run.shown))
-                .unwrap_or_default();
+            let mut style = run.map_or_default(|run| terminal_style(&run.shown));
             if heading {
                 style = style.add_modifier(Modifier::BOLD);
             }
@@ -2513,8 +2508,7 @@ impl App {
         let caret_line = self
             .core
             .layout_block(self.caret.block, self.measure(self.caret.block), &Cells)
-            .map(|layout| layout.line_at(self.caret.offset))
-            .unwrap_or(0);
+            .map_or(0, |layout| layout.line_at(self.caret.offset));
 
         // --- the title bar: which document, and which section of it the caret is in ---
         let name = chrome::file_name(self.path.as_deref());

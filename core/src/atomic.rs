@@ -93,8 +93,7 @@ fn temp_name(target: &Path) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let name = target
         .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map_or_default(|n| n.to_string_lossy().into_owned());
     let unique = format!(
         ".{name}.grind-{}-{}.tmp",
         std::process::id(),

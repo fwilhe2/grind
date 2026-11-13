@@ -125,7 +125,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         let found = masters.iter().position(|&m| {
             input.sections[m].same_page(section)
                 && input.sections[m].landscape == section.landscape
-                && input.pages.get(m).map(Page::parts).unwrap_or_default() == page.parts()
+                && input.pages.get(m).map_or_default(Page::parts) == page.parts()
         });
         let index = match found {
             Some(index) => index,
@@ -627,8 +627,7 @@ impl Writer<'_, '_> {
         if !self.table_spacing.is_empty() {
             let chain = style_id
                 .as_deref()
-                .map(|id| styles::resolved(self.styles(), id))
-                .unwrap_or_default();
+                .map_or_default(|id| styles::resolved(self.styles(), id));
             for (key, value) in &self.table_spacing.0 {
                 if chain.para.get(key).is_none() && direct.para.get(key).is_none() {
                     direct.para.set(key, value.clone());
@@ -1013,8 +1012,7 @@ impl Writer<'_, '_> {
             .or_else(|| self.styles().default_table.clone());
         let mut look = style_id
             .as_deref()
-            .map(|id| self.styles().table_look(id))
-            .unwrap_or_default();
+            .map_or_default(|id| self.styles().table_look(id));
         if look.conditional {
             self.report.drop_one(Dropped::TableStyleCondition);
         }
@@ -1073,8 +1071,7 @@ impl Writer<'_, '_> {
         let master = table
             .master_page
             .as_deref()
-            .map(|m| format!(" style:master-page-name=\"{}\"", esc(m)))
-            .unwrap_or_default();
+            .map_or_default(|m| format!(" style:master-page-name=\"{}\"", esc(m)));
         let _ = writeln!(
             styles,
             "  <style:style style:name=\"{name}\" style:family=\"table\"{master}><style:table-properties{}/></style:style>",

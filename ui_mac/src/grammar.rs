@@ -68,14 +68,13 @@ impl TextPane {
         self.app
             .get_viewport(flag.block..flag.block + 1)
             .get(flag.block)
-            .map(|view| {
+            .map_or_default(|view| {
                 view.text
                     .chars()
                     .skip(range.start)
                     .take(range.len())
                     .collect()
             })
-            .unwrap_or_default()
     }
 
     /// One of Edit ▸ Spelling's grammar verbs, or a context-menu row's.

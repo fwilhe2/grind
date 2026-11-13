@@ -27,7 +27,7 @@ pub fn widest(
     let rows = app.used_extent(sheet).map_or(0, |(rows, _)| rows);
     let mut advances = Vec::new();
     app.get_viewport(sheet, 0..rows, col..col + 1)
-        .map(|viewport| {
+        .map_or(0.0, |viewport| {
             (0..rows)
                 .filter_map(|row| {
                     let text = viewport.text(row, col).filter(|text| !text.is_empty())?;
@@ -37,7 +37,6 @@ pub fn widest(
                 })
                 .fold(0.0, f64::max)
         })
-        .unwrap_or(0.0)
 }
 
 /// [`widest`] in the face [`look::text_style`] gives each cell — what every shell draws with.

@@ -652,7 +652,7 @@ impl Picker {
         // General cell would say it is in euros.
         let buttons = || self.currencies.iter().chain([&self.other]);
         match kind {
-            Some(Kind::Currency) if !buttons().any(|b| b.is_active()) => {
+            Some(Kind::Currency) if !buttons().any(gtk::prelude::ToggleButtonExt::is_active) => {
                 self.currencies[0].set_active(true);
             }
             Some(Kind::Currency) => {}
@@ -800,10 +800,7 @@ impl Picker {
     /// The symbol whose button is down.
     fn symbol(&self) -> String {
         if self.other.is_active() {
-            self.other
-                .label()
-                .map(|l| l.to_string())
-                .unwrap_or_default()
+            self.other.label().map_or_default(|l| l.to_string())
         } else {
             numfmt::CURRENCIES
                 .iter()

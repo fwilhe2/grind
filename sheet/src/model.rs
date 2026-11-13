@@ -390,8 +390,7 @@ impl Sheet {
     ) -> Vec<u32> {
         self.filter
             .as_ref()
-            .map(|f| f.hidden_rows(self, null_date, locale))
-            .unwrap_or_default()
+            .map_or_default(|f| f.hidden_rows(self, null_date, locale))
     }
 
     /// Whether one row is hidden by the filter, without building the whole list.

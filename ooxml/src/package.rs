@@ -117,7 +117,7 @@ fn resolve_target(base: &str, target: &str) -> Option<String> {
     if target.starts_with('/') || target.starts_with('\\') {
         return normalise(target);
     }
-    let dir = base.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+    let dir = base.rsplit_once('/').map_or("", |(dir, _)| dir);
     normalise(&format!("{dir}/{target}"))
 }
 

@@ -68,14 +68,13 @@ pub fn save(kind: DocumentKind, setting: Setting) -> Result<(), String> {
 pub fn words() -> Vec<String> {
     storage()
         .and_then(|s| s.get_item(WORDS).ok().flatten())
-        .map(|text| {
+        .map_or_default(|text| {
             text.lines()
                 .map(str::trim)
                 .filter(|line| !line.is_empty())
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default()
 }
 
 /// Add a word to the personal dictionary, for good.

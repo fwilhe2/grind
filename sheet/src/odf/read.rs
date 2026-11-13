@@ -744,11 +744,9 @@ impl Context<Builder> for Spreadsheet {
         if let Some(source) = b.doc.source.as_deref_mut()
             && let Some(range) = range
         {
-            let keep = source
-                .bytes
-                .get(attrs.span())
-                .map(|tag| grind_core::odf::envelope::attributes_except(tag, &["table:name"]))
-                .unwrap_or_default();
+            let keep = source.bytes.get(attrs.span()).map_or_default(|tag| {
+                grind_core::odf::envelope::attributes_except(tag, &["table:name"])
+            });
             let index = source.tables.len();
             source.tables.push(source::Table {
                 range,
@@ -830,12 +828,7 @@ impl Context<Builder> for Forms {
         let id = attrs
             .get(Ns::Xml, "id")
             .or_else(|| attrs.get(Ns::Form, "id"))?;
-        let own = b
-            .doc
-            .sheets
-            .get(b.sheet)
-            .map(|s| s.name.clone())
-            .unwrap_or_default();
+        let own = b.doc.sheets.get(b.sheet).map_or_default(|s| s.name.clone());
         let link = attrs
             .get(Ns::Form, "linked-cell")
             .and_then(|address| crate::model::Link::parse(address, &own));

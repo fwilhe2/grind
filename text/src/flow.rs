@@ -478,8 +478,7 @@ pub fn lay_out(
                     faces.first_indent(index),
                     &faces.tabs(index),
                 )
-                .map(|layout| f64::from(layout.height()))
-                .unwrap_or(0.0),
+                .map_or(0.0, |layout| f64::from(layout.height())),
         };
         (height, f64::from(width))
     };

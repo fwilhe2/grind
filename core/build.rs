@@ -27,14 +27,10 @@ fn run(args: &[&str]) -> Option<String> {
 
 fn main() {
     let commit = run(&["git", "rev-parse", "--short", "HEAD"])
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned());
-    let dirty = run(&["git", "status", "--porcelain"])
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned());
+    let dirty = run(&["git", "status", "--porcelain"]).is_some_and(|s| !s.trim().is_empty());
     let date = run(&["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"])
-        .map(|s| s.trim().to_owned())
-        .unwrap_or_else(|| "unknown".to_owned());
+        .map_or_else(|| "unknown".to_owned(), |s| s.trim().to_owned());
 
     println!("cargo:rustc-env=GRIND_BUILD_COMMIT={commit}");
     println!(

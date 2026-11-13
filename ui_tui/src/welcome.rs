@@ -345,7 +345,7 @@ mod tests {
             .buffer()
             .content()
             .iter()
-            .map(|cell| cell.symbol())
+            .map(ratatui::buffer::Cell::symbol)
             .collect();
         for card in ["New Spreadsheet", "New Text Document", "Open a Document"] {
             assert!(text.contains(card), "{card} is on screen");

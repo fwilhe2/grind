@@ -1219,7 +1219,7 @@ mod imp {
                     #[weak(rename_to = grid)]
                     widget,
                     move |_, target| {
-                        if let Some(target) = target.and_then(|v| v.get::<String>()) {
+                        if let Some(target) = target.and_then(gtk::glib::Variant::get::<String>) {
                             grid.imp().spell(name, &target);
                         }
                     }
@@ -2361,8 +2361,7 @@ mod imp {
                 .app
                 .borrow()
                 .as_ref()
-                .map(|app| app.names().into_iter().map(|(name, _)| name).collect())
-                .unwrap_or_default();
+                .map_or_default(|app| app.names().into_iter().map(|(name, _)| name).collect());
             completion.update(
                 &self.buffer.text(),
                 self.caret(),
@@ -3036,7 +3035,7 @@ mod imp {
             let popover = gtk::Popover::new();
             popover.set_parent(&*self.obj());
             popover.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
-            popover.connect_closed(|popover| popover.unparent());
+            popover.connect_closed(gtk::prelude::WidgetExt::unparent);
 
             // A colour is a series (`doc/chart-format.md`, Colour), so a click on a bar colours
             // its whole series — and the bar with it, if it had one of its own. One bar alone is
@@ -4276,7 +4275,7 @@ mod imp {
                         && !grind_sheet::numfmt::is_number(value);
                     // An indent (`fo:margin-left`) moves the text in from the leading edge.
                     let indent = style
-                        .and_then(|s| s.indent_mm())
+                        .and_then(grind_sheet::style::CellStyle::indent_mm)
                         .map_or(0.0, |mm| mm * PX_PER_MM * self.zoom.get());
 
                     let mut cell = geom.cell_rect(row, col);
@@ -4361,7 +4360,9 @@ mod imp {
 
                     // Turned text (`style:rotation-angle`) is turned about the cell's middle and
                     // kept inside it — a rotated heading over a narrow column, the usual case.
-                    if let Some(degrees) = style.and_then(|s| s.rotation_degrees()) {
+                    if let Some(degrees) =
+                        style.and_then(grind_sheet::style::CellStyle::rotation_degrees)
+                    {
                         draw_turned(f.snapshot, &layout, color, &cell, text_w, text_h, degrees);
                         continue;
                     }
@@ -5057,10 +5058,10 @@ mod imp {
                 attrs.insert(pango::AttrInt::new_style(slant));
             }
         }
-        if style.is_some_and(|s| s.is_underlined()) {
+        if style.is_some_and(grind_sheet::style::CellStyle::is_underlined) {
             attrs.insert(pango::AttrInt::new_underline(pango::Underline::Single));
         }
-        if style.is_some_and(|s| s.is_struck()) {
+        if style.is_some_and(grind_sheet::style::CellStyle::is_struck) {
             attrs.insert(pango::AttrInt::new_strikethrough(true));
         }
         let scale = zoom * style.and_then(font_scale).unwrap_or(1.0);

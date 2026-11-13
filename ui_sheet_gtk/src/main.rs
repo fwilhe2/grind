@@ -534,7 +534,7 @@ impl Ui {
             self,
             move |_, target| {
                 if let Some(setting) = target
-                    .and_then(|v| v.get::<String>())
+                    .and_then(gtk::glib::Variant::get::<String>)
                     .and_then(|tag| grind_spell::Setting::from_tag(&tag))
                 {
                     ui.set_spelling(setting);
@@ -1622,8 +1622,7 @@ impl Ui {
                     .iter()
                     .filter_map(|info| {
                         let friendly = grind_sheet::formula::friendly::signature(info.name)
-                            .map(|(head, _)| head)
-                            .unwrap_or_else(|| info.name.to_owned());
+                            .map_or_else(|| info.name.to_owned(), |(head, _)| head);
                         (info.name.to_uppercase().contains(&wanted)
                             || friendly.to_uppercase().contains(&wanted))
                         .then_some((info, friendly))
@@ -2402,13 +2401,13 @@ fn actions() -> Vec<Verb> {
         verb("open", &["<Control>o"], "Open…", "Document", |ui| {
             ui.open();
         }),
-        verb("save", &["<Control>s"], "Save", "Document", |ui| ui.save()),
+        verb("save", &["<Control>s"], "Save", "Document", Ui::save),
         verb(
             "save-as",
             &["<Control><Shift>s"],
             "Save As…",
             "Document",
-            |ui| ui.save_as(),
+            Ui::save_as,
         ),
         // The one non-ODF format (`doc/not-doing.md` §2), and the only interchange this suite
         // has. No accelerator: neither is a verb anybody presses twice a minute, and the
@@ -2421,7 +2420,7 @@ fn actions() -> Vec<Verb> {
             &[],
             "Import CSV with Options…",
             "Document",
-            |ui| ui.import_csv_with(),
+            Ui::import_csv_with,
         ),
         verb("csv-export", &[], "Export CSV…", "Document", |ui| {
             ui.export_csv();
@@ -2464,9 +2463,9 @@ fn actions() -> Vec<Verb> {
             &["<Control><Shift>f"],
             "Find a Calculation…",
             "Document",
-            |ui| ui.explore_calculations(),
+            Ui::explore_calculations,
         ),
-        verb("names", &[], "Names…", "Document", |ui| ui.manage_names()),
+        verb("names", &[], "Names…", "Document", Ui::manage_names),
         // A palette verb rather than a format-bar control: a rule is something the sheet has,
         // not a property of the selection (`doc/conditional-format.md` §4).
         verb(
@@ -2490,7 +2489,7 @@ fn actions() -> Vec<Verb> {
             &[],
             "Replace Formulas with Values",
             "Document",
-            |ui| ui.formulas_to_values(),
+            Ui::formulas_to_values,
         ),
         verb("functions", &[], "Functions…", "Document", |ui| {
             ui.explore_functions();
@@ -2500,7 +2499,7 @@ fn actions() -> Vec<Verb> {
             &[],
             "Spelling Language…",
             "View",
-            |ui| ui.spelling_language_dialog(),
+            Ui::spelling_language_dialog,
         ),
         verb(
             "personal-dictionary",
@@ -2572,7 +2571,7 @@ fn actions() -> Vec<Verb> {
             &[],
             "Format as Table…",
             "Selection",
-            |ui| ui.format_table_dialog(),
+            Ui::format_table_dialog,
         ),
         verb(
             "explain-formula",

@@ -54,9 +54,8 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
     let content = match splice(doc, form) {
         Some(spliced) => spliced,
         None => {
-            let reserved = source
-                .map(|source| envelope::automatic_style_names(&source.bytes))
-                .unwrap_or_default();
+            let reserved =
+                source.map_or_default(|source| envelope::automatic_style_names(&source.bytes));
             let generated = content(doc, form, source, &reserved);
             match source.and_then(|source| envelope::merge(&source.bytes, generated.as_bytes())) {
                 Some(merged) => merged,
@@ -726,9 +725,7 @@ fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
 fn body(out: &mut String, doc: &Document, pool: &Pool, origin: Option<&Origin>) {
     // What the file had in its body without a block, by the index of the block it now follows
     // (`None` for before every block).
-    let placed = origin
-        .map(|origin| origin.placements(doc))
-        .unwrap_or_default();
+    let placed = origin.map_or_default(|origin| origin.placements(doc));
     let carry = |out: &mut String, after: Option<usize>| {
         for bytes in placed.get(&after).into_iter().flatten() {
             let _ = writeln!(out, "{}{bytes}", pad(3, origin));
@@ -1075,10 +1072,7 @@ fn table(
                 );
                 tag.trim_end_matches('>').to_owned()
             }
-            None => format!(
-                "<{element}{}",
-                spans.map(span_attributes).unwrap_or_default()
-            ),
+            None => format!("<{element}{}", spans.map_or_default(span_attributes)),
         }
     };
 
@@ -1089,8 +1083,10 @@ fn table(
         let row_tag = recorded
             .and_then(|r| r.rows.get(&row))
             .filter(|tag| tag.starts_with("<table:table-row"))
-            .map(|tag| envelope::set_attributes(tag, &[("table:number-rows-repeated", None)]))
-            .unwrap_or_else(|| "<table:table-row>".to_owned());
+            .map_or_else(
+                || "<table:table-row>".to_owned(),
+                |tag| envelope::set_attributes(tag, &[("table:number-rows-repeated", None)]),
+            );
         let _ = writeln!(out, "{}{row_tag}", pad(4, origin));
         let mut column = 0;
         while column < columns.max(1) {
@@ -1127,16 +1123,16 @@ fn table(
                         "table:table-cell"
                     };
                     // A position no block names is written as the file had it, when it had it.
-                    let element = recorded
-                        .and_then(|r| r.cells.get(&(row, column)))
-                        .map(|tag| {
-                            if tag.starts_with("<table:covered-table-cell") {
-                                "table:covered-table-cell"
-                            } else {
-                                "table:table-cell"
-                            }
-                        })
-                        .unwrap_or(element);
+                    let element =
+                        recorded
+                            .and_then(|r| r.cells.get(&(row, column)))
+                            .map_or(element, |tag| {
+                                if tag.starts_with("<table:covered-table-cell") {
+                                    "table:covered-table-cell"
+                                } else {
+                                    "table:table-cell"
+                                }
+                            });
                     let open = cell_tag(row, column, element, None);
                     let _ = writeln!(out, "{}{open}/>", pad(5, origin));
                     column += 1;
@@ -1200,8 +1196,7 @@ fn blocks(out: &mut String, list: &[Block], extra: u32, pool: &Pool, origin: Opt
             Some(mark) => (
                 "text:list-item",
                 mark.start
-                    .map(|n| format!(" text:start-value=\"{n}\""))
-                    .unwrap_or_default(),
+                    .map_or_default(|n| format!(" text:start-value=\"{n}\"")),
             ),
             None => ("text:list-item", String::new()),
         }

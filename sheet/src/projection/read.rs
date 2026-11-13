@@ -524,7 +524,7 @@ fn argument(node: &KdlNode, index: usize) -> Option<&KdlValue> {
         .iter()
         .filter(|entry| entry.name().is_none())
         .nth(index)
-        .map(|entry| entry.value())
+        .map(grind_core::projection::kdl::KdlEntry::value)
 }
 
 fn text_arg(node: &KdlNode, index: usize) -> Result<String> {

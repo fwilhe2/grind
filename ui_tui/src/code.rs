@@ -150,10 +150,10 @@ impl Code {
         // What this line *is*, in the document's own vocabulary. The whole point of the pane: a
         // reader looking at `row North 4200` is told it is `Sales.A2`, in the spelling they would
         // type into the go-to box.
-        let at = self
-            .address(projection)
-            .map(|address| format!("  {address}  "))
-            .unwrap_or_else(|| "  j/k moves, any other key closes  ".to_owned());
+        let at = self.address(projection).map_or_else(
+            || "  j/k moves, any other key closes  ".to_owned(),
+            |address| format!("  {address}  "),
+        );
         frame.render_widget(
             Paragraph::new(lines).block(
                 Block::default()

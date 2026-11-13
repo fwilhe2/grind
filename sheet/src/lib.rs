@@ -1258,8 +1258,7 @@ impl App {
             .doc
             .projection_source
             .as_deref()
-            .map(grind_core::projection::Source::anchors)
-            .unwrap_or_default()
+            .map_or_default(grind_core::projection::Source::anchors)
     }
 
     // --- reading ---

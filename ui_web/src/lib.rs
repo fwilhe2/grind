@@ -990,8 +990,10 @@ impl Shell {
     fn export_markdown(&self) {
         let stem = std::path::Path::new(&self.document_name())
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".to_owned());
+            .map_or_else(
+                || "untitled".to_owned(),
+                |stem| stem.to_string_lossy().into_owned(),
+            );
         let name = format!("{stem}.md");
         let Some(text) = self.text.export_markdown() else {
             return;
@@ -1072,8 +1074,10 @@ impl Shell {
         let document = js_sys::Uint8Array::from(document.as_slice());
         let stem = std::path::Path::new(&self.document_name())
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".to_owned());
+            .map_or_else(
+                || "untitled".to_owned(),
+                |stem| stem.to_string_lossy().into_owned(),
+            );
         let call = |name: &str, args: &js_sys::Array| -> Result<JsValue, JsValue> {
             let function: js_sys::Function =
                 js_sys::Reflect::get(&module, &name.into())?.dyn_into()?;
@@ -1140,8 +1144,7 @@ impl Shell {
                     .unwrap_or(0.0) as u32
             };
             let rgba = js_sys::Reflect::get(&page, &"rgba".into())
-                .map(|bytes| js_sys::Uint8Array::new(&bytes).to_vec())
-                .unwrap_or_default();
+                .map_or_default(|bytes| js_sys::Uint8Array::new(&bytes).to_vec());
             let _ = self.put_page(number("width"), number("height"), &rgba, ratio);
         }
         self.previewing.set(true);
@@ -1210,8 +1213,10 @@ impl Shell {
     fn export_csv(&self, extension: &str) {
         let stem = std::path::Path::new(&self.document_name())
             .file_stem()
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "untitled".to_owned());
+            .map_or_else(
+                || "untitled".to_owned(),
+                |stem| stem.to_string_lossy().into_owned(),
+            );
         let name = format!("{stem}.{extension}");
         let Some(text) = self.sheet.export_csv(csv::Dialect::for_name(&name)) else {
             return;
@@ -1840,7 +1845,7 @@ pub(crate) fn request_frame() {
     };
     // `once_into_js` hands the closure to JS and frees it after the call, which is what makes
     // a per-frame allocation acceptable.
-    let callback = Closure::once_into_js(move || with_shell(|shell| shell.refresh()));
+    let callback = Closure::once_into_js(move || with_shell(Shell::refresh));
     let _ = window.request_animation_frame(callback.unchecked_ref());
 }
 

@@ -102,7 +102,7 @@ pub fn words(text: &str) -> Vec<Range<usize>> {
 /// Whether a word is one a dictionary should be asked about at all.
 pub fn checkable(word: &str) -> bool {
     let letters = word.chars().filter(|c| c.is_alphabetic()).count();
-    if letters < 2 || word.chars().any(|c| c.is_numeric()) {
+    if letters < 2 || word.chars().any(char::is_numeric) {
         return false;
     }
     // An acronym: `ODF`, `PDF`, `GTK`, and `PDFs`' stem — two capitals or more and no lowercase.
