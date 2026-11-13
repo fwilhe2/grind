@@ -177,9 +177,17 @@ fn what_the_corpus_drew_that_was_wrong_is_still_found() {
 #[test]
 fn a_skipped_range_is_opaque_to_every_rule() {
     // `the .xlsx file`, with `.xlsx` a run of code.
-    assert!(found_skipping("Open the .xlsx file.", 9..14).is_empty());
+    assert!(
+        found_skipping("Open the .xlsx file.", 9..14).is_empty(),
+        "{:?}",
+        found_skipping("Open the .xlsx file.", 9..14)
+    );
     // `every # and ? in it`, with `?` code.
-    assert!(found_skipping("Every # and ? is a digit.", 12..13).is_empty());
+    assert!(
+        found_skipping("Every # and ? is a digit.", 12..13).is_empty(),
+        "{:?}",
+        found_skipping("Every # and ? is a digit.", 12..13)
+    );
     // A rule still fires beside it, on what is prose.
     assert_eq!(
         found_skipping("Open the the .xlsx file.", 13..18),

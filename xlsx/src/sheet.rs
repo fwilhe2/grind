@@ -1175,7 +1175,7 @@ mod tests {
         assert_eq!(sheet.formula(at("B1")), Some("=[.A1]*2"));
         assert_eq!(sheet.get(at("B1")), CellValue::Number(6.0));
         assert_eq!(report.formulas, 1);
-        assert!(report.untranslated.is_empty());
+        assert!(report.untranslated.is_empty(), "{:?}", report.untranslated);
     }
 
     /// Apache POI and SheetJS do not evaluate, so they write this by default.

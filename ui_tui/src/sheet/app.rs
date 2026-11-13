@@ -4668,8 +4668,15 @@ mod tests {
             "row 1 only"
         );
         app.run_command("fit all");
-        assert!(app.core.row_heights(app.sheet).unwrap().is_empty());
-        assert!(!app.core.col_widths(app.sheet).unwrap().is_empty());
+        assert!(
+            app.core.row_heights(app.sheet).unwrap().is_empty(),
+            "{:?}",
+            app.core.row_heights(app.sheet).unwrap()
+        );
+        assert!(
+            !app.core.col_widths(app.sheet).unwrap().is_empty(),
+            "no column was fitted"
+        );
         assert!(app.core.undo());
         assert!(
             app.core.col_widths(app.sheet).unwrap().is_empty(),
@@ -5013,7 +5020,11 @@ mod tests {
         assert!(app.status.contains("D11"), "{}", app.status);
         assert_eq!(app.core.charts(0).unwrap()[0].x, "75.000mm");
         app.run_command("chart!");
-        assert!(app.core.charts(0).unwrap().is_empty());
+        assert!(
+            app.core.charts(0).unwrap().is_empty(),
+            "{:?}",
+            app.core.charts(0).unwrap()
+        );
     }
 
     /// `:dict` opens the personal dictionary in a pane of its own, any key closes it, and a verb
@@ -5228,7 +5239,11 @@ mod tests {
         assert_eq!(geom::cells(&widths[0].1), Some(20));
 
         app.run_command("width auto");
-        assert!(app.core.col_widths(0).expect("widths").is_empty());
+        assert!(
+            app.core.col_widths(0).expect("widths").is_empty(),
+            "{:?}",
+            app.core.col_widths(0).expect("widths")
+        );
 
         app.run_command("width nonsense");
         assert!(app.status.starts_with("not a width"), "{}", app.status);

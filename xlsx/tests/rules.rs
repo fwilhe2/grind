@@ -187,6 +187,10 @@ fn a_rule_with_no_dxf_or_one_the_model_cannot_draw_is_counted() {
     let rules = r#"<conditionalFormatting sqref="A1"><cfRule type="expression" priority="1"><formula>TRUE</formula></cfRule><cfRule type="expression" dxfId="0" priority="2"><formula>TRUE</formula></cfRule></conditionalFormatting>"#;
     let dxfs = r#"<dxf><font><vertAlign val="superscript"/></font></dxf>"#;
     let (document, report) = grind_xlsx::import_bytes(&workbook(rules, dxfs)).expect("imports");
-    assert!(document.sheets[0].rules().is_empty());
+    assert!(
+        document.sheets[0].rules().is_empty(),
+        "{:?}",
+        document.sheets[0].rules()
+    );
     assert_eq!(report.dropped.get(&Dropped::ConditionalFormat), Some(&2));
 }

@@ -130,7 +130,11 @@ fn rules_written_by_this_build_read_back_as_they_were() {
     }
     // One undo step takes them all away.
     assert!(app.undo());
-    assert!(app.rules(0).unwrap().is_empty());
+    assert!(
+        app.rules(0).unwrap().is_empty(),
+        "{:?}",
+        app.rules(0).unwrap()
+    );
 }
 
 #[test]
@@ -177,7 +181,11 @@ fn a_condition_that_is_not_a_formula_is_refused() {
     let app = App::new();
     let bad = Rule::over(Pos::new(0, 0), Pos::new(0, 0), "[.A1]>(", fill("#ff0000"));
     assert!(app.set_rules(0, vec![bad]).is_err());
-    assert!(app.rules(0).unwrap().is_empty());
+    assert!(
+        app.rules(0).unwrap().is_empty(),
+        "{:?}",
+        app.rules(0).unwrap()
+    );
 }
 
 #[test]

@@ -372,7 +372,7 @@ mod tests {
         assert_eq!(next, vec![("ince 202".to_owned(), false)]);
         let (last, rest) = split_pieces(rest, 4);
         assert_eq!(last, vec![("6   ".to_owned(), false)]);
-        assert!(rest.is_empty());
+        assert!(rest.is_empty(), "{rest:?}");
     }
 
     #[test]
@@ -438,7 +438,15 @@ mod tests {
                 Fit::Number,
                 &[0..8]
             ))
-            .is_empty()
+            .is_empty(),
+            "{:?}",
+            marked(pad_marked(
+                "12345678",
+                4,
+                Align::Right,
+                Fit::Number,
+                &[0..8]
+            ))
         );
     }
 

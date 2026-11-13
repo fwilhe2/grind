@@ -171,10 +171,18 @@ mod tests {
     fn the_viewport_carries_the_ranges_a_shell_underlines_and_nothing_when_off() {
         let app = app(&[("A1", "Totl recieved"), ("B1", "the goods")]);
         let view = |app: &App| app.get_viewport(0, 0..2, 0..2).unwrap();
-        assert!(view(&app).misspelt(0, 0).is_empty());
+        assert!(
+            view(&app).misspelt(0, 0).is_empty(),
+            "{:?}",
+            view(&app).misspelt(0, 0)
+        );
         app.set_lexicon(Some(Arc::new(List(WORDS))));
         assert_eq!(view(&app).misspelt(0, 0), [0..4, 5..13]);
-        assert!(view(&app).misspelt(0, 1).is_empty());
+        assert!(
+            view(&app).misspelt(0, 1).is_empty(),
+            "{:?}",
+            view(&app).misspelt(0, 1)
+        );
         app.set_lexicon(None);
         assert!(view(&app).misspelt(0, 0).is_empty(), "off is off");
         assert_eq!(app.spelling_language(), None);

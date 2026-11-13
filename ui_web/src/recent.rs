@@ -104,9 +104,17 @@ mod tests {
             ids(entries("", &names, true)),
             ["doc.recent:0", "doc.recent:1", "doc.forget-recent"]
         );
-        assert!(entries("", &names, false).is_empty());
+        assert!(
+            entries("", &names, false).is_empty(),
+            "{:?}",
+            entries("", &names, false)
+        );
         assert_eq!(ids(entries("lett", &names, false)), ["doc.recent:1"]);
         assert_eq!(ids(entries("forget", &names, false)), ["doc.forget-recent"]);
-        assert!(entries("", &[], true).is_empty());
+        assert!(
+            entries("", &[], true).is_empty(),
+            "{:?}",
+            entries("", &[], true)
+        );
     }
 }

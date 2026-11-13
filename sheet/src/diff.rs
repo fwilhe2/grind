@@ -379,7 +379,11 @@ mod tests {
         assert_eq!(found.sheets.len(), 2, "{found:#?}");
         assert_eq!(found.sheets[0].name, "New");
         assert_eq!(found.sheets[0].renamed_from.as_deref(), Some("Old"));
-        assert!(found.sheets[0].edited.is_empty());
+        assert!(
+            found.sheets[0].edited.is_empty(),
+            "{:?}",
+            found.sheets[0].edited
+        );
         assert_eq!(found.sheets[1].change, SheetChange::Added);
         assert_eq!(found.sheets[1].cells, 2);
 
@@ -409,7 +413,11 @@ mod tests {
             .insert("total".to_owned(), "[$Sheet1.$A$3]".to_owned());
         let found = diff(&before, &after);
         assert_eq!(found.sheets[0].restyled, ["A1:A3"]);
-        assert!(found.sheets[0].edited.is_empty());
+        assert!(
+            found.sheets[0].edited.is_empty(),
+            "{:?}",
+            found.sheets[0].edited
+        );
         assert_eq!(found.names.len(), 1);
         assert_eq!(found.names[0].before, None);
     }

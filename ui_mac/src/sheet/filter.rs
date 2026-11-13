@@ -201,7 +201,11 @@ mod tests {
             buttons: false,
             ..filter
         };
-        assert!(super::buttons(&hidden, &grid).is_empty());
+        assert!(
+            super::buttons(&hidden, &grid).is_empty(),
+            "{:?}",
+            super::buttons(&hidden, &grid)
+        );
     }
 
     #[test]

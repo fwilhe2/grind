@@ -530,7 +530,7 @@ mod tests {
     fn typed_input_that_will_not_parse_says_where() {
         let error = to_input("=SUM(B2").unwrap_err();
         assert!(error.at <= "=SUM(B2".len(), "{error:?}");
-        assert!(!error.message.is_empty());
+        assert!(!error.message.is_empty(), "the error says nothing");
     }
 
     fn there_and_back(canonical: &str) -> String {

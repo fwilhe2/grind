@@ -1043,7 +1043,7 @@ mod tests {
     fn a_block_with_no_figures_in_it_charts_nothing() {
         let rows: &[&[&str]] = &[&["a", "b"], &["c", "d"]];
         let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(1, 1), None, 0);
-        assert!(guessed.spec.series.is_empty());
+        assert!(guessed.spec.series.is_empty(), "{:?}", guessed.spec.series);
         assert_eq!(guessed.spec.categories, None);
     }
 
@@ -1118,8 +1118,16 @@ mod tests {
         let slices = pie_slices(&pie_of(&[2.0, 0.0, -1.0, 2.0]), true);
         let points: Vec<usize> = slices.iter().map(|s| s.point).collect();
         assert_eq!(points, [0, 3]);
-        assert!(pie_slices(&pie_of(&[0.0, 0.0]), true).is_empty());
-        assert!(pie_slices(&pie_of(&[f64::NAN]), true).is_empty());
+        assert!(
+            pie_slices(&pie_of(&[0.0, 0.0]), true).is_empty(),
+            "{:?}",
+            pie_slices(&pie_of(&[0.0, 0.0]), true)
+        );
+        assert!(
+            pie_slices(&pie_of(&[f64::NAN]), true).is_empty(),
+            "{:?}",
+            pie_slices(&pie_of(&[f64::NAN]), true)
+        );
     }
 
     #[test]

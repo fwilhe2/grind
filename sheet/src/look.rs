@@ -282,7 +282,11 @@ mod tests {
         );
         assert_eq!(bottom(0.0, "1pt dotted #000000").len(), 5);
         assert_eq!(bottom(0.0, "1pt dotted #000000")[1], (2.0, 1.0));
-        assert!(bottom(0.0, "1pt none #000000").is_empty());
+        assert!(
+            bottom(0.0, "1pt none #000000").is_empty(),
+            "{:?}",
+            bottom(0.0, "1pt none #000000")
+        );
         assert_eq!(bottom(0.0, "1pt dash-dot #000000").len(), 2);
         assert_eq!(bottom(0.0, "1pt double-thin #000000").len(), 2);
     }

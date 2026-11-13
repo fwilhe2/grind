@@ -609,7 +609,7 @@ mod tests {
         app.enter(0, cell_of("A1"), "1", RecalcMode::No).unwrap();
         app.set_name("doubled", "[$Sheet1.$A$1]*2").unwrap();
         let view = app.get_viewport_with(0, 0..4, 0..4, Overlays::ALL).unwrap();
-        assert!(view.names().is_empty());
+        assert!(view.names().is_empty(), "{:?}", view.names());
         assert_eq!(view.role(0, 0).unwrap(), CellRole::InputUnnamed);
     }
 
@@ -656,7 +656,7 @@ mod tests {
         let near = app
             .get_viewport_with(0, 0..4, 0..4, Overlays::NAMES)
             .unwrap();
-        assert!(near.names().is_empty());
+        assert!(near.names().is_empty(), "{:?}", near.names());
         let over = app
             .get_viewport_with(0, 4..10, 4..10, Overlays::NAMES)
             .unwrap();
@@ -668,7 +668,7 @@ mod tests {
         let app = app();
         let view = app.get_viewport(0, 0..8, 0..8).unwrap();
         assert_eq!(view.role(0, 0), None);
-        assert!(view.names().is_empty());
+        assert!(view.names().is_empty(), "{:?}", view.names());
     }
 
     #[test]

@@ -187,7 +187,11 @@ mod tests {
 
     #[test]
     fn no_table_at_all_is_an_empty_one() {
-        assert!(read(b"").is_empty());
-        assert!(read(b"<nonsense/>").is_empty());
+        assert!(read(b"").is_empty(), "{:?}", read(b""));
+        assert!(
+            read(b"<nonsense/>").is_empty(),
+            "{:?}",
+            read(b"<nonsense/>")
+        );
     }
 }

@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn every_control_can_be_named_and_every_button_labelled() {
         for (control, shape, _) in CONTROLS {
-            assert!(!control.name().is_empty());
+            assert!(!control.name().is_empty(), "{control:?} has no name");
             assert_eq!(
                 !control.label().is_empty(),
                 shape == Shape::Button,

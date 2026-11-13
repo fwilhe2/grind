@@ -719,7 +719,7 @@ fn a_bookmark_survives_the_paragraph_being_retyped() {
     assert_eq!(app.bookmarks(), vec![("intro".to_owned(), 1)]);
 
     app.set_bookmark("intro", None).expect("removes");
-    assert!(app.bookmarks().is_empty());
+    assert!(app.bookmarks().is_empty(), "{:?}", app.bookmarks());
 }
 
 #[test]
@@ -743,7 +743,11 @@ fn finding_ignoring_case_counts_characters_not_bytes() {
         1,
         "and `find` itself still minds case"
     );
-    assert!(app.find_ignoring_case("").is_empty());
+    assert!(
+        app.find_ignoring_case("").is_empty(),
+        "{:?}",
+        app.find_ignoring_case("")
+    );
     assert_eq!(
         app.find_ignoring_case("aa").len(),
         0,
@@ -767,7 +771,7 @@ fn replace_changes_every_occurrence_and_undoes_as_one_step() {
 #[test]
 fn formatting_lists_only_what_carries_a_style_of_its_own() {
     let app = app(&["plain", "styled", "plain too"]);
-    assert!(app.formatting().is_empty());
+    assert!(app.formatting().is_empty(), "{:?}", app.formatting());
 
     app.set_style(1..2, Some("Quote".into())).expect("styles");
     let styled = app.formatting();

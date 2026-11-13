@@ -55,7 +55,11 @@ mod tests {
 
     #[test]
     fn an_empty_report_is_an_empty_list() {
-        assert!(rows(&Report::default()).is_empty());
+        assert!(
+            rows(&Report::default()).is_empty(),
+            "{:?}",
+            rows(&Report::default())
+        );
     }
 
     #[test]

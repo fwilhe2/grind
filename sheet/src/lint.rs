@@ -1061,7 +1061,11 @@ mod tests {
 
     #[test]
     fn a_formula_filled_down_a_column_is_consistent() {
-        assert!(found(&doc_of(&order_lines(8)), &INCONSISTENT_FORMULA).is_empty());
+        assert!(
+            found(&doc_of(&order_lines(8)), &INCONSISTENT_FORMULA).is_empty(),
+            "{:?}",
+            found(&doc_of(&order_lines(8)), &INCONSISTENT_FORMULA)
+        );
     }
 
     #[test]
@@ -1093,7 +1097,11 @@ mod tests {
         doc.sheets[0].set(Pos::new(4, 1), CellValue::Text("Subtotal".to_owned()));
         doc.sheets[0].set(Pos::new(4, 2), CellValue::Empty);
         set(&mut doc, "D5", "=SUM([.D2:.D4])");
-        assert!(found(&doc, &INCONSISTENT_FORMULA).is_empty());
+        assert!(
+            found(&doc, &INCONSISTENT_FORMULA).is_empty(),
+            "{:?}",
+            found(&doc, &INCONSISTENT_FORMULA)
+        );
     }
 
     #[test]
@@ -1116,7 +1124,11 @@ mod tests {
                 &format!("=[.C{row}]+[.D{row}]"),
             );
         }
-        assert!(found(&doc, &INCONSISTENT_FORMULA).is_empty());
+        assert!(
+            found(&doc, &INCONSISTENT_FORMULA).is_empty(),
+            "{:?}",
+            found(&doc, &INCONSISTENT_FORMULA)
+        );
     }
 
     #[test]
@@ -1128,7 +1140,11 @@ mod tests {
         for col in ["C", "E", "G"] {
             set(&mut doc, &format!("{col}2"), &format!("=SUM([.{col}1])"));
         }
-        assert!(found(&doc, &INCONSISTENT_FORMULA).is_empty());
+        assert!(
+            found(&doc, &INCONSISTENT_FORMULA).is_empty(),
+            "{:?}",
+            found(&doc, &INCONSISTENT_FORMULA)
+        );
     }
 
     #[test]
@@ -1143,7 +1159,11 @@ mod tests {
         // The whole line is quiet; so is a sum that starts at the header.
         set(&mut doc, "B10", "=SUM([.B2:.B8])");
         set(&mut doc, "C10", "=SUM([.C1:.C8])");
-        assert!(super::tests::found(&doc, &SHORT_RANGE).is_empty());
+        assert!(
+            super::tests::found(&doc, &SHORT_RANGE).is_empty(),
+            "{:?}",
+            super::tests::found(&doc, &SHORT_RANGE)
+        );
     }
 
     #[test]
@@ -1168,7 +1188,11 @@ mod tests {
             },
         );
         set(&mut doc, "B10", "=SUM([.B2:.B8])");
-        assert!(found(&doc, &SHORT_RANGE).is_empty());
+        assert!(
+            found(&doc, &SHORT_RANGE).is_empty(),
+            "{:?}",
+            found(&doc, &SHORT_RANGE)
+        );
     }
 
     #[test]
@@ -1196,8 +1220,16 @@ mod tests {
 
         // Reading it is the fix; a fill beside it is not a calculation going on.
         set(&mut doc, "D1", "=[.C1]*1.19");
-        assert!(super::tests::found(&doc, &UNREAD_RESULT).is_empty());
-        assert!(super::tests::found(&doc_of(&order_lines(8)), &UNREAD_RESULT).is_empty());
+        assert!(
+            super::tests::found(&doc, &UNREAD_RESULT).is_empty(),
+            "{:?}",
+            super::tests::found(&doc, &UNREAD_RESULT)
+        );
+        assert!(
+            super::tests::found(&doc_of(&order_lines(8)), &UNREAD_RESULT).is_empty(),
+            "{:?}",
+            super::tests::found(&doc_of(&order_lines(8)), &UNREAD_RESULT)
+        );
     }
 
     #[test]

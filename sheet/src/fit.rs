@@ -126,7 +126,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(changed, 2 + 3, "B was already at the default");
-        assert!(app.row_heights(0).unwrap().is_empty());
+        assert!(
+            app.row_heights(0).unwrap().is_empty(),
+            "{:?}",
+            app.row_heights(0).unwrap()
+        );
         assert_eq!(app.col_widths(0).unwrap().len(), 2);
         assert!(app.undo());
         assert_eq!(
@@ -134,7 +138,11 @@ mod tests {
             3,
             "one ⌘Z takes it all back"
         );
-        assert!(app.col_widths(0).unwrap().is_empty());
+        assert!(
+            app.col_widths(0).unwrap().is_empty(),
+            "{:?}",
+            app.col_widths(0).unwrap()
+        );
     }
 
     #[test]

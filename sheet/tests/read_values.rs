@@ -455,7 +455,7 @@ fn covered_cells_hold_their_grid_position() {
 #[test]
 fn a_document_with_no_sheets_is_empty_not_an_error() {
     let d = doc("");
-    assert!(d.sheets.is_empty());
+    assert!(d.sheets.is_empty(), "{:?}", d.sheets);
 }
 
 // --- against a real LibreOffice-authored file ---

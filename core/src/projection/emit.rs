@@ -373,7 +373,11 @@ mod tests {
         for token in projection.tokens() {
             assert!(token.span.start >= previous, "tokens are in order");
             assert!(token.span.end <= projection.text().len());
-            assert!(!projection.text()[token.span.clone()].is_empty());
+            assert!(
+                !token.span.is_empty(),
+                "an empty token at {}",
+                token.span.start
+            );
             previous = token.span.end;
         }
         // The one comment is tokenised as one, prose and all.
@@ -405,7 +409,11 @@ mod tests {
             );
         }
         assert_eq!(projection.line_span(99), None);
-        assert!(projection.line_pieces(99).is_empty());
+        assert!(
+            projection.line_pieces(99).is_empty(),
+            "{:?}",
+            projection.line_pieces(99)
+        );
     }
 
     /// A blank line has one empty piece or none, and either way is still a line: an off-by-one

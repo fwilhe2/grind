@@ -407,8 +407,16 @@ mod tests {
                 ("spell.forget:grnid".to_owned(), format!("{FORGET}grnid")),
             ]
         );
-        assert!(forget("rem", &words).is_empty());
-        assert!(forget("bold", &words).is_empty());
+        assert!(
+            forget("rem", &words).is_empty(),
+            "{:?}",
+            forget("rem", &words)
+        );
+        assert!(
+            forget("bold", &words).is_empty(),
+            "{:?}",
+            forget("bold", &words)
+        );
     }
 
     #[test]

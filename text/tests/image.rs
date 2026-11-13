@@ -173,7 +173,7 @@ fn a_frame_with_no_image_inside_it_is_simply_not_a_run() {
 </office:document>"#;
     let doc = odf::read(bytes).expect("parses");
     assert_eq!(doc.blocks.len(), 1);
-    assert!(doc.blocks[0].runs.is_empty());
+    assert!(doc.blocks[0].runs.is_empty(), "{:?}", doc.blocks[0].runs);
 }
 
 /// [`nested_frame_fodt`] plus the caption LibreOffice's own Insert Image dialog writes after

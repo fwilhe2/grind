@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn a_run_outside_the_line_is_not_drawn_at_all() {
         let runs = [run(0, "abc", false), run(3, "def", false)];
-        assert!(pieces(&runs, 0, 0).is_empty());
+        assert!(pieces(&runs, 0, 0).is_empty(), "{:?}", pieces(&runs, 0, 0));
         assert_eq!(pieces(&runs, 3, 6).len(), 1);
     }
 

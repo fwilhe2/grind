@@ -1360,7 +1360,11 @@ mod tests {
         assert_eq!(wrong.len(), 1);
         assert_eq!(wrong[0].word, "Fehller");
         assert!(Setting::Off.apply(&app).unwrap().is_none());
-        assert!(app.misspellings(None, None).unwrap().is_empty());
+        assert!(
+            app.misspellings(None, None).unwrap().is_empty(),
+            "{:?}",
+            app.misspellings(None, None).unwrap()
+        );
     }
 
     #[test]

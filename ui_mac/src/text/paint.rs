@@ -667,12 +667,16 @@ mod tests {
     fn a_misspelt_word_is_dotted_under_its_own_characters() {
         let setup = setup(&["we recieve it"]);
         let red = Palette::LIGHT.misspelt;
-        assert!(fills(&draw(&setup, &Page::default()), red).is_empty());
+        assert!(
+            fills(&draw(&setup, &Page::default()), red).is_empty(),
+            "{:?}",
+            fills(&draw(&setup, &Page::default()), red)
+        );
 
         grind_spell::attach(&setup.app, Some(grind_spell::Language::English)).unwrap();
         let dots = fills(&draw(&setup, &Page::default()), red);
         let top = spacing().top;
-        assert!(!dots.is_empty());
+        assert!(!dots.is_empty(), "no misspelling is marked");
         for dot in &dots {
             // `recieve` is characters 3 to 10 of a column at 100, one unit each.
             assert!((103.0..110.0).contains(&dot.x), "{dot:?}");
@@ -686,13 +690,17 @@ mod tests {
     fn a_grammar_finding_is_dotted_in_green_under_what_it_covers() {
         let setup = setup(&["we saw the the cat and the dog"]);
         let green = Palette::LIGHT.grammar;
-        assert!(fills(&draw(&setup, &Page::default()), green).is_empty());
+        assert!(
+            fills(&draw(&setup, &Page::default()), green).is_empty(),
+            "{:?}",
+            fills(&draw(&setup, &Page::default()), green)
+        );
 
         setup
             .app
             .set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin::default())));
         let dots = fills(&draw(&setup, &Page::default()), green);
-        assert!(!dots.is_empty());
+        assert!(!dots.is_empty(), "no misspelling is marked");
         for dot in &dots {
             // ` the` (the second) is characters 10 to 14, one unit each.
             assert!((110.0..114.0).contains(&dot.x), "{dot:?}");

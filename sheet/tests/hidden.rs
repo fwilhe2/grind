@@ -31,7 +31,9 @@ fn libreoffice_collapsed_column_c_and_row_three() {
     assert!(
         sheet
             .hidden_rows(doc.null_date, doc.locale.as_ref())
-            .is_empty()
+            .is_empty(),
+        "{:?}",
+        sheet.hidden_rows(doc.null_date, doc.locale.as_ref())
     );
 }
 

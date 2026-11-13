@@ -1953,7 +1953,7 @@ mod tests {
     #[test]
     fn the_shortcuts_list_names_every_accelerator_and_drops_the_mnemonic() {
         let rows = shortcuts();
-        assert!(!rows.is_empty());
+        assert!(!rows.is_empty(), "no shortcuts at all");
         for row in &rows {
             assert!(!row.contains('&'), "{row}");
             assert!(row.contains('\t'), "{row}");
@@ -1985,8 +1985,16 @@ mod tests {
         use grind_core::DocumentKind::Text;
         assert!(!menu_has_items(menu("&Sheet"), Surface::Document(Text)));
         assert!(!menu_has_items(menu("&Data"), Surface::Document(Text)));
-        assert!(items_for(menu("&Sheet"), Surface::Document(Text)).is_empty());
-        assert!(items_for(menu("&Data"), Surface::Document(Text)).is_empty());
+        assert!(
+            items_for(menu("&Sheet"), Surface::Document(Text)).is_empty(),
+            "{:?}",
+            items_for(menu("&Sheet"), Surface::Document(Text))
+        );
+        assert!(
+            items_for(menu("&Data"), Surface::Document(Text)).is_empty(),
+            "{:?}",
+            items_for(menu("&Data"), Surface::Document(Text))
+        );
     }
 
     /// `Format` over the grid is exactly its strip's verbs in the strip's order, plus the three

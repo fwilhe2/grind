@@ -118,10 +118,18 @@ mod tests {
 
     #[test]
     fn not_a_theme_is_no_colours() {
-        assert!(read(b"<nonsense/>").is_empty());
-        assert!(read(b"").is_empty());
+        assert!(
+            read(b"<nonsense/>").is_empty(),
+            "{:?}",
+            read(b"<nonsense/>")
+        );
+        assert!(read(b"").is_empty(), "{:?}", read(b""));
         // The right shape in an unmeasured namespace.
         let strict = scheme("").replace(A, "http://example.invalid/drawingml");
-        assert!(read(strict.as_bytes()).is_empty());
+        assert!(
+            read(strict.as_bytes()).is_empty(),
+            "{:?}",
+            read(strict.as_bytes())
+        );
     }
 }

@@ -2179,7 +2179,7 @@ fn fmt_normalises_a_formula_without_touching_a_document() {
 
     let output = sheet(&["fmt", "=SUM("]);
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert!(output.stdout.is_empty(), "{:?}", output.stdout);
 }
 
 #[test]

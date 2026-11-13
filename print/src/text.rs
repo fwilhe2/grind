@@ -4042,7 +4042,11 @@ mod tests {
         let app = doc(&[]);
         let typeset = typeset(&app, &setter(), &Options::default());
         assert_eq!(typeset.pages.len(), 1);
-        assert!(typeset.pages[0].ops.is_empty());
+        assert!(
+            typeset.pages[0].ops.is_empty(),
+            "{:?}",
+            typeset.pages[0].ops
+        );
         assert_eq!((typeset.pages[0].start, typeset.pages[0].end), (None, None));
     }
     /// A flat document of 12 pt Liberation Sans paragraphs between `Before` and `After`, on 2 cm
@@ -4217,7 +4221,7 @@ mod tests {
             &Options::default(),
         );
         let (strokes, fills) = strokes_and_fills(&doc.pages[0]);
-        assert!(strokes.is_empty());
+        assert!(strokes.is_empty(), "{strokes:?}");
         assert_eq!(fills.len(), 1);
         let [x, y, w, h] = fills[0];
         near(x, 3.0 * CM, "from the left margin");

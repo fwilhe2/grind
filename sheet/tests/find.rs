@@ -119,13 +119,21 @@ fn a_range_narrows_it_to_a_rectangle_and_replace_to_one_cell() {
         range: Some((p("Z100"), p("ZZ9999"))),
         ..Search::new("a")
     };
-    assert!(app.find(&far).unwrap().is_empty());
+    assert!(
+        app.find(&far).unwrap().is_empty(),
+        "{:?}",
+        app.find(&far).unwrap()
+    );
 }
 
 #[test]
 fn an_empty_needle_finds_and_replaces_nothing() {
     let app = book();
-    assert!(app.find(&Search::new("")).unwrap().is_empty());
+    assert!(
+        app.find(&Search::new("")).unwrap().is_empty(),
+        "{:?}",
+        app.find(&Search::new("")).unwrap()
+    );
     let done = app.replace(&Search::new(""), "x", RecalcMode::No).unwrap();
     assert_eq!(done.cells, 0);
 }
@@ -137,7 +145,7 @@ fn replace_is_one_undo_step_across_sheets() {
         .replace(&Search::new("apples"), "Plums", RecalcMode::No)
         .unwrap();
     assert_eq!(done.cells, 2);
-    assert!(done.refused.is_empty());
+    assert!(done.refused.is_empty(), "{:?}", done.refused);
     assert_eq!(
         value_at(&app, 0, p("A1")).unwrap(),
         CellValue::Text("Plums".into())

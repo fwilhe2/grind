@@ -243,7 +243,11 @@ pub(crate) mod tests {
     fn the_app_checks_only_once_a_lexicon_is_attached() {
         let app = crate::App::new();
         app.insert(0, BlockKind::Paragraph, "I recieve it").unwrap();
-        assert!(app.misspellings(0..10).is_empty());
+        assert!(
+            app.misspellings(0..10).is_empty(),
+            "{:?}",
+            app.misspellings(0..10)
+        );
         assert_eq!(app.spelling_language(), None);
         app.set_lexicon(Some(std::sync::Arc::new(List(&["i", "it", "receive"]))));
         assert_eq!(app.spelling_language().as_deref(), Some("en-US"));

@@ -718,7 +718,11 @@ mod tests {
         let indices: Vec<usize> = flow.visible(15.0, 35.0).iter().map(|s| s.index).collect();
         assert_eq!(indices, vec![1], "20..30 is the only one inside 15..35");
         assert_eq!(flow.visible(0.0, 100.0).len(), 3);
-        assert!(flow.visible(500.0, 600.0).is_empty());
+        assert!(
+            flow.visible(500.0, 600.0).is_empty(),
+            "{:?}",
+            flow.visible(500.0, 600.0)
+        );
         assert_eq!(flow.visible(5.0, 6.0)[0].index, 0, "half on screen is on");
     }
 

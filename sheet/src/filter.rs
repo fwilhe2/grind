@@ -214,7 +214,11 @@ mod tests {
     fn a_filter_with_no_conditions_hides_nothing() {
         let mut filter = filter(&[]);
         filter.keep.clear();
-        assert!(filter.hidden_rows(&sheet(), 0, None).is_empty());
+        assert!(
+            filter.hidden_rows(&sheet(), 0, None).is_empty(),
+            "{:?}",
+            filter.hidden_rows(&sheet(), 0, None)
+        );
     }
 
     /// An empty cell is the value `""`, LibreOffice's "(empty)", so the sample's totals row

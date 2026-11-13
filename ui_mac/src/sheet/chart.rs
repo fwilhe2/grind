@@ -452,9 +452,13 @@ mod tests {
         let app = sheet_with("bar");
         let frame = frame_of(&app.charts(0).unwrap()[0]).unwrap();
         let near = charts(&app, 0, &frame, &Palette::LIGHT, &Fixed, Held::default());
-        assert!(!near.is_empty());
+        assert!(!near.is_empty(), "the chart drew nothing");
         let far = Rect::new(frame.right() + 1000.0, 0.0, 100.0, 100.0);
-        assert!(charts(&app, 0, &far, &Palette::LIGHT, &Fixed, Held::default()).is_empty());
+        assert!(
+            charts(&app, 0, &far, &Palette::LIGHT, &Fixed, Held::default()).is_empty(),
+            "{:?}",
+            charts(&app, 0, &far, &Palette::LIGHT, &Fixed, Held::default())
+        );
     }
 
     #[test]

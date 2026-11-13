@@ -331,7 +331,11 @@ mod tests {
 
     #[test]
     fn an_empty_line_has_no_pieces_at_all() {
-        assert!(cut(4..4, &[], None, Some(4), &[]).is_empty());
+        assert!(
+            cut(4..4, &[], None, Some(4), &[]).is_empty(),
+            "{:?}",
+            cut(4..4, &[], None, Some(4), &[])
+        );
     }
 
     /// A document's own colour is a value, not a class — it has to reach the page verbatim.

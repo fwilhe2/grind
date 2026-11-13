@@ -218,8 +218,8 @@ mod tests {
             vec![Command::NewSheet, Command::NewText, Command::Open]
         );
         for choice in Choice::ALL {
-            assert!(!choice.title().is_empty());
-            assert!(!choice.detail().is_empty());
+            assert!(!choice.title().is_empty(), "{choice:?} has no title");
+            assert!(!choice.detail().is_empty(), "{choice:?} has no detail");
             assert!(crate::menu::label_for(choice.command()).is_some());
         }
     }

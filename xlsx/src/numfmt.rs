@@ -1236,7 +1236,7 @@ mod tests {
             Unspellable::NarrowAmPm,
             Unspellable::Locale,
         ] {
-            assert!(!class.label().is_empty());
+            assert!(!class.label().is_empty(), "{class:?} has no label");
         }
     }
 

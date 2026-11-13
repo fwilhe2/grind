@@ -826,7 +826,7 @@ mod tests {
     #[test]
     fn an_empty_query_shows_the_common_commands_in_order() {
         let shown = filter(SHEET, "");
-        assert!(!shown.is_empty());
+        assert!(!shown.is_empty(), "an empty query shows nothing");
         assert!(shown.iter().all(|entry| entry.hits.is_empty()));
         // Declaration order, not alphabetical: the first thing offered is opening a document.
         assert_eq!(shown[0].id, "doc.open");
@@ -899,7 +899,11 @@ mod tests {
 
     #[test]
     fn a_letter_that_is_not_there_matches_nothing() {
-        assert!(filter(SHEET, "zzzz").is_empty());
+        assert!(
+            filter(SHEET, "zzzz").is_empty(),
+            "{:?}",
+            filter(SHEET, "zzzz")
+        );
     }
 
     /// Markdown is blocks in both directions, so both rows are the page's alone.

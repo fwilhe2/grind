@@ -49,7 +49,7 @@ fn fodt(styles: &str, body: &str) -> App {
 #[test]
 fn no_checker_finds_nothing() {
     let app = fodt("", "<text:p>a xx b</text:p>");
-    assert!(app.grammar(0..1).is_empty());
+    assert!(app.grammar(0..1).is_empty(), "{:?}", app.grammar(0..1));
 }
 
 #[test]
@@ -74,7 +74,11 @@ fn findings_are_addressed_by_block_and_a_links_text_is_not_checked() {
     );
     // Correcting one is spelling's correction, over the finding's span.
     app.correct(flags[0].caret(), "xx", "x").unwrap();
-    assert!(app.grammar(0..app.block_count()).is_empty());
+    assert!(
+        app.grammar(0..app.block_count()).is_empty(),
+        "{:?}",
+        app.grammar(0..app.block_count())
+    );
 }
 
 #[test]

@@ -167,7 +167,11 @@ mod tests {
 
     #[test]
     fn an_empty_needle_matches_nothing() {
-        assert!(search("").occurrences("anything").is_empty());
+        assert!(
+            search("").occurrences("anything").is_empty(),
+            "{:?}",
+            search("").occurrences("anything")
+        );
         assert_eq!(search("").replaced("anything", "x"), None);
     }
 
@@ -240,7 +244,11 @@ mod tests {
             ..search("0")
         };
         assert_eq!(whole.occurrences("0"), vec![Range { start: 0, end: 1 }]);
-        assert!(whole.occurrences("10").is_empty());
+        assert!(
+            whole.occurrences("10").is_empty(),
+            "{:?}",
+            whole.occurrences("10")
+        );
         assert_eq!(whole.replaced("0", "zero").as_deref(), Some("zero"));
     }
 }

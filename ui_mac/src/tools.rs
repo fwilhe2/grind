@@ -303,7 +303,7 @@ mod tests {
             let mut seen = HashSet::new();
             for tool in tools(kind) {
                 assert!(seen.insert(tool.id()), "{} twice", tool.id());
-                assert!(!tool.label().is_empty());
+                assert!(!tool.label().is_empty(), "{} has no label", tool.id());
             }
         }
         assert_eq!(TEXT_COLOR, TEXT[2]);

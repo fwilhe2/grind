@@ -267,7 +267,7 @@ fn rename_and_delete_keep_the_id_and_the_bytes() {
     assert_eq!(kind_change.status, 400);
 
     assert_eq!(server.handle(&send("DELETE", &path)).status, 204);
-    assert!(docs(&server).is_empty());
+    assert!(docs(&server).is_empty(), "{:?}", docs(&server));
     let trash = dir.0.join(".grind/trash").join(format!("{id}-new.fods"));
     assert_eq!(std::fs::read(trash).unwrap(), sheet);
 }

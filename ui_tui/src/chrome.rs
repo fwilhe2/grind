@@ -348,7 +348,7 @@ mod tests {
                 shown(active)
             );
         }
-        assert!(tabs(&[], 0, 20).is_empty());
+        assert!(tabs(&[], 0, 20).is_empty(), "{:?}", tabs(&[], 0, 20));
     }
 
     /// One sheet is still a strip, and it fits whatever it is called.

@@ -754,6 +754,6 @@ mod tests {
     fn an_empty_string_measures_to_nothing() {
         let mut out = Vec::new();
         assert_eq!(fold_advances("", &[], 12.0, &mut out), 12.0);
-        assert!(out.is_empty());
+        assert!(out.is_empty(), "{out:?}");
     }
 }

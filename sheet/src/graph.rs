@@ -416,7 +416,11 @@ mod tests {
     fn a_name_defined_in_terms_of_itself_terminates() {
         let d = doc(&[("Sheet1", &[(0, 0, "=loop")])], &[("loop", "loop+1")]);
         let index = RefIndex::build(&d);
-        assert!(reads(&index, at(0, "A1")).is_empty());
+        assert!(
+            reads(&index, at(0, "A1")).is_empty(),
+            "{:?}",
+            reads(&index, at(0, "A1"))
+        );
     }
 
     #[test]
@@ -452,8 +456,16 @@ mod tests {
     fn a_formula_that_reads_nothing_and_one_that_does_not_parse_index_nothing() {
         let d = doc(&[("Sheet1", &[(0, 0, "=1+1"), (1, 0, "={1;2}")])], &[]);
         let index = RefIndex::build(&d);
-        assert!(index.reads(at(0, "A1")).is_empty());
-        assert!(index.reads(at(0, "A2")).is_empty());
+        assert!(
+            index.reads(at(0, "A1")).is_empty(),
+            "{:?}",
+            index.reads(at(0, "A1"))
+        );
+        assert!(
+            index.reads(at(0, "A2")).is_empty(),
+            "{:?}",
+            index.reads(at(0, "A2"))
+        );
         assert_eq!(index.formula_cells().count(), 0);
     }
 
@@ -461,7 +473,11 @@ mod tests {
     fn a_reference_to_a_sheet_that_does_not_exist_indexes_nothing() {
         let d = doc(&[("Sheet1", &[(0, 0, "=[Nope.A1]")])], &[]);
         let index = RefIndex::build(&d);
-        assert!(index.reads(at(0, "A1")).is_empty());
+        assert!(
+            index.reads(at(0, "A1")).is_empty(),
+            "{:?}",
+            index.reads(at(0, "A1"))
+        );
     }
 
     #[test]

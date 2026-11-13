@@ -83,6 +83,6 @@ mod tests {
         let (a, hits) = score("Bold", "").unwrap();
         let (b, _) = score("Bold", "").unwrap();
         assert_eq!(a, b);
-        assert!(hits.is_empty());
+        assert!(hits.is_empty(), "{hits:?}");
     }
 }

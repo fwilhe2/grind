@@ -1176,7 +1176,7 @@ mod tests {
         assert!(red(&drawn(&app)).is_empty(), "nothing is checked yet");
         app.set_lexicon(Some(std::sync::Arc::new(List(&["pay", "rent", "the"]))));
         let dots = red(&drawn(&app));
-        assert!(!dots.is_empty());
+        assert!(!dots.is_empty(), "no misspelling is marked");
         let row = Grid::of(&app, 0).cell(3, 0);
         let start = row.x + PAD_X + 4.0;
         assert_eq!(dots[0].x, start, "from the start of “teh”");

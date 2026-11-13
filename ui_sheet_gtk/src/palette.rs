@@ -347,7 +347,7 @@ mod tests {
     fn three_letters_find_the_verb() {
         assert_eq!(rank(&ROWS, "rec")[0].row.name, "recalc");
         assert_eq!(rank(&ROWS, "check")[0].row.name, "lint");
-        assert!(rank(&ROWS, "zzz").is_empty());
+        assert!(rank(&ROWS, "zzz").is_empty(), "{:?}", rank(&ROWS, "zzz"));
     }
 
     /// The group is searchable, which is what makes the readings findable: not one of their
