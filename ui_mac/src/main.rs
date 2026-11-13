@@ -325,7 +325,7 @@ fn handlers(file: &Path) -> Result<String, String> {
             .map_or_else(String::new, |p| p.display().to_string())
     };
     let mut said = String::new();
-    for app in workspace.URLsForApplicationsToOpenURL(&url).iter() {
+    for app in &workspace.URLsForApplicationsToOpenURL(&url) {
         said.push_str(&format!("offered: {}\n", path(&app)));
     }
     let default = workspace

@@ -161,7 +161,7 @@ fn a_series_is_named_for_files_and_is_one_kind() {
     assert!(
         bad(r#"let d = text(); d.para("x"); #{ "../evil": d }"#).contains("cannot be a file name")
     );
-    assert!(bad(r#"#{}"#).contains("at least one"));
+    assert!(bad(r"#{}").contains("at least one"));
     assert!(
         bad(r#"let d = text(); d.para("x"); #{ "a": d, "b": sheet("S") }"#)
             .contains("one kind of document")

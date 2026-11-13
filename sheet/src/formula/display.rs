@@ -595,7 +595,7 @@ mod tests {
             let text = reference_text(&reference);
             assert_eq!(
                 from_display(&format!("=SUM({text})")).expect(&text),
-                format!("=SUM({})", reference)
+                format!("=SUM({reference})")
             );
         }
     }

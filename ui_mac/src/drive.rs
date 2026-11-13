@@ -355,7 +355,7 @@ mod mac {
             | NSEventModifierFlags::Shift
             | NSEventModifierFlags::Option
             | NSEventModifierFlags::Control;
-        for item in menu.itemArray().iter() {
+        for item in &menu.itemArray() {
             if let Some(submenu) = item.submenu() {
                 if let Some(found) = equivalent(&submenu, stroke) {
                     return Some(found);

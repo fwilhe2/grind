@@ -272,7 +272,7 @@ fn children_named(
         else {
             break;
         };
-        let tag = &bytes[start..start + tag_end + 1];
+        let tag = &bytes[start..=(start + tag_end)];
         let name_end = tag
             .iter()
             .position(|c| c.is_ascii_whitespace() || *c == b'>' || *c == b'/')

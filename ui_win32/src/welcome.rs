@@ -241,7 +241,7 @@ mod tests {
         let cards = page().cards();
         assert_eq!(cards.len(), Choice::ALL.len());
         for [prev, next] in cards.array_windows() {
-            assert!(next.y >= prev.y + prev.h, "{:?} overlaps {:?}", prev, next);
+            assert!(next.y >= prev.y + prev.h, "{prev:?} overlaps {next:?}");
         }
     }
 

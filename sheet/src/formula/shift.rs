@@ -32,8 +32,8 @@ fn shift_cellref(cell: &CellRef, rows: i64, cols: i64) -> Option<CellRef> {
         None => None,
     };
     Some(CellRef {
-        row,
         col,
+        row,
         ..cell.clone()
     })
 }

@@ -239,7 +239,7 @@ fn saving_into_the_other_form_carries_everything() {
 
 /// A run that is superscript, German and bold — two of which `CharStyle` does not read — and a
 /// run that is only bold, as LibreOffice writes them.
-const SUPERSCRIPT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+const SUPERSCRIPT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
  <office:automatic-styles>
   <style:style style:name="T1" style:family="text"><style:text-properties style:text-position="super 58%" fo:language="de" fo:country="DE" fo:font-weight="bold"/></style:style>
@@ -251,7 +251,7 @@ const SUPERSCRIPT: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
   </office:text>
  </office:body>
 </office:document>
-"##;
+"#;
 
 /// The `style:text-properties` of the style a span names, in a flat document.
 fn span_properties(xml: &str, text: &str) -> String {

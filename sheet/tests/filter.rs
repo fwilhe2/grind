@@ -162,7 +162,7 @@ fn filtered(body: &str) -> Vec<u32> {
         })
         .collect();
     let fods = format!(
-        r##"<?xml version="1.0" encoding="UTF-8"?>
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
@@ -172,7 +172,7 @@ fn filtered(body: &str) -> Vec<u32> {
 <table:database-ranges><table:database-range table:name="__Anonymous_Sheet_DB__0"
  table:target-range-address="S.A1:S.B5" table:display-filter-buttons="true">
 <table:filter>{body}</table:filter></table:database-range></table:database-ranges>
-</office:spreadsheet></office:body></office:document>"##
+</office:spreadsheet></office:body></office:document>"#
     );
     let doc = grind_sheet::read_bytes("or.fods", fods.as_bytes()).expect("loads");
     let sheet = doc.sheet(0).expect("one sheet");

@@ -182,7 +182,7 @@ fn nper(args: &mut Args) -> Answer {
     let ratio = (k - fv) / (pv + k);
     if matches!(
         ratio.partial_cmp(&0.0),
-        None | Some(std::cmp::Ordering::Less) | Some(std::cmp::Ordering::Equal)
+        None | Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
     ) {
         return Err(FormulaError::Num);
     }

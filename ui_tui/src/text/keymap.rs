@@ -102,7 +102,7 @@ pub fn normal_action(code: KeyCode, mods: KeyModifiers, visual: bool) -> Option<
         KeyCode::Char('i') => Some(Action::Insert),
         KeyCode::Char('a') => Some(Action::Append),
         KeyCode::Char('o') => Some(Action::OpenBelow),
-        KeyCode::Char('x') | KeyCode::Char('d') => Some(Action::EraseChar),
+        KeyCode::Char('x' | 'd') => Some(Action::EraseChar),
         KeyCode::Char('X') => Some(Action::DeleteBlock),
         KeyCode::Char('J') => Some(Action::Join),
         KeyCode::Char('n') => Some(Action::Next(true)),

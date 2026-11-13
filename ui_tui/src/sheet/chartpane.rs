@@ -89,9 +89,7 @@ impl Charts {
                 self.selected = at.saturating_sub(1);
                 Reply::Stay
             }
-            KeyCode::Char('d') | KeyCode::Char('x') | KeyCode::Delete | KeyCode::Backspace => {
-                Reply::Delete(at)
-            }
+            KeyCode::Char('d' | 'x') | KeyCode::Delete | KeyCode::Backspace => Reply::Delete(at),
             KeyCode::Char('m') => Reply::Move(at),
             KeyCode::Char('b') => Reply::Kind(at, grind_sheet::ChartKind::Bar),
             KeyCode::Char('l') => Reply::Kind(at, grind_sheet::ChartKind::Line),
@@ -100,7 +98,7 @@ impl Charts {
             KeyCode::Char('L') => Reply::Nudge(at, 1, 0),
             KeyCode::Char('K') => Reply::Nudge(at, 0, -1),
             KeyCode::Char('J') => Reply::Nudge(at, 0, 1),
-            KeyCode::Char('+') | KeyCode::Char('=') => Reply::Scale(at, STEP),
+            KeyCode::Char('+' | '=') => Reply::Scale(at, STEP),
             KeyCode::Char('-') => Reply::Scale(at, 1.0 / STEP),
             KeyCode::Enter | KeyCode::Char('c') => {
                 self.close();

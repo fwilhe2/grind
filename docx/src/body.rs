@@ -1438,7 +1438,11 @@ mod tests {
         ]);
         assert_eq!(
             shape(&got),
-            [("a".into(), false), ("".into(), false), ("b".into(), true)]
+            [
+                ("a".into(), false),
+                (String::new(), false),
+                ("b".into(), true)
+            ]
         );
     }
 }

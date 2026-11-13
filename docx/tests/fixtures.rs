@@ -360,8 +360,8 @@ fn a_superscript_survives_into_the_file_a_save_writes() {
 
 #[test]
 fn hyperlinks_external_and_internal() {
-    let body = r##"<w:p><w:bookmarkStart w:id="0" w:name="intro"/><w:r><w:t>Intro</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>
-        <w:p><w:hyperlink r:id="rId1"><w:r><w:t>site</w:t></w:r></w:hyperlink><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:hyperlink w:anchor="intro"><w:r><w:t>back</w:t></w:r></w:hyperlink></w:p>"##;
+    let body = r#"<w:p><w:bookmarkStart w:id="0" w:name="intro"/><w:r><w:t>Intro</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>
+        <w:p><w:hyperlink r:id="rId1"><w:r><w:t>site</w:t></w:r></w:hyperlink><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:hyperlink w:anchor="intro"><w:r><w:t>back</w:t></w:r></w:hyperlink></w:p>"#;
     let bytes = package(&[
         (
             "_rels/.rels",
@@ -387,8 +387,8 @@ fn hyperlinks_external_and_internal() {
 
 #[test]
 fn a_hidden_bookmark_is_kept_only_where_something_points_at_it() {
-    let body = r##"<w:p><w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Head</w:t></w:r></w:p>
-        <w:p><w:hyperlink w:anchor="_Toc1"><w:r><w:t>see</w:t></w:r></w:hyperlink></w:p>"##;
+    let body = r#"<w:p><w:bookmarkStart w:id="0" w:name="_GoBack"/><w:bookmarkStart w:id="1" w:name="_Toc1"/><w:r><w:t>Head</w:t></w:r></w:p>
+        <w:p><w:hyperlink w:anchor="_Toc1"><w:r><w:t>see</w:t></w:r></w:hyperlink></w:p>"#;
     let (doc, _) = import(&docx(body, &[]));
     assert!(doc.bookmarks.contains_key("_Toc1"));
     assert!(!doc.bookmarks.contains_key("_GoBack"));

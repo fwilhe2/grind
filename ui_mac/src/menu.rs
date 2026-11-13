@@ -433,8 +433,7 @@ impl Command {
                 | Command::RemoveRule
                 | Command::Calculations
                 | Command::ParagraphStyle
-                | Command::Spell(Spell::Language)
-                | Command::Spell(Spell::Dictionary)
+                | Command::Spell(Spell::Language | Spell::Dictionary)
         )
     }
 

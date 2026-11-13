@@ -173,7 +173,7 @@ impl Part {
     }
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     fn peek(&self) -> Option<char> {
         self.src.get(self.at).copied()
     }
@@ -429,7 +429,7 @@ impl<'a> Parser<'a> {
             loop {
                 self.space();
                 // An omitted parameter is present and empty: `OFFSET(A1,1,,2)`.
-                args.push(match matches!(self.peek(), Some(',') | Some(')')) {
+                args.push(match matches!(self.peek(), Some(',' | ')')) {
                     true => Expr::Empty,
                     false => {
                         let (arg, depth) = self.expr(0)?;
@@ -485,7 +485,7 @@ impl<'a> Parser<'a> {
         {
             self.at += 1;
         }
-        if matches!(self.peek(), Some('!') | Some('?')) {
+        if matches!(self.peek(), Some('!' | '?')) {
             self.at += 1;
         }
         let name: String = self.src[start..self.at].iter().collect();

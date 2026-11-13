@@ -289,10 +289,10 @@ mod tests {
 
     #[test]
     fn a_label_splits_around_its_numbers() {
-        assert_eq!(label_parts("%1."), ("".into(), ".".into(), 1));
+        assert_eq!(label_parts("%1."), (String::new(), ".".into(), 1));
         assert_eq!(label_parts("(%1)"), ("(".into(), ")".into(), 1));
-        assert_eq!(label_parts("%1.%2.%3"), ("".into(), "".into(), 3));
+        assert_eq!(label_parts("%1.%2.%3"), (String::new(), String::new(), 3));
         assert_eq!(label_parts("Step %1:"), ("Step ".into(), ":".into(), 1));
-        assert_eq!(label_parts("•"), ("•".into(), "".into(), 0));
+        assert_eq!(label_parts("•"), ("•".into(), String::new(), 0));
     }
 }

@@ -494,12 +494,12 @@ impl Part {
             })
             .collect();
         Styles {
-            shared,
             xfs,
             looks,
             dxfs,
             digit_px,
             size,
+            shared,
         }
     }
 }
@@ -593,7 +593,8 @@ fn dxf(reader: &mut Reader<'_>) -> crate::Result<Dxf> {
                     "strike" => out.strike = on(attrs),
                     "u" => (out.underline, out.double) = underline(attrs),
                     "vertAlign" => {
-                        out.script = matches!(attrs.plain("val"), Some("superscript" | "subscript"))
+                        out.script =
+                            matches!(attrs.plain("val"), Some("superscript" | "subscript"));
                     }
                     "sz" => {
                         out.size = attrs

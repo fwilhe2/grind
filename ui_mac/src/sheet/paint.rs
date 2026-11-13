@@ -1153,7 +1153,7 @@ mod tests {
         fn suggest(&self, _: &str) -> Vec<String> {
             Vec::new()
         }
-        fn language(&self) -> &str {
+        fn language(&self) -> &'static str {
             "en-US"
         }
     }

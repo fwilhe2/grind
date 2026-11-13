@@ -2971,11 +2971,11 @@ mod tests {
     fn a_footer_paragraphs_border_is_drawn_inside_the_footer() {
         let footer = |props: &str| {
             let bytes = format!(
-                r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
                 <office:styles><style:style style:name="Ruled" style:family="paragraph"><style:paragraph-properties {props}/></style:style></office:styles>
                 <office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="4cm" fo:margin-right="1cm"/></style:page-layout></office:automatic-styles>
                 <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:footer><text:p text:style-name="Ruled">foot</text:p></style:footer></style:master-page></office:master-styles>
-                <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"##
+                <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"#
             );
             let app = App::new();
             app.open_bytes("f.fodt", bytes.as_bytes()).unwrap();
@@ -2994,9 +2994,8 @@ mod tests {
         let cm = (72.0 / 2.54) as f32;
         let (_, plain, none) = footer(r#"fo:margin-top="0cm""#);
         assert_eq!(none, None);
-        let (x, y, rule) = footer(
-            r##"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0cm""##,
-        );
+        let (x, y, rule) =
+            footer(r#"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0cm""#);
         assert!((y - plain).abs() < 0.01, "{y} against {plain}");
         let (from, to, width) = rule.unwrap();
         assert!((from.0 - 4.0 * cm).abs() < 0.01 && (to.0 - 20.0 * cm).abs() < 0.01);
@@ -3007,7 +3006,7 @@ mod tests {
             from.1
         );
         let (padded_x, padded_y, _) = footer(
-            r##"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0.3cm""##,
+            r#"fo:border-top="2pt solid #ff0000" fo:border-bottom="none" fo:padding="0.3cm""#,
         );
         assert!((padded_y - (plain - 0.3 * cm)).abs() < 0.01, "{padded_y}");
         assert!((padded_x - (x + 0.3 * cm)).abs() < 0.01, "{padded_x}");
@@ -3609,14 +3608,14 @@ mod tests {
     /// [`styled`], with `automatic` in `office:automatic-styles`.
     fn styled_with(styles: &str, automatic: &str, body: &str) -> App {
         let bytes = format!(
-            r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:styles>
               <style:default-style style:family="paragraph"><style:text-properties fo:font-family="'Liberation Serif'" fo:font-size="12pt"/></style:default-style>
               <style:style style:name="Standard" style:family="paragraph"/>
               {styles}
             </office:styles>
             <office:automatic-styles>{automatic}</office:automatic-styles>
-            <office:body><office:text>{body}</office:text></office:body></office:document>"##
+            <office:body><office:text>{body}</office:text></office:body></office:document>"#
         );
         let app = App::new();
         app.open_bytes("t.fodt", bytes.as_bytes()).unwrap();
@@ -4232,7 +4231,7 @@ mod tests {
     fn contextual_spacing_drops_the_space_between_paragraphs_of_one_style() {
         let gaps = |body: &str| -> Vec<f32> {
             let bytes = format!(
-                r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
                 <office:styles>
                   <style:style style:name="Standard" style:family="paragraph"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="12pt" fo:font-family="'Liberation Sans'"/></style:style>
                   <style:style style:name="C" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" style:contextual-spacing="true"/></style:style>
@@ -4242,7 +4241,7 @@ mod tests {
                   <style:style style:name="P1" style:family="paragraph" style:parent-style-name="C"><style:paragraph-properties fo:text-align="end"/></style:style>
                   <style:style style:name="Off" style:family="paragraph" style:parent-style-name="C"><style:paragraph-properties fo:margin-top="0.5cm" fo:margin-bottom="1cm" style:contextual-spacing="false"/></style:style>
                 </office:automatic-styles>
-                <office:body><office:text><text:p text:style-name="Standard">Before</text:p>{body}<text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"##
+                <office:body><office:text><text:p text:style-name="Standard">Before</text:p>{body}<text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"#
             );
             let app = App::new();
             app.open_bytes("cs.fodt", bytes.as_bytes()).unwrap();
@@ -4280,7 +4279,7 @@ mod tests {
     /// padding, as `style:vertical-align` says.
     #[test]
     fn a_cells_text_sits_down_its_row_as_its_style_says() {
-        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+        let bytes = r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
 <office:styles><style:style style:name="Standard" style:family="paragraph"><style:paragraph-properties fo:margin-top="0cm" fo:margin-bottom="0cm" fo:line-height="100%"/><style:text-properties fo:font-size="12pt" fo:font-family="'Liberation Sans'"/></style:style></office:styles>
 <office:automatic-styles>
 <style:style style:name="R" style:family="table-row"><style:table-row-properties style:min-row-height="3cm"/></style:style>
@@ -4293,7 +4292,7 @@ mod tests {
 <table:table-cell table:style-name="CT"><text:p text:style-name="Standard">Top</text:p></table:table-cell>
 <table:table-cell table:style-name="CM"><text:p text:style-name="Standard">Mid</text:p></table:table-cell>
 <table:table-cell table:style-name="CB"><text:p text:style-name="Standard">Bot</text:p><text:p text:style-name="Standard">Two</text:p></table:table-cell>
-</table:table-row></table:table><text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"##;
+</table:table-row></table:table><text:p text:style-name="Standard">After</text:p></office:text></office:body></office:document>"#;
         let app = App::new();
         app.open_bytes("va.fodt", bytes.as_bytes()).unwrap();
         let doc = typeset(&app, &setter(), &Options::default());

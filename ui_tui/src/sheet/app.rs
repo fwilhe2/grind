@@ -2046,7 +2046,7 @@ impl App {
         match grind_sheet::verbs::locale(typed) {
             Ok(locale) => {
                 self.status = match self.core.set_locale(locale) {
-                    Ok(()) => format!("locale {} \u{2014} u takes it back", tag),
+                    Ok(()) => format!("locale {tag} \u{2014} u takes it back"),
                     Err(e) => e.to_string(),
                 }
             }

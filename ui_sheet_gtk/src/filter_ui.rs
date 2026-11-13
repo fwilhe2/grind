@@ -281,7 +281,7 @@ mod tests {
         let cells = app.get_viewport(0, 0..5, 0..3).unwrap();
         assert_eq!(
             field_values(&cells, &filter, 0),
-            vec!["".to_owned(), "Chair".to_owned(), "Desk".to_owned()],
+            vec![String::new(), "Chair".to_owned(), "Desk".to_owned()],
             "the heading is not one of its own values, and an empty cell is one"
         );
     }

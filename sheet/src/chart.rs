@@ -1072,7 +1072,7 @@ mod tests {
         ChartData {
             kind: ChartKind::Pie,
             categories: Vec::new(),
-            series: vec![("".into(), values.to_vec())],
+            series: vec![(String::new(), values.to_vec())],
             value_format: None,
         }
     }

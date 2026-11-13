@@ -104,7 +104,7 @@ mod tests {
                 .map(|w| (*w).to_owned())
                 .collect()
         }
-        fn language(&self) -> &str {
+        fn language(&self) -> &'static str {
             "en-US"
         }
     }

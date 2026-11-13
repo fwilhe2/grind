@@ -123,7 +123,7 @@ pub fn length_mm(length: &str) -> Option<f64> {
 
 /// A measurement back as an ODF length: millimetres, three decimals.
 pub fn mm_length(mm: f64) -> String {
-    format!("{:.3}mm", mm)
+    format!("{mm:.3}mm")
 }
 
 #[cfg(test)]

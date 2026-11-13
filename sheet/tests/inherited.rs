@@ -12,7 +12,7 @@ use grind_sheet::{Document, Pos};
 
 fn fods(body: &str, styles: &str) -> String {
     format!(
-        r##"<?xml version="1.0" encoding="UTF-8"?>
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
@@ -23,7 +23,7 @@ fn fods(body: &str, styles: &str) -> String {
 {styles}
 <office:body><office:spreadsheet><table:table table:name="S">
 <table:table-row>{body}</table:table-row>
-</table:table></office:spreadsheet></office:body></office:document>"##
+</table:table></office:spreadsheet></office:body></office:document>"#
     )
 }
 
@@ -50,7 +50,7 @@ fn style(doc: &Document, col: u32) -> CellStyle {
         .unwrap_or_default()
 }
 
-const CELL: &str = r##"office:value-type="float" office:value="1""##;
+const CELL: &str = r#"office:value-type="float" office:value="1""#;
 
 /// A named style's parent is laid under it, an automatic style's named parent under that, and
 /// the parents may be declared in any order — `Texte` after `Description`, as in the corpus.
@@ -69,7 +69,7 @@ fn a_style_inherits_what_its_parents_set() {
  <style:table-cell-properties fo:background-color="transparent"/></style:style>
 </office:automatic-styles>"##;
     let body = format!(
-        r##"<table:table-cell table:style-name="ce1" {CELL}/><table:table-cell table:style-name="Child" {CELL}/>"##
+        r#"<table:table-cell table:style-name="ce1" {CELL}/><table:table-cell table:style-name="Child" {CELL}/>"#
     );
     let doc = read(&body, styles);
 
@@ -103,7 +103,7 @@ fn a_child_can_take_back_a_parents_border() {
  <style:text-properties style:text-underline-style="none" style:use-window-font-color="true"/></style:style>
 </office:automatic-styles>"##;
     let doc = read(
-        &format!(r##"<table:table-cell table:style-name="ce1" {CELL}/>"##),
+        &format!(r#"<table:table-cell table:style-name="ce1" {CELL}/>"#),
         styles,
     );
     let look = style(&doc, 0);
@@ -130,15 +130,15 @@ fn a_child_can_take_back_a_parents_border() {
 /// The data style comes from the nearest style in the chain that names one.
 #[test]
 fn a_style_inherits_its_parents_number_format() {
-    let styles = r##"<office:styles>
+    let styles = r#"<office:styles>
 <number:number-style style:name="N1"><number:number number:decimal-places="3" number:min-integer-digits="1"/></number:number-style>
 <style:style style:name="Money" style:family="table-cell" style:data-style-name="N1"/>
 </office:styles>
 <office:automatic-styles>
 <style:style style:name="ce1" style:family="table-cell" style:parent-style-name="Money">
  <style:text-properties fo:font-weight="bold"/></style:style>
-</office:automatic-styles>"##;
-    let body = format!(r##"<table:table-cell table:style-name="ce1" {CELL}/>"##);
+</office:automatic-styles>"#;
+    let body = format!(r#"<table:table-cell table:style-name="ce1" {CELL}/>"#);
     assert_eq!(shown(&body, styles, 1), ["1.000"]);
 }
 
@@ -147,14 +147,14 @@ fn a_style_inherits_its_parents_number_format() {
 /// §5.2).
 #[test]
 fn decimals_with_no_minimum_are_all_shown() {
-    let styles = r##"<office:automatic-styles>
+    let styles = r#"<office:automatic-styles>
 <number:number-style style:name="N1"><number:number number:decimal-places="2" number:min-integer-digits="1"/></number:number-style>
 <number:number-style style:name="N2"><number:number number:decimal-places="2" number:min-decimal-places="0" number:min-integer-digits="1"/></number:number-style>
 <style:style style:name="ce1" style:family="table-cell" style:data-style-name="N1"/>
 <style:style style:name="ce2" style:family="table-cell" style:data-style-name="N2"/>
-</office:automatic-styles>"##;
+</office:automatic-styles>"#;
     let body = format!(
-        r##"<table:table-cell table:style-name="ce1" {CELL}/><table:table-cell table:style-name="ce2" {CELL}/>"##
+        r#"<table:table-cell table:style-name="ce1" {CELL}/><table:table-cell table:style-name="ce2" {CELL}/>"#
     );
     assert_eq!(shown(&body, styles, 2), ["1.00", "1"]);
 }
@@ -163,11 +163,11 @@ fn decimals_with_no_minimum_are_all_shown() {
 /// it, and written back as it was read (`doc/ods-format.md` §5.2).
 #[test]
 fn embedded_text_is_read_shown_and_written() {
-    let styles = r##"<office:automatic-styles>
+    let styles = r#"<office:automatic-styles>
 <number:number-style style:name="N1"><number:number number:decimal-places="0" number:min-integer-digits="10"><number:embedded-text number:position="4">-</number:embedded-text><number:embedded-text number:position="7">) </number:embedded-text></number:number></number:number-style>
 <style:style style:name="ce1" style:family="table-cell" style:data-style-name="N1"/>
-</office:automatic-styles>"##;
-    let body = r##"<table:table-cell table:style-name="ce1" office:value-type="float" office:value="5551234567"/>"##;
+</office:automatic-styles>"#;
+    let body = r#"<table:table-cell table:style-name="ce1" office:value-type="float" office:value="5551234567"/>"#;
     assert_eq!(shown(body, styles, 1), ["555) 123-4567"]);
     let doc = read(body, styles);
     let bytes = grind_sheet::write_bytes(&doc, grind_sheet::Form::Flat).expect("writes");

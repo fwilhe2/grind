@@ -160,12 +160,7 @@ mod tests {
             .map(|title| mnemonic(title).unwrap_or_else(|| panic!("{title} has no mnemonic")))
             .collect();
         for (i, letter) in letters.iter().enumerate() {
-            assert_eq!(
-                by_mnemonic(&titles, *letter),
-                Some(i),
-                "{} is shared",
-                letter
-            );
+            assert_eq!(by_mnemonic(&titles, *letter), Some(i), "{letter} is shared");
         }
         assert_eq!(
             by_mnemonic(&titles, 'F'),

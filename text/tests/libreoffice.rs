@@ -45,7 +45,7 @@ fn documents() -> Vec<PathBuf> {
         .filter(|path| {
             matches!(
                 path.extension().and_then(|e| e.to_str()),
-                Some("odt") | Some("fodt")
+                Some("odt" | "fodt")
             )
         })
         .collect();
