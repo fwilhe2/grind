@@ -369,7 +369,7 @@ mod registry {
                             PCWSTR(key_name.as_ptr()),
                             None,
                             KEY_SET_VALUE,
-                            &mut open,
+                            &raw mut open,
                         )
                     }
                     .is_err()
@@ -402,7 +402,7 @@ mod registry {
                 PCWSTR(name.as_ptr()),
                 None,
                 KEY_READ,
-                &mut open,
+                &raw mut open,
             )
         }
         .ok()
@@ -416,9 +416,9 @@ mod registry {
                 open,
                 PCWSTR::null(),
                 None,
-                Some(&mut kind),
+                Some(&raw mut kind),
                 Some(buffer.as_mut_ptr().cast()),
-                Some(&mut size),
+                Some(&raw mut size),
             )
         };
         // SAFETY: `open` is not used again.

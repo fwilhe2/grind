@@ -133,7 +133,7 @@ impl Font {
         // 31 units or fewer, so this asserts it.
         log.lfFaceName[31] = 0;
         // SAFETY: `log` is a fully initialised local read only for the duration of the call.
-        Self(unsafe { CreateFontIndirectW(&log) })
+        Self(unsafe { CreateFontIndirectW(&raw const log) })
     }
 
     pub fn handle(&self) -> HFONT {
@@ -249,7 +249,7 @@ impl BackBuffer {
         };
         // SAFETY: the DC and the brush are both live, and the rectangle is the surface's own.
         unsafe {
-            FillRect(self.dc, &rect, brush.handle());
+            FillRect(self.dc, &raw const rect, brush.handle());
         }
     }
 
@@ -299,7 +299,7 @@ pub fn fill(dc: HDC, left: i32, top: i32, right: i32, bottom: i32, colour: Rgb) 
     };
     // SAFETY: the DC is the caller's and live; the brush outlives the call.
     unsafe {
-        FillRect(dc, &rect, brush.handle());
+        FillRect(dc, &raw const rect, brush.handle());
     }
 }
 
@@ -361,7 +361,7 @@ pub fn text_width(dc: HDC, text: &str) -> i32 {
     let mut size = windows::Win32::Foundation::SIZE::default();
     // SAFETY: the buffer and the size are live locals that outlive the call.
     unsafe {
-        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+        let _ = GetTextExtentPoint32W(dc, &wide, &raw mut size);
     }
     size.cx
 }
@@ -373,7 +373,7 @@ pub fn line_height(dc: HDC) -> i32 {
     let mut size = windows::Win32::Foundation::SIZE::default();
     // SAFETY: the buffer and the size are live locals that outlive the call.
     unsafe {
-        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+        let _ = GetTextExtentPoint32W(dc, &wide, &raw mut size);
     }
     size.cy
 }
@@ -419,7 +419,7 @@ pub fn client_rect(hwnd: HWND) -> RECT {
     let mut rect = RECT::default();
     // SAFETY: `hwnd` is this window's and `rect` is a live local.
     unsafe {
-        let _ = windows::Win32::UI::WindowsAndMessaging::GetClientRect(hwnd, &mut rect);
+        let _ = windows::Win32::UI::WindowsAndMessaging::GetClientRect(hwnd, &raw mut rect);
     }
     rect
 }
@@ -492,7 +492,7 @@ pub fn line(dc: HDC, text: &str, rect: RECT, across: Across, ink: Rgb) {
     unsafe {
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, windows::Win32::Foundation::COLORREF(ink.colorref()));
-        DrawTextW(dc, &mut wide, &mut rect, flags);
+        DrawTextW(dc, &mut wide, &raw mut rect, flags);
     }
 }
 
@@ -513,17 +513,17 @@ pub fn turned(dc: HDC, text: &str, cell: (i32, i32, i32, i32), degrees: f64, ink
     // SAFETY: the DC is the caller's and live; every buffer is a local that outlives its call, and
     // the turned font is selected out again before it is deleted.
     unsafe {
-        let _ = GetTextExtentPoint32W(dc, &wide, &mut size);
+        let _ = GetTextExtentPoint32W(dc, &wide, &raw mut size);
         let current = GetCurrentObject(dc, OBJ_FONT);
         GetObjectW(
             current,
             std::mem::size_of::<LOGFONTW>() as i32,
-            Some((&mut log as *mut LOGFONTW).cast()),
+            Some((&raw mut log).cast()),
         );
         let tenths = (degrees * 10.0).round() as i32;
         log.lfEscapement = tenths;
         log.lfOrientation = tenths;
-        let font = CreateFontIndirectW(&log);
+        let font = CreateFontIndirectW(&raw const log);
         let previous = SelectObject(dc, HGDIOBJ(font.0));
         let middle = (f64::from(left + right) / 2.0, f64::from(top + bottom) / 2.0);
         let (x, y) = crate::sheet::draw::turned_origin(
@@ -546,7 +546,7 @@ pub fn turned(dc: HDC, text: &str, cell: (i32, i32, i32, i32), degrees: f64, ink
             x.round() as i32,
             y.round() as i32,
             ETO_CLIPPED,
-            Some(&clip),
+            Some(&raw const clip),
             windows::core::PCWSTR(wide.as_ptr()),
             wide.len() as u32,
             None,
@@ -578,7 +578,7 @@ pub fn paragraph(dc: HDC, text: &str, rect: RECT, ink: Rgb, measure: bool) -> i3
     unsafe {
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, windows::Win32::Foundation::COLORREF(ink.colorref()));
-        DrawTextW(dc, &mut wide, &mut rect, flags)
+        DrawTextW(dc, &mut wide, &raw mut rect, flags)
     }
 }
 
@@ -694,7 +694,7 @@ fn has_face(name: &str) -> bool {
         }
         EnumFontFamiliesExW(
             dc,
-            &log,
+            &raw const log,
             Some(found),
             LPARAM(std::ptr::from_mut(&mut answer) as isize),
             0,
@@ -755,9 +755,16 @@ impl Dib {
             if dc.is_invalid() {
                 return None;
             }
-            let bitmap = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0)
-                .ok()
-                .filter(|bitmap| !bitmap.is_invalid());
+            let bitmap = CreateDIBSection(
+                Some(dc),
+                &raw const info,
+                DIB_RGB_COLORS,
+                &raw mut bits,
+                None,
+                0,
+            )
+            .ok()
+            .filter(|bitmap| !bitmap.is_invalid());
             let Some(bitmap) = bitmap else {
                 let _ = DeleteDC(dc);
                 return None;
@@ -879,8 +886,14 @@ pub fn blit_image(
         if mem_dc.is_invalid() {
             return false;
         }
-        let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0)
-        else {
+        let Ok(bitmap) = CreateDIBSection(
+            Some(dc),
+            &raw const info,
+            DIB_RGB_COLORS,
+            &raw mut bits,
+            None,
+            0,
+        ) else {
             let _ = DeleteDC(mem_dc);
             return false;
         };
@@ -941,7 +954,7 @@ pub fn print_image(dc: HDC, dest: (i32, i32, i32, i32), size: (u32, u32), pixels
             w,
             h,
             Some(pixels.as_ptr().cast()),
-            &info,
+            &raw const info,
             DIB_RGB_COLORS,
             SRCCOPY,
         ) != 0

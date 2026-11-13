@@ -1597,7 +1597,7 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
             // colour before each frame.
             ..Default::default()
         };
-        if RegisterClassW(&wc) == 0 {
+        if RegisterClassW(&raw const wc) == 0 {
             return Err("could not register the window class".into());
         }
 
@@ -1624,7 +1624,7 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
         // and **-1 for an error** — on a destroyed window, say. `.as_bool()` is true for -1, so
         // the obvious loop spins forever on the one case that most needs to end.
         let mut message = MSG::default();
-        while GetMessageW(&mut message, None, 0, 0).0 > 0 {
+        while GetMessageW(&raw mut message, None, 0, 0).0 > 0 {
             // Enter, Escape, Tab and the arrows inside a child `EDIT` never reach its parent: the
             // control eats them, and with no dialog manager nothing turns them into a command. So
             // the pump relays them (`WM_CHILD_KEY`) and asks rather than decides: it reaches no
@@ -1641,8 +1641,8 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
             {
                 continue;
             }
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
+            let _ = TranslateMessage(&raw const message);
+            DispatchMessageW(&raw const message);
         }
     }
     Ok(())
@@ -2221,7 +2221,7 @@ fn context_on_chart(hwnd: HWND, lparam: LPARAM) -> bool {
     if !keyboard {
         // SAFETY: `hwnd` is this window's and `at` is a live local.
         unsafe {
-            let _ = ScreenToClient(hwnd, &mut at);
+            let _ = ScreenToClient(hwnd, &raw mut at);
         }
     }
     // SAFETY: one borrow; arithmetic.
@@ -2325,7 +2325,7 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let mut client = at;
         // SAFETY: `hwnd` is this window's and `client` is a live local.
         unsafe {
-            let _ = ScreenToClient(hwnd, &mut client);
+            let _ = ScreenToClient(hwnd, &raw mut client);
         }
         // SAFETY: one borrow, released before the popup.
         let wrong = unsafe {
@@ -2392,7 +2392,7 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let mut client = at;
         // SAFETY: `hwnd` is this window's and `client` is a live local.
         unsafe {
-            let _ = ScreenToClient(hwnd, &mut client);
+            let _ = ScreenToClient(hwnd, &raw mut client);
         }
         // SAFETY: one borrow, released before the popup.
         let wrong = unsafe {
@@ -2467,7 +2467,7 @@ fn context_anchor(hwnd: HWND) -> POINT {
     };
     // SAFETY: `hwnd` is this window's and `point` is a live local.
     unsafe {
-        let _ = ClientToScreen(hwnd, &mut point);
+        let _ = ClientToScreen(hwnd, &raw mut point);
     }
     point
 }
@@ -2549,7 +2549,7 @@ fn sync_scrollbars(hwnd: HWND, state: &Sheet) {
         };
         // SAFETY: `info` is a live, fully initialised local read for the length of the call.
         unsafe {
-            SetScrollInfo(hwnd, bar, &info, true);
+            SetScrollInfo(hwnd, bar, &raw const info, true);
         }
     };
     set(
@@ -2730,10 +2730,10 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
     let mut at = windows::Win32::Foundation::POINT::default();
     // SAFETY: `at` is a live local; the point is converted into this window's client space.
     unsafe {
-        if GetCursorPos(&mut at).is_err() {
+        if GetCursorPos(&raw mut at).is_err() {
             return false;
         }
-        let _ = ScreenToClient(hwnd, &mut at);
+        let _ = ScreenToClient(hwnd, &raw mut at);
     }
     // SAFETY: one borrow; arithmetic.
     let edge = unsafe {
@@ -3038,7 +3038,7 @@ fn refresh_bands(hwnd: HWND) {
             right: gdi::client_rect(hwnd).right,
             bottom,
         };
-        let _ = InvalidateRect(Some(hwnd), Some(&rect), false);
+        let _ = InvalidateRect(Some(hwnd), Some(&raw const rect), false);
     }
 }
 
@@ -3241,7 +3241,7 @@ fn position_ime_composition(hwnd: HWND) {
             ptCurrentPos: POINT { x, y },
             ..Default::default()
         };
-        let _ = ImmSetCompositionWindow(himc, &form);
+        let _ = ImmSetCompositionWindow(himc, &raw const form);
         let _ = ImmReleaseContext(hwnd, himc);
     }
 }
@@ -5944,7 +5944,7 @@ fn text_next_misspelling(hwnd: HWND) {
     };
     // SAFETY: `hwnd` is this window's and `at` is a live local.
     unsafe {
-        let _ = ClientToScreen(hwnd, &mut at);
+        let _ = ClientToScreen(hwnd, &raw mut at);
     }
     spelling_popup(hwnd, at, Some(wrong), &[]);
 }
@@ -6257,7 +6257,7 @@ fn sheet_next_misspelling(hwnd: HWND) {
     };
     // SAFETY: `hwnd` is this window's and `at` is a live local.
     unsafe {
-        let _ = ClientToScreen(hwnd, &mut at);
+        let _ = ClientToScreen(hwnd, &raw mut at);
     }
     sheet_spelling_popup(hwnd, at, Some(wrong), &[]);
 }
@@ -6440,7 +6440,7 @@ fn text_next_grammar(hwnd: HWND) {
     };
     // SAFETY: `hwnd` is this window's and `at` is a live local.
     unsafe {
-        let _ = ClientToScreen(hwnd, &mut at);
+        let _ = ClientToScreen(hwnd, &raw mut at);
     }
     grammar_popup(hwnd, at, flag, &[]);
 }
@@ -6741,7 +6741,7 @@ fn context_on_tab(hwnd: HWND, lparam: LPARAM) -> bool {
     };
     // SAFETY: `at` is a live local the call writes through.
     unsafe {
-        let _ = ScreenToClient(hwnd, &mut at);
+        let _ = ScreenToClient(hwnd, &raw mut at);
     }
     // SAFETY: one borrow, nothing inside dispatches.
     let tab = unsafe {
@@ -7354,7 +7354,7 @@ fn paint(hwnd: HWND) {
     // SAFETY: `BeginPaint`/`EndPaint` are paired on every path below, including the early
     // return when the back buffer cannot be made.
     unsafe {
-        let dc: HDC = BeginPaint(hwnd, &mut ps);
+        let dc: HDC = BeginPaint(hwnd, &raw mut ps);
         let rect = gdi::client_rect(hwnd);
         if let Some(buffer) = BackBuffer::new(dc, rect.right - rect.left, rect.bottom - rect.top) {
             with_pane(hwnd, |pane| {
@@ -7367,7 +7367,7 @@ fn paint(hwnd: HWND) {
             });
             buffer.present(dc);
         }
-        let _ = EndPaint(hwnd, &ps);
+        let _ = EndPaint(hwnd, &raw const ps);
     }
     if has_caret {
         // Repositioned after every repaint, not trusted to whichever handler invalidated the
@@ -7423,8 +7423,8 @@ fn welcome_refresh(hwnd: HWND) {
     // call, and `SetWindowTextW` dispatches, which is why it is out here.
     let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
     unsafe {
-        SetScrollInfo(hwnd, SB_VERT, &flat, true);
-        SetScrollInfo(hwnd, SB_HORZ, &flat, true);
+        SetScrollInfo(hwnd, SB_VERT, &raw const flat, true);
+        SetScrollInfo(hwnd, SB_HORZ, &raw const flat, true);
         if let Some(title) = title
             && window_text(hwnd) != title
         {
@@ -7636,14 +7636,14 @@ fn text_scrollbars(hwnd: HWND, text: &Text) {
     };
     // SAFETY: `info` is a live, fully initialised local read for the length of the call.
     unsafe {
-        SetScrollInfo(hwnd, SB_VERT, &info, true);
+        SetScrollInfo(hwnd, SB_VERT, &raw const info, true);
         let flat = SCROLLINFO {
             nMax: 0,
             nPage: 1,
             nPos: 0,
             ..info
         };
-        SetScrollInfo(hwnd, SB_HORZ, &flat, true);
+        SetScrollInfo(hwnd, SB_HORZ, &raw const flat, true);
     }
 }
 
@@ -9066,7 +9066,7 @@ fn text_print(hwnd: HWND) {
     };
     // SAFETY: `request` is initialised and lives across the call. **A nested message loop**;
     // nothing borrowed.
-    if !unsafe { PrintDlgW(&mut request) }.as_bool() || request.hDC.is_invalid() {
+    if !unsafe { PrintDlgW(&raw mut request) }.as_bool() || request.hDC.is_invalid() {
         return;
     }
     let dc = request.hDC;
@@ -9084,7 +9084,7 @@ fn text_print(hwnd: HWND) {
             lpszDocName: PCWSTR(title.as_ptr()),
             ..Default::default()
         };
-        let mut ok = StartDocW(dc, &info) > 0;
+        let mut ok = StartDocW(dc, &raw const info) > 0;
         for page in &doc.pages {
             if !ok {
                 break;

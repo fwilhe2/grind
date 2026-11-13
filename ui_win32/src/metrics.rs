@@ -272,7 +272,7 @@ mod windows_impl {
                     0,
                     None,
                     Some(dx.as_mut_ptr()),
-                    &mut size,
+                    &raw mut size,
                 );
                 SelectObject(dc, previous);
             }
@@ -305,7 +305,7 @@ mod windows_impl {
             // SAFETY: `tm` is a live local; the font is restored before the call returns.
             unsafe {
                 let previous = SelectObject(self.dc, HGDIOBJ(font.0));
-                let _ = GetTextMetricsW(self.dc, &mut tm);
+                let _ = GetTextMetricsW(self.dc, &raw mut tm);
                 SelectObject(self.dc, previous);
             }
             tm
@@ -393,7 +393,7 @@ mod windows_impl {
                     0,
                     None,
                     Some(dx.as_mut_ptr()),
-                    &mut size,
+                    &raw mut size,
                 );
                 // Per-unit widths from the cumulative ones — the difference between neighbours,
                 // which is what `lpDx` is.
@@ -432,7 +432,7 @@ mod windows_impl {
                         Some(_) => ETO_OPAQUE,
                         None => Default::default(),
                     },
-                    Some(&rect),
+                    Some(&raw const rect),
                     PCWSTR(units.as_ptr()),
                     units.len() as u32,
                     Some(widths.as_ptr()),
@@ -470,7 +470,7 @@ mod windows_impl {
                 let _ = DrawTextW(
                     dc,
                     &mut wide[..],
-                    &mut rect,
+                    &raw mut rect,
                     DT_WORDBREAK | DT_NOPREFIX | DT_LEFT,
                 );
                 SelectObject(dc, previous);
@@ -498,7 +498,7 @@ mod windows_impl {
                 let _ = DrawTextW(
                     dc,
                     &mut wide[..],
-                    &mut rect,
+                    &raw mut rect,
                     DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_LEFT,
                 );
                 SelectObject(dc, previous);

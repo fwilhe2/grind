@@ -63,7 +63,7 @@ impl Metrics for CellMetrics<'_> {
         let mut tm = TEXTMETRICW::default();
         // SAFETY: the DC is live and `tm` is a local that outlives the call.
         unsafe {
-            let _ = GetTextMetricsW(self.dc, &mut tm);
+            let _ = GetTextMetricsW(self.dc, &raw mut tm);
         }
         tm.tmHeight as f32
     }

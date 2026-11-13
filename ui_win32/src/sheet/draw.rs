@@ -1763,7 +1763,7 @@ mod windows_impl {
         // is `mut`, and it is never read afterwards.
         unsafe {
             SetTextColor(dc, COLORREF(colour.colorref()));
-            DrawTextW(dc, &mut wide[..], &mut rect, format);
+            DrawTextW(dc, &mut wide[..], &raw mut rect, format);
         }
     }
 }

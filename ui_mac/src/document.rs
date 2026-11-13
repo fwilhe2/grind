@@ -581,7 +581,7 @@ mod mac {
             };
             let holds = window
                 .firstResponder()
-                .is_some_and(|responder| std::ptr::eq(&*responder, view.as_super()));
+                .is_some_and(|responder| std::ptr::eq(&raw const *responder, view.as_super()));
             if !holds {
                 window.makeFirstResponder(Some(&view));
             }

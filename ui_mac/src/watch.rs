@@ -56,7 +56,7 @@ impl grind_core::Observer for Changed {
 /// An observer that tells `watched` about every change from now on — for its `App`'s
 /// `set_observer`.
 pub fn observer<T: Watched + 'static>(watched: &Rc<T>) -> Arc<dyn grind_core::Observer> {
-    let id = Rc::as_ptr(watched) as *const () as usize;
+    let id = Rc::as_ptr(watched).cast::<()>() as usize;
     let weak: Weak<dyn Watched> = Rc::downgrade(watched) as Weak<dyn Watched>;
     WATCHED.with(|all| {
         let mut all = all.borrow_mut();

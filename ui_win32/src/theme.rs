@@ -524,7 +524,7 @@ fn read_dword(path: &str, name: &str) -> Option<u32> {
     // SAFETY: every pointer is to a live local that outlives the call, and the key is closed on
     // both paths below.
     unsafe {
-        if RegOpenKeyExW(HKEY_CURRENT_USER, &path, None, KEY_READ, &mut key).is_err() {
+        if RegOpenKeyExW(HKEY_CURRENT_USER, &path, None, KEY_READ, &raw mut key).is_err() {
             return None;
         }
         let mut data = 0u32;
@@ -534,9 +534,9 @@ fn read_dword(path: &str, name: &str) -> Option<u32> {
             key,
             PCWSTR(name.as_ptr()),
             None,
-            Some(&mut kind),
+            Some(&raw mut kind),
             Some(std::ptr::from_mut(&mut data).cast()),
-            Some(&mut size),
+            Some(&raw mut size),
         );
         let _ = RegCloseKey(key);
         read.is_ok().then_some(data)
@@ -680,7 +680,7 @@ pub fn windows_build() -> u32 {
             return 0;
         };
         let get: unsafe extern "system" fn(*mut Version) -> i32 = std::mem::transmute(get);
-        if get(&mut version) != 0 {
+        if get(&raw mut version) != 0 {
             return 0;
         }
     }

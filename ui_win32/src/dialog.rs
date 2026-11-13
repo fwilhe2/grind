@@ -620,7 +620,7 @@ fn register(
             },
             ..Default::default()
         };
-        if RegisterClassW(&wc) == 0 {
+        if RegisterClassW(&raw const wc) == 0 {
             flag.store(false, Ordering::SeqCst);
             return false;
         }
@@ -637,7 +637,7 @@ fn work_area(hwnd: HWND) -> Edges {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
             ..Default::default()
         };
-        let _ = GetMonitorInfoW(monitor, &mut info);
+        let _ = GetMonitorInfoW(monitor, &raw mut info);
         edges(info.rcWork)
     }
 }
@@ -677,9 +677,9 @@ impl Smoke {
         // SAFETY: the class name outlives the call; the window is destroyed in `Drop`.
         unsafe {
             let mut client = RECT::default();
-            let _ = GetClientRect(owner, &mut client);
+            let _ = GetClientRect(owner, &raw mut client);
             let mut origin = windows::Win32::Foundation::POINT::default();
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(owner, &mut origin);
+            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(owner, &raw mut origin);
             let Ok(instance) = GetModuleHandleW(None) else {
                 return Self(HWND::default());
             };
@@ -854,7 +854,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
     let mut owner_rect = RECT::default();
     // SAFETY: a live local.
     unsafe {
-        let _ = GetWindowRect(owner, &mut owner_rect);
+        let _ = GetWindowRect(owner, &raw mut owner_rect);
     }
     let placed = modal::place(want, edges(owner_rect), work, dpi);
 
@@ -937,7 +937,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
             if with_modal(popup, |modal| modal.finished).unwrap_or(true) {
                 break;
             }
-            let got = GetMessageW(&mut message, None, 0, 0).0;
+            let got = GetMessageW(&raw mut message, None, 0, 0).0;
             if got <= 0 {
                 // `WM_QUIT` arrived while a modal was up — the application is closing. Put it
                 // back so the outer loop sees it too, and stop.
@@ -950,11 +950,11 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
             if message.message == WM_KEYDOWN && turn_page(popup, message.wParam.0 as u16) {
                 continue;
             }
-            if IsDialogMessageW(popup, &message).as_bool() {
+            if IsDialogMessageW(popup, &raw const message).as_bool() {
                 continue;
             }
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
+            let _ = TranslateMessage(&raw const message);
+            DispatchMessageW(&raw const message);
         }
 
         let answer = with_modal(popup, read);
@@ -1004,7 +1004,7 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
             return;
         };
         let mut client = RECT::default();
-        let _ = GetClientRect(popup, &mut client);
+        let _ = GetClientRect(popup, &raw mut client);
         let Some((dpi, specs, body_kind)) = with_modal(popup, |modal| {
             let specs: Vec<(f64, End)> = modal
                 .buttons
@@ -1489,7 +1489,7 @@ fn command(hwnd: HWND, id: i32, code: u32) {
             });
             if let Some(Some(dpi)) = dirty {
                 let mut client = RECT::default();
-                let _ = GetClientRect(hwnd, &mut client);
+                let _ = GetClientRect(hwnd, &raw mut client);
                 let titled = with_modal(hwnd, |modal| !modal.title.is_empty()).unwrap_or(true);
                 let frame = modal::frame(
                     f64::from(client.right),
@@ -1498,7 +1498,7 @@ fn command(hwnd: HWND, id: i32, code: u32) {
                     titled,
                 );
                 let advice = rect_of(modal::alt_body(frame.body, dpi).advice);
-                let _ = InvalidateRect(Some(hwnd), Some(&advice), false);
+                let _ = InvalidateRect(Some(hwnd), Some(&raw const advice), false);
             }
             return;
         }
@@ -1509,7 +1509,7 @@ fn command(hwnd: HWND, id: i32, code: u32) {
             }) else {
                 return;
             };
-            let _ = InvalidateRect(Some(hwnd), Some(&well), false);
+            let _ = InvalidateRect(Some(hwnd), Some(&raw const well), false);
             let _ = InvalidateRect(Some(edit), None, true);
             return;
         }
@@ -1520,7 +1520,7 @@ fn command(hwnd: HWND, id: i32, code: u32) {
             }) else {
                 return;
             };
-            let _ = InvalidateRect(Some(hwnd), Some(&well), false);
+            let _ = InvalidateRect(Some(hwnd), Some(&raw const well), false);
             let _ = InvalidateRect(Some(edit), None, true);
             return;
         }
@@ -1607,7 +1607,7 @@ fn paint(hwnd: HWND) {
     let mut ps = PAINTSTRUCT::default();
     // SAFETY: `BeginPaint`/`EndPaint` are paired, and the borrow does not dispatch.
     unsafe {
-        let dc = BeginPaint(hwnd, &mut ps);
+        let dc = BeginPaint(hwnd, &raw mut ps);
         let client = gdi::client_rect(hwnd);
         let (w, h) = (client.right, client.bottom);
         with_modal(hwnd, |modal| {
@@ -1645,12 +1645,13 @@ fn paint(hwnd: HWND) {
                     .iter()
                     .map(|button| {
                         let mut r = RECT::default();
-                        let _ = GetWindowRect(button.hwnd, &mut r);
+                        let _ = GetWindowRect(button.hwnd, &raw mut r);
                         let mut origin = windows::Win32::Foundation::POINT {
                             x: r.left,
                             y: r.top,
                         };
-                        let _ = windows::Win32::Graphics::Gdi::ScreenToClient(hwnd, &mut origin);
+                        let _ =
+                            windows::Win32::Graphics::Gdi::ScreenToClient(hwnd, &raw mut origin);
                         Rect {
                             x: f64::from(origin.x),
                             y: f64::from(origin.y),
@@ -1676,7 +1677,7 @@ fn paint(hwnd: HWND) {
             }
             buffer.present(dc);
         });
-        let _ = EndPaint(hwnd, &ps);
+        let _ = EndPaint(hwnd, &raw const ps);
     }
 }
 
@@ -2152,7 +2153,7 @@ extern "system" fn button_proc(
                         hwndTrack: hwnd,
                         dwHoverTime: 0,
                     };
-                    let _ = TrackMouseEvent(&mut track);
+                    let _ = TrackMouseEvent(&raw mut track);
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
             }
@@ -2218,7 +2219,7 @@ extern "system" fn list_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: L
             Some(WPARAM(row - 1)),
             Some(LPARAM(std::ptr::from_mut(&mut rect) as isize)),
         );
-        let _ = InvalidateRect(Some(hwnd), Some(&rect), false);
+        let _ = InvalidateRect(Some(hwnd), Some(&raw const rect), false);
     };
     match message {
         WM_MOUSEMOVE => {
@@ -2248,7 +2249,7 @@ extern "system" fn list_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: L
                             hwndTrack: hwnd,
                             dwHoverTime: 0,
                         };
-                        let _ = TrackMouseEvent(&mut track);
+                        let _ = TrackMouseEvent(&raw mut track);
                     }
                     redraw(before);
                     redraw(row);

@@ -63,7 +63,7 @@ pub fn size(data: &[u8]) -> Option<(u32, u32)> {
     let frame = frame(&factory, data)?;
     let (mut w, mut h) = (0u32, 0u32);
     // SAFETY: `frame` is live; `w`/`h` are valid out-parameters for the length of the call.
-    unsafe { frame.GetSize(&mut w, &mut h).ok()? };
+    unsafe { frame.GetSize(&raw mut w, &raw mut h).ok()? };
     (w > 0 && h > 0).then_some((w, h))
 }
 
@@ -90,7 +90,7 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
     }
     let (mut w, mut h) = (0u32, 0u32);
     // SAFETY: `converter` is live; `w`/`h` are valid out-parameters.
-    unsafe { converter.GetSize(&mut w, &mut h).ok()? };
+    unsafe { converter.GetSize(&raw mut w, &raw mut h).ok()? };
     if w == 0 || h == 0 {
         return None;
     }

@@ -336,8 +336,8 @@ mod native {
         let mut origin = POINT::default();
         // SAFETY: live locals.
         unsafe {
-            GetWindowRect(hwnd, &mut window).ok()?;
-            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &mut origin);
+            GetWindowRect(hwnd, &raw mut window).ok()?;
+            let _ = windows::Win32::Graphics::Gdi::ClientToScreen(hwnd, &raw mut origin);
         }
         let band = super::band(
             origin.x - window.left,
@@ -425,7 +425,7 @@ mod native {
                         flags |= DT_HIDEPREFIX;
                     }
                     if !text.is_empty() {
-                        DrawTextW(out, &mut text, &mut rect, flags);
+                        DrawTextW(out, &mut text, &raw mut rect, flags);
                     }
                 }
                 drop(_font);
@@ -441,7 +441,7 @@ mod native {
     fn in_window(hwnd: HWND, x: i32, y: i32) -> Option<(f64, f64)> {
         let mut window = RECT::default();
         // SAFETY: a live local.
-        unsafe { GetWindowRect(hwnd, &mut window).ok()? };
+        unsafe { GetWindowRect(hwnd, &raw mut window).ok()? };
         Some((f64::from(x - window.left), f64::from(y - window.top)))
     }
 
@@ -489,7 +489,7 @@ mod native {
             };
             // SAFETY: a live local naming this window.
             unsafe {
-                let _ = TrackMouseEvent(&mut event);
+                let _ = TrackMouseEvent(&raw mut event);
             }
         }
         if changed {
@@ -536,7 +536,7 @@ mod native {
             let (_, items, _) = geometry(hwnd)?;
             let mut window = RECT::default();
             // SAFETY: a live local.
-            unsafe { GetWindowRect(hwnd, &mut window).ok()? };
+            unsafe { GetWindowRect(hwnd, &raw mut window).ok()? };
             let screen: Vec<RECT> = items
                 .iter()
                 .map(|item| {
@@ -590,7 +590,7 @@ mod native {
                     at.left,
                     at.bottom,
                     hwnd,
-                    Some(&params),
+                    Some(&raw const params),
                 );
                 if let Some(hook) = hook {
                     let _ = UnhookWindowsHookEx(hook);
@@ -700,7 +700,7 @@ mod native {
                 if GetForegroundWindow() != hwnd {
                     break;
                 }
-                if GetMessageW(&mut message, None, 0, 0).0 <= 0 {
+                if GetMessageW(&raw mut message, None, 0, 0).0 <= 0 {
                     PostQuitMessage(0);
                     break;
                 }
@@ -729,7 +729,7 @@ mod native {
                         // Let it become a character, which is how a mnemonic arrives.
                         // SAFETY: translating a message this loop owns.
                         unsafe {
-                            let _ = TranslateMessage(&message);
+                            let _ = TranslateMessage(&raw const message);
                         }
                     }
                 }
@@ -753,15 +753,15 @@ mod native {
                     nc_paint(hwnd);
                     // SAFETY: the click is the user's, and goes where it was going.
                     unsafe {
-                        DispatchMessageW(&message);
+                        DispatchMessageW(&raw const message);
                     }
                     return None;
                 }
                 _ => {
                     // SAFETY: as above.
                     unsafe {
-                        let _ = TranslateMessage(&message);
-                        DispatchMessageW(&message);
+                        let _ = TranslateMessage(&raw const message);
+                        DispatchMessageW(&raw const message);
                     }
                 }
             }

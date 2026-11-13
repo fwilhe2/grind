@@ -342,12 +342,12 @@ mod gdi_half {
                         GetObjectW(
                             GetCurrentObject(dc, OBJ_FONT),
                             std::mem::size_of::<LOGFONTW>() as i32,
-                            Some((&mut log as *mut LOGFONTW).cast()),
+                            Some((&raw mut log).cast()),
                         );
                         let tenths = (turn * 10.0).round() as i32;
                         log.lfEscapement = tenths;
                         log.lfOrientation = tenths;
-                        let font = CreateFontIndirectW(&log);
+                        let font = CreateFontIndirectW(&raw const log);
                         (font, SelectObject(dc, HGDIOBJ(font.0)))
                     });
                     let _ = TextOutW(dc, x.round() as i32, top.round() as i32, &wide);
