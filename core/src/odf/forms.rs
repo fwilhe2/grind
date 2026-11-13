@@ -565,7 +565,6 @@ fn rdf_says_nothing(rdf: &[u8]) -> bool {
                     }
                 }
             }
-            Ok(Event::Text(_)) => {}
             Ok(Event::Eof) => return true,
             Err(_) => return false,
             _ => {}

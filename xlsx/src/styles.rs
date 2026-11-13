@@ -792,7 +792,6 @@ fn look(
             }
         }
         style.rotation = match align.rotation {
-            0 => None,
             255 => {
                 lost.push(Appearance::Rotation);
                 None

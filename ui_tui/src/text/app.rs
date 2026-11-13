@@ -1208,9 +1208,8 @@ impl App {
     /// named. Replaces this pane, so unsaved work is refused unless the verb is `:new!`.
     fn cmd_new(&mut self, which: &str, force: bool) {
         let kind = match which {
-            "" => grind_core::DocumentKind::Text,
             "sheet" => grind_core::DocumentKind::Spreadsheet,
-            "text" => grind_core::DocumentKind::Text,
+            "" | "text" => grind_core::DocumentKind::Text,
             other => {
                 self.status = format!("not a document kind: {other} (sheet or text)");
                 return;
@@ -2693,8 +2692,10 @@ impl App {
                 "* bold  / italic  _ under  ~ struck  - plain  y yank  d delete".to_owned()
             }
             _ if !self.status.is_empty() => self.status.clone(),
-            _ => "hjkl move  i/a/o insert  v select  x erase  X delete  J join  u undo  :help"
-                .to_owned(),
+            Mode::Normal => {
+                "hjkl move  i/a/o insert  v select  x erase  X delete  J join  u undo  :help"
+                    .to_owned()
+            }
         };
         // The caret's own address at the far end, and how much is selected when something is —
         // the two numbers a writer glances at, in the place they stay put.

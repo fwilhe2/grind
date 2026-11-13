@@ -491,7 +491,7 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                 report.page = Some(report::PageReport::new(app.page()));
                 Ok(Report::TextDocument(report))
             }
-            kind => Err(unsupported(file, Some(kind)).into()),
+            kind @ DocumentKind::Presentation => Err(unsupported(file, Some(kind)).into()),
         },
 
         // The suite-level third: the kind decides which application's rules run, and the
@@ -505,7 +505,9 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                     app.lint(&options)
                 }
                 DocumentKind::Text => open_text_checked(file, *hints)?.lint(&options),
-                kind => return Err(unsupported(file, Some(kind)).into()),
+                kind @ DocumentKind::Presentation => {
+                    return Err(unsupported(file, Some(kind)).into());
+                }
             };
             Ok(lint_report(file, findings))
         }
@@ -541,7 +543,7 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                     project_report(&app.project(), *tokens, *anchors)
                 }
             }
-            kind => Err(unsupported(file, Some(kind)).into()),
+            kind @ DocumentKind::Presentation => Err(unsupported(file, Some(kind)).into()),
         },
 
         // The one verb that runs a script, and the only place in the suite that links an
@@ -700,7 +702,7 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                 let app = open_text(file)?;
                 finish_text(&app, cli, out, true)
             }
-            kind => Err(unsupported(file, Some(kind)).into()),
+            kind @ DocumentKind::Presentation => Err(unsupported(file, Some(kind)).into()),
         },
     }
 }

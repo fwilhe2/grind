@@ -198,6 +198,6 @@ fn list_level<'a>(
             let name = doc.list_marks.get(&block.id)?.style.as_deref()?;
             Some((doc.list_styles.get(name)?, depth))
         }
-        _ => None,
+        BlockKind::Paragraph => None,
     }
 }

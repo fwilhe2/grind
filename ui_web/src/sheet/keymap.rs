@@ -176,8 +176,7 @@ pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
     let page = page.max(1);
     match motion {
         // Needs the document; the pane answers it (`Ui::move_to`). One cell, if asked here.
-        Motion::Edge(dir) => step(from, dir, 1),
-        Motion::By(dir) => step(from, dir, 1),
+        Motion::Edge(dir) | Motion::By(dir) => step(from, dir, 1),
         Motion::Page(dir) => step(from, dir, page),
         Motion::RowStart => Pos::new(from.row, 0),
         Motion::RowEnd => Pos::new(from.row, extent.1.saturating_sub(1)),

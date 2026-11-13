@@ -243,14 +243,13 @@ impl Run {
     #[must_use]
     pub fn text(&self) -> &str {
         match self {
-            Run::Text { text, .. } => text,
             Run::Tab => "\t",
             Run::Break => "\n",
             Run::Bookmark { .. } => "",
             // The object replacement character, so a caret has one position and `Block::text()`
             // one character for the image.
             Run::Image { .. } => "\u{fffc}",
-            Run::Kept { text, .. } => text,
+            Run::Text { text, .. } | Run::Kept { text, .. } => text,
         }
     }
 

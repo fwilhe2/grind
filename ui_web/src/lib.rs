@@ -2328,8 +2328,7 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
         // Reading a file is a promise; nothing else in this shell is async.
         match shell.pick.get() {
             Pick::Document => spawn_local(shell.clone().load(file)),
-            Pick::Csv => spawn_local(shell.clone().load_csv(file)),
-            Pick::CsvWith => spawn_local(shell.clone().load_csv(file)),
+            Pick::Csv | Pick::CsvWith => spawn_local(shell.clone().load_csv(file)),
             Pick::Image => spawn_local(shell.clone().load_image(file)),
             Pick::Markdown => spawn_local(shell.clone().load_markdown(file)),
         }

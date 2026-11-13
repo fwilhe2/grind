@@ -142,9 +142,10 @@ fn aggregate(op: Op, numbers: &[f64]) -> Answer {
         Op::Max | Op::Min if numbers.is_empty() => 0.0,
         Op::Max => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
         Op::Min => numbers.iter().copied().fold(f64::INFINITY, f64::min),
-        Op::Average if numbers.is_empty() => return Err(FormulaError::DivZero),
+        Op::Average | Op::VarP | Op::StDevP if numbers.is_empty() => {
+            return Err(FormulaError::DivZero);
+        }
         Op::Average => mean,
-        Op::VarP | Op::StDevP if numbers.is_empty() => return Err(FormulaError::DivZero),
         Op::Var | Op::StDev if numbers.len() < 2 => return Err(FormulaError::DivZero),
         Op::VarP => sum_squares() / n,
         Op::StDevP => (sum_squares() / n).sqrt(),

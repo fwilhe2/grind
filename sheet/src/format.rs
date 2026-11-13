@@ -385,9 +385,7 @@ impl Preset {
             .filter(|(k, ..)| matches!(k, Kind::Number | Kind::Percentage | Kind::Currency));
         let (decimals, grouping, symbol) = match (kind, numeric) {
             (Kind::Number | Kind::Percentage | Kind::Currency, Some((_, d, g, s))) => (d, g, s),
-            (Kind::Number, None) => (2, true, String::new()),
-            (Kind::Percentage, None) => (0, false, String::new()),
-            (Kind::Currency, None) => (2, true, String::new()),
+            (Kind::Number | Kind::Currency, None) => (2, true, String::new()),
             _ => (0, false, String::new()),
         };
         let symbol = match (kind, symbol.as_str()) {

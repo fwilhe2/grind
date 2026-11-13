@@ -571,7 +571,6 @@ pub fn read_ppr(r: &mut Reader) -> grind_ooxml::Result<ParaFacts> {
             // The paragraph *mark*'s run properties: how the pilcrow is formatted, which is
             // invisible, and — in a style — the text properties of the whole style, which is
             // `styles.rs`'s to read rather than this function's.
-            "rPr" => return Ok(Handled::No),
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)

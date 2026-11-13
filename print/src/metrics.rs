@@ -165,10 +165,9 @@ impl Typesetter {
             .filter_map(|((asked, _, _), resolved)| {
                 let asked = asked.clone()?;
                 let compatible = match resolved.how {
-                    Match::Exact => return None,
                     Match::Compatible => true,
                     // A generic family *names* no face, so setting it in one substitutes nothing.
-                    Match::Generic => return None,
+                    Match::Exact | Match::Generic => return None,
                     Match::Fallback => false,
                 };
                 Some(Substitution {

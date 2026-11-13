@@ -382,7 +382,7 @@ fn main() -> ExitCode {
             eprintln!("grind-mac: {message}\n\n{}", args::USAGE);
             ExitCode::from(2)
         }
-        open => match resolve(open) {
+        open @ Command::Open { .. } => match resolve(open) {
             Err(message) => {
                 eprintln!("grind-mac: {message}");
                 ExitCode::FAILURE

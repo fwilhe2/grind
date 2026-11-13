@@ -82,7 +82,7 @@ fn if_(args: &mut Args) -> Answer {
     // A branch may be a reference, and `IF(…;[.A1:.B2])` keeps it one for the caller.
     Ok(match args.operand(branch) {
         Operand::Value(v) => v,
-        area => args.scalar(area),
+        area @ Operand::Area(_) => args.scalar(area),
     })
 }
 

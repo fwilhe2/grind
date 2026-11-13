@@ -27,9 +27,8 @@ pub fn color(own: Option<&str>, fill: Option<&str>, dark: bool) -> Option<String
     let (ground, ink) = if dark { DARK } else { LIGHT };
     match (own, own.and_then(parse), fill.and_then(parse)) {
         // A colour this shell cannot parse is still the document's, and CSS may know it.
-        (Some(own), None, _) => Some(own.to_owned()),
         (None, _, None) => None,
-        (Some(own), Some(_), Some(_)) => Some(own.to_owned()),
+        (Some(own), None, _) | (Some(own), Some(_), Some(_)) => Some(own.to_owned()),
         (Some(own), Some(_), None) if !dark => Some(own.to_owned()),
         (_, rgb, fill) => Some(hex(color::document_ink(rgb, fill, ground, ink, dark))),
     }

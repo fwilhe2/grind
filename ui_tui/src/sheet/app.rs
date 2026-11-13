@@ -2175,8 +2175,7 @@ impl App {
     /// removes the width.
     fn cmd_width(&mut self, cells: Option<&str>) {
         let width = match cells {
-            None => None,
-            Some("auto" | "default") => None,
+            None | Some("auto" | "default") => None,
             Some(n) => match n.parse::<u16>() {
                 Ok(n) if n > 0 => Some(geom::length(n)),
                 _ => {
@@ -2562,8 +2561,7 @@ impl App {
     /// named. Replaces this pane, so unsaved work is refused unless the verb is `:new!`.
     fn cmd_new(&mut self, which: &str, force: bool) {
         let kind = match which {
-            "" => grind_core::DocumentKind::Spreadsheet,
-            "sheet" => grind_core::DocumentKind::Spreadsheet,
+            "" | "sheet" => grind_core::DocumentKind::Spreadsheet,
             "text" => grind_core::DocumentKind::Text,
             other => {
                 self.status = format!("not a document kind: {other} (sheet or text)");
@@ -3385,7 +3383,9 @@ impl App {
                 )
             }
             _ if !self.status.is_empty() => self.status.clone(),
-            _ => "hjkl move  i edit  v select  x clear  y/p yank put  u undo  :help".to_owned(),
+            Mode::Normal => {
+                "hjkl move  i edit  v select  x clear  y/p yank put  u undo  :help".to_owned()
+            }
         };
         frame.render_widget(
             Paragraph::new(chrome::bar(
@@ -3635,9 +3635,8 @@ fn alignment(style: Option<&CellStyle>, numeric: bool) -> Align {
     match style.and_then(|style| style.align.as_deref()) {
         Some("center") => Align::Centre,
         Some("end" | "right") => Align::Right,
-        Some(_) => Align::Left,
         None if numeric => Align::Right,
-        None => Align::Left,
+        Some(_) | None => Align::Left,
     }
 }
 

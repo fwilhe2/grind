@@ -112,7 +112,7 @@ pub fn run(files: &[PathBuf], git: bool, exit_code: bool) -> Result<DiffReport, 
             out.same = diff.is_empty();
             out.blocks = diff.blocks.into_iter().map(block).collect();
         }
-        kind => return Err(super::unsupported(before, Some(kind))),
+        kind @ DocumentKind::Presentation => return Err(super::unsupported(before, Some(kind))),
     }
     Ok(out)
 }

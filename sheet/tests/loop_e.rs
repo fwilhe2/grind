@@ -219,8 +219,7 @@ fn slots(signature: &str) -> Vec<Slot> {
         match word {
             "[" => depth += 1,
             "]" => depth -= 1,
-            "{" => {}
-            "}" => {}
+            "{" | "}" | "|" | "ForceArray" => {}
             "+" => {
                 if let Some(last) = out.last_mut() {
                     last.repeat = true;
@@ -231,7 +230,6 @@ fn slots(signature: &str) -> Vec<Slot> {
                 skipping = false;
             }
             "=" => skipping = true,
-            "|" | "ForceArray" => {}
             _ if skipping => {}
             _ if !started => {
                 started = true;

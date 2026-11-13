@@ -1425,8 +1425,9 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
                         modal.focused
                     };
                     let (ground, brush) = match (message, focused) {
-                        (WM_CTLCOLORLISTBOX, _) => (modal.theme.background, &modal.active),
-                        (WM_CTLCOLOREDIT, true) => (modal.theme.background, &modal.active),
+                        (WM_CTLCOLORLISTBOX, _) | (WM_CTLCOLOREDIT, true) => {
+                            (modal.theme.background, &modal.active)
+                        }
                         _ => (modal.theme.card, &modal.rest),
                     };
                     SetBkMode(dc, TRANSPARENT);

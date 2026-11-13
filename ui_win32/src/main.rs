@@ -179,7 +179,7 @@ fn main() -> std::process::ExitCode {
             say(&format!("{message}\n\n{}", args::USAGE), true);
             ExitCode::from(2)
         }
-        open => match resolve(open) {
+        open @ Command::Open { .. } => match resolve(open) {
             Err(message) => {
                 say(&message, true);
                 ExitCode::FAILURE
@@ -273,7 +273,7 @@ fn main() -> std::process::ExitCode {
             eprintln!("grind-win32: {message}\n\n{}", args::USAGE);
             ExitCode::from(2)
         }
-        open => match resolve(open) {
+        open @ Command::Open { .. } => match resolve(open) {
             Err(message) => {
                 eprintln!("grind-win32: {message}");
                 ExitCode::FAILURE

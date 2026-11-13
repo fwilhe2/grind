@@ -127,18 +127,16 @@ pub fn editing(at: Where, selector: &str) -> Outcome {
     match (selector, at.mode) {
         ("cancelOperation:", _) => Outcome::Cancel,
         (TOGGLE, _) => Outcome::ToggleMode,
-        ("insertNewline:", _) => Outcome::Commit(Some(Dir::Down)),
+        ("insertNewline:", _) | ("moveDown:", Mode::Enter) => Outcome::Commit(Some(Dir::Down)),
         // ⇧Return, in the bindings Excel for Mac reads: up.
-        ("insertNewlineIgnoringFieldEditor:", _) => Outcome::Commit(Some(Dir::Up)),
-        ("insertTab:", _) => Outcome::Commit(Some(Dir::Right)),
-        ("insertBacktab:", _) => Outcome::Commit(Some(Dir::Left)),
+        ("insertNewlineIgnoringFieldEditor:", _) | ("moveUp:", Mode::Enter) => {
+            Outcome::Commit(Some(Dir::Up))
+        }
+        ("insertTab:", _) | ("moveRight:", Mode::Enter) => Outcome::Commit(Some(Dir::Right)),
+        ("insertBacktab:", _) | ("moveLeft:", Mode::Enter) => Outcome::Commit(Some(Dir::Left)),
         // An arrow commits and moves in Enter mode and moves the caret in Edit mode. That
         // difference *is* the reason there are two modes: somebody who typed `12` and pressed →
         // meant the next cell, and somebody amending a typo meant the next character.
-        ("moveLeft:", Mode::Enter) => Outcome::Commit(Some(Dir::Left)),
-        ("moveRight:", Mode::Enter) => Outcome::Commit(Some(Dir::Right)),
-        ("moveUp:", Mode::Enter) => Outcome::Commit(Some(Dir::Up)),
-        ("moveDown:", Mode::Enter) => Outcome::Commit(Some(Dir::Down)),
         // Everything else belongs to the field editor: its caret, its selection, its own words.
         _ => Outcome::Passthrough,
     }

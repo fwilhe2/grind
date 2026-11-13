@@ -435,30 +435,37 @@ impl Document {
             }
             // A format or a style is a `style:style` the source file lacks, so it cannot be
             // spliced; still record the cell.
-            Action::SetFormat { sheet, pos, .. } | Action::SetStyle { sheet, pos, .. } => {
+            Action::SetFormat { sheet, pos, .. }
+            | Action::SetStyle { sheet, pos, .. }
+            | Action::SetCheckbox { sheet, pos, .. } => {
                 self.edits.cells.insert((*sheet, *pos));
                 self.edits.only_values = false;
             }
             // A track style lives in `office:automatic-styles` and is named from a
             // `<table:table-column>`, neither of which the splice touches.
-            Action::SetColWidth { .. } | Action::SetRowHeight { .. } => {
+            Action::SetColWidth { .. }
+            | Action::SetRowHeight { .. }
+            | Action::SetColHidden { .. }
+            | Action::SetRowHidden { .. }
+            | Action::InsertSheet { .. }
+            | Action::RemoveSheet { .. }
+            | Action::RenameSheet { .. } => {
                 self.edits.only_values = false;
             }
             // `table:visibility="collapse"` is on the row or column element, not in a cell.
-            Action::SetColHidden { .. } | Action::SetRowHidden { .. } => {
-                self.edits.only_values = false;
-            }
             // `table:database-ranges` is its own element, and the visibility it implies is on
             // rows.
-            Action::SetFilter { .. } => self.edits.only_values = false,
+            Action::SetFilter { .. }
+            | Action::SetMerge { .. }
+            | Action::SetRules { .. }
+            | Action::SetLocale { .. }
+            | Action::InsertChart { .. }
+            | Action::RemoveChart { .. }
+            | Action::ReshapeChart { .. }
+            | Action::ReplaceChart { .. } => self.edits.only_values = false,
             // A merge is an attribute on one cell element and the element kind of every other
             // it takes in — the rows it spans are rewritten (`Provenance::merges`).
-            Action::SetMerge { .. } => self.edits.only_values = false,
             // `office:forms` is its own element, and the control is a child of the cell.
-            Action::SetCheckbox { sheet, pos, .. } => {
-                self.edits.cells.insert((*sheet, *pos));
-                self.edits.only_values = false;
-            }
             // `table:named-expressions` is its own element, which the splice does not touch; a new
             // name would be lost on the next save without this.
             Action::SetName { .. } => {
@@ -467,23 +474,12 @@ impl Document {
             }
             // Every cell a rule covers carries it on its own style, so restyling them is not a
             // splice; `touch` names the cells.
-            Action::SetRules { .. } => self.edits.only_values = false,
             // The default cell style is not a splice site: it lives in `office:styles`, which
             // the regenerating writer writes fresh.
-            Action::SetLocale { .. } => self.edits.only_values = false,
             // Adding or removing a sheet shifts later indices, so the `(sheet, pos)` keys in
             // `cells` would name the wrong sheet; regenerating means the splice map is not
             // consulted again.
-            Action::InsertSheet { .. }
-            | Action::RemoveSheet { .. }
-            | Action::RenameSheet { .. } => {
-                self.edits.only_values = false;
-            }
             // Not a cell either: `table:shapes` is a sibling of the rows, not a splice site.
-            Action::InsertChart { .. }
-            | Action::RemoveChart { .. }
-            | Action::ReshapeChart { .. }
-            | Action::ReplaceChart { .. } => self.edits.only_values = false,
             Action::Batch(actions) => actions.iter().for_each(|a| self.note(a)),
         }
     }

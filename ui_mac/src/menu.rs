@@ -480,7 +480,8 @@ impl Command {
             )
             | Command::TextColor(_)
             | Command::Background(_)
-            | Command::ClearFormatting => sheet || text,
+            | Command::ClearFormatting
+            | Command::Spell(_) => sheet || text,
             Command::Mark(_)
             | Command::Block(_)
             | Command::InsertTable
@@ -493,11 +494,10 @@ impl Command {
             | Command::Print
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
-            | Command::ParagraphStyle => text,
+            | Command::ParagraphStyle
+            | Command::Grammar(_) => text,
             // A paragraph's words and a text cell's are checked alike (`doc/spelling.md`).
-            Command::Spell(_) => sheet || text,
             // Grammar is for documents, never a spreadsheet's labels (`doc/grammar.md` §1).
-            Command::Grammar(_) => text,
             Command::AddSheet
             | Command::RenameSheet
             | Command::DeleteSheet

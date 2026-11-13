@@ -104,9 +104,7 @@ impl fmt::Display for Error {
                     "{asked} is more than one request may cover at once (at most {limit})"
                 )
             }
-            Error::BadSheet(e) => write!(f, "{e}"),
-            Error::Formula(e) => write!(f, "{e}"),
-            Error::Stale(e) => write!(f, "{e}"),
+            Error::BadSheet(e) | Error::Formula(e) | Error::Stale(e) => write!(f, "{e}"),
         }
     }
 }

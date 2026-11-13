@@ -144,7 +144,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         .iter()
         .filter_map(|block| match block {
             Block::Para(para) => w.heading_number(para),
-            _ => None,
+            Block::Table(_) => None,
         })
         .filter(|&(num, _)| Some(num) == w.outline_list)
         .map(|(_, ilvl)| ilvl)

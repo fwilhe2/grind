@@ -166,11 +166,10 @@ impl Palette {
     #[must_use]
     pub fn resolve(&self, color: &Color) -> Resolved {
         let base = match color.spelling {
-            Spelling::Auto => return Resolved::Automatic,
             Spelling::Rgb(rgb) => rgb,
             // 64 and 65 are the system's foreground and background (§18.8.27): automatic,
             // whatever a replaced palette says about them.
-            Spelling::Indexed(64 | 65) => return Resolved::Automatic,
+            Spelling::Auto | Spelling::Indexed(64 | 65) => return Resolved::Automatic,
             Spelling::Indexed(i) => match self.indexed.get(i as usize) {
                 Some(rgb) => *rgb,
                 None => return Resolved::Unknown(Missing::Index),

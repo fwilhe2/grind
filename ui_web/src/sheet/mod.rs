@@ -530,12 +530,12 @@ impl Ui {
                         && row == filter.start.row
                         && (filter.start.col..=filter.end.col).contains(&col)
                 });
-                if !numeric
-                    && merge.is_none()
-                    && !(active && editing)
-                    && !filtered
-                    && !text.is_empty()
-                    && !look::wraps(style)
+                if !(numeric
+                    || merge.is_some()
+                    || filtered
+                    || text.is_empty()
+                    || look::wraps(style)
+                    || active && editing)
                     && style.and_then(CellStyle::rotation_degrees).is_none()
                     && viewport.checkbox(pos.row, pos.col).is_none()
                 {

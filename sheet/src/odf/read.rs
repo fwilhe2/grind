@@ -1589,14 +1589,17 @@ impl Context<Builder> for Table {
                 b.declare_columns(style, width.as_deref(), hidden, repeat);
                 Some(Box::new(super::context::Ignore))
             }
-            (Ns::Table, "table-column-group" | "table-header-columns" | "table-columns") => {
-                Some(Box::new(Table { top: false }))
-            }
+            (
+                Ns::Table,
+                "table-column-group"
+                | "table-header-columns"
+                | "table-columns"
+                | "table-row-group"
+                | "table-header-rows"
+                | "table-rows",
+            ) => Some(Box::new(Table { top: false })),
             // Row and column groups nest real rows inside a wrapper. Recursing with the
             // same context keeps the cursor continuous instead of losing the contents.
-            (Ns::Table, "table-row-group" | "table-header-rows" | "table-rows") => {
-                Some(Box::new(Table { top: false }))
-            }
             // Sheet-local names (§5.11).
             (Ns::Table, "named-expressions") => Some(Box::new(NamedExpressions {
                 local: b
@@ -2415,9 +2418,6 @@ impl Context<Builder> for Paragraph {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
             // A span is styled text; its characters still belong to the cell.
-            (Ns::Text, "span" | "a") => Some(Box::new(Paragraph {
-                collapse: self.collapse,
-            })),
             // `text:s` carries a count: `"a    b"` is written as one space plus `<text:s
             // text:c="3"/>`.
             (Ns::Text, "s") => {
@@ -2438,7 +2438,7 @@ impl Context<Builder> for Paragraph {
             // A note's text is not the cell's, nor is a ruby's reading over its base; any other
             // inline element — a ruby's base, a field's cached text — holds the cell's characters.
             (Ns::Text, "note" | "ruby-text") => None,
-            (Ns::Text, _) => Some(Box::new(Paragraph {
+            (Ns::Text, "span" | "a" | _) => Some(Box::new(Paragraph {
                 collapse: self.collapse,
             })),
             _ => None,

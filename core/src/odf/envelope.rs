@@ -388,7 +388,6 @@ fn taken_bytes(g: &Tree, generated: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     for (index, node) in g.top() {
         match node.local.as_str() {
-            "body" => out.extend_from_slice(&generated[node.range.clone()]),
             "automatic-styles" | "styles" | "font-face-decls" => {
                 for child in g.children(index) {
                     out.extend_from_slice(&generated[child.range.clone()]);

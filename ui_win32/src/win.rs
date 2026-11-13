@@ -246,7 +246,7 @@ impl Pane {
         match self {
             Pane::Sheet(sheet) => sheet.path.clone().or_else(|| sheet.imported.clone()),
             Pane::Text(text) => text.path.clone().or_else(|| text.imported.clone()),
-            _ => self.path(),
+            Pane::Welcome(_) => self.path(),
         }
     }
 
@@ -7527,10 +7527,9 @@ fn welcome_key(hwnd: HWND, vk: u32) -> bool {
         return true;
     }
     let step = match keymap::key_for(vk) {
-        Key::Down => 1,
         Key::Up => -1,
         Key::Tab if mods.shift => -1,
-        Key::Tab => 1,
+        Key::Down | Key::Tab => 1,
         Key::Return => {
             // SAFETY: one borrow, released before the verb — which may open a file dialog.
             let focus = unsafe { with_welcome(hwnd, |state| state.focus) };
