@@ -68,6 +68,7 @@ semantics never are.
 | Import filters | `doc/xlsx-import.md`, `doc/docx-import.md` |
 | Shells | `doc/sheet-shell.md` (its "Four surfaces" governs the GTK chrome), `doc/text-shell.md`, `doc/tui-shell.md`, `doc/web-shell.md`, `doc/windows-shell.md`, `doc/macos-shell.md` |
 | Parity and licences | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md`, `doc/feature-matrix.md`, `doc/third-party.md` |
+| The language | `doc/rust-idioms.md` (which spelling, what CI's lints hold, what to do when a toolchain arrives) |
 
 ## Commands
 
@@ -75,7 +76,8 @@ semantics never are.
 cargo test                                     # the default members: everything without system packages
 cargo test -p grind-sheet --test read_values   # one test file
 cargo test -- repeated_columns                 # one test by name substring
-cargo clippy --workspace --all-targets         # CI gates on it, warnings as errors
+cargo clippy --workspace --all-targets         # CI gates on it, warnings as errors, with
+                                               #   the root Cargo.toml's [workspace.lints]
 cargo fmt --all                                # CI gates on --check
 RUSTDOCFLAGS=-D warnings cargo doc --no-deps   # CI gates on it
 reuse lint                                     # CI gates on it
@@ -280,6 +282,13 @@ update: check `../clerk` for callers, and name the change in the commit message.
   other files change: no milestone tags, no "used to", no status ("not yet", "this build"), no
   descriptions of other shells. A doc comment is one to three lines unless the item really needs
   more; a design argument belongs in `doc/`, linked once.
+- **A byte offset is not a character.** `text[a..b]` only for offsets the same function just
+  searched for; otherwise `strip_prefix`, `get(..)?`, `floor_char_boundary`
+  (`doc/rust-idioms.md` §1). §2 there is the table of newer spellings the tree uses throughout,
+  §3 the ones decided against.
+- **Clippy's pedantic group is on** (`Cargo.toml`, `[workspace.lints]`). The lints allowed
+  under it are the ones the old code is not clean of: that list only shrinks, one lint per
+  commit, and new code needs none of it. An `#[allow]` carries a `reason`.
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and upgrade path — a
   tracked ledger; read the reason before "fixing" one.
 - **`TODO:` comments** are something reported or suspected wrong and not yet reproduced: what is

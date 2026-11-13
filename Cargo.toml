@@ -40,10 +40,11 @@ license = "AGPL-3.0-or-later"
 repository = "https://github.com/fwilhe2/grind"
 
 # Clippy's pedantic group, for every crate (`[lints] workspace = true`), under CI's warnings as
-# errors. The group goes first so the lines after it can answer it.
+# errors (`doc/rust-idioms.md` §5). The group goes first so the lines after it can answer it.
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-# The tree is not yet clean of these. A line goes when its lint is fixed.
+# The tree is not yet clean of these. A line goes in the commit that fixes its lint; none is
+# added.
 assigning_clones = "allow"
 case_sensitive_file_extension_comparisons = "allow"
 cast_possible_truncation = "allow"

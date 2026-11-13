@@ -145,3 +145,10 @@ Carried over from [fwilhe2/editor](https://github.com/fwilhe2/editor)'s
 
 Rule 7 is also the anti-bloat mechanism: if it doesn't round-trip, it isn't done, and if it
 isn't on the "in" list in `doc/plan.md`, it doesn't get built.
+
+## The language
+
+`doc/rust-idioms.md` is which spelling this code uses where Rust offers several: how a string
+is sliced without assuming where its characters are, the newer features the tree uses
+throughout, the ones decided against, and the lints CI holds. A new crate opts into those with
+`[lints] workspace = true`.
