@@ -233,8 +233,9 @@ pub fn read_indexed(reader: &mut Reader<'_>) -> crate::Result<Option<Vec<[u8; 3]
 /// alpha is dropped either way — ODF's colour is six digits.
 pub fn argb(value: &str) -> Option<[u8; 3]> {
     let value = value.trim();
+    // `get`, not an index: the attribute is the file's, and need not be ASCII.
     let rgb = match value.len() {
-        8 => &value[2..],
+        8 => value.get(2..)?,
         6 => value,
         _ => return None,
     };
@@ -327,6 +328,11 @@ mod tests {
         assert_eq!(argb("00FF00"), Some([0, 0xFF, 0]));
         assert_eq!(argb("red"), None);
         assert_eq!(argb("FF00"), None);
+        assert_eq!(
+            argb("aé12345"),
+            None,
+            "eight bytes, split inside a character"
+        );
     }
 
     /// Greys have no hue, so a grey's tint is exact arithmetic — the case the formula is
