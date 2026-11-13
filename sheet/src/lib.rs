@@ -1375,7 +1375,9 @@ impl App {
             .filter(|(pos, _)| rows.contains(&pos.row) && cols.contains(&pos.col))
             .map(|(pos, c)| (pos, checkbox_state(&state.doc, sheet, c)))
             .collect();
-        let misspelt = match self.lexicon.read().unwrap().clone() {
+        // Cloned out, so the lexicon's lock is not held across the checking.
+        let lexicon = self.lexicon.read().unwrap().clone();
+        let misspelt = match lexicon {
             None => Vec::new(),
             Some(lexicon) => {
                 let anchors = merges.iter().map(|m: &Merged| m.anchor);
