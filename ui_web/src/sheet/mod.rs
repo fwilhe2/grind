@@ -827,8 +827,14 @@ impl Ui {
         // The room is measured in the unit the tracks are, so a zoomed grid fits fewer cells.
         let zoom = self.zoom.get();
         (
-            heights.fit(scroll.row, self.dom.surface.client_height() as f64 / zoom),
-            widths.fit(scroll.col, self.dom.surface.client_width() as f64 / zoom),
+            heights.fit(
+                scroll.row,
+                f64::from(self.dom.surface.client_height()) / zoom,
+            ),
+            widths.fit(
+                scroll.col,
+                f64::from(self.dom.surface.client_width()) / zoom,
+            ),
         )
     }
 

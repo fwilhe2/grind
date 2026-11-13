@@ -1272,10 +1272,12 @@ mod imp {
                 .as_ref()
                 .map_or(400, |s| s.gtk_double_click_time())
                 .max(1) as u32;
-            let distance = settings
-                .as_ref()
-                .map_or(5, |s| s.gtk_double_click_distance())
-                .max(1) as f64;
+            let distance = f64::from(
+                settings
+                    .as_ref()
+                    .map_or(5, |s| s.gtk_double_click_distance())
+                    .max(1),
+            );
             let count = match self.presses.get() {
                 Some((then, px, py, count))
                     if time.wrapping_sub(then) <= window

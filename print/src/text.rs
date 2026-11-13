@@ -2585,7 +2585,7 @@ mod tests {
         let middle = texts(page).into_iter().find(|t| t.2 == "middle").unwrap();
         let centre = (56.6929 + 595.2756 - 56.6929) / 2.0;
         assert!(
-            middle.0 > 250.0 && (middle.0 as f64) < centre,
+            middle.0 > 250.0 && f64::from(middle.0) < centre,
             "{}",
             middle.0
         );

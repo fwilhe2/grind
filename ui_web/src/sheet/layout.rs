@@ -219,7 +219,7 @@ pub fn follow(scroll: Pos, active: Pos, visible: (u32, u32)) -> Pos {
 /// Scroll by whole cells, clamped at the top-left corner. The sheet has no bottom
 /// to clamp against — scrolling into blank space is normal (`Viewport`'s own rule).
 pub fn scrolled_by(scroll: Pos, rows: i64, cols: i64) -> Pos {
-    let shift = |at: u32, by: i64| (at as i64 + by).clamp(0, u32::MAX as i64) as u32;
+    let shift = |at: u32, by: i64| (i64::from(at) + by).clamp(0, i64::from(u32::MAX)) as u32;
     Pos::new(shift(scroll.row, rows), shift(scroll.col, cols))
 }
 

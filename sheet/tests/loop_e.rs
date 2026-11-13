@@ -516,7 +516,7 @@ fn agrees(stored: &CellValue, computed: &Value) -> bool {
         (CellValue::Empty, Value::Text(s)) => s.is_empty(),
         (CellValue::Text(s), Value::Text(t)) => s == t,
         (CellValue::Bool(a), Value::Bool(b)) => a == b,
-        (CellValue::Number(x), Value::Bool(b)) => *x == u8::from(*b) as f64,
+        (CellValue::Number(x), Value::Bool(b)) => *x == f64::from(u8::from(*b)),
         (CellValue::Empty, Value::Empty) => true,
         _ => false,
     }

@@ -93,7 +93,7 @@ pub fn measurer<W: IsA<gtk::Widget>>(widget: &W) -> impl Fn(&str) -> (f64, f64) 
     move |text: &str| {
         layout.set_text(text);
         let (w, h) = layout.pixel_size();
-        (w as f64, h as f64)
+        (f64::from(w), f64::from(h))
     }
 }
 
@@ -667,7 +667,7 @@ fn draw_label(
 ) {
     let layout = widget.create_pango_layout(Some(text));
     let (w, h) = layout.pixel_size();
-    let (w, h) = (w as f64, h as f64);
+    let (w, h) = (f64::from(w), f64::from(h));
 
     snapshot.save();
     if angle == 0.0 {

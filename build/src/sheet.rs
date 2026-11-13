@@ -375,13 +375,13 @@ pub fn register(engine: &mut Engine) {
         "rows",
         ["sheet: Sheet", "int"],
         ["/// How many rows have been written — where the next `push` will land."],
-        |sheet: &mut Sheet| sheet.0.borrow().next_row as i64,
+        |sheet: &mut Sheet| i64::from(sheet.0.borrow().next_row),
     );
     hint_get(
         engine,
         "rows",
         ["/// How many rows have been written — where the next `push` will land."],
-        |sheet: &mut Sheet| sheet.0.borrow().next_row as i64,
+        |sheet: &mut Sheet| i64::from(sheet.0.borrow().next_row),
     );
     hint(
         engine,
@@ -628,8 +628,8 @@ fn within(row: u32, col: u32) -> Res<()> {
         (true, true) => Ok(()),
         _ => Err(bad(format!(
             "row {} column {} is past the end of the sheet",
-            row as u64 + 1,
-            col as u64 + 1
+            u64::from(row) + 1,
+            u64::from(col) + 1
         ))),
     }
 }
@@ -689,7 +689,7 @@ impl Sheet {
                 spec.ops.push(Op::Format { range, format });
             }
         }
-        Ok(at as i64)
+        Ok(i64::from(at))
     }
 
     fn set(&mut self, at: &str, value: Dynamic) -> Res<()> {
