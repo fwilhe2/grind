@@ -100,7 +100,7 @@ impl Trace {
                     .map(|(_, node)| *node)
                     .filter(|node| !node.range.is_empty() && line.contains(&node.range.start))
                     .find(|node| {
-                        std::ptr::eq(*node, &self.root)
+                        std::ptr::eq(*node, &raw const self.root)
                             || node.kind != Kind::Operator
                             || node.range.end <= line.end
                     })
@@ -188,7 +188,7 @@ fn node(
     shape: &Shape,
     seen: &HashMap<*const Expr, Operand>,
 ) -> Node {
-    let came_to = match seen.get(&(expr as *const Expr)) {
+    let came_to = match seen.get(&std::ptr::from_ref::<Expr>(expr)) {
         None => CameTo::Skipped,
         Some(Operand::Value(value)) => CameTo::Value(value.clone()),
         Some(Operand::Area(area)) => match single(area) {

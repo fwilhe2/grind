@@ -222,7 +222,7 @@ fn stale_values(doc: &Document, report: &mut Report) {
 /// A cell value as a diagnostic spells it — quoted when text, so an empty cell and an empty string
 /// differ.
 fn shown(value: &crate::CellValue) -> String {
-    use crate::CellValue::*;
+    use crate::CellValue::{Bool, Empty, Number, Text};
     match value {
         Empty => "nothing".to_owned(),
         Number(n) => crate::formula::value::format_number(*n),

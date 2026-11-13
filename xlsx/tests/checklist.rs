@@ -145,10 +145,10 @@ fn checklist() -> Vec<u8> {
     };
     let item = |r: u32, text: &str, note: &str, ticked: bool| {
         let mut cells = vec![("A", 1, ""), ("B", 5, ""), ("C", 5, text)];
-        if !note.is_empty() {
-            cells.push(("D", 6, note));
-        } else {
+        if note.is_empty() {
             cells.push(("D", 6, ""));
+        } else {
+            cells.push(("D", 6, note));
         }
         cells.push(("E", 1, if ticked { "b:1" } else { "b:0" }));
         row(r, &cells)

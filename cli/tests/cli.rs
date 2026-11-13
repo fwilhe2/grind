@@ -1096,8 +1096,8 @@ fn the_lines_of_code_spreadsheet_is_current() {
     ok_top(&["build", &script, "-o", &s(&out)]);
     // Three charts, each on the sheet it reads: LibreOffice draws one reading a *later* sheet
     // as empty (`examples/loc/loc.rhai`'s header says why).
-    assert!(ok(&["chart-list", &s(&out), "Growth"]).lines().count() == 2);
-    assert!(ok(&["chart-list", &s(&out), "Crates"]).lines().count() == 1);
+    assert_eq!(ok(&["chart-list", &s(&out), "Growth"]).lines().count(), 2);
+    assert_eq!(ok(&["chart-list", &s(&out), "Crates"]).lines().count(), 1);
     assert!(
         std::fs::read(&out).unwrap() == std::fs::read(example("loc/loc.fods")).unwrap(),
         "examples/loc/loc.fods is not what examples/loc/loc.rhai builds — run \

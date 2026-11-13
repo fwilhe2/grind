@@ -238,7 +238,9 @@ impl Format {
     pub fn color_of(&self, value: &CellValue) -> Option<&str> {
         match value {
             CellValue::Number(n) => match self.branch(*n) {
-                Some(map) if !std::ptr::eq(&map.format, self) => map.format.color.as_deref(),
+                Some(map) if !std::ptr::eq(&raw const map.format, self) => {
+                    map.format.color.as_deref()
+                }
                 _ => self.color.as_deref(),
             },
             CellValue::Text(_) if self.kind == Kind::Text => self.color.as_deref(),
@@ -352,7 +354,7 @@ impl Format {
         if let CellValue::Number(n) = value
             && let Some(map) = self.branch(*n)
             // Guard against a document mapping a style to itself: one level, then stop.
-            && !std::ptr::eq(&map.format, self)
+            && !std::ptr::eq(&raw const map.format, self)
         {
             return map
                 .format

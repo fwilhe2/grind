@@ -129,7 +129,7 @@ fn the_scope_line_is_the_reader_and_not_a_second_list() {
 
     assert_eq!(doc.blocks.len(), 3, "text:h, text:p and text:list-item");
     assert_eq!(doc.blocks[0].outline_level(), Some(2), "text:h");
-    assert!(doc.blocks[0].text() == "H");
+    assert_eq!(doc.blocks[0].text(), "H");
     assert!(doc.blocks[1].text().contains('\t'), "text:tab");
     assert!(doc.blocks[1].text().contains('\n'), "text:line-break");
     assert!(doc.blocks[1].text().contains("  "), "text:s");

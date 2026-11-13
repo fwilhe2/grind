@@ -260,7 +260,7 @@ impl<'a> Engine<'a> {
         {
             recorder
                 .seen
-                .entry(expr as *const Expr)
+                .entry(std::ptr::from_ref::<Expr>(expr))
                 .or_insert_with(|| operand.clone());
         }
         operand

@@ -204,7 +204,10 @@ mod tests {
         let list = sizes(Some("13pt"));
         assert_eq!(list[0], DEFAULT);
         assert_eq!(list[1], "13pt");
-        assert!(sizes(Some("12pt")).iter().filter(|s| *s == "12pt").count() == 1);
+        assert_eq!(
+            sizes(Some("12pt")).iter().filter(|s| *s == "12pt").count(),
+            1
+        );
     }
     fn app(text: &str) -> App {
         let app = App::new();

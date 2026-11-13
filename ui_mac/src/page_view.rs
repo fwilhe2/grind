@@ -630,7 +630,7 @@ define_class!(
                     && window.firstResponder().is_some_and(|responder| {
                         std::ptr::eq(
                             Retained::as_ptr(&responder).cast::<()>(),
-                            (self as *const Self).cast::<()>(),
+                            std::ptr::from_ref::<Self>(self).cast::<()>(),
                         )
                     })
             });
