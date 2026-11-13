@@ -1070,7 +1070,7 @@ impl App {
     /// `:md-in <file>` — markdown inserted before the caret's block, one undo step.
     fn cmd_md_in(&mut self, path: &str) {
         let text = match std::fs::read(path) {
-            Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
+            Ok(bytes) => String::from_utf8_lossy_owned(bytes),
             Err(e) => {
                 self.status = format!("{path}: {e}");
                 return;

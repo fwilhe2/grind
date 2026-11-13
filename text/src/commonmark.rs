@@ -461,7 +461,7 @@ fn percent_decode(text: &str) -> String {
             }
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
+    String::from_utf8_lossy_owned(out)
 }
 
 // ---------------------------------------------------------------------------

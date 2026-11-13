@@ -103,7 +103,7 @@ fn percent_decode(s: &str) -> String {
             }
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
+    String::from_utf8_lossy_owned(out)
 }
 
 /// Resolve a relationship target against the part that declared it.

@@ -388,7 +388,7 @@ pub fn init(dir: &Path, options: Options, projection_snippets: &str) -> Result<I
 fn place(dir: &Path, file: Plan, options: Options) -> Result<Entry, String> {
     let target = dir.join(file.path);
     let existing = match std::fs::read(&target) {
-        Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+        Ok(bytes) => Some(String::from_utf8_lossy_owned(bytes)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(format!("cannot read {}: {e}", target.display())),
     };
