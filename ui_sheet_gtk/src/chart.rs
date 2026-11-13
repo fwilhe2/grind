@@ -844,8 +844,8 @@ fn line_hit(layout: &Layout, data: &ChartData, x: f64, y: f64) -> Option<usize> 
         let Some(points) = line_points(layout, data, s) else {
             continue;
         };
-        for pair in points.windows(2) {
-            if distance_to_segment((x, y), pair[0], pair[1]) <= LINE_HIT_DISTANCE {
+        for &[prev, next] in points.array_windows() {
+            if distance_to_segment((x, y), prev, next) <= LINE_HIT_DISTANCE {
                 return Some(s);
             }
         }

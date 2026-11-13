@@ -296,7 +296,10 @@ mod tests {
         let mut out = Vec::new();
         t.advances("Grüße, Œuvre — fi", &serif(), &mut out);
         assert_eq!(out.len(), "Grüße, Œuvre — fi".chars().count());
-        assert!(out.windows(2).all(|w| w[1] >= w[0]), "{out:?}");
+        assert!(
+            out.array_windows().all(|[prev, next]| next >= prev),
+            "{out:?}"
+        );
         assert!(out[0] > 0.0);
     }
 

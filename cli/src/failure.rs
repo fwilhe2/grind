@@ -169,7 +169,7 @@ pub(crate) fn usage(error: &clap::Error) -> Failure {
 
 /// Whether the command line asked for JSON, read before clap has parsed it.
 pub(crate) fn wants_json(args: &[std::ffi::OsString]) -> bool {
-    args.windows(2)
-        .any(|pair| pair[0] == "--format" && pair[1] == "json")
+    args.array_windows()
+        .any(|[prev, next]| prev == "--format" && next == "json")
         || args.iter().any(|a| a == "--format=json")
 }

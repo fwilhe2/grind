@@ -457,7 +457,7 @@ impl Builder {
                 );
                 chain.push(at);
             }
-            before.extend(chain.windows(2).map(|w| (w[0], w[1])));
+            before.extend(chain.array_windows().map(|&[prev, next]| (prev, next)));
         }
         let order = crate::rule::priority(keys.len(), &before);
         let rules = order

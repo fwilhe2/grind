@@ -357,7 +357,7 @@ mod tests {
         let mut out = Vec::new();
         fold("e\u{301}", |units| offsets[units], &mut out);
         assert_eq!(out, [0.0, 9.0]);
-        assert!(out.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert!(out.array_windows().all(|[prev, next]| prev <= next));
     }
 
     #[test]
@@ -390,7 +390,10 @@ mod coretext {
         let mut out = Vec::new();
         face.advances(text, &TextStyle::default(), &mut out);
         assert_eq!(out.len(), text.chars().count(), "one advance per char");
-        assert!(out.windows(2).all(|pair| pair[0] <= pair[1]), "{out:?}");
+        assert!(
+            out.array_windows().all(|[prev, next]| prev <= next),
+            "{out:?}"
+        );
         out
     }
 
@@ -428,6 +431,9 @@ mod coretext {
     #[test]
     fn a_latin_word_has_a_stop_per_letter() {
         let out = advances("Hello");
-        assert!(out.windows(2).all(|pair| pair[0] < pair[1]), "{out:?}");
+        assert!(
+            out.array_windows().all(|[prev, next]| prev < next),
+            "{out:?}"
+        );
     }
 }

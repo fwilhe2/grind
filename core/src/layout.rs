@@ -357,7 +357,7 @@ pub fn wrap_tabbed(
     let text_chars = &chars;
     let tabbed = !tabs.is_empty() && chars.contains(&'\t');
     let advance: Vec<f32> = match tabbed {
-        true => xs.windows(2).map(|pair| pair[1] - pair[0]).collect(),
+        true => xs.array_windows().map(|[prev, next]| next - prev).collect(),
         false => Vec::new(),
     };
     // The cumulative x of each character from `start` to `end`, on a line that begins `origin`

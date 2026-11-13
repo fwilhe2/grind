@@ -492,7 +492,10 @@ fn counts(cells: &[CellValue]) -> bool {
         return false;
     }
     let step = numbers[1] - numbers[0];
-    step != 0.0 && numbers.windows(2).all(|pair| pair[1] - pair[0] == step)
+    step != 0.0
+        && numbers
+            .array_windows()
+            .all(|[prev, next]| next - prev == step)
 }
 
 /// The colour a mark gets — the one place the writer and every shell's painter resolve it. A bar
@@ -775,8 +778,8 @@ impl ChartData {
         let spell = |v: f64| format.render_in(&CellValue::Number(v), 0, locale.as_ref());
         let distinct = ticks
             .values
-            .windows(2)
-            .all(|pair| spell(pair[0]) != spell(pair[1]));
+            .array_windows()
+            .all(|&[prev, next]| spell(prev) != spell(next));
         match distinct {
             true => spell(value),
             false => ticks.label(value),

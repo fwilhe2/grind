@@ -1023,8 +1023,7 @@ fn keep_the_larger_space(
     spacing: &mut HashMap<usize, crate::faces::Room>,
 ) {
     let views: Vec<&BlockView> = viewport.iter().collect();
-    for pair in views.windows(2) {
-        let [first, second] = pair else { continue };
+    for [first, second] in views.array_windows() {
         if first.cell.is_some() || second.cell.is_some() || second.index != first.index + 1 {
             continue;
         }
@@ -2375,8 +2374,8 @@ mod tests {
             })
         );
         // Each page starts exactly where the one before it ended.
-        for pair in typeset.pages.windows(2) {
-            assert_eq!(pair[0].end, pair[1].start);
+        for [prev, next] in typeset.pages.array_windows() {
+            assert_eq!(prev.end, next.start);
         }
         let last = typeset.pages.last().unwrap();
         let length = paragraph.chars().count();
@@ -4249,7 +4248,9 @@ mod tests {
             app.open_bytes("cs.fodt", bytes.as_bytes()).unwrap();
             let doc = typeset(&app, &setter(), &Options::default());
             let ys: Vec<f32> = texts(&doc.pages[0]).iter().map(|t| t.1).collect();
-            ys.windows(2).map(|w| (w[1] - w[0] - LINE) / CM).collect()
+            ys.array_windows()
+                .map(|[prev, next]| (next - prev - LINE) / CM)
+                .collect()
         };
         let p = |style: &str| format!(r#"<text:p text:style-name="{style}">x</text:p>"#);
         let near_all = |got: Vec<f32>, want: &[f32], what: &str| {

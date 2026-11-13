@@ -1612,7 +1612,7 @@ mod tests {
         let lines: Vec<(&str, f64, f64)> = texts(&ops);
         assert!(lines.len() > 1, "{lines:?}");
         assert!(
-            lines.windows(2).all(|pair| pair[0].2 < pair[1].2),
+            lines.array_windows().all(|[prev, next]| prev.2 < next.2),
             "down the cell"
         );
         let joined: Vec<&str> = lines.iter().map(|(text, ..)| *text).collect();

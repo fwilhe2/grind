@@ -240,13 +240,8 @@ mod tests {
     fn the_cards_are_stacked_in_order_and_do_not_overlap() {
         let cards = page().cards();
         assert_eq!(cards.len(), Choice::ALL.len());
-        for pair in cards.windows(2) {
-            assert!(
-                pair[1].y >= pair[0].y + pair[0].h,
-                "{:?} overlaps {:?}",
-                pair[0],
-                pair[1]
-            );
+        for [prev, next] in cards.array_windows() {
+            assert!(next.y >= prev.y + prev.h, "{:?} overlaps {:?}", prev, next);
         }
     }
 

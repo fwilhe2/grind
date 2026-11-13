@@ -167,7 +167,10 @@ impl Source {
     /// overlap or run past the end, which would mean the map and the text have come apart.
     pub fn splice(&self, mut patches: Vec<(Range<usize>, String)>) -> Option<String> {
         patches.sort_by_key(|(range, _)| range.start);
-        if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
+        if patches
+            .array_windows()
+            .any(|[prev, next]| prev.0.end > next.0.start)
+        {
             return None;
         }
         let mut out = String::with_capacity(self.text.len());

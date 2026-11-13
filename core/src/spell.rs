@@ -146,8 +146,8 @@ pub fn known(lexicon: &dyn Lexicon, word: &str) -> bool {
 pub fn prose_chunk(chunk: &str) -> bool {
     let chars: Vec<char> = chunk.chars().collect();
     let inner_dot = chars
-        .windows(2)
-        .any(|pair| pair[0] == '.' && pair[1].is_alphanumeric());
+        .array_windows()
+        .any(|&[prev, next]| prev == '.' && next.is_alphanumeric());
     !inner_dot
         && !chunk.contains("://")
         && !chunk

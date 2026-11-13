@@ -2364,8 +2364,7 @@ impl App {
         let block_code = view.style.as_deref() == Some(markdown::PREFORMATTED);
         let mut spans = Vec::new();
         let mut drawn_caret = false;
-        for pair in bounds.windows(2) {
-            let (start, end) = (pair[0], pair[1]);
+        for &[start, end] in bounds.array_windows() {
             let run = view.runs.iter().find(|run| {
                 (run.start..run.start + run.text.chars().count().max(1)).contains(&start)
             });

@@ -564,7 +564,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             rewrite(sheet, row, at, doc.null_date, source),
         ));
     }
-    if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
+    if patches
+        .array_windows()
+        .any(|[prev, next]| prev.0.end > next.0.start)
+    {
         return None;
     }
 

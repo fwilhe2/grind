@@ -747,7 +747,7 @@ mod tests {
         let mut none = Vec::new();
         fold_advances("ab", &[], 3.0, &mut none);
         assert_eq!(none, vec![3.0, 3.0]);
-        assert!(none.windows(2).all(|w| w[1] >= w[0]));
+        assert!(none.array_windows().all(|[prev, next]| next >= prev));
     }
 
     #[test]

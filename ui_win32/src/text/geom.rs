@@ -429,10 +429,10 @@ mod tests {
         let page = page();
         let buttons = page.strip_buttons();
         assert_eq!(buttons[0].x, crate::theme::space::GROUP);
-        for pair in buttons.windows(2) {
-            assert!(pair[0].x + pair[0].w < pair[1].x, "they overlap");
+        for [prev, next] in buttons.array_windows() {
+            assert!(prev.x + prev.w < next.x, "they overlap");
             assert!(
-                pair[1].x - (pair[0].x + pair[0].w) <= crate::theme::space::GAP,
+                next.x - (prev.x + prev.w) <= crate::theme::space::GAP,
                 "a segmented group, not a scattering"
             );
         }
@@ -486,8 +486,8 @@ mod tests {
         assert!(after(rects[1], rects[2]) > tight, "pickers | colour");
         assert_eq!(after(rects[2], rects[3]), tight, "the two swatches pair up");
         assert!(after(rects[3], rects[4]) > tight, "colour | clear");
-        for pair in rects.windows(2) {
-            assert!(pair[0].x + pair[0].w < pair[1].x, "no overlap");
+        for [prev, next] in rects.array_windows() {
+            assert!(prev.x + prev.w < next.x, "no overlap");
         }
         // The separator sits in a group gap and touches neither side of it.
         let rule = page.strip_separator(rects[0]);

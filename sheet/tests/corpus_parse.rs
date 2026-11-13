@@ -108,9 +108,9 @@ fn juxtaposed(formula: &str) -> bool {
     let Ok(tokens) = grind_sheet::formula::lex::lex(formula.trim_start_matches("of:=")) else {
         return false;
     };
-    tokens.windows(2).any(|pair| {
+    tokens.array_windows().any(|[prev, next]| {
         let ends_operand = matches!(
-            pair[0],
+            prev,
             Token::Number(_)
                 | Token::Text(_)
                 | Token::Error(_)
@@ -119,7 +119,7 @@ fn juxtaposed(formula: &str) -> bool {
                 | Token::RParen
         );
         let starts_operand = matches!(
-            pair[1],
+            next,
             Token::Number(_)
                 | Token::Text(_)
                 | Token::Error(_)

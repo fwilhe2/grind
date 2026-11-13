@@ -96,9 +96,8 @@ pub fn cut_marked(
     bounds.dedup();
 
     bounds
-        .windows(2)
-        .map(|pair| {
-            let (start, end) = (pair[0], pair[1]);
+        .array_windows()
+        .map(|&[start, end]| {
             let run = runs.iter().find(|run| {
                 (run.start..run.start + run.text.chars().count().max(1)).contains(&start)
             });

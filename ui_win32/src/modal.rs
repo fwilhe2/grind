@@ -573,8 +573,8 @@ mod tests {
             (90.0, End::Trailing),
         ];
         let placed = buttons(footer, 96, &specs);
-        for pair in placed.windows(2) {
-            assert!(pair[0].x + pair[0].w <= pair[1].x + 1e-9);
+        for [prev, next] in placed.array_windows() {
+            assert!(prev.x + prev.w <= next.x + 1e-9);
         }
         assert!(
             placed

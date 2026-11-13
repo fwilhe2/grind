@@ -292,8 +292,8 @@ mod tests {
         assert_eq!(placed[1].rect.x, placed[0].rect.x + 32.0 + space::GAP / 2.0);
         assert_eq!(placed[2].rect.x, placed[1].rect.x + 32.0 + space::GROUP);
         assert_eq!(placed[2].rect.w, 64.0);
-        for window in placed.windows(2) {
-            assert!(window[0].rect.x + window[0].rect.w <= window[1].rect.x);
+        for [prev, next] in placed.array_windows() {
+            assert!(prev.rect.x + prev.rect.w <= next.rect.x);
         }
     }
 

@@ -276,7 +276,9 @@ mod tests {
             c.blocks
         );
         assert!(
-            c.blocks.windows(2).all(|w| w[0].kind() != w[1].kind()),
+            c.blocks
+                .array_windows()
+                .all(|[prev, next]| prev.kind() != next.kind()),
             "adjacent blocks of the same kind: {:?}",
             c.blocks
         );

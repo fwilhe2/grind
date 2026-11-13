@@ -307,7 +307,10 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     // In file order. Siblings never overlap, but a corrupt span would tangle bytes, so it is
     // refused.
     patches.sort_by_key(|(range, _)| range.start);
-    if patches.windows(2).any(|w| w[0].0.end > w[1].0.start) {
+    if patches
+        .array_windows()
+        .any(|[prev, next]| prev.0.end > next.0.start)
+    {
         return None;
     }
 

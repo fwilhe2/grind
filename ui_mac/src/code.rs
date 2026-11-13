@@ -134,6 +134,9 @@ mod tests {
             "the string"
         );
         assert!(runs.iter().all(|(range, _)| range.end <= total));
-        assert!(runs.windows(2).all(|pair| pair[0].0.end <= pair[1].0.start));
+        assert!(
+            runs.array_windows()
+                .all(|[prev, next]| prev.0.end <= next.0.start)
+        );
     }
 }

@@ -959,7 +959,10 @@ mod tests {
     fn a_measured_document_stacks_in_order() {
         let flow = laid_out(&document(), 30.0);
         let tops: Vec<f64> = flow.slots().iter().map(|slot| slot.top).collect();
-        assert!(tops.windows(2).all(|w| w[1] > w[0]), "{tops:?}");
+        assert!(
+            tops.array_windows().all(|[prev, next]| next > prev),
+            "{tops:?}"
+        );
         assert_eq!(flow.slot(0).unwrap().top, SPACING.top, "the page's margin");
         assert!(flow.height() > flow.slot(2).unwrap().bottom());
         // The list item is the only one indented, and by exactly one step.

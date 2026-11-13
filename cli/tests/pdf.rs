@@ -162,8 +162,8 @@ fn pages_lists_where_each_page_begins_and_ends() {
     assert!(rows.len() >= 2, "{pages}");
     assert_eq!(rows[0][0], "1");
     assert_eq!(rows[0][1], "p1+0");
-    for pair in rows.windows(2) {
-        assert_eq!(pair[0][2], pair[1][1], "{pages}");
+    for [prev, next] in rows.array_windows() {
+        assert_eq!(prev[2], next[1], "{pages}");
     }
     // A smaller page holds less, so the same document takes more of them.
     let a6 = ok(&["text", "pages", &file, "--paper", "a6"]);
