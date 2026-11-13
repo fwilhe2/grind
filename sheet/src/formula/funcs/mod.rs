@@ -80,7 +80,9 @@ fn collect(expr: &Expr, names: &mut Vec<String>) {
             if !names.contains(&name) {
                 names.push(name);
             }
-            args.iter().for_each(|arg| collect(arg, names));
+            for arg in args {
+                collect(arg, names);
+            }
         }
         Expr::Prefix(_, inner) | Expr::Postfix(_, inner) | Expr::Paren(inner) => {
             collect(inner, names);

@@ -949,9 +949,8 @@ impl Shell {
     /// travels only so a download has something to be called.
     async fn load(self: Rc<Self>, file: File) {
         let name = file.name();
-        let buffer = match JsFuture::from(file.array_buffer()).await {
-            Ok(buffer) => buffer,
-            Err(_) => return self.set_message(format!("Could not read {name}")),
+        let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
+            return self.set_message(format!("Could not read {name}"));
         };
         self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
     }
@@ -960,9 +959,8 @@ impl Shell {
     /// UTF-8" is a rule about CSV, said in the same words by every client.
     async fn load_csv(self: Rc<Self>, file: File) {
         let name = file.name();
-        let buffer = match JsFuture::from(file.array_buffer()).await {
-            Ok(buffer) => buffer,
-            Err(_) => return self.set_message(format!("Could not read {name}")),
+        let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
+            return self.set_message(format!("Could not read {name}"));
         };
         let words = self.csv_words.take();
         match csv::decode(js_sys::Uint8Array::new(&buffer).to_vec()) {
@@ -974,9 +972,8 @@ impl Shell {
     /// The same read, for markdown to go into the open text document.
     async fn load_markdown(self: Rc<Self>, file: File) {
         let name = file.name();
-        let buffer = match JsFuture::from(file.array_buffer()).await {
-            Ok(buffer) => buffer,
-            Err(_) => return self.set_message(format!("Could not read {name}")),
+        let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
+            return self.set_message(format!("Could not read {name}"));
         };
         match String::from_utf8(js_sys::Uint8Array::new(&buffer).to_vec()) {
             Ok(text) => self.text.import_markdown(&text),
@@ -1195,9 +1192,8 @@ impl Shell {
     /// may get wrong or leave empty.
     async fn load_image(self: Rc<Self>, file: File) {
         let name = file.name();
-        let buffer = match JsFuture::from(file.array_buffer()).await {
-            Ok(buffer) => buffer,
-            Err(_) => return self.set_message(format!("Could not read {name}")),
+        let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
+            return self.set_message(format!("Could not read {name}"));
         };
         self.text
             .insert_picture(js_sys::Uint8Array::new(&buffer).to_vec());

@@ -72,7 +72,7 @@ pub fn plain(title: &str) -> String {
 /// A title's mnemonic — the letter after its single `&` — lower-cased, so Alt+F and Alt+Shift+F
 /// mean one menu.
 pub fn mnemonic(title: &str) -> Option<char> {
-    let mut chars = title.chars().peekable();
+    let mut chars = title.chars();
     while let Some(c) = chars.next() {
         if c == '&' {
             match chars.next() {

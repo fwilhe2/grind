@@ -65,9 +65,8 @@ impl App {
         self.mutate(|state| {
             let s = state.doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
             let at = a1::format(Some(&s.name), pos);
-            let text = match (s.get(pos), s.formula(pos)) {
-                (CellValue::Text(text), None) => text,
-                _ => return Err(Error::Stale(format!("{at} holds no typed text"))),
+            let (CellValue::Text(text), None) = (s.get(pos), s.formula(pos)) else {
+                return Err(Error::Stale(format!("{at} holds no typed text")));
             };
             let chars: Vec<char> = text.chars().collect();
             let len = word.chars().count();

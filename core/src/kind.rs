@@ -149,11 +149,10 @@ fn flat_kind(bytes: &[u8]) -> Option<DocumentKind> {
     let mut buf = Vec::new();
 
     for _ in 0..MAX_EVENTS {
-        let event = match reader.read_event_into(&mut buf) {
-            Ok(event) => event,
-            // Malformed XML is not this function's problem to report; the reader that runs
-            // next will say so properly.
-            Err(_) => return None,
+        // Malformed XML is not this function's problem to report; the reader that runs next
+        // will say so properly.
+        let Ok(event) = reader.read_event_into(&mut buf) else {
+            return None;
         };
         let start = match event {
             Event::Start(ref e) | Event::Empty(ref e) => e,

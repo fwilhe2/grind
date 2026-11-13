@@ -3922,9 +3922,8 @@ fn cancel_edit(hwnd: HWND) {
 /// keystroke does not redraw the grid; a full [`refresh`] when it appeared or disappeared, which
 /// moves the editor too.
 fn editor_changed(hwnd: HWND) {
-    let (edit, text) = match editor_text(hwnd) {
-        Some(pair) => pair,
-        None => return,
+    let Some((edit, text)) = editor_text(hwnd) else {
+        return;
     };
     let caret = editor_caret(edit, &text);
     // SAFETY: one borrow, released before anything is invalidated. `Sheet::assist` reads
