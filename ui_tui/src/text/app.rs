@@ -2297,7 +2297,7 @@ impl App {
         &self,
         view: &BlockView,
         line: Range<usize>,
-        selection: &Option<(Caret, Caret)>,
+        selection: Option<&(Caret, Caret)>,
         caret: Option<usize>,
         (misspelt, flagged): (&[grind_text::Misspelling], &[grind_text::grammar::Flag]),
     ) -> Vec<Span<'static>> {
@@ -2601,7 +2601,7 @@ impl App {
                     spans.extend(self.line_spans(
                         view,
                         range.clone(),
-                        &selection,
+                        selection.as_ref(),
                         caret,
                         (&misspelt, &flagged),
                     ));
@@ -2633,7 +2633,7 @@ impl App {
                                     self.line_spans(
                                         view,
                                         range.clone(),
-                                        &selection,
+                                        selection.as_ref(),
                                         caret,
                                         (&misspelt, &flagged),
                                     )

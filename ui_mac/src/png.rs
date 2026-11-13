@@ -51,19 +51,19 @@ pub fn encode(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     let idat = zlib.finish().expect("finishing into a Vec cannot fail");
 
     let mut out = SIGNATURE.to_vec();
-    chunk(&mut out, b"IHDR", &ihdr);
-    chunk(&mut out, b"IDAT", &idat);
-    chunk(&mut out, b"IEND", &[]);
+    chunk(&mut out, *b"IHDR", &ihdr);
+    chunk(&mut out, *b"IDAT", &idat);
+    chunk(&mut out, *b"IEND", &[]);
     out
 }
 
 /// One chunk: its length, its type, its data, and the CRC of the type and the data.
-fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+fn chunk(out: &mut Vec<u8>, kind: [u8; 4], data: &[u8]) {
     out.extend_from_slice(&(data.len() as u32).to_be_bytes());
-    out.extend_from_slice(kind);
+    out.extend_from_slice(&kind);
     out.extend_from_slice(data);
     let mut crc = crc32fast::Hasher::new();
-    crc.update(kind);
+    crc.update(&kind);
     crc.update(data);
     out.extend_from_slice(&crc.finalize().to_be_bytes());
 }

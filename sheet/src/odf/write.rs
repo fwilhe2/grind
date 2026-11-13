@@ -2760,12 +2760,12 @@ impl Objects {
 
     /// `Object 1`, `Object 2`, … skipping every name already taken.
     fn next_directory(&self) -> String {
-        (1..)
+        (1..=u32::MAX)
             .map(|n| format!("Object {n}"))
             .find(|dir| {
                 !self.taken.contains(dir) && !self.documents.iter().any(|d| d.directory == *dir)
             })
-            .expect("an unbounded range has a free name")
+            .expect("there is always a free number")
     }
 }
 

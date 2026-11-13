@@ -394,11 +394,10 @@ fn every_starter_lints_clean() {
     let sandbox = Sandbox::new("none");
     let report = init(&sandbox.0, ".", &["--template", "none"]);
     assert_eq!(report["README.md"], "wrote");
-    assert!(
-        report
-            .keys()
-            .all(|p| !p.ends_with(".grind") && !p.ends_with(".rhai") || p == "grind.d.rhai")
-    );
+    assert!(report.keys().all(|p| {
+        let extension = Path::new(p).extension().and_then(|e| e.to_str());
+        !matches!(extension, Some("grind" | "rhai")) || p == "grind.d.rhai"
+    }));
 }
 
 /// Running it again names no starter, so it must not add one beside the first.

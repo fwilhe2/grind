@@ -1100,7 +1100,9 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
         }
 
         #[cfg(feature = "spell")]
-        Command::Spelling { setting } => spelling_setting(DocumentKind::Spreadsheet, setting),
+        Command::Spelling { setting } => {
+            spelling_setting(DocumentKind::Spreadsheet, setting.as_deref())
+        }
 
         Command::Find {
             file,
@@ -1290,13 +1292,13 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             };
             spec.x_axis = axis(
                 Some(&spec.x_axis),
-                x_axis_label,
+                x_axis_label.as_deref(),
                 *x_tick_labels,
                 *x_gridlines,
             );
             spec.y_axis = axis(
                 Some(&spec.y_axis),
-                y_axis_label,
+                y_axis_label.as_deref(),
                 *y_tick_labels,
                 *y_gridlines,
             );
@@ -1354,13 +1356,13 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             }
             spec.x_axis = axis(
                 Some(&chart.x_axis),
-                x_axis_label,
+                x_axis_label.as_deref(),
                 *x_tick_labels,
                 *x_gridlines,
             );
             spec.y_axis = axis(
                 Some(&chart.y_axis),
-                y_axis_label,
+                y_axis_label.as_deref(),
                 *y_tick_labels,
                 *y_gridlines,
             );
@@ -1485,13 +1487,13 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 *index,
                 axis(
                     Some(&chart.x_axis),
-                    x_axis_label,
+                    x_axis_label.as_deref(),
                     *x_tick_labels,
                     *x_gridlines,
                 ),
                 axis(
                     Some(&chart.y_axis),
-                    y_axis_label,
+                    y_axis_label.as_deref(),
                     *y_tick_labels,
                     *y_gridlines,
                 ),
@@ -1516,13 +1518,13 @@ fn chart_sheet(app: &App, name: Option<&str>) -> Result<usize, String> {
 /// "unset it" flag in this CLI uses.
 fn axis(
     current: Option<&grind_sheet::ChartAxis>,
-    label: &Option<String>,
+    label: Option<&str>,
     tick_labels: Option<bool>,
     gridlines: Option<bool>,
 ) -> grind_sheet::ChartAxis {
     let mut axis = current.cloned().unwrap_or_default();
     if let Some(label) = label {
-        axis.label = (!label.is_empty()).then(|| label.clone());
+        axis.label = (!label.is_empty()).then(|| label.to_owned());
     }
     if let Some(show) = tick_labels {
         axis.tick_labels = show;

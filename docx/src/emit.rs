@@ -1673,6 +1673,10 @@ fn points(length: &str) -> Option<f64> {
 }
 
 /// A cell's look: its own borders, fill, alignment and margins over the table's.
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "one flag per side of the cell, for whether it is on the table's edge"
+)]
 fn cell_look(
     cell: &crate::body::Cell,
     table: &styles::TableLook,

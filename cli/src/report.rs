@@ -537,6 +537,10 @@ pub struct DocumentReport {
     pub can_redo: bool,
 }
 
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if hands the field over by reference"
+)]
 fn is_zero(n: &usize) -> bool {
     *n == 0
 }

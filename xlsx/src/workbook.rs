@@ -349,10 +349,10 @@ fn unique_name(name: &str, taken: &[Sheet]) -> String {
     if !clashes(base) {
         return base.to_owned();
     }
-    (2..)
+    (2..=u32::MAX)
         .map(|n| format!("{base} ({n})"))
         .find(|candidate| !clashes(candidate))
-        .expect("the integers do not run out")
+        .expect("there is always a free number")
 }
 
 #[cfg(test)]

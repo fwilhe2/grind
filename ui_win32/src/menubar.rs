@@ -389,7 +389,7 @@ mod native {
                 let out = buffer.dc();
                 buffer.clear(theme.backdrop);
                 let radius = scale(crate::theme::space::RADIUS, dpi).round() as i32;
-                let _font = Selected::font(out, &font);
+                let selected = Selected::font(out, &font);
                 SetBkMode(out, TRANSPARENT);
                 for (i, (item, title)) in items.iter().zip(&titles).enumerate() {
                     let (l, t, r, b) = item.edges();
@@ -423,7 +423,7 @@ mod native {
                         DrawTextW(out, &mut text, &raw mut rect, flags);
                     }
                 }
-                drop(_font);
+                drop(selected);
                 let _ = SetViewportOrgEx(dc, left, top, None);
                 buffer.present(dc);
                 let _ = SetViewportOrgEx(dc, 0, 0, None);

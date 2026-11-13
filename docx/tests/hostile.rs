@@ -65,15 +65,13 @@ fn part(bytes: &[u8], name: &str) -> Vec<u8> {
 
 /// Import, and if it imports, read the result back. Panics are the only failure.
 fn survives(label: &str, bytes: &[u8]) {
-    let outcome = std::panic::catch_unwind(|| grind_docx::convert(bytes));
-    match outcome {
-        Err(_) => panic!("{label}: the import panicked"),
-        Ok(Err(_)) => {}
-        Ok(Ok((odf, _))) => {
-            if let Err(e) = grind_text::read_bytes(label, &odf) {
-                panic!("{label}: imported to ODF our reader refuses: {e}");
-            }
-        }
+    let Ok(outcome) = std::panic::catch_unwind(|| grind_docx::convert(bytes)) else {
+        panic!("{label}: the import panicked");
+    };
+    if let Ok((odf, _)) = outcome
+        && let Err(e) = grind_text::read_bytes(label, &odf)
+    {
+        panic!("{label}: imported to ODF our reader refuses: {e}");
     }
 }
 

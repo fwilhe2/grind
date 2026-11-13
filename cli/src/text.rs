@@ -731,7 +731,9 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
         }
 
         #[cfg(feature = "spell")]
-        TextCommand::Spelling { setting } => spelling_setting(DocumentKind::Text, setting),
+        TextCommand::Spelling { setting } => {
+            spelling_setting(DocumentKind::Text, setting.as_deref())
+        }
         #[cfg(feature = "spell")]
         TextCommand::Spell {
             file,

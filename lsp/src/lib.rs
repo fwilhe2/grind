@@ -164,10 +164,12 @@ struct Server<'h> {
 /// `.grind` arrives as `kdl` when the editor was told it is KDL, and an unsaved one has no name
 /// to go by, only grind's client calling it `grind`.
 fn language(uri: &Uri, id: &str) -> Option<Language> {
-    let path = uri.as_str();
-    if path.ends_with(".grind") || id == "grind" {
+    let extension = std::path::Path::new(uri.as_str())
+        .extension()
+        .and_then(|e| e.to_str());
+    if extension == Some("grind") || id == "grind" {
         Some(Language::Grind)
-    } else if path.ends_with(".rhai") || id == "rhai" {
+    } else if extension == Some("rhai") || id == "rhai" {
         Some(Language::Rhai)
     } else {
         None

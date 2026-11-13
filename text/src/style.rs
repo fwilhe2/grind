@@ -159,18 +159,18 @@ impl CharStyle {
     /// not bold.
     #[must_use]
     pub fn common(&self, other: &CharStyle) -> CharStyle {
-        fn agreed(a: &Option<String>, b: &Option<String>) -> Option<String> {
-            (a == b).then(|| a.clone()).flatten()
+        fn agreed(a: Option<&String>, b: Option<&String>) -> Option<String> {
+            (a == b).then(|| a.cloned()).flatten()
         }
         CharStyle {
-            font_family: agreed(&self.font_family, &other.font_family),
-            font_size: agreed(&self.font_size, &other.font_size),
-            font_weight: agreed(&self.font_weight, &other.font_weight),
-            font_style: agreed(&self.font_style, &other.font_style),
-            underline: agreed(&self.underline, &other.underline),
-            line_through: agreed(&self.line_through, &other.line_through),
-            color: agreed(&self.color, &other.color),
-            background: agreed(&self.background, &other.background),
+            font_family: agreed(self.font_family.as_ref(), other.font_family.as_ref()),
+            font_size: agreed(self.font_size.as_ref(), other.font_size.as_ref()),
+            font_weight: agreed(self.font_weight.as_ref(), other.font_weight.as_ref()),
+            font_style: agreed(self.font_style.as_ref(), other.font_style.as_ref()),
+            underline: agreed(self.underline.as_ref(), other.underline.as_ref()),
+            line_through: agreed(self.line_through.as_ref(), other.line_through.as_ref()),
+            color: agreed(self.color.as_ref(), other.color.as_ref()),
+            background: agreed(self.background.as_ref(), other.background.as_ref()),
             // A reading for a toolbar, not a run: it came from nowhere.
             origin: Origin::default(),
         }
@@ -203,7 +203,7 @@ impl CharStyle {
 
     #[must_use]
     pub fn is_underlined(&self) -> bool {
-        is_line(&self.underline)
+        is_line(self.underline.as_deref())
     }
 
     pub fn set_underlined(&mut self, on: bool) {
@@ -212,7 +212,7 @@ impl CharStyle {
 
     #[must_use]
     pub fn is_struck(&self) -> bool {
-        is_line(&self.line_through)
+        is_line(self.line_through.as_deref())
     }
 
     pub fn set_struck(&mut self, on: bool) {
@@ -254,8 +254,8 @@ impl CharStyle {
 }
 
 /// Whether a `*-style` attribute names a drawn line: anything but `none`.
-fn is_line(value: &Option<String>) -> bool {
-    !matches!(value.as_deref(), None | Some("none"))
+fn is_line(value: Option<&str>) -> bool {
+    !matches!(value, None | Some("none"))
 }
 
 /// A font family with XSL-FO's quoting removed. `fo:font-family` is a font list, so `'Liberation

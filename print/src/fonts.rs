@@ -495,7 +495,11 @@ mod tests {
         let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
-            .filter(|name| name.ends_with(".ttf"))
+            .filter(|name| {
+                std::path::Path::new(name)
+                    .extension()
+                    .is_some_and(|e| e == "ttf")
+            })
             .collect();
         on_disk.sort();
         let mut named: Vec<String> = BUNDLED_NAMES.iter().map(|n| (*n).to_owned()).collect();

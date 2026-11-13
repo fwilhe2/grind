@@ -181,7 +181,7 @@ pub fn normalise(style: Option<&CellStyle>, defaults: &Defaults) -> Option<CellS
 
 /// Loop C's rule for two styles (`sheet/tests/roundtrip.rs`'s `same_style`): a border's width
 /// numerically, since LibreOffice re-quantises it, and everything else exactly.
-pub fn same_style(a: &Option<CellStyle>, b: &Option<CellStyle>) -> bool {
+pub fn same_style(a: Option<&CellStyle>, b: Option<&CellStyle>) -> bool {
     let (Some(a), Some(b)) = (a, b) else {
         return a.is_none() && b.is_none();
     };
@@ -406,7 +406,7 @@ pub fn differences_with(
                     cell(mine, pos, ours.null_date, own),
                     cell(other, pos, theirs.null_date, defaults),
                 );
-                if !same_style(&a.style, &b.style) {
+                if !same_style(a.style.as_ref(), b.style.as_ref()) {
                     out.push(Difference::Style(
                         mine.name.clone(),
                         pos,

@@ -156,6 +156,10 @@ fn failure(script: &str, error: &EvalAltResult) -> Error {
 }
 
 /// What a document method says when it is asked of a series.
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "the box is rhai\'s error type"
+)]
 fn series_says(method: &str) -> Box<EvalAltResult> {
     failed(format!(
         "this is a series of documents: `d.doc(\"name\").{method}(…)` asks one of them"
@@ -163,6 +167,10 @@ fn series_says(method: &str) -> Box<EvalAltResult> {
 }
 
 /// A failed assertion, as the runtime error Rhai positions at the call that raised it.
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "the box is rhai\'s error type"
+)]
 fn failed(message: String) -> Box<EvalAltResult> {
     EvalAltResult::ErrorRuntime(message.into(), rhai::Position::NONE).into()
 }

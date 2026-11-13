@@ -30,6 +30,10 @@ pub enum Reply {
 /// and `None` for nearly every key. It claims Tab (else commit and move right), Up/Down and Escape
 /// (else the whole edit is thrown away). **Enter is not claimed**: it commits, the common way to
 /// finish a formula, where an accidental completion would store the wrong thing.
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "a KeyboardEvent's three modifiers, as the DOM hands them over"
+)]
 pub fn on_key(offering: bool, key: &str, ctrl: bool, alt: bool, shift: bool) -> Option<Reply> {
     if !offering || ctrl || alt {
         return None;

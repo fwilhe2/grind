@@ -3329,14 +3329,14 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     let Some(style) = style else {
         return css;
     };
-    fn set(css: &mut String, property: &str, value: &Option<String>) {
+    fn set(css: &mut String, property: &str, value: Option<&String>) {
         if let Some(value) = value {
             css.push_str(&format!("{property}:{value};"));
         }
     }
-    set(&mut css, "font-weight", &style.font_weight);
-    set(&mut css, "font-style", &style.font_style);
-    set(&mut css, "font-size", &style.font_size);
+    set(&mut css, "font-weight", style.font_weight.as_ref());
+    set(&mut css, "font-style", style.font_style.as_ref());
+    set(&mut css, "font-size", style.font_size.as_ref());
     let lines: Vec<&str> = [
         (style.is_underlined(), "underline"),
         (style.is_struck(), "line-through"),
@@ -3349,19 +3349,19 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
     }
     // An indent is ODF's paragraph margin, which in a cell is CSS's first-line indent: the
     // cell's own padding stays where the grid put it.
-    set(&mut css, "text-indent", &style.indent);
+    set(&mut css, "text-indent", style.indent.as_ref());
     // The document's colour, made to read on the page it lands on (`crate::ink`).
     let ink = crate::ink::color(style.color.as_deref(), style.background.as_deref(), dark);
-    set(&mut css, "color", &ink);
-    set(&mut css, "background-color", &style.background);
-    set(&mut css, "text-align", &style.align);
+    set(&mut css, "color", ink.as_ref());
+    set(&mut css, "background-color", style.background.as_ref());
+    set(&mut css, "text-align", style.align.as_ref());
     // `automatic` is ODF's "you decide", which in CSS is saying nothing at all.
     if style
         .vertical_align
         .as_deref()
         .is_some_and(|v| v != "automatic")
     {
-        set(&mut css, "vertical-align", &style.vertical_align);
+        set(&mut css, "vertical-align", style.vertical_align.as_ref());
     }
     if let Some(wrap) = &style.wrap {
         css.push_str(match wrap.as_str() {
@@ -3370,7 +3370,7 @@ fn css_of(style: Option<&CellStyle>, numeric: bool, dark: bool) -> String {
         });
     }
     for (edge, value) in EDGES.iter().zip(&style.borders) {
-        set(&mut css, &format!("border-{edge}"), value);
+        set(&mut css, &format!("border-{edge}"), value.as_ref());
     }
     css
 }

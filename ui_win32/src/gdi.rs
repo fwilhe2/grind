@@ -87,6 +87,10 @@ impl Font {
 
     /// The same, with italic, underline and strikethrough, which GDI makes properties of the font
     /// rather than separate drawing calls.
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "the four properties LOGFONTW has a field each for"
+    )]
     pub fn styled(
         face: &str,
         height: i32,

@@ -975,7 +975,7 @@ impl App {
         let taken: Vec<String> = (0..self.sheet_count())
             .filter_map(|i| self.sheet_name(i).ok())
             .collect();
-        (1..)
+        (1..=u32::MAX)
             .map(|n| format!("Sheet{n}"))
             .find(|name| !taken.iter().any(|t| t.eq_ignore_ascii_case(name)))
             .expect("there is always a free number")

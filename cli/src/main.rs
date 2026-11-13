@@ -78,7 +78,7 @@ fn open_text_checked(file: &Path, hints: bool) -> Result<TextApp, String> {
 /// `grind <app> spelling [setting]`: print, or set and then print, the remembered spelling setting
 /// for one kind of document — the same file the windows read and write.
 #[cfg(feature = "spell")]
-fn spelling_setting(kind: DocumentKind, setting: &Option<String>) -> Result<Report, Failure> {
+fn spelling_setting(kind: DocumentKind, setting: Option<&str>) -> Result<Report, Failure> {
     use grind_spell::{Setting, preference};
     if let Some(tag) = setting {
         let chosen = Setting::from_tag(tag).ok_or_else(|| {

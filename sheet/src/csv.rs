@@ -296,7 +296,7 @@ pub fn write(rows: &[Vec<String>], options: &Export) -> String {
             if at > 0 {
                 out.push(options.dialect.delimiter);
             }
-            if options.quote_all || needs_quoting(field, &options.dialect) {
+            if options.quote_all || needs_quoting(field, options.dialect) {
                 out.push(options.dialect.quote);
                 for c in field.chars() {
                     if c == options.dialect.quote {
@@ -314,7 +314,7 @@ pub fn write(rows: &[Vec<String>], options: &Export) -> String {
     out
 }
 
-fn needs_quoting(field: &str, dialect: &Dialect) -> bool {
+fn needs_quoting(field: &str, dialect: Dialect) -> bool {
     field.contains([dialect.delimiter, dialect.quote, '\n', '\r'])
         || field.starts_with(char::is_whitespace)
         || field.ends_with(char::is_whitespace)
@@ -564,14 +564,14 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
 mod tests {
     use super::*;
 
-    fn rows(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
-        parse(text, dialect)
+    fn rows(text: &str, dialect: Dialect) -> Vec<Vec<String>> {
+        parse(text, &dialect)
     }
 
     #[test]
     fn the_plain_shape_reads() {
         assert_eq!(
-            rows("a,b,c\n1,2,3\n", &Dialect::COMMA),
+            rows("a,b,c\n1,2,3\n", Dialect::COMMA),
             vec![
                 vec!["a".to_owned(), "b".to_owned(), "c".to_owned()],
                 vec!["1".to_owned(), "2".to_owned(), "3".to_owned()],
@@ -583,7 +583,7 @@ mod tests {
     fn a_quoted_field_carries_the_delimiter_a_quote_and_a_newline() {
         let text = "name,note\n\"Smith, J\",\"said \"\"hi\"\"\"\n\"two\nlines\",x\n";
         assert_eq!(
-            rows(text, &Dialect::COMMA),
+            rows(text, Dialect::COMMA),
             vec![
                 vec!["name".to_owned(), "note".to_owned()],
                 vec!["Smith, J".to_owned(), "said \"hi\"".to_owned()],
@@ -595,27 +595,27 @@ mod tests {
     #[test]
     fn the_malformed_shapes_have_a_reading_rather_than_an_error() {
         // A quote that does not start a field is a character.
-        assert_eq!(rows("12\",a", &Dialect::COMMA)[0][0], "12\"");
-        assert_eq!(rows("a\"b,c", &Dialect::COMMA)[0][0], "a\"b");
+        assert_eq!(rows("12\",a", Dialect::COMMA)[0][0], "12\"");
+        assert_eq!(rows("a\"b,c", Dialect::COMMA)[0][0], "a\"b");
         // Text after the closing quote joins the field.
-        assert_eq!(rows("\"a\"b,c", &Dialect::COMMA)[0][0], "ab");
+        assert_eq!(rows("\"a\"b,c", Dialect::COMMA)[0][0], "ab");
         // An unterminated quote runs to the end.
-        assert_eq!(rows("\"a,b", &Dialect::COMMA)[0][0], "a,b");
+        assert_eq!(rows("\"a,b", Dialect::COMMA)[0][0], "a,b");
         // Ragged rows stay ragged; the caller lands each row where it falls.
-        let ragged = rows("a,b,c\nd\ne,f\n", &Dialect::COMMA);
+        let ragged = rows("a,b,c\nd\ne,f\n", Dialect::COMMA);
         assert_eq!(ragged.iter().map(Vec::len).collect::<Vec<_>>(), [3, 1, 2]);
     }
 
     #[test]
     fn every_line_ending_ends_a_record_and_a_trailing_one_does_not_add_a_row() {
         for text in ["a\nb\n", "a\r\nb\r\n", "a\rb\r"] {
-            assert_eq!(rows(text, &Dialect::COMMA).len(), 2, "{text:?}");
+            assert_eq!(rows(text, Dialect::COMMA).len(), 2, "{text:?}");
         }
-        assert_eq!(rows("a\nb", &Dialect::COMMA).len(), 2);
-        assert_eq!(rows("", &Dialect::COMMA).len(), 0);
+        assert_eq!(rows("a\nb", Dialect::COMMA).len(), 2);
+        assert_eq!(rows("", Dialect::COMMA).len(), 0);
         // A blank line is an empty row, because dropping it would move every row after it.
         assert_eq!(
-            rows("a\n\nb\n", &Dialect::COMMA),
+            rows("a\n\nb\n", Dialect::COMMA),
             vec![
                 vec!["a".to_owned()],
                 vec![String::new()],
@@ -626,15 +626,15 @@ mod tests {
 
     #[test]
     fn a_byte_order_mark_is_not_content() {
-        assert_eq!(rows("\u{feff}id,name\n", &Dialect::COMMA)[0][0], "id");
+        assert_eq!(rows("\u{feff}id,name\n", Dialect::COMMA)[0][0], "id");
     }
 
     #[test]
     fn the_delimiter_is_the_only_difference_between_csv_and_tsv() {
         let expected = vec![vec!["a".to_owned(), "b".to_owned()]];
-        assert_eq!(rows("a\tb\n", &Dialect::TAB), expected);
-        assert_eq!(rows("a;b\n", &Dialect::SEMICOLON), expected);
-        assert_eq!(rows("a|b\n", &Dialect::new('|')), expected);
+        assert_eq!(rows("a\tb\n", Dialect::TAB), expected);
+        assert_eq!(rows("a;b\n", Dialect::SEMICOLON), expected);
+        assert_eq!(rows("a|b\n", Dialect::new('|')), expected);
     }
 
     #[test]

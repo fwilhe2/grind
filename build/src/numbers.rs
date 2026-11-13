@@ -18,6 +18,10 @@ use crate::hint::hint;
 
 type Res<T> = Result<T, Box<EvalAltResult>>;
 
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "the box is rhai\'s error type"
+)]
 fn bad(message: impl Into<String>) -> Box<EvalAltResult> {
     message.into().into()
 }

@@ -281,7 +281,7 @@ pub struct NamedChar {
 /// What a run looks like: its named character styles (`names`, outermost first, space-separated),
 /// each down its chain, with the run's direct formatting over them.
 #[must_use]
-pub fn shown(
+pub(crate) fn shown(
     styles: &HashMap<String, NamedChar>,
     names: Option<&str>,
     direct: &CharStyle,
@@ -316,8 +316,8 @@ pub(crate) const MAX_DEPTH: usize = 32;
 /// chain's root down to `name` laid over them. An undeclared name or a looping chain stops where
 /// it stops (R5).
 #[must_use]
-pub fn resolve(
-    styles: &HashMap<String, ParagraphStyle>,
+pub fn resolve<S: std::hash::BuildHasher>(
+    styles: &HashMap<String, ParagraphStyle, S>,
     default: &ParagraphProps,
     name: Option<&str>,
 ) -> ParagraphProps {
@@ -338,7 +338,10 @@ pub fn resolve(
 }
 
 /// The first named style down `name`'s chain: `name` itself unless it is an automatic style.
-pub fn named(styles: &HashMap<String, ParagraphStyle>, name: Option<&str>) -> Option<String> {
+pub(crate) fn named(
+    styles: &HashMap<String, ParagraphStyle>,
+    name: Option<&str>,
+) -> Option<String> {
     let mut at = name;
     for _ in 0..MAX_DEPTH {
         let style = styles.get(at?)?;

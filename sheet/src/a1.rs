@@ -106,10 +106,10 @@ pub fn resolve_in(app: &App, sheet: usize, reference: &Reference) -> Result<(usi
 
     let end = reference.end.as_ref().unwrap_or(&reference.start);
     // A whole column starts at row 0 and ends at the last used row; likewise a whole row.
-    let start = Pos::new(axis(&reference.start.row, 0), axis(&reference.start.col, 0));
+    let start = Pos::new(axis(reference.start.row, 0), axis(reference.start.col, 0));
     let stop = Pos::new(
-        axis(&end.row, rows.saturating_sub(1)),
-        axis(&end.col, cols.saturating_sub(1)),
+        axis(end.row, rows.saturating_sub(1)),
+        axis(end.col, cols.saturating_sub(1)),
     );
     for pos in [start, stop] {
         if pos.row >= crate::MAX_ROWS || pos.col >= crate::MAX_COLS {
@@ -131,7 +131,7 @@ fn format_pos(pos: Pos) -> String {
     }
 }
 
-fn axis(a: &Option<lex::Axis>, whole: u32) -> u32 {
+fn axis(a: Option<lex::Axis>, whole: u32) -> u32 {
     a.map_or(whole, |a| a.index)
 }
 

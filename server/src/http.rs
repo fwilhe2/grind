@@ -36,6 +36,7 @@ impl Request {
         self
     }
 
+    #[must_use]
     pub fn with_body(mut self, body: impl Into<Vec<u8>>) -> Self {
         self.body = body.into();
         self

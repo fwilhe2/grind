@@ -587,6 +587,10 @@ pub fn register(engine: &mut Engine) {
 }
 
 /// A message with no position of its own — Rhai adds the call site's.
+#[expect(
+    clippy::unnecessary_box_returns,
+    reason = "the box is rhai\'s error type"
+)]
 fn bad(message: impl Into<String>) -> Box<EvalAltResult> {
     message.into().into()
 }

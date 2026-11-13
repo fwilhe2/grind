@@ -288,7 +288,7 @@ pub struct Room {
 /// The face the block at `index`, of `kind` and `style`, is set in: its own where its paragraph
 /// style states one, its role's otherwise.
 #[must_use]
-pub fn face_for<'a>(
+pub(crate) fn face_for<'a>(
     faces: &'a [RoleFace<'a>],
     blocks: &'a HashMap<usize, RoleFace<'a>>,
     index: usize,

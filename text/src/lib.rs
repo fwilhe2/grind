@@ -356,7 +356,7 @@ fn unused_table_name(doc: &Document) -> String {
         .iter()
         .filter_map(|b| b.cell.as_ref().map(|c| c.table.as_str()))
         .collect();
-    (1..)
+    (1..=u32::MAX)
         .map(|n| format!("Table{n}"))
         .find(|name| !taken.contains(name.as_str()))
         .unwrap_or_else(|| "Table".to_owned())
