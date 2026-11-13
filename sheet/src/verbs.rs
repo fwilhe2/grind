@@ -156,8 +156,7 @@ pub fn restyle_chart(
             "legend=bottom" => spec.legend = Some(crate::ChartLegend::Bottom),
             "legend=start" => spec.legend = Some(crate::ChartLegend::Start),
             "legend=end" => spec.legend = Some(crate::ChartLegend::End),
-            _ if word.starts_with("width=") || word.starts_with("height=") => {
-                let (which, length) = word.split_once('=').unwrap_or((word, ""));
+            _ if let Some((which @ ("width" | "height"), length)) = word.split_once('=') => {
                 if !crate::style::length_mm(length).is_some_and(|mm| mm > 0.0) {
                     return Err(format!("“{length}” is not a length — 12cm, 4in or 300pt"));
                 }
@@ -166,8 +165,7 @@ pub fn restyle_chart(
                     _ => height = Some(length.to_owned()),
                 }
             }
-            _ if word.starts_with("range=") => {
-                let text = &word["range=".len()..];
+            _ if let Some(text) = word.strip_prefix("range=") => {
                 let reference = crate::a1::parse(text)
                     .map_err(|_| format!("“{text}” is not a range — A1:C9"))?;
                 let (_, start, end) =
@@ -178,11 +176,9 @@ pub fn restyle_chart(
                 spec.categories = guessed.spec.categories;
                 spec.series = guessed.spec.series;
             }
-            _ if word.starts_with("title=")
-                || word.starts_with("x-title=")
-                || word.starts_with("y-title=") =>
+            _ if let Some((which @ ("title" | "x-title" | "y-title"), first)) =
+                word.split_once('=') =>
             {
-                let (which, first) = word.split_once('=').unwrap_or((word, ""));
                 let title = quoted_or_rest(first, &mut rest)?;
                 let title = Some(title).filter(|t| !t.is_empty());
                 match which {
@@ -191,8 +187,10 @@ pub fn restyle_chart(
                     _ => spec.y_axis.label = title,
                 }
             }
-            _ if word.starts_with("color") && word.contains('=') => {
-                let (n, value) = word["color".len()..].split_once('=').unwrap_or_default();
+            _ if let Some((n, value)) = word
+                .strip_prefix("color")
+                .and_then(|rest| rest.split_once('=')) =>
+            {
                 let n = n
                     .parse::<usize>()
                     .ok()

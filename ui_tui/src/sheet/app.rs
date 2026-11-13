@@ -1435,10 +1435,10 @@ impl App {
             "welcome!" => self.cmd_welcome(true),
             "new" => self.cmd_new("", false),
             "new!" => self.cmd_new("", true),
-            _ if cmd.starts_with("new ") => self.cmd_new(cmd[4..].trim(), false),
-            _ if cmd.starts_with("new! ") => self.cmd_new(cmd[5..].trim(), true),
-            _ if cmd.starts_with("open ") => self.cmd_open(cmd[5..].trim(), false),
-            _ if cmd.starts_with("open! ") => self.cmd_open(cmd[6..].trim(), true),
+            _ if let Some(rest) = cmd.strip_prefix("new ") => self.cmd_new(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("new! ") => self.cmd_new(rest.trim(), true),
+            _ if let Some(rest) = cmd.strip_prefix("open ") => self.cmd_open(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("open! ") => self.cmd_open(rest.trim(), true),
             "q!" => self.cmd_quit(true),
             "w" => {
                 self.cmd_write(None);
@@ -1490,35 +1490,37 @@ impl App {
             "friendly" => self.cmd_friendly(),
             "functions" => self.cmd_functions(""),
             "calc" => self.cmd_calc(""),
-            _ if cmd.starts_with("calc ") => self.cmd_calc(cmd[5..].trim()),
-            _ if cmd.starts_with("functions ") => self.cmd_functions(cmd[10..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("calc ") => self.cmd_calc(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("functions ") => self.cmd_functions(rest.trim()),
             "filter" => self.cmd_filter(),
             // Conditional formatting (`doc/conditional-format.md` §4): what each look writes and
             // how the condition becomes ODF are `grind_sheet::rule`'s, shared with every shell.
             "rules" => self.cmd_rules(),
             "rule" => self.cmd_rule(""),
             "rule!" => self.cmd_unrule(""),
-            _ if cmd.starts_with("rule ") => self.cmd_rule(cmd[5..].trim()),
-            _ if cmd.starts_with("rule! ") => self.cmd_unrule(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("rule ") => self.cmd_rule(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("rule! ") => self.cmd_unrule(rest.trim()),
             "locale" => self.cmd_locale(None),
-            _ if cmd.starts_with("locale ") => self.cmd_locale(Some(cmd[7..].trim())),
+            _ if let Some(rest) = cmd.strip_prefix("locale ") => self.cmd_locale(Some(rest.trim())),
             "chart" | "chart new" => self.cmd_chart(""),
             "charts" => self.cmd_charts(),
             "chart preview" => self.cmd_chart_preview(""),
-            _ if cmd.starts_with("chart new ") => self.cmd_chart(cmd[10..].trim()),
-            _ if cmd.starts_with("chart preview ") => self.cmd_chart_preview(cmd[14..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("chart new ") => self.cmd_chart(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("chart preview ") => {
+                self.cmd_chart_preview(rest.trim())
+            }
             "chart!" => self.cmd_unchart(),
             "chart here" => self.cmd_move_chart(),
-            _ if cmd.starts_with("chart ") => self.cmd_restyle_chart(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("chart ") => self.cmd_restyle_chart(rest.trim()),
             "yank-values" => self.cmd_yank_values(),
             "find" => self.cmd_find(""),
             "spell" => self.cmd_spell(""),
-            _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("spell ") => self.cmd_spell(rest.trim()),
             "dict" => crate::dict::open(&mut self.dict, None),
-            _ if cmd.starts_with("dict ") => {
-                self.status = crate::dict::command(cmd[5..].trim(), self.speller.as_deref());
+            _ if let Some(rest) = cmd.strip_prefix("dict ") => {
+                self.status = crate::dict::command(rest.trim(), self.speller.as_deref());
             }
-            _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("fix ") => self.cmd_fix(rest.trim()),
             "merge" => self.cmd_merge(true),
             "unmerge" => self.cmd_merge(false),
             "hide" => self.cmd_hide(true, false),
@@ -1532,29 +1534,31 @@ impl App {
             "height" | "height auto" => self.cmd_height(None),
             "name!" => self.cmd_unname(),
             "format-table" => self.cmd_table(""),
-            _ if cmd.starts_with("align ") => self.cmd_align(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("align ") => self.cmd_align(rest.trim()),
             _ if cmd == "rotate" || cmd.starts_with("rotate ") => self.cmd_rotate(&cmd[6..]),
-            _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
-            _ if cmd.starts_with("fill ") => self.cmd_color(cmd[5..].trim(), true),
-            _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("color ") => self.cmd_color(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("fill ") => self.cmd_color(rest.trim(), true),
+            _ if let Some(rest) = cmd.strip_prefix("find ") => self.cmd_find(rest.trim()),
             // vi's substitution, the text half's own spelling of the same verb: every cell,
             // one undo step, because that is what `App::replace` is.
-            _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
-            _ if cmd.starts_with("format ") => self.cmd_format(cmd[7..].trim()),
-            _ if cmd.starts_with("eval ") => self.cmd_eval(cmd[5..].trim()),
-            _ if cmd.starts_with("width ") => self.cmd_width(Some(cmd[6..].trim())),
-            _ if cmd.starts_with("height ") => self.cmd_height(Some(cmd[7..].trim())),
-            _ if cmd.starts_with("name ") => self.cmd_name(cmd[5..].trim()),
-            _ if cmd.starts_with("rename ") => self.cmd_rename_name(cmd[7..].trim()),
-            _ if cmd.starts_with("inline ") => self.cmd_inline_name(cmd[7..].trim()),
-            _ if cmd.starts_with("format-table ") => self.cmd_table(cmd[13..].trim()),
-            _ if cmd.starts_with("csv-in ") => self.cmd_csv_in(cmd[7..].trim()),
-            _ if cmd.starts_with("csv-out ") => self.cmd_csv_out(cmd[8..].trim()),
-            _ if cmd.starts_with("sheet-rename ") => self.cmd_sheet_rename(cmd[13..].trim()),
-            _ if cmd.starts_with("w ") => {
-                self.cmd_write(Some(cmd[2..].trim()));
+            _ if let Some(rest) = cmd.strip_prefix("s/") => self.cmd_substitute(rest),
+            _ if let Some(rest) = cmd.strip_prefix("format ") => self.cmd_format(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("eval ") => self.cmd_eval(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("width ") => self.cmd_width(Some(rest.trim())),
+            _ if let Some(rest) = cmd.strip_prefix("height ") => self.cmd_height(Some(rest.trim())),
+            _ if let Some(rest) = cmd.strip_prefix("name ") => self.cmd_name(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("rename ") => self.cmd_rename_name(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("inline ") => self.cmd_inline_name(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("format-table ") => self.cmd_table(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("csv-in ") => self.cmd_csv_in(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("csv-out ") => self.cmd_csv_out(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("sheet-rename ") => {
+                self.cmd_sheet_rename(rest.trim())
             }
-            _ if cmd.starts_with("sheet ") => self.cmd_sheet(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("w ") => {
+                self.cmd_write(Some(rest.trim()));
+            }
+            _ if let Some(rest) = cmd.strip_prefix("sheet ") => self.cmd_sheet(rest.trim()),
             // Anything else is a cell, a range or a defined name — vi's `:{line}` counterpart.
             _ => self.cmd_jump(cmd),
         }

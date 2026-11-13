@@ -969,10 +969,10 @@ impl App {
             "welcome!" => self.cmd_welcome(true),
             "new" => self.cmd_new("", false),
             "new!" => self.cmd_new("", true),
-            _ if cmd.starts_with("new ") => self.cmd_new(cmd[4..].trim(), false),
-            _ if cmd.starts_with("new! ") => self.cmd_new(cmd[5..].trim(), true),
-            _ if cmd.starts_with("open ") => self.cmd_open(cmd[5..].trim(), false),
-            _ if cmd.starts_with("open! ") => self.cmd_open(cmd[6..].trim(), true),
+            _ if let Some(rest) = cmd.strip_prefix("new ") => self.cmd_new(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("new! ") => self.cmd_new(rest.trim(), true),
+            _ if let Some(rest) = cmd.strip_prefix("open ") => self.cmd_open(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("open! ") => self.cmd_open(rest.trim(), true),
             "q!" => self.cmd_quit(true),
             "w" => {
                 self.cmd_write(None);
@@ -986,12 +986,14 @@ impl App {
             "lint" => self.cmd_lint(false),
             "lint hints" | "lint!" => self.cmd_lint(true),
             "outline" => self.cmd_outline(),
-            _ if cmd.starts_with("image ") => self.cmd_image(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("image ") => self.cmd_image(rest.trim()),
             "alt" => self.cmd_alt_edit(false),
             "desc" => self.cmd_alt_edit(true),
             "alt!" => self.cmd_alt(Some(""), Some("")),
-            _ if cmd.starts_with("alt ") => self.cmd_alt(Some(cmd[4..].trim()), None),
-            _ if cmd.starts_with("desc ") => self.cmd_alt(None, Some(cmd[5..].trim())),
+            _ if let Some(rest) = cmd.strip_prefix("alt ") => self.cmd_alt(Some(rest.trim()), None),
+            _ if let Some(rest) = cmd.strip_prefix("desc ") => {
+                self.cmd_alt(None, Some(rest.trim()))
+            }
             // The word processor's half of inline names (§3.6). A verb rather than a key,
             // and the same word turns it off: nothing is written either way.
             "names" => {
@@ -1003,14 +1005,14 @@ impl App {
             }
             "words" => self.cmd_words(),
             "spell" => self.cmd_spell(""),
-            _ if cmd.starts_with("spell ") => self.cmd_spell(cmd[6..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("spell ") => self.cmd_spell(rest.trim()),
             "dict" => crate::dict::open(&mut self.dict, None),
-            _ if cmd.starts_with("dict ") => {
-                self.status = crate::dict::command(cmd[5..].trim(), self.speller.as_deref());
+            _ if let Some(rest) = cmd.strip_prefix("dict ") => {
+                self.status = crate::dict::command(rest.trim(), self.speller.as_deref());
             }
-            _ if cmd.starts_with("fix ") => self.cmd_fix(cmd[4..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("fix ") => self.cmd_fix(rest.trim()),
             "grammar" => self.cmd_grammar(""),
-            _ if cmd.starts_with("grammar ") => self.cmd_grammar(cmd[8..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("grammar ") => self.cmd_grammar(rest.trim()),
             "plain" => self.set_selection_style(&CharStyle::default(), "plain"),
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
@@ -1018,37 +1020,39 @@ impl App {
             #[cfg(feature = "pdf")]
             "pdf" => self.status = "usage: :pdf <file>".to_string(),
             #[cfg(feature = "pdf")]
-            _ if cmd.starts_with("pdf ") => self.cmd_pdf(cmd[4..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("pdf ") => self.cmd_pdf(rest.trim()),
             #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
             #[cfg(feature = "pdf")]
             "print" => self.cmd_print(),
-            _ if cmd.starts_with("md-in ") => self.cmd_md_in(cmd[6..].trim()),
-            _ if cmd.starts_with("md-out ") => self.cmd_md_out(cmd[7..].trim()),
-            _ if cmd.starts_with("mark ") => self.cmd_mark(cmd[5..].trim()),
-            _ if cmd.starts_with("table ") => self.cmd_table(cmd[6..].trim()),
-            _ if cmd.starts_with("move ") => self.cmd_move(cmd[5..].trim()),
-            _ if cmd.starts_with("find ") => self.cmd_find(cmd[5..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("md-in ") => self.cmd_md_in(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("md-out ") => self.cmd_md_out(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("mark ") => self.cmd_mark(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("table ") => self.cmd_table(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("move ") => self.cmd_move(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("find ") => self.cmd_find(rest.trim()),
             // vi's substitution, a document edit: `App::replace` changes every match, which is
             // what `/g` means.
-            _ if cmd.starts_with("s/") => self.cmd_substitute(&cmd[2..]),
-            _ if cmd.starts_with("font ") => {
-                self.cmd_char(grind_text::format::Change::Family(non_empty(&cmd[5..])))
+            _ if let Some(rest) = cmd.strip_prefix("s/") => self.cmd_substitute(rest),
+            _ if let Some(rest) = cmd.strip_prefix("font ") => {
+                self.cmd_char(grind_text::format::Change::Family(non_empty(rest)))
             }
             "font" => self.cmd_char(grind_text::format::Change::Family(None)),
-            _ if cmd.starts_with("size ") => {
-                self.cmd_char(grind_text::format::Change::Size(non_empty(&cmd[5..])))
+            _ if let Some(rest) = cmd.strip_prefix("size ") => {
+                self.cmd_char(grind_text::format::Change::Size(non_empty(rest)))
             }
             "size" => self.cmd_char(grind_text::format::Change::Size(None)),
-            _ if cmd.starts_with("color ") => self.cmd_color(cmd[6..].trim(), false),
-            _ if cmd.starts_with("highlight ") => self.cmd_color(cmd[10..].trim(), true),
-            _ if cmd.starts_with("li") => self.cmd_list(cmd[2..].trim()),
-            _ if cmd.starts_with("w ") => {
-                self.cmd_write(Some(cmd[2..].trim()));
+            _ if let Some(rest) = cmd.strip_prefix("color ") => self.cmd_color(rest.trim(), false),
+            _ if let Some(rest) = cmd.strip_prefix("highlight ") => {
+                self.cmd_color(rest.trim(), true)
             }
-            _ if cmd.starts_with("style ") => self.cmd_style(Some(cmd[6..].trim())),
+            _ if let Some(rest) = cmd.strip_prefix("li") => self.cmd_list(rest.trim()),
+            _ if let Some(rest) = cmd.strip_prefix("w ") => {
+                self.cmd_write(Some(rest.trim()));
+            }
+            _ if let Some(rest) = cmd.strip_prefix("style ") => self.cmd_style(Some(rest.trim())),
             "style" => self.cmd_style(None),
-            _ if cmd.starts_with("h ") => self.cmd_kind(cmd[2..].trim()),
+            _ if let Some(rest) = cmd.strip_prefix("h ") => self.cmd_kind(rest.trim()),
             // Anything else is an address, vi's `:{line}` counterpart — and here it may be
             // `p12`, `#intro` or `§2.1`, which is the thing no word processor's UI offers.
             _ => self.cmd_jump(cmd),
