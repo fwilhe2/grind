@@ -135,7 +135,7 @@ pub fn snippets() -> String {
             doc.push(text.trim().to_owned());
             continue;
         }
-        let Some(signature) = line.strip_prefix("fn ").and_then(|s| s.strip_suffix(';')) else {
+        let Some(signature) = line.strip_circumfix("fn ", ';') else {
             // A blank line between registrations, or `module static;` — either way whatever
             // documentation was accumulating belongs to nothing and is dropped.
             if !line.is_empty() {

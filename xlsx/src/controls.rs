@@ -167,7 +167,7 @@ fn place(sheet: &mut Sheet, control: Control, report: &mut Report) {
 fn link(formula: &str, own: &str) -> Option<Link> {
     let (sheet, cell) = match formula.rsplit_once('!') {
         Some((sheet, cell)) => {
-            let sheet = match sheet.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+            let sheet = match sheet.strip_circumfix('\'', '\'') {
                 Some(quoted) => quoted.replace("''", "'"),
                 None => sheet.to_owned(),
             };

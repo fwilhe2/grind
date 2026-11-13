@@ -116,7 +116,7 @@ pub fn vocabulary(definitions: &str) -> Vec<Function> {
             doc.push(text.trim_prefix(' ').to_owned());
             continue;
         }
-        let Some(signature) = line.strip_prefix("fn ").and_then(|s| s.strip_suffix(';')) else {
+        let Some(signature) = line.strip_circumfix("fn ", ';') else {
             if !line.is_empty() {
                 doc.clear();
             }
