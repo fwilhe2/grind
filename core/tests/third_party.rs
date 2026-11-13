@@ -775,7 +775,9 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn raw(text: &str) -> String {
-    let mut hashes = 1;
+    // As few as hold the text, which is what `clippy::needless_raw_string_hashes` asks of the
+    // file this writes.
+    let mut hashes = 0;
     while text.contains(&format!("\"{}", "#".repeat(hashes))) {
         hashes += 1;
     }
