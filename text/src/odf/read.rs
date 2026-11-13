@@ -2145,7 +2145,7 @@ fn block_child(name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
                 .as_deref()
                 .and_then(|source| source.bytes.get(attrs.span()))
             {
-                let kept = super::source::attributes(tag, &[]);
+                let kept = grind_core::odf::envelope::attributes_except(tag, &[]);
                 b.open_lists.push((attrs.span().start, kept));
             }
             Some(Box::new(List::new(before, frames)))

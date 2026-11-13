@@ -168,45 +168,10 @@ pub struct Block {
 /// verbatim so they keep the document's prefixes.
 pub fn kept_attributes(start_tag: &[u8]) -> String {
     // What the writer always emits, and what would therefore appear twice.
-    attributes(start_tag, &["text:style-name", "text:outline-level"])
-}
-
-/// Every attribute of a start tag except those in `drop`, as the file spelled them — a list's
-/// `text:style-name` and `xml:id`, for the `text:list` a regenerated body opens.
-pub fn attributes(start_tag: &[u8], drop: &[&str]) -> String {
-    let Ok(tag) = std::str::from_utf8(start_tag) else {
-        return String::new();
-    };
-    // Past `<text:p`, and stopping before the `/>` or `>` that closes it.
-    let Some(body) = tag.find(char::is_whitespace).map(|i| &tag[i..]) else {
-        return String::new();
-    };
-    let body = body.trim_end_matches('>').trim_end_matches('/');
-
-    let mut out = String::new();
-    let mut rest = body;
-    while let Some(eq) = rest.find('=') {
-        let name = rest[..eq].trim();
-        let after = &rest[eq + 1..];
-        // An attribute value is quoted and cannot contain its own quote character, so the next
-        // one of the same kind ends it — `>` and `<` inside notwithstanding.
-        let Some(quote) = after.chars().find(|c| *c == '"' || *c == '\'') else {
-            break;
-        };
-        let Some(open) = after.find(quote) else { break };
-        let Some(len) = after[open + 1..].find(quote) else {
-            break;
-        };
-        let end = open + 1 + len + 1;
-        if !name.is_empty() && !drop.contains(&name) {
-            out.push(' ');
-            out.push_str(name);
-            out.push('=');
-            out.push_str(&after[open..end]);
-        }
-        rest = &after[end..];
-    }
-    out
+    grind_core::odf::envelope::attributes_except(
+        start_tag,
+        &["text:style-name", "text:outline-level"],
+    )
 }
 
 impl Source {

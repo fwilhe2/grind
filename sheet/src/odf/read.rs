@@ -746,7 +746,7 @@ impl Context<Builder> for Spreadsheet {
             let keep = source
                 .bytes
                 .get(attrs.span())
-                .map(|tag| source::attributes(tag, &["table:name"]))
+                .map(|tag| grind_core::odf::envelope::attributes_except(tag, &["table:name"]))
                 .unwrap_or_default();
             let index = source.tables.len();
             source.tables.push(source::Table {

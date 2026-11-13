@@ -944,6 +944,44 @@ pub fn prefix_for(document: &[u8], uri: &str) -> Option<String> {
         .map(|(prefix, _)| prefix)
 }
 
+/// Every attribute of a start tag except those named in `drop`, each with a leading space and
+/// spelled as the file spelled it — what a regenerated element carries over from the one it
+/// replaces.
+pub fn attributes_except(start_tag: &[u8], drop: &[&str]) -> String {
+    let Ok(tag) = std::str::from_utf8(start_tag) else {
+        return String::new();
+    };
+    // Past the element's name, and stopping before the `/>` or `>` that closes the tag.
+    let Some(body) = tag.find(char::is_whitespace).map(|i| &tag[i..]) else {
+        return String::new();
+    };
+    let body = body.trim_end_matches('>').trim_end_matches('/');
+
+    let mut out = String::new();
+    let mut rest = body;
+    while let Some((name, after)) = rest.split_once('=') {
+        let name = name.trim();
+        // A value is quoted and cannot contain its own quote character, so the next one of the
+        // same kind ends it, `>` and `<` inside notwithstanding.
+        let Some(open) = after.find(['"', '\'']) else {
+            break;
+        };
+        let quote = &after[open..=open];
+        let Some(len) = after[open + 1..].find(quote) else {
+            break;
+        };
+        let end = open + 1 + len + 1;
+        if !name.is_empty() && !drop.contains(&name) {
+            out.push(' ');
+            out.push_str(name);
+            out.push('=');
+            out.push_str(&after[open..end]);
+        }
+        rest = &after[end..];
+    }
+    out
+}
+
 /// The start tag at the front of `element` with each `(name, value)` set: replaced where the
 /// tag has the attribute, appended where it does not, and removed where `value` is `None`.
 /// Every other byte of the tag is kept. Names are qualified as the document spells them.
@@ -1341,6 +1379,17 @@ mod tests {
             ),
             "<s:p a:x=\"9\" a:z=\"3\"/>rest"
         );
+    }
+
+    #[test]
+    fn a_tag_keeps_every_attribute_but_the_dropped_ones_as_spelled() {
+        let tag = b"<s:p a:x=\"1 > 0\"  a:y='it\"s' a:z=\"3\"/>";
+        assert_eq!(
+            attributes_except(tag, &["a:z"]),
+            " a:x=\"1 > 0\" a:y='it\"s'"
+        );
+        assert_eq!(attributes_except(b"<s:p>", &[]), "");
+        assert_eq!(attributes_except(b"<s:p a:x=\"unclosed>", &[]), "");
     }
 
     #[test]

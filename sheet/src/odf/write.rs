@@ -1712,7 +1712,7 @@ fn remerge(
         if patched.contains(&col) {
             if sheet.origin.values.contains(&pos) {
                 // Written from the model, with the element's own attributes but its spans.
-                let keep = super::source::attributes(
+                let keep = grind_core::odf::envelope::attributes_except(
                     format!("<x{}>", element.keep).as_bytes(),
                     &[
                         cols_spanned.as_str(),
@@ -1922,8 +1922,10 @@ fn rewrite_cells(
     source: &super::source::Source,
 ) -> String {
     let looks = &sheet.origin.looks;
-    let restyled_keep =
-        super::source::attributes(format!("<x{}>", at.keep).as_bytes(), &["table:style-name"]);
+    let restyled_keep = grind_core::odf::envelope::attributes_except(
+        format!("<x{}>", at.keep).as_bytes(),
+        &["table:style-name"],
+    );
     let mut out = String::new();
     let mut col = at.cols.start;
     while col < at.cols.end {

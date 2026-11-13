@@ -957,7 +957,10 @@ impl<'a> Origin<'a> {
         if self.opened.borrow_mut().insert(*start) {
             return attributes.clone();
         }
-        super::source::attributes(format!("<x{attributes}>").as_bytes(), &["xml:id"])
+        grind_core::odf::envelope::attributes_except(
+            format!("<x{attributes}>").as_bytes(),
+            &["xml:id"],
+        )
     }
 
     /// Every kept body element, by the index of the block it now follows: the one it followed in
