@@ -2903,7 +2903,7 @@ impl App {
         }
         // The completion band takes a row only while it has something to say, so a document
         // being read is never a row shorter than one being edited.
-        let band = matches!(self.mode, Mode::Insert { .. }) && self.assist.is_showing();
+        let band = matches!(self.mode, Mode::Insert { .. }) && super::assist::showing(&self.assist);
         let [
             title_area,
             col_header_area,
@@ -3366,7 +3366,10 @@ impl App {
         }
 
         if band {
-            frame.render_widget(Line::from(self.assist.line(false)), assist_area);
+            frame.render_widget(
+                Line::from(super::assist::line(&self.assist, false)),
+                assist_area,
+            );
         }
 
         let mode = match &self.mode {
