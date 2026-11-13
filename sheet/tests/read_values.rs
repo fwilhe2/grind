@@ -8,6 +8,7 @@
 //! Loop A (`corpus_read.rs`) only proves documents load. This proves they load *correctly*,
 //! which is the other half of the phase 2 exit criterion.
 
+use std::assert_matches;
 use std::path::PathBuf;
 
 use grind_sheet::model::NumberKind;
@@ -493,8 +494,7 @@ fn a_real_libreoffice_file_lands_its_cells_where_the_xml_says() {
     for col in 1..9 {
         assert_eq!(data.get(Pos::new(0, col)), CellValue::Empty, "col {col}");
     }
-    assert!(
-        matches!(data.get(Pos::new(0, 9)), CellValue::Text(s) if s.starts_with("The sheet “Data” serves as source")),
+    assert_matches!(data.get(Pos::new(0, 9)), CellValue::Text(s) if s.starts_with("The sheet “Data” serves as source"),
         "J1 must hold the note, which means the 8-column repeat was honoured; got {:?}",
         data.get(Pos::new(0, 9))
     );

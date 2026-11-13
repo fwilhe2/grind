@@ -121,6 +121,7 @@ fn ambiguous(input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn de() -> Option<Locale> {
         Some(Locale::new("de", "DE"))
@@ -158,10 +159,7 @@ mod tests {
             ("-0.5", -0.5),
         ] {
             assert_eq!(value(typed, de()), Some(n), "{typed}");
-            assert!(
-                matches!(note(typed, de()), Some(Reading::Other { .. })),
-                "{typed}"
-            );
+            assert_matches!(note(typed, de()), Some(Reading::Other { .. }), "{typed}");
         }
         assert_eq!(value("1,5", en()), Some(1.5));
         assert_eq!(value("1.234,5", en()), Some(1234.5));
@@ -185,8 +183,9 @@ mod tests {
         assert_eq!(value("1,234", en()), Some(1234.0));
         assert_eq!(value("1.234", en()), Some(1.234));
         for (typed, locale) in [("1.234", de()), ("1,234", de()), ("-12,500", en())] {
-            assert!(
-                matches!(note(typed, locale), Some(Reading::Ambiguous { .. })),
+            assert_matches!(
+                note(typed, locale),
+                Some(Reading::Ambiguous { .. }),
                 "{typed}"
             );
         }

@@ -5,6 +5,7 @@
 //! The public API, exercised only from outside — which is also how we find out whether it
 //! is usable from outside.
 
+use std::assert_matches;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -428,10 +429,10 @@ fn a_viewport_past_the_limit_is_refused_before_anything_is_read() {
     );
     assert_eq!(refused(0..1024, 0..1025).0, 1024 * 1025);
     // Checked before the sheet, so a size the caller got wrong is the error it hears.
-    assert!(matches!(
+    assert_matches!(
         app.get_viewport(9, 0..u32::MAX, 0..2),
         Err(Error::TooLarge { .. })
-    ));
+    );
     let message = app
         .get_viewport(0, 0..u32::MAX, 0..2)
         .unwrap_err()
@@ -991,14 +992,14 @@ fn trace_writes_nothing_notifies_nobody_records_no_history_and_agrees_with_previ
     drop(held);
 
     // A formula that will not parse is a formula error, and a sheet that is not there says so.
-    assert!(matches!(
+    assert_matches!(
         app.trace(0, p(0, 1), "=SUM(A1", &Default::default()),
         Err(grind_sheet::Error::Formula(_))
-    ));
-    assert!(matches!(
+    );
+    assert_matches!(
         app.trace(7, p(0, 1), "=1", &Default::default()),
         Err(grind_sheet::Error::NoSuchSheet(7))
-    ));
+    );
 }
 
 /// `overlay` reads each value through the typing rule for *that* cell, and the trace sees it

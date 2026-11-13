@@ -11,6 +11,7 @@
 
 use grind_text::model::{Block, BlockKind, Document, Run};
 use grind_text::{Form, odf};
+use std::assert_matches;
 
 /// Sixteen bytes is not a real JPEG, and does not need to be — nothing in the ODF schema or
 /// this crate looks inside `office:binary-data`, only base64-decodes it. What must round-trip
@@ -206,7 +207,7 @@ fn a_captioned_frame_reads_the_caption_as_a_run_after_the_image() {
     assert_eq!(doc.blocks.len(), 1);
     let runs = &doc.blocks[0].runs;
     assert_eq!(runs.len(), 2, "the image, then its caption");
-    assert!(matches!(runs[0], Run::Image { .. }));
+    assert_matches!(runs[0], Run::Image { .. });
     assert_eq!(
         runs[1].text(),
         "Figure 1: a photograph.",

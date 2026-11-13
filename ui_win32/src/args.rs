@@ -114,6 +114,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn parse_str(args: &[&str]) -> Command {
         parse(args.iter().map(|a| a.to_string()))
@@ -147,10 +148,10 @@ mod tests {
         assert!(!dark(&["book.fods", "--render-to", "shot.bmp"]));
         assert!(dark(&["book.fods", "--render-to", "shot.bmp", "--dark"]));
         assert!(dark(&["--dark", "--render-to", "shot.bmp"]), "either order");
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["book.fods", "--dark"]),
             Command::Error(message) if message.contains("--render-to")
-        ));
+        );
     }
 
     #[test]
@@ -193,10 +194,10 @@ mod tests {
 
     #[test]
     fn render_to_without_a_target_is_an_error() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["--render-to"]),
             Command::Error(message) if message.contains("needs a file")
-        ));
+        );
     }
 
     #[test]
@@ -208,20 +209,20 @@ mod tests {
 
     #[test]
     fn an_unknown_option_is_refused_rather_than_ignored() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["--fluent"]),
             Command::Error(message) if message.contains("--fluent")
-        ));
+        );
     }
 
     /// A window opens one document. Silently dropping the second would be the kind of
     /// almost-worked that costs somebody an afternoon.
     #[test]
     fn two_files_is_an_error() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["one.fods", "two.fodt"]),
             Command::Error(message) if message.contains("second")
-        ));
+        );
     }
 
     /// Windows passes `"C:\Users\...\My Book.fods"` as one argument, already unquoted, and a

@@ -723,6 +723,7 @@ fn rectangles(cells: &BTreeSet<Pos>) -> Vec<(Pos, Pos)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     #[test]
     fn a_block_of_cells_becomes_one_rectangle() {
@@ -762,7 +763,7 @@ mod tests {
         assert_eq!(number(-0.5).to_string(), "-0.5");
         assert_eq!(number(1e300).to_string(), "1e300");
         // Past 2^53 an integer spelling would not read back as the same double.
-        assert!(matches!(number(1e17), KdlValue::Float(_)));
+        assert_matches!(number(1e17), KdlValue::Float(_));
     }
 
     #[test]

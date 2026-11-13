@@ -18,6 +18,7 @@
 
 use grind_text::model::{BlockKind, Document, Run};
 use grind_text::{App, Caret, Form, odf};
+use std::assert_matches;
 
 /// A flat ODT with `body` between the usual wrappers, declaring the namespaces a table needs.
 fn fodt(body: &str) -> Vec<u8> {
@@ -301,7 +302,7 @@ fn a_cells_content_is_written_like_any_other_block() {
     ))
     .expect("parses");
     assert_eq!(doc.blocks[0].text(), "a\tb  c");
-    assert!(matches!(doc.blocks[0].runs[1], Run::Tab));
+    assert_matches!(doc.blocks[0].runs[1], Run::Tab);
 
     let mut regenerated = doc.clone();
     regenerated.source = None;

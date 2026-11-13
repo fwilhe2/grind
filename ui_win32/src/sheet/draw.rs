@@ -1792,6 +1792,7 @@ pub const ROW_H: f64 = 20.0;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn styled(f: impl FnOnce(&mut CellStyle)) -> CellStyle {
         let mut style = CellStyle::default();
@@ -1817,7 +1818,7 @@ mod tests {
         assert_eq!(one_line("a\nb"), "a b");
         assert_eq!(one_line("a\r\nb\tc"), "a  b c");
         // The common case allocates nothing.
-        assert!(matches!(one_line("plain"), std::borrow::Cow::Borrowed(_)));
+        assert_matches!(one_line("plain"), std::borrow::Cow::Borrowed(_));
     }
 
     /// `grind_sheet::look`'s rule: a number right, a label left, a boolean centred.

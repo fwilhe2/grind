@@ -174,6 +174,7 @@ fn is_user_default(arg: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn parse_str(args: &[&str]) -> Command {
         parse(args.iter().map(|a| a.to_string()))
@@ -198,7 +199,7 @@ mod tests {
             parse_str(&["--handlers", "a.fods"]),
             Command::Handlers(PathBuf::from("a.fods"))
         );
-        assert!(matches!(parse_str(&["--handlers"]), Command::Error(_)));
+        assert_matches!(parse_str(&["--handlers"]), Command::Error(_));
     }
 
     #[test]
@@ -232,10 +233,10 @@ mod tests {
 
     #[test]
     fn render_to_without_a_target_is_an_error() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["--render-to"]),
             Command::Error(message) if message.contains("needs a file")
-        ));
+        );
     }
 
     #[test]
@@ -246,10 +247,10 @@ mod tests {
         };
         assert!(!dark(&["book.fods", "--render-to", "shot.png"]));
         assert!(dark(&["--dark", "--render-to", "shot.png"]), "either order");
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["book.fods", "--dark"]),
             Command::Error(message) if message.contains("--render-to")
-        ));
+        );
     }
 
     #[test]
@@ -261,18 +262,18 @@ mod tests {
 
     #[test]
     fn an_unknown_option_is_refused_rather_than_ignored() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["--fluent"]),
             Command::Error(message) if message.contains("--fluent")
-        ));
+        );
     }
 
     #[test]
     fn two_files_is_an_error() {
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["one.fods", "two.fodt"]),
             Command::Error(message) if message.contains("second")
-        ));
+        );
     }
 
     /// The one rule this file has that the Windows one does not. A default for one launch is
@@ -333,17 +334,17 @@ mod tests {
                 out: PathBuf::from("shots"),
             })
         );
-        assert!(matches!(
+        assert_matches!(
             parse_str(&["--drive", "bold.drive"]),
             Command::Error(message) if message.contains("--out")
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             parse_str(&["--out", "shots"]),
             Command::Error(message) if message.contains("--drive")
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             parse_str(&["--drive", "a", "--out", "b", "--render-to", "c.png"]),
             Command::Error(_)
-        ));
+        );
     }
 }

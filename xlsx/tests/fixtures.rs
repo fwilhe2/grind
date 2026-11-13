@@ -22,6 +22,7 @@
 //! the package reaching nothing, are each pinned here *and* in the corpus's
 //! `DECIDED_OTHERWISE` table.
 
+use std::assert_matches;
 use std::io::{Cursor, Write};
 
 use grind_xlsx::{Dropped, Flavour};
@@ -96,7 +97,7 @@ fn a_package_with_no_relationships_falls_back_to_convention() {
 fn a_zip_that_is_not_a_spreadsheet_says_so() {
     let bytes = package(&[("hello.txt", "not a workbook".to_owned())]);
     let err = grind_xlsx::import_bytes(&bytes).expect_err("no workbook part");
-    assert!(matches!(err, grind_xlsx::Error::NotSpreadsheet), "{err}");
+    assert_matches!(err, grind_xlsx::Error::NotSpreadsheet, "{err}");
 }
 
 // ---- markup compatibility, end to end through a real package ----
@@ -281,5 +282,5 @@ fn a_workbook_part_that_will_not_parse_is_an_error() {
         ("xl/workbook.xml", "<workbook><sheets>".to_owned()),
     ]);
     let err = grind_xlsx::import_bytes(&bytes).expect_err("truncated XML");
-    assert!(matches!(err, grind_xlsx::Error::Xml(_)), "{err}");
+    assert_matches!(err, grind_xlsx::Error::Xml(_), "{err}");
 }

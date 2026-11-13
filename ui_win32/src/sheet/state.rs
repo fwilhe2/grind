@@ -184,6 +184,7 @@ pub fn byte_at(text: &str, units: i32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn ctrl() -> Mods {
         Mods {
@@ -326,10 +327,10 @@ mod tests {
             Outcome::Do(Command::Recalculate)
         );
         // Without Ctrl it is still a motion.
-        assert!(matches!(
+        assert_matches!(
             on_key(Mode::Ready, Key::PageDown, Mods::default()),
             Outcome::Navigate(keymap::Action::Move { .. })
-        ));
+        );
     }
 
     /// While editing, a shortcut belongs to the editor rather than to the window. Saving in the

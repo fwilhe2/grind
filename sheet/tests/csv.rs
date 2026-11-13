@@ -10,6 +10,7 @@
 
 use grind_sheet::csv::{Dialect, Export, Import};
 use grind_sheet::{App, CellValue, Pos, RecalcMode};
+use std::assert_matches;
 
 fn empty() -> App {
     App::new()
@@ -164,8 +165,8 @@ fn dates_arrive_as_dates_and_leave_as_dates() {
         &options,
     );
     // A number with a format, not a string — which is what makes it sortable and arithmetic.
-    assert!(matches!(value(&app, "A2"), CellValue::Number(_)));
-    assert!(matches!(value(&app, "B2"), CellValue::Number(_)));
+    assert_matches!(value(&app, "A2"), CellValue::Number(_));
+    assert_matches!(value(&app, "B2"), CellValue::Number(_));
     // The header is not a date and did not acquire a format by sitting above one.
     assert_eq!(value(&app, "A1"), CellValue::Text("When".to_owned()));
     assert!(app.format_at(0, resolve(&app, "A1").1).unwrap().is_none());
@@ -194,7 +195,7 @@ fn an_import_is_one_undo_entry_even_when_it_formats_cells() {
         ..Import::default()
     };
     import(&app, "When,Amount\n2026-03-15,100\n", &options);
-    assert!(matches!(value(&app, "A2"), CellValue::Number(_)));
+    assert_matches!(value(&app, "A2"), CellValue::Number(_));
 
     // One step takes back the values *and* the formats that gave them meaning. Two entries
     // would leave a date-formatted empty cell behind, which is a document nobody asked for.
@@ -255,7 +256,7 @@ fn the_import_a_window_does_reads_a_picked_file_at_the_cursor() {
     assert_eq!(value(&app, "D3"), CellValue::Number(120.0));
     // The date column is a date, which is the whole of what `Import::sniffed` adds to the
     // defaults — a number with a date format on it, showing as the day it says.
-    assert!(matches!(value(&app, "B3"), CellValue::Number(_)));
+    assert_matches!(value(&app, "B3"), CellValue::Number(_));
     let viewport = app.get_viewport(sheet, 2..3, 1..2).unwrap();
     assert_eq!(viewport.text(2, 1), Some("2026-03-15"));
 

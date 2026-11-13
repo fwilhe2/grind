@@ -10,6 +10,7 @@
 //! document `grind_text` reads back — not on the ODF this filter wrote, because what matters is
 //! what a shell shows and a save keeps.
 
+use std::assert_matches;
 use std::io::{Cursor, Write};
 
 use grind_docx::{Dropped, Flavour};
@@ -183,7 +184,7 @@ fn a_workbook_is_not_a_word_document_and_says_so() {
     ]);
     assert!(!grind_docx::sniff(&bytes));
     let err = grind_docx::import_bytes(&bytes).expect_err("a workbook is not a document");
-    assert!(matches!(err, grind_docx::Error::NotWordDocument), "{err}");
+    assert_matches!(err, grind_docx::Error::NotWordDocument, "{err}");
     assert!(grind_xlsx_free_sniff_is_not_needed());
 }
 

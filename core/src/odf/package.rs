@@ -289,6 +289,7 @@ pub fn write_package_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     /// A package whose `content.xml` *claims* `size` bytes, in both the local header and the
     /// central directory — what a hostile file costs nothing to write.
@@ -323,7 +324,7 @@ mod tests {
     #[test]
     fn a_part_claiming_gigabytes_is_an_error_not_an_abort() {
         let bytes = lying(0xFFFF_FFF0);
-        assert!(matches!(content_xml(&bytes), Err(Error::Package(_))));
+        assert_matches!(content_xml(&bytes), Err(Error::Package(_)));
         assert_eq!(part(&bytes, "content.xml"), None);
         // Sniffing the kind reads the same part, and must not trust the claim either.
         let _ = crate::kind::kind(&bytes);

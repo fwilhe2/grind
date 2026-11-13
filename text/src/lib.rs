@@ -1571,6 +1571,7 @@ impl grind_core::spell::Spelled for App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     /// A flat text document with `body` as its `office:text` content.
     fn fodt(body: &str) -> String {
@@ -1755,7 +1756,7 @@ mod tests {
     #[test]
     fn tabs_and_breaks_are_elements_rather_than_characters() {
         let doc = read(r#"<text:p>a<text:tab/>b<text:line-break/>c</text:p>"#);
-        assert!(matches!(doc.blocks[0].runs[1], Run::Tab));
+        assert_matches!(doc.blocks[0].runs[1], Run::Tab);
         assert_eq!(doc.blocks[0].text(), "a\tb\nc");
     }
 

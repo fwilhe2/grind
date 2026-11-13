@@ -241,6 +241,7 @@ mod tests {
     use super::*;
     use crate::formula::value::FormulaError;
     use crate::model::{CellValue, Sheet};
+    use std::assert_matches;
 
     /// A1 = 4, A2 = 0, A3 empty, A4 = `=A1*2` (a formula, so its value is computed), and
     /// B1:B3 = 1, 2, 3.
@@ -317,7 +318,7 @@ mod tests {
         let nodes = flat("=SUM(B1:B3)");
         assert_eq!(nodes[0].1, n(6.0));
         assert_eq!(nodes[1].0, "B1:B3");
-        assert!(matches!(nodes[1].1, CameTo::Range(ref a) if a.rows == (0..3)));
+        assert_matches!(nodes[1].1, CameTo::Range(ref a) if a.rows == (0..3));
     }
 
     #[test]

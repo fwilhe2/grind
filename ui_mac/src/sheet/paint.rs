@@ -1082,6 +1082,7 @@ mod tests {
     use grind_core::layout::Fixed;
     use grind_sheet::style::CellStyle;
     use grind_sheet::{Pos, RecalcMode};
+    use std::assert_matches;
 
     /// `Fixed` is one unit per character and one unit tall — so a sheet measured with it has
     /// every width assertable, if tiny.
@@ -1483,8 +1484,7 @@ mod tests {
             .rposition(|op| matches!(op, Op::Wash { .. }))
             .unwrap();
         assert!(last_wash < first_text);
-        assert!(
-            matches!(ops.last(), Some(Op::Fill { color, .. }) if *color == Palette::LIGHT.accent)
+        assert_matches!(ops.last(), Some(Op::Fill { color, .. }) if *color == Palette::LIGHT.accent
         );
     }
 

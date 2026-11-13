@@ -909,6 +909,7 @@ fn escape_start(line: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn kinds(doc: &Document) -> Vec<String> {
         doc.blocks
@@ -975,7 +976,7 @@ mod tests {
         assert_eq!(doc.blocks.len(), 4);
         let cell = doc.blocks[3].cell.as_ref().unwrap();
         assert_eq!((cell.row, cell.column), (1, 1));
-        assert!(matches!(&doc.blocks[0].runs[0], Run::Text { props, .. } if props.is_bold()));
+        assert_matches!(&doc.blocks[0].runs[0], Run::Text { props, .. } if props.is_bold());
         assert_eq!(
             write(&doc.blocks),
             "| **a** | **b** |\n| --- | --- |\n| 1 | 2 |\n"
@@ -1079,7 +1080,7 @@ mod tests {
         let resolve = |path: &str| (path == "my pics/a.png").then(|| PNG.to_vec());
         let doc = document("![one](my%20pics/a.png) ![two](missing.png)", &resolve);
         let runs = &doc.blocks[0].runs;
-        assert!(matches!(&runs[0], Run::Image { title, .. } if title.as_deref() == Some("one")));
+        assert_matches!(&runs[0], Run::Image { title, .. } if title.as_deref() == Some("one"));
         assert_eq!(doc.blocks[0].text(), "\u{fffc} two");
         // Bytes that are no picture stay the alt text too.
         let doc = document("![x](a.png)", &|_: &str| Some(b"text".to_vec()));

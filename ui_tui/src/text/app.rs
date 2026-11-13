@@ -239,6 +239,7 @@ impl Find {
     }
 }
 
+#[derive(Debug)]
 enum Mode {
     Normal,
     /// Selecting, from an anchor the caret is being dragged away from — vi's own Visual, and
@@ -2911,6 +2912,7 @@ mod tests {
     use super::*;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use std::assert_matches;
 
     fn press(app: &mut App, code: KeyCode) {
         app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
@@ -3281,7 +3283,7 @@ mod tests {
         );
         // Bare, it is the command line again with the text in it, ready to edit.
         app.run_command("alt");
-        assert!(matches!(&app.mode, Mode::Command { buf } if buf == "alt A grey heron"));
+        assert_matches!(&app.mode, Mode::Command { buf } if buf == "alt A grey heron");
         app.mode = Mode::Normal;
         app.run_command("alt!");
         assert_eq!(said(&app), Some((None, None)));
@@ -3539,7 +3541,7 @@ mod tests {
     fn o_opens_a_paragraph_below_and_starts_typing() {
         let mut app = app(&["first"]);
         press(&mut app, KeyCode::Char('o'));
-        assert!(matches!(app.mode, Mode::Insert));
+        assert_matches!(app.mode, Mode::Insert);
         type_str(&mut app, "second");
         assert_eq!(text(&app), "first\nsecond");
     }
@@ -3573,7 +3575,7 @@ mod tests {
             type_str(&mut app, address);
             press(&mut app, KeyCode::Enter);
             assert_eq!(app.caret.block, block, "{address}");
-            assert!(matches!(app.mode, Mode::Normal));
+            assert_matches!(app.mode, Mode::Normal);
         }
     }
 
@@ -3819,7 +3821,7 @@ mod tests {
         );
 
         press(&mut app, KeyCode::Char('*'));
-        assert!(matches!(app.mode, Mode::Normal), "the selection is spent");
+        assert_matches!(app.mode, Mode::Normal, "the selection is spent");
         let view = app.core.get_viewport(0..1);
         let runs = &view.get(0).expect("the block").runs;
         assert_eq!(runs[0].text, "hello");
@@ -3862,7 +3864,7 @@ mod tests {
         assert_eq!(app.core.input_text(1).unwrap(), "Yb");
         press(&mut app, KeyCode::Char(':'));
         app.on_paste("w\r");
-        assert!(matches!(&app.mode, Mode::Command { buf } if buf == "w"));
+        assert_matches!(&app.mode, Mode::Command { buf } if buf == "w");
     }
 
     /// A tab is drawn as the cells it was measured at, and a caret after it sits on the character

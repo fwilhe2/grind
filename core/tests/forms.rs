@@ -6,6 +6,7 @@
 //! element of it and to refusing, by name, what the other form has no place for. Fixtures are
 //! written out here rather than vendored so a reviewer can read every part of them.
 
+use std::assert_matches;
 use std::io::{Cursor, Write};
 
 use grind_core::Error;
@@ -201,10 +202,7 @@ fn two_parts_declaring_one_font_keep_the_fuller_declaration_or_refuse() {
         "<style:font-face style:name=\"Sans\" svg:font-family=\"A\"/>",
         "<style:font-face style:name=\"Sans\" svg:font-family=\"B\"/>",
     );
-    assert!(matches!(
-        convert(&clash, Form::Flat),
-        Err(Error::WouldLose(_))
-    ));
+    assert_matches!(convert(&clash, Form::Flat), Err(Error::WouldLose(_)));
 }
 
 #[test]

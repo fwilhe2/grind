@@ -9,6 +9,7 @@
 use grind_sheet::locale::Locale;
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::{App, CellValue, Form, Pos, RecalcMode};
+use std::assert_matches;
 
 fn german() -> Option<Locale> {
     Locale::parse("de-DE")
@@ -128,10 +129,10 @@ fn an_unexpected_reading_comes_back_with_its_sentence() {
         .enter_range(0, at, &rows, grind_sheet::RecalcMode::Document)
         .unwrap();
     assert_eq!(pasted.readings, 2);
-    assert!(matches!(
+    assert_matches!(
         pasted.reading,
         Some(grind_sheet::Reading::Other { ref typed, .. }) if typed == "1.5"
-    ));
+    );
 }
 
 /// What the formula bar puts in front of somebody is what typing it back reads as the same

@@ -385,6 +385,7 @@ fn collect_attrs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     /// Collect `(namespace, local)` for every child the visitor recognises, where
     /// "recognises" means SpreadsheetML — everything else is skipped, which is the point.
@@ -443,7 +444,7 @@ mod tests {
             r.children(|_, _, _| Ok(Handled::No))?;
             Ok(Handled::Yes)
         });
-        assert!(matches!(err, Err(Error::Xml(_))), "got {err:?}");
+        assert_matches!(err, Err(Error::Xml(_)), "got {err:?}");
     }
 
     /// A self-closed element has no end tag, so asking for its children or its text must not

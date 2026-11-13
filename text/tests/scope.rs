@@ -11,6 +11,8 @@
 //! is a product decision — and the only thing standing between a product decision and a wish
 //! list is a test that fails.
 
+use std::assert_matches;
+
 const SCOPE: &str = include_str!("../../doc/text-core.md");
 
 /// The element a table row is *about* — its first backticked token, and only if that token
@@ -132,11 +134,9 @@ fn the_scope_line_is_the_reader_and_not_a_second_list() {
     assert!(doc.blocks[1].text().contains('\n'), "text:line-break");
     assert!(doc.blocks[1].text().contains("  "), "text:s");
     assert_eq!(doc.bookmarks.len(), 1, "text:bookmark");
-    assert!(
-        matches!(
-            doc.blocks[2].kind,
-            grind_text::BlockKind::ListItem { depth: 1 }
-        ),
+    assert_matches!(
+        doc.blocks[2].kind,
+        grind_text::BlockKind::ListItem { depth: 1 },
         "text:list and text:list-item"
     );
 }

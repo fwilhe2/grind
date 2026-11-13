@@ -40,6 +40,7 @@ use super::keymap::{self, Action, Dir, Motion};
 
 const ROW_HEADER_WIDTH: u16 = 7;
 
+#[derive(Debug)]
 enum Mode {
     Normal,
     /// Selecting a rectangle, from an anchor the active cell is being dragged away from —
@@ -3669,6 +3670,7 @@ mod tests {
     use super::*;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+    use std::assert_matches;
 
     fn press(app: &mut App, code: KeyCode) {
         app.on_key(KeyEvent::new(code, KeyModifiers::NONE));
@@ -4092,8 +4094,9 @@ mod tests {
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "=SUM(");
         press(&mut app, KeyCode::Enter);
-        assert!(
-            matches!(app.mode, Mode::Insert { .. }),
+        assert_matches!(
+            app.mode,
+            Mode::Insert { .. },
             "commit must not have succeeded"
         );
         assert_eq!(
@@ -4108,7 +4111,7 @@ mod tests {
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "hello");
         press(&mut app, KeyCode::Esc);
-        assert!(matches!(app.mode, Mode::Normal));
+        assert_matches!(app.mode, Mode::Normal);
         assert_eq!(
             value_at(&app.core, 0, Pos::new(0, 0)).unwrap(),
             grind_sheet::CellValue::Empty
@@ -4149,7 +4152,7 @@ mod tests {
         type_str(&mut app, "C4");
         press(&mut app, KeyCode::Enter);
         assert_eq!(app.active, Pos::new(3, 2));
-        assert!(matches!(app.mode, Mode::Normal));
+        assert_matches!(app.mode, Mode::Normal);
     }
 
     #[test]
@@ -4226,7 +4229,7 @@ mod tests {
         assert_eq!((start, end), (Pos::new(0, 0), Pos::new(0, 1)));
 
         press(&mut app, KeyCode::Char('*'));
-        assert!(matches!(app.mode, Mode::Normal), "the selection is spent");
+        assert_matches!(app.mode, Mode::Normal, "the selection is spent");
         for col in 0..2 {
             let style = app
                 .core
@@ -4272,8 +4275,7 @@ mod tests {
 
         press(&mut app, KeyCode::Char('i'));
         app.on_paste("two\rlines");
-        assert!(
-            matches!(&app.mode, Mode::Insert { buf, .. } if buf.iter().collect::<String>().ends_with("two lines"))
+        assert_matches!(&app.mode, Mode::Insert { buf, .. } if buf.iter().collect::<String>().ends_with("two lines")
         );
     }
 
@@ -5133,13 +5135,10 @@ mod tests {
         press(&mut app, KeyCode::Char('i'));
         type_str(&mut app, "=SU");
         press(&mut app, KeyCode::Esc);
-        assert!(
-            matches!(app.mode, Mode::Insert { .. }),
-            "the edit is still open"
-        );
+        assert_matches!(app.mode, Mode::Insert { .. }, "the edit is still open");
         assert!(!app.assist.is_offering());
         press(&mut app, KeyCode::Esc);
-        assert!(matches!(app.mode, Mode::Normal), "the second one cancels");
+        assert_matches!(app.mode, Mode::Normal, "the second one cancels");
     }
 
     /// A name defined here is a name every other shell reads, and `:{name}` is a place to go.
