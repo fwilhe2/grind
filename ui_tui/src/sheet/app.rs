@@ -690,7 +690,7 @@ impl App {
             self.status = "usage: :s/old/new/".to_owned();
             return;
         };
-        let with = with.strip_suffix('/').unwrap_or(with);
+        let with = with.trim_suffix('/');
         if needle.is_empty() {
             self.status = "usage: :s/old/new/".to_owned();
             return;

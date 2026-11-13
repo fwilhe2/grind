@@ -117,8 +117,8 @@ pub fn odf_condition(condition: &str) -> String {
 
 fn strip_intro(condition: &str) -> &str {
     let c = condition.trim();
-    let c = c.strip_prefix("of:").unwrap_or(c);
-    c.strip_prefix('=').unwrap_or(c)
+    let c = c.trim_prefix("of:");
+    c.trim_prefix('=')
 }
 
 /// A `style:condition` read off a `style:map`, as the model's condition written from `base`.
@@ -329,9 +329,9 @@ impl Look {
 /// [`crate::formula::display::from_display`], with the same errors a cell's formula gets.
 pub fn condition_from_display(text: &str) -> Result<String, crate::formula::display::DisplayError> {
     let text = text.trim();
-    let body = text.strip_prefix('=').unwrap_or(text);
+    let body = text.trim_prefix('=');
     let odf = crate::formula::display::from_display(&format!("={body}"))?;
-    Ok(odf.strip_prefix('=').unwrap_or(&odf).to_owned())
+    Ok(odf.trim_prefix('=').to_owned())
 }
 
 /// A rule's condition as a window shows it, display syntax with its `=`; one that will not parse

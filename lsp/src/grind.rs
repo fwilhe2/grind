@@ -124,7 +124,7 @@ pub fn analyse(name: &str, text: &str, host: &dyn Host) -> Grind {
 /// Both are turned back into a position here, against the text that was read; anything else
 /// lands on the first line.
 pub fn located(lines: &Lines, message: &str) -> Diagnostic {
-    let message = message.strip_prefix("projection: ").unwrap_or(message);
+    let message = message.trim_prefix("projection: ");
     let number = |s: &str| -> Option<usize> {
         let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
         digits.parse().ok()

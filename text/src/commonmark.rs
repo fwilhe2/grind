@@ -61,7 +61,7 @@ pub fn open(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<Op
 }
 
 fn open_markdown(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Result<Opened, String> {
-    let text = std::str::from_utf8(bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes))
+    let text = std::str::from_utf8(bytes.trim_prefix(b"\xEF\xBB\xBF"))
         .map_err(|_| format!("{name}: not UTF-8"))?;
     let doc = document(text, resolve);
     let blocks = doc.blocks.len();
@@ -416,7 +416,7 @@ impl Reader<'_> {
     }
 
     fn code_text(&mut self, text: &str) {
-        for line in text.strip_suffix('\n').unwrap_or(text).split('\n') {
+        for line in text.trim_suffix('\n').split('\n') {
             let id = self.doc.next_id();
             let mut block = Block::new(id, BlockKind::Paragraph);
             block.style = Some(PREFORMATTED.to_owned());

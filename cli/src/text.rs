@@ -478,8 +478,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
                     let markdown = exported.markdown;
                     text_lines(
                         markdown
-                            .strip_suffix('\n')
-                            .unwrap_or(&markdown)
+                            .trim_suffix('\n')
                             .split('\n')
                             .map(str::to_owned)
                             .collect(),

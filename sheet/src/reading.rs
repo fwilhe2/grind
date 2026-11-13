@@ -109,7 +109,7 @@ pub(crate) fn read(
 /// One point or comma with one to three digits before it (not a lone `0`) and exactly three after:
 /// `1.234`, `-12,500`.
 fn ambiguous(input: &str) -> bool {
-    let unsigned = input.strip_prefix(['+', '-']).unwrap_or(input);
+    let unsigned = input.trim_prefix(['+', '-']);
     let mut parts = unsigned.split(['.', ',']);
     let (Some(whole), Some(rest), None) = (parts.next(), parts.next(), parts.next()) else {
         return false;

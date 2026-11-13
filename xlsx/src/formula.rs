@@ -111,12 +111,7 @@ pub fn translate(src: &str) -> Result<Expr, Refusal> {
 /// [`translate`], with the workbook's tables to hand: a structured reference then becomes the
 /// range it names, where without a scope it is refused.
 pub fn translate_in(src: &str, scope: Option<&Scope<'_>>) -> Result<Expr, Refusal> {
-    let chars: Vec<char> = src
-        .trim()
-        .strip_prefix('=')
-        .unwrap_or(src.trim())
-        .chars()
-        .collect();
+    let chars: Vec<char> = src.trim().trim_prefix('=').chars().collect();
     if chars.is_empty() {
         return Err(Refusal::Syntax);
     }
@@ -736,7 +731,7 @@ fn row_index(digits: &str) -> Option<u32> {
 fn function_name(word: &str) -> String {
     let mut name = word;
     for marker in ["_xlfn.", "_xlws."] {
-        name = name.strip_prefix(marker).unwrap_or(name);
+        name = name.trim_prefix(marker);
     }
     let name = name.to_ascii_uppercase();
     if MICROSOFT.contains(&name.as_str()) {

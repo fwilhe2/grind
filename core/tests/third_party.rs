@@ -366,7 +366,7 @@ fn everything_reuse_says_is_not_ours_is_on_the_list_or_never_shipped() {
             if let Some(at) = line.find(TAG) {
                 let licence = line[at + TAG.len()..].trim();
                 let licence = licence.trim_end_matches("-->").trim();
-                let path = relative.strip_suffix(".license").unwrap_or(&relative);
+                let path = relative.trim_suffix(".license");
                 claims.push((path.to_owned(), licence.to_owned()));
             }
         }

@@ -196,7 +196,7 @@ fn open_delimited(name: &str, bytes: &[u8]) -> Result<Opened, String> {
 /// * A final record separator ends the file: `a\n` is one row.
 pub fn parse(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
     // Excel's UTF-8 signature; left in, the first header would not match its name.
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let text = text.trim_prefix('\u{feff}');
 
     let mut rows: Vec<Vec<String>> = Vec::new();
     let mut row: Vec<String> = Vec::new();
@@ -535,7 +535,7 @@ pub(crate) fn number(field: &str, decimal: char, group: char) -> Option<String> 
         return None;
     }
     if let Some(exponent) = exponent {
-        let digits_of = exponent.strip_prefix(['+', '-']).unwrap_or(exponent);
+        let digits_of = exponent.trim_prefix(['+', '-']);
         if digits_of.is_empty() || !digits(digits_of) {
             return None;
         }

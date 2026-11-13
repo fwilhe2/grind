@@ -84,11 +84,7 @@ fn every_corpus_document_imports() {
     let (mut tables, mut images, mut notes, mut lists) = (0, 0, 0, 0);
 
     for path in &files {
-        let name = path
-            .strip_prefix(&root)
-            .unwrap_or(path)
-            .display()
-            .to_string();
+        let name = path.trim_prefix(&root).display().to_string();
         let Ok(bytes) = std::fs::read(path) else {
             failures.push(format!("{name}: unreadable"));
             continue;

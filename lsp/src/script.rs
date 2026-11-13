@@ -113,7 +113,7 @@ pub fn vocabulary(definitions: &str) -> Vec<Function> {
     for line in definitions.lines() {
         let line = line.trim();
         if let Some(text) = line.strip_prefix("///") {
-            doc.push(text.strip_prefix(' ').unwrap_or(text).to_owned());
+            doc.push(text.trim_prefix(' ').to_owned());
             continue;
         }
         let Some(signature) = line.strip_prefix("fn ").and_then(|s| s.strip_suffix(';')) else {

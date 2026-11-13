@@ -87,7 +87,7 @@ fn no_manifest_turns_on_a_network_api_and_no_code_opens_a_socket() {
     let mut offences = Vec::new();
     for path in &all {
         let text = std::fs::read_to_string(path).unwrap_or_default();
-        let relative = path.strip_prefix(root()).unwrap_or(path);
+        let relative = path.trim_prefix(root());
         let in_tests = relative.components().any(|c| c.as_os_str() == "tests");
         let words: &[&str] = match path.file_name().is_some_and(|n| n == "Cargo.toml") {
             true => &manifest_words,
@@ -118,7 +118,7 @@ fn the_one_listener_is_on_loopback() {
     let mut binds = Vec::new();
     for path in &all {
         let text = std::fs::read_to_string(path).unwrap_or_default();
-        let relative = path.strip_prefix(root()).unwrap_or(path);
+        let relative = path.trim_prefix(root());
         if relative.components().any(|c| c.as_os_str() == "tests") {
             continue;
         }

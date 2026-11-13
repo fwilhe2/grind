@@ -162,10 +162,7 @@ pub(crate) fn usage(error: &clap::Error) -> Failure {
     let message = message.join(" ");
     Failure {
         kind: Kind::Usage,
-        message: message
-            .strip_prefix("error: ")
-            .unwrap_or(&message)
-            .to_owned(),
+        message: message.trim_prefix("error: ").to_owned(),
         at: None,
     }
 }

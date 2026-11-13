@@ -109,8 +109,8 @@ fn a1(pos: Pos) -> String {
 
 /// The stored formula without its namespace prefix and `=`, the key [`DIVERGES`] uses.
 fn bare(formula: &str) -> &str {
-    let formula = formula.strip_prefix("of:").unwrap_or(formula);
-    formula.strip_prefix('=').unwrap_or(formula)
+    let formula = formula.trim_prefix("of:");
+    formula.trim_prefix('=')
 }
 
 /// Whether a recalculated value is the one the oracle stored. Numbers agree to the fifteen

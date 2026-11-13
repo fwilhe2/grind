@@ -154,10 +154,7 @@ fn sheet(node: &KdlNode, source: &mut Source) -> Result<Sheet> {
                 };
                 let condition = string_prop(child, "when")
                     .ok_or_else(|| at(child, "a rule needs a condition: when=\"…\"".to_owned()))?;
-                let condition = condition
-                    .trim()
-                    .strip_prefix('=')
-                    .unwrap_or(condition.trim());
+                let condition = condition.trim().trim_prefix('=');
                 formula::parse::parse(condition)
                     .map_err(|e| at(child, format!("{condition:?} is not a formula: {e}")))?;
                 let base = match string_prop(child, "base") {

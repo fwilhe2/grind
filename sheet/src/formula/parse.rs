@@ -171,7 +171,7 @@ fn strip_intro(formula: &str) -> &str {
         None => return formula,
     };
     // The forced-recalculate marker.
-    rest.strip_prefix('=').unwrap_or(rest)
+    rest.trim_prefix('=')
 }
 
 fn is_prefix_char(c: char) -> bool {

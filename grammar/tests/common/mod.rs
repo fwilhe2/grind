@@ -44,11 +44,7 @@ fn check_with(
     findings
         .into_iter()
         .map(|f| {
-            let rule = f
-                .rule
-                .strip_prefix("builtin:")
-                .unwrap_or(&f.rule)
-                .to_owned();
+            let rule = f.rule.trim_prefix("builtin:").to_owned();
             let covered: String = chars[f.range].iter().collect();
             format!("{rule}:{covered}")
         })

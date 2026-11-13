@@ -343,8 +343,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                 // is no output rather than one blank line.
                 None if csv.is_empty() => text_lines(Vec::new()),
                 None => text_lines(
-                    csv.strip_suffix('\n')
-                        .unwrap_or(&csv)
+                    csv.trim_suffix('\n')
                         .split('\n')
                         .map(str::to_owned)
                         .collect(),
@@ -803,10 +802,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
                         .into(),
                 );
             }
-            let condition = condition
-                .trim()
-                .strip_prefix('=')
-                .unwrap_or(condition.trim());
+            let condition = condition.trim().trim_prefix('=');
             app.add_rule(
                 sheet,
                 grind_sheet::rule::Rule::over(start, end, condition, look),

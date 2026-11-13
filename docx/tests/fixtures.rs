@@ -49,7 +49,7 @@ fn docx(body: &str, parts: &[(&str, &str, Vec<u8>)]) -> Vec<u8> {
         .enumerate()
         .filter(|(_, (_, kind, _))| !kind.is_empty())
         .map(|(i, (name, kind, _))| {
-            let target = name.strip_prefix("word/").unwrap_or(name);
+            let target = name.trim_prefix("word/");
             format!(
                 r#"<Relationship Id="rId{}" Type="{R}/{kind}" Target="{target}"/>"#,
                 i + 1

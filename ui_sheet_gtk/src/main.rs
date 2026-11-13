@@ -2952,7 +2952,7 @@ mod chrome_tests {
             ("the cell menu", grid::cell_menu_model()),
         ] {
             for action in targets(&model.upcast()) {
-                let name = action.strip_prefix("win.").unwrap_or(&action);
+                let name = action.trim_prefix("win.");
                 assert!(
                     known.contains(&name),
                     "{where_} points at win.{name}, which no verb declares"

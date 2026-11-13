@@ -472,7 +472,7 @@ fn textconv(dir: &Path) -> Entry {
 /// A path as a person would type it back: `./model.rhai` is `model.rhai`, and one with a
 /// space in it is quoted.
 fn shown(path: &Path) -> String {
-    let path = path.strip_prefix(".").unwrap_or(path);
+    let path = path.trim_prefix(".");
     let text = match path.as_os_str().is_empty() {
         true => ".".to_owned(),
         false => path.display().to_string(),

@@ -222,7 +222,7 @@ pub(crate) fn rank(node: &Node) -> Option<u8> {
 
 /// The qualified name of a start tag, as spelled — `office:styles` out of `<office:styles …>`.
 pub(crate) fn qname(tag: &[u8]) -> &[u8] {
-    let rest = tag.strip_prefix(b"<").unwrap_or(tag);
+    let rest = tag.trim_prefix(b"<");
     let end = rest
         .iter()
         .position(|c| c.is_ascii_whitespace() || *c == b'/' || *c == b'>')
