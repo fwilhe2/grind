@@ -32,11 +32,9 @@ pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
         return None;
     }
     let caret = caret.min(text.len());
-    // Not a character boundary: an offset badly converted from UTF-16. Nothing to complete.
-    if !text.is_char_boundary(caret) {
-        return None;
-    }
-    let start = text[..caret]
+    // `None` off a character boundary: an offset badly converted from UTF-16 completes nothing.
+    let start = text
+        .get(..caret)?
         .char_indices()
         .rev()
         .take_while(|(_, c)| is_name_char(*c))
@@ -80,7 +78,7 @@ pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
 /// backwards over the display text, counting parentheses and skipping string literals. A finished
 /// call (`=SUM(1;2)|`) does not count, nor does a grouping parenthesis.
 pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
-    let head: Vec<char> = text[..caret.min(text.len())].chars().collect();
+    let head: Vec<char> = before(text, caret).chars().collect();
     let mut depth = 0i32;
     let mut argument = 0usize;
     let mut i = head.len();
@@ -120,8 +118,7 @@ pub fn ref_eligible(text: &str, caret: usize) -> bool {
     if !text.starts_with('=') {
         return false;
     }
-    let before = &text[..caret.min(text.len())];
-    match before.trim_end().chars().next_back() {
+    match before(text, caret).trim_end().chars().next_back() {
         Some(c) => "=(;+-*/^&<>:,".contains(c),
         // Nothing but the `=` and whitespace.
         None => false,
@@ -205,6 +202,11 @@ pub fn brief(name: &str) -> Option<&'static str> {
         .iter()
         .find(|info| info.name.eq_ignore_ascii_case(name))
         .map(|info| info.brief)
+}
+
+/// `text` before `caret`, a byte offset clamped to the text and down to a character boundary.
+fn before(text: &str, caret: usize) -> &str {
+    &text[..text.floor_char_boundary(caret)]
 }
 
 /// What a name is made of, in both a function name and a defined one.
@@ -452,6 +454,11 @@ mod tests {
         assert_eq!(prefix_at(text, 3), None);
         assert_eq!(prefix_at(text, 5), Some(1..5));
         assert_eq!(prefix_at(text, 99), Some(1..5), "past the end is the end");
+
+        let text = "=SUM(é;1"; // 6 is inside `é`, so the caret reads as before it
+        assert_eq!(call_at(text, 6), Some(("SUM".to_owned(), 0)));
+        assert!(ref_eligible(text, 6));
+        Assist::default().refresh(text, 6, &[]);
     }
 
     #[test]
