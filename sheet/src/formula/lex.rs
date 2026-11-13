@@ -65,6 +65,7 @@ pub enum Op {
 }
 
 impl Op {
+    #[must_use]
     pub fn text(self) -> &'static str {
         match self {
             Op::Add => "+",
@@ -589,6 +590,7 @@ fn column_index(letters: &[char]) -> Option<u32> {
 }
 
 /// Column index back to letters, for serialisation.
+#[must_use]
 pub fn column_name(mut index: u32) -> String {
     let mut out = Vec::new();
     loop {

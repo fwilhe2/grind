@@ -56,6 +56,7 @@ pub enum LineRule {
 
 impl LineRule {
     /// `"150%"` or a length; `normal`, anything unreadable or nothing at all is the natural line.
+    #[must_use]
     pub fn parse(value: Option<&str>) -> Option<LineRule> {
         let value = value?.trim();
         match value.strip_suffix('%') {
@@ -74,6 +75,7 @@ impl LineRule {
 
 impl<'a> RoleFace<'a> {
     /// The same face with its paragraph style's line height.
+    #[must_use]
     pub fn with_line(mut self, line: Option<LineRule>) -> Self {
         self.line = line;
         self
@@ -93,6 +95,7 @@ impl<'a> RoleFace<'a> {
         }
     }
 
+    #[must_use]
     pub fn setter(&self) -> &'a Typesetter {
         self.setter
     }
@@ -284,6 +287,7 @@ pub struct Room {
 
 /// The face the block at `index`, of `kind` and `style`, is set in: its own where its paragraph
 /// style states one, its role's otherwise.
+#[must_use]
 pub fn face_for<'a>(
     faces: &'a [RoleFace<'a>],
     blocks: &'a HashMap<usize, RoleFace<'a>>,
@@ -328,6 +332,7 @@ pub struct Column<'a> {
 
 impl Column<'_> {
     /// The face the block at `index`, of `kind` and `style`, is set in.
+    #[must_use]
     pub fn face(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> &RoleFace<'_> {
         face_for(self.faces, self.blocks, index, kind, style)
     }

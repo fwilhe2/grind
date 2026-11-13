@@ -61,6 +61,7 @@ pub enum TokenKind {
 impl TokenKind {
     /// The one word each kind is called, for a CLI that prints the token map and a shell that keys
     /// a colour off it.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             TokenKind::Node => "node",
@@ -108,16 +109,19 @@ pub struct Projection {
 
 impl Projection {
     /// The projection itself — what is written to a `.grind` file and what a code view shows.
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
     /// The token map, in the order the tokens appear.
+    #[must_use]
     pub fn tokens(&self) -> &[Token] {
         &self.tokens
     }
 
     /// The span map, in the order the anchors were emitted.
+    #[must_use]
     pub fn anchors(&self) -> &[Anchor] {
         &self.anchors
     }
@@ -127,6 +131,7 @@ impl Projection {
     /// The **narrowest** anchor for the address, so that asking for a sheet when a cell of it
     /// also anchors there still gets the sheet's whole block: an address is matched exactly,
     /// and the two are different strings.
+    #[must_use]
     pub fn span_of(&self, address: &str) -> Option<Range<usize>> {
         self.anchors
             .iter()
@@ -139,6 +144,7 @@ impl Projection {
     ///
     /// The **narrowest** containing anchor, because anchors nest: a byte inside a cell's line
     /// is inside its sheet's block too, and the cell is the answer a person means.
+    #[must_use]
     pub fn address_at(&self, byte: usize) -> Option<&str> {
         self.anchors
             .iter()
@@ -148,11 +154,13 @@ impl Projection {
     }
 
     /// The line an address is projected on, 0-based — what a shell scrolls to.
+    #[must_use]
     pub fn line_of(&self, address: &str) -> Option<usize> {
         let span = self.span_of(address)?;
         Some(self.text[..span.start].matches('\n').count())
     }
 
+    #[must_use]
     pub fn into_text(self) -> String {
         self.text
     }
@@ -163,11 +171,13 @@ impl Projection {
     ///
     /// The text always ends in a newline, and the empty stretch after it is not a line — so this
     /// is the number of `\n`s, and a projection of nothing at all has none.
+    #[must_use]
     pub fn line_count(&self) -> usize {
         self.text.matches('\n').count()
     }
 
     /// A line's byte range, **without** its newline.
+    #[must_use]
     pub fn line_span(&self, line: usize) -> Option<Range<usize>> {
         let mut start = 0usize;
         for (index, piece) in self.text.split_inclusive('\n').enumerate() {
@@ -182,6 +192,7 @@ impl Projection {
 
     /// A line cut into pieces, in order, covering every byte of it exactly once — uncoloured
     /// stretches included, so concatenating the pieces gives the line back.
+    #[must_use]
     pub fn line_pieces(&self, line: usize) -> Vec<Piece<'_>> {
         let Some(span) = self.line_span(line) else {
             return Vec::new();
@@ -228,6 +239,7 @@ impl Projection {
     ///
     /// Ties go to whichever was emitted first, which for a text block is `p12`. A shell with a
     /// column should use [`Projection::address_at`] on [`Projection::byte_at`], which is exact.
+    #[must_use]
     pub fn address_on_line(&self, line: usize) -> Option<&str> {
         let span = self.line_span(line)?;
         let overlapping = || {
@@ -244,6 +256,7 @@ impl Projection {
 
     /// The byte offset of a byte `column` on a line, clamped to the line's end: a caret past the
     /// end of a line is ordinary.
+    #[must_use]
     pub fn byte_at(&self, line: usize, column: usize) -> Option<usize> {
         let span = self.line_span(line)?;
         Some((span.start + column).min(span.end))
@@ -253,6 +266,7 @@ impl Projection {
 /// The kind a projection declares, from its header alone. A scan rather than a parse, since
 /// [`crate::kind()`] must answer for any bytes; blank lines and `//` comments before the header
 /// are skipped.
+#[must_use]
 pub fn header_kind(text: &str) -> Option<DocumentKind> {
     let header = text.lines().find(|line| {
         let line = line.trim();
@@ -270,6 +284,7 @@ pub fn header_kind(text: &str) -> Option<DocumentKind> {
 }
 
 /// Whether these bytes are a projection, and of what. A projection is always UTF-8.
+#[must_use]
 pub fn is_projection(bytes: &[u8]) -> Option<DocumentKind> {
     header_kind(std::str::from_utf8(bytes).ok()?)
 }

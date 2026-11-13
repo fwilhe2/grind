@@ -62,6 +62,7 @@ pub use grind_ooxml::{Error, Result};
 /// Whether these bytes are an OOXML spreadsheet, sniffed from content, never the name. An
 /// **encrypted** workbook answers `false` (it is a CFB container); [`import_bytes`] tells the two
 /// apart, which is the call to make when the answer decides what to tell a person.
+#[must_use]
 pub fn sniff(bytes: &[u8]) -> bool {
     if !package::is_zip(bytes) {
         return false;
@@ -201,6 +202,7 @@ pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
 /// **A shell must never save back to the workbook's own path**: writing ODF into a file called
 /// `.xlsx` is the one way this filter could destroy a user's data. This is the name to offer in a
 /// save dialog; the path to save to is `None` until the user picks one.
+#[must_use]
 pub fn suggested_name(workbook: &str) -> String {
     let stem = match workbook.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() && !ext.contains(['/', '\\']) => stem,

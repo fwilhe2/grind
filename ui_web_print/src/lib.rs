@@ -84,11 +84,13 @@ pub struct Printed {
 #[wasm_bindgen]
 impl Printed {
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn pdf(&self) -> Vec<u8> {
         self.pdf.clone()
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn summary(&self) -> String {
         self.summary.clone()
     }
@@ -105,16 +107,19 @@ pub struct Sheet {
 #[wasm_bindgen]
 impl Sheet {
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.width
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.height
     }
 
     #[wasm_bindgen(getter)]
+    #[must_use]
     pub fn rgba(&self) -> Vec<u8> {
         self.rgba.clone()
     }

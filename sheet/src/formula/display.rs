@@ -95,6 +95,7 @@ pub fn to_display(canonical: &str) -> Result<String, SyntaxError> {
 
 /// One reference in display form — `B2`, `Data.B2:C9`, `$A$1` — through the same printer as a
 /// whole formula.
+#[must_use]
 pub fn reference_text(reference: &Reference) -> String {
     Bare(&Expr::Ref(reference.clone())).to_string()
 }
@@ -247,6 +248,7 @@ impl Canonical {
 /// is — the `LOG10` collision from the other side. A foreign document may declare a cell-shaped
 /// name (`date1`), so anything substituting a name into display form must ask this first, as
 /// `view::Names` does.
+#[must_use]
 pub fn reads_as_reference(word: &str) -> bool {
     matches!(
         spans(word).as_slice(),
@@ -256,6 +258,7 @@ pub fn reads_as_reference(word: &str) -> bool {
 
 /// Scan display-form text into the runs that mean something, in byte ranges. Total: a half-typed
 /// formula scans, and anything unrecognised is a gap.
+#[must_use]
 pub fn spans(text: &str) -> Vec<Span> {
     let chars: Vec<(usize, char)> = text.char_indices().collect();
     let mut out = Vec::new();

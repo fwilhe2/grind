@@ -76,6 +76,7 @@ pub struct Seen {
 }
 
 impl Seen {
+    #[must_use]
     pub fn flavour(self) -> Flavour {
         match (self.transitional, self.strict) {
             (true, true) => Flavour::Mixed,
@@ -120,6 +121,7 @@ pub const VML: &str = "urn:schemas-microsoft-com:vml";
 pub const VML_EXCEL: &str = "urn:schemas-microsoft-com:office:excel";
 
 impl Ns {
+    #[must_use]
     pub fn from_uri(uri: &str) -> Ns {
         match uri {
             MAIN_T | MAIN_S => Ns::Spreadsheet,
@@ -142,6 +144,7 @@ impl Ns {
 /// Which flavour a URI is evidence of, if either. Only Part 1 URIs count: the package and
 /// markup-compatibility namespaces are shared, and counting them for Transitional would make every
 /// Strict file `Mixed`.
+#[must_use]
 pub fn family(uri: &str) -> Option<Flavour> {
     // `starts_with` rather than equality because a relationship *type* extends the
     // relationships namespace with a segment, and both are evidence of the same family.
@@ -208,6 +211,7 @@ pub enum RelType {
 impl RelType {
     /// Both families, by stripping the family's own prefix and matching the rest — not just the
     /// last segment, which would accept `http://example.invalid/relationships/worksheet`.
+    #[must_use]
     pub fn from_uri(uri: &str) -> RelType {
         let rest = uri
             .strip_prefix(REL_T)

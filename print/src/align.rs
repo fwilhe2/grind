@@ -40,6 +40,7 @@ pub struct Fit {
 /// Place a line whose text is `content` wide (trailing spaces left out) in a measure `available`
 /// wide, with `spaces` spaces between its first and last visible characters; `last` says whether
 /// it is the paragraph's last line, which justification leaves alone.
+#[must_use]
 pub fn fit(align: Align, available: f32, content: f32, spaces: usize, last: bool) -> Fit {
     let slack = (available - content).max(0.0);
     let (offset, extra) = match align {

@@ -63,6 +63,7 @@ pub enum Missing {
 impl Resolved {
     /// The colour a style carries: `None` for automatic, and for anything unresolved, which
     /// the caller has already counted.
+    #[must_use]
     pub fn hex(&self) -> Option<&str> {
         match self {
             Resolved::Hex(hex) => Some(hex),
@@ -162,6 +163,7 @@ impl Default for Palette {
 }
 
 impl Palette {
+    #[must_use]
     pub fn resolve(&self, color: &Color) -> Resolved {
         let base = match color.spelling {
             Spelling::Auto => return Resolved::Automatic,
@@ -231,6 +233,7 @@ pub fn read_indexed(reader: &mut Reader<'_>) -> crate::Result<Option<Vec<[u8; 3]
 /// `FF0000FF` as three bytes. ARGB is what §18.8.19 says; six digits is what some producers
 /// write (`styles/colors.xlsx` B5), and means the same colour with the alpha implied. The
 /// alpha is dropped either way — ODF's colour is six digits.
+#[must_use]
 pub fn argb(value: &str) -> Option<[u8; 3]> {
     let value = value.trim();
     // `get`, not an index: the attribute is the file's, and need not be ASCII.
@@ -243,6 +246,7 @@ pub fn argb(value: &str) -> Option<[u8; 3]> {
     Some([byte(0)?, byte(2)?, byte(4)?])
 }
 
+#[must_use]
 pub fn hex([r, g, b]: [u8; 3]) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
@@ -255,6 +259,7 @@ pub fn hex([r, g, b]: [u8; 3]) -> String {
 /// colours (`doc/xlsx-format.md` §4.2) it agrees exactly on 69 and is one step off in a channel on
 /// six: the oracle quantises where the spec does not say to, and loop D names that rather than
 /// this imitating it.
+#[must_use]
 pub fn tint(rgb: [u8; 3], tint: f64) -> [u8; 3] {
     if tint == 0.0 {
         return rgb;

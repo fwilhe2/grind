@@ -26,14 +26,17 @@ pub struct Rect {
 }
 
 impl Rect {
+    #[must_use]
     pub fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
         Rect { x, y, w, h }
     }
 
+    #[must_use]
     pub fn right(&self) -> f64 {
         self.x + self.w
     }
 
+    #[must_use]
     pub fn bottom(&self) -> f64 {
         self.y + self.h
     }
@@ -127,6 +130,7 @@ const TURN_SHARE: f64 = 0.3;
 /// How the names under a plot are set: `widest` the widest name, `band` one category's width,
 /// `line` a line's height, `height` the chart's frame, `gap` the space between plot and names,
 /// and `clearance` the least space between two level names.
+#[must_use]
 pub fn category_names(
     widest: f64,
     band: f64,
@@ -157,6 +161,7 @@ pub fn category_names(
 /// Where a name `w` wide and `h` tall goes, turned [`TURN_DEGREES`] about its box's top-left
 /// corner, so that it ends under `tick` and its top corner is `gap` below `bottom`: the top-left
 /// of its box before turning.
+#[must_use]
 pub fn turned_origin(tick: f64, bottom: f64, gap: f64, w: f64, h: f64) -> (f64, f64) {
     let s = std::f64::consts::FRAC_1_SQRT_2;
     let anchor = (tick, bottom + gap + s * h / 2.0);

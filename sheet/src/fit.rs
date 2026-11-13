@@ -60,6 +60,7 @@ pub fn all_columns(app: &App, sheet: usize) -> Range<u32> {
 /// The width a column fits to, as a stored length, from its [`widest`] text plus `pad`, both in
 /// the shell's unit (`mm_per_unit` millimetres each). An empty column goes back to the default
 /// (`None`), as LibreOffice's optimal width does.
+#[must_use]
 pub fn width(widest: f64, pad: f64, mm_per_unit: f64) -> Option<String> {
     (widest > 0.0).then(|| crate::style::mm_length((widest + pad) * mm_per_unit))
 }

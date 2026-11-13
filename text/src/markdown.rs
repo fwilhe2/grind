@@ -50,12 +50,14 @@ pub const PREFORMATTED: &str = "Preformatted Text";
 
 /// Whether a paragraph style is [`PREFORMATTED`], as grind spells it or as LibreOffice encodes it
 /// (`Preformatted_20_Text`).
+#[must_use]
 pub fn is_preformatted(style: Option<&str>) -> bool {
     style.is_some_and(|s| s == PREFORMATTED || crate::style::readable_name(s) == PREFORMATTED)
 }
 
 impl Emphasis {
     /// The formatting to write, as the character style the core takes.
+    #[must_use]
     pub fn style(self) -> CharStyle {
         let mut style = CharStyle::default();
         match self {
@@ -70,6 +72,7 @@ impl Emphasis {
 
     /// How this emphasis is written — what the status line offers and the visual-mode keys are
     /// named after.
+    #[must_use]
     pub fn markers(self) -> &'static str {
         match self {
             Emphasis::Bold => "**",
@@ -111,6 +114,7 @@ const NOTATION: [(&str, Emphasis); 5] = [
 /// - it holds no marker character of its own (`2*3*4`);
 /// - the opening marker starts a word — at the block's start or after a space or opening bracket
 ///   (`snake_case`, `a*b`).
+#[must_use]
 pub fn emphasised(text: &str, caret: usize) -> Option<Emphasised> {
     let chars: Vec<char> = text.chars().collect();
     if caret > chars.len() {
@@ -192,6 +196,7 @@ pub struct Linked {
 /// What the `)` just typed at `caret` completed, if it ended a Markdown link. The label is not
 /// blank and holds no bracket; the target is not empty and holds no whitespace or parenthesis, so
 /// `(see [1](2) above)` closes at the first `)`. `![alt](src)`, an image, is left as typed.
+#[must_use]
 pub fn linked(text: &str, caret: usize) -> Option<Linked> {
     let chars: Vec<char> = text.chars().collect();
     if caret > chars.len() || caret == 0 || chars[caret - 1] != ')' {
@@ -242,6 +247,7 @@ pub fn linked(text: &str, caret: usize) -> Option<Linked> {
 /// toggles whether its block is preformatted, and Enter in a preformatted block makes another, so
 /// a code region is a run of preformatted paragraphs ended by the closing fence. ``` mid-sentence
 /// is three backticks.
+#[must_use]
 pub fn is_fence(text: &str, caret: usize) -> bool {
     let chars: Vec<char> = text.chars().collect();
     caret == chars.len() && chars.len() == 3 && chars.iter().all(|c| *c == '`')
@@ -250,6 +256,7 @@ pub fn is_fence(text: &str, caret: usize) -> bool {
 /// The block kind a line-opening prefix asks for — `# ` up to six deep (`doc/text-core.md`), `- `
 /// or `* ` for a list item — and how many characters to remove, recognised when its trailing space
 /// lands.
+#[must_use]
 pub fn block_prefix(text: &str, caret: usize) -> Option<(usize, BlockKind)> {
     let chars: Vec<char> = text.chars().collect();
     // Only at the very start of a block, and only as the space lands: `a # b` is prose.

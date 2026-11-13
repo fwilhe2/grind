@@ -28,6 +28,7 @@ pub struct Raster {
 
 impl Raster {
     /// The pixel at `(x, y)` as `[r, g, b, a]`.
+    #[must_use]
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         let at = ((y * self.width + x) * 4) as usize;
         [
@@ -39,6 +40,7 @@ impl Raster {
     }
 
     /// The raster as a PNG file.
+    #[must_use]
     pub fn png(&self) -> Vec<u8> {
         Pixmap::from_vec(
             self.rgba.clone(),
@@ -50,6 +52,7 @@ impl Raster {
 }
 
 /// Rasterise `page` at `scale` pixels per point (1.0 is 72 dpi; a screen at 100% wants 96/72).
+#[must_use]
 pub fn render(page: &Page, fonts: &Fonts, scale: f32) -> Raster {
     // Whole pixels, rounding down, as a PDF renderer sizes the same page.
     let width = ((page.width * scale) as u32).max(1);

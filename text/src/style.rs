@@ -57,11 +57,13 @@ pub struct CharStyle {
 pub struct Origin(Option<std::sync::Arc<str>>);
 
 impl Origin {
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Origin(Some(name.into()))
     }
 
     /// The automatic style's name in the file it was read from.
+    #[must_use]
     pub fn name(&self) -> Option<&str> {
         self.0.as_deref()
     }
@@ -82,17 +84,20 @@ impl std::hash::Hash for Origin {
 impl CharStyle {
     /// Nothing set at all. About what the formatting says, so a run distinguished only by its
     /// [`Origin`] is plain; a writer asks [`CharStyle::needs_style`].
+    #[must_use]
     pub fn is_plain(&self) -> bool {
         *self == CharStyle::default()
     }
 
     /// Whether writing this formatting takes a style: anything set, or an [`Origin`] whose style
     /// says more (a superscript alone).
+    #[must_use]
     pub fn needs_style(&self) -> bool {
         !self.is_plain() || self.origin.name().is_some()
     }
 
     /// Equal *and* read from the same style — [`Origin`] is the one difference `==` ignores.
+    #[must_use]
     pub fn same(&self, other: &CharStyle) -> bool {
         self == other && self.origin.name() == other.origin.name()
     }
@@ -100,6 +105,7 @@ impl CharStyle {
     /// The attributes that turn `base`'s properties into these — each differing field set or
     /// removed, nothing else — so a restyle built on the old element keeps the file's own spelling
     /// of the rest. A changed family also drops `style:font-name`, which would otherwise win.
+    #[must_use]
     pub fn patch_against(&self, base: &CharStyle) -> Vec<(String, Option<String>)> {
         let mut out = Vec::new();
         for ((name, new), (_, old)) in self.pairs().into_iter().zip(base.pairs()) {
@@ -119,6 +125,7 @@ impl CharStyle {
     }
 
     /// The four fields that change how wide text is, for `grind_core::layout`.
+    #[must_use]
     pub fn metrics(&self) -> TextStyle {
         TextStyle {
             font_family: self.font_family.clone(),
@@ -150,6 +157,7 @@ impl CharStyle {
 
     /// What `self` and `other` agree about, and nothing else — so a half-bold selection reads as
     /// not bold.
+    #[must_use]
     pub fn common(&self, other: &CharStyle) -> CharStyle {
         fn agreed(a: &Option<String>, b: &Option<String>) -> Option<String> {
             (a == b).then(|| a.clone()).flatten()
@@ -170,6 +178,7 @@ impl CharStyle {
 
     /// Whether this run reads as bold: `fo:font-weight` of `bold` or 600 and up, interpreted
     /// rather than stored.
+    #[must_use]
     pub fn is_bold(&self) -> bool {
         match self.font_weight.as_deref() {
             None | Some("normal") => false,
@@ -183,6 +192,7 @@ impl CharStyle {
     }
 
     /// Whether this run reads as italic; `oblique` counts.
+    #[must_use]
     pub fn is_italic(&self) -> bool {
         matches!(self.font_style.as_deref(), Some("italic" | "oblique"))
     }
@@ -191,6 +201,7 @@ impl CharStyle {
         self.font_style = on.then(|| "italic".to_owned());
     }
 
+    #[must_use]
     pub fn is_underlined(&self) -> bool {
         is_line(&self.underline)
     }
@@ -199,6 +210,7 @@ impl CharStyle {
         self.underline = on.then(|| "solid".to_owned());
     }
 
+    #[must_use]
     pub fn is_struck(&self) -> bool {
         is_line(&self.line_through)
     }
@@ -208,6 +220,7 @@ impl CharStyle {
     }
 
     /// The `style:text-properties` attributes, ready for a start tag — the one speller of them.
+    #[must_use]
     pub fn attributes(&self) -> String {
         use std::fmt::Write as _;
         let mut out = String::new();
@@ -249,6 +262,7 @@ fn is_line(value: &Option<String>) -> bool {
 /// Serif'`'s quotes are list syntax, not the name; keeping them would hand a shell a name no font
 /// system resolves. Decoded on reading and re-encoded on writing (`quote_family`), as `text:s` is.
 /// A value with a comma is a list and is left as it is.
+#[must_use]
 pub fn unquote_family(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.contains(',') {

@@ -10,6 +10,7 @@
 
 /// How many UTF-16 code units come before `byte` in `text`. A byte past the end is the end, and
 /// one inside a character is that character's start.
+#[must_use]
 pub fn units_before(text: &str, byte: usize) -> usize {
     text.char_indices()
         .take_while(|&(at, c)| at + c.len_utf8() <= byte)
@@ -19,6 +20,7 @@ pub fn units_before(text: &str, byte: usize) -> usize {
 
 /// The byte offset of the place `units` UTF-16 code units into `text`. A unit past the end is the
 /// end, and one inside a surrogate pair is that character's start.
+#[must_use]
 pub fn byte_of(text: &str, units: usize) -> usize {
     let mut seen = 0;
     for (byte, c) in text.char_indices() {

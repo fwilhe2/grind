@@ -127,6 +127,7 @@ impl From<std::io::Error> for Error {
 
 impl Error {
     /// Whether this is `Error::Odf(Encrypted)`, without the nesting at every call site.
+    #[must_use]
     pub fn is_encrypted(&self) -> bool {
         matches!(self, Error::Odf(grind_core::Error::Encrypted))
     }
@@ -175,12 +176,14 @@ pub struct Calculation {
 
 impl Calculation {
     /// The cell as an address a user can type back in: `Sheet1.B2`, ODF's own spelling.
+    #[must_use]
     pub fn address(&self) -> String {
         format!("{}.{}", self.sheet_name, a1::format(None, self.pos))
     }
 
     /// Whether a search finds this one — its sheet, address, formula or a function it calls,
     /// case-insensitively; everything for an empty needle.
+    #[must_use]
     pub fn matches(&self, needle: &str) -> bool {
         let needle = needle.trim().to_uppercase();
         needle.is_empty()
@@ -191,6 +194,7 @@ impl Calculation {
 }
 
 /// Which functions a set of calculations uses, commonest first, ties alphabetical.
+#[must_use]
 pub fn function_tally(calculations: &[Calculation]) -> Vec<(String, usize)> {
     let mut tally: Vec<(String, usize)> = Vec::new();
     for name in calculations.iter().flat_map(|calc| &calc.functions) {
@@ -257,6 +261,7 @@ pub struct Merged {
 
 impl Merged {
     /// Whether this merge takes in `(row, col)`.
+    #[must_use]
     pub fn contains(&self, row: u32, col: u32) -> bool {
         (self.anchor.row..=self.end.row).contains(&row)
             && (self.anchor.col..=self.end.col).contains(&col)
@@ -275,6 +280,7 @@ impl Viewport {
         Some(r * width + c)
     }
 
+    #[must_use]
     pub fn get(&self, row: u32, col: u32) -> Option<&CellValue> {
         self.cells.get(self.at(row, col)?)
     }
@@ -287,6 +293,7 @@ impl Viewport {
     /// The shorter spellings to try, in order, when a cell's [`Viewport::text`] does not fit its
     /// column ([`numfmt::narrower`]). Empty except for a plain number in the General format; any
     /// other number that does not fit is `###` (`doc/ods-format.md` §5.2).
+    #[must_use]
     pub fn narrower(&self, row: u32, col: u32) -> Vec<String> {
         let Some(at) = self.at(row, col) else {
             return Vec::new();
@@ -299,22 +306,26 @@ impl Viewport {
 
     /// How one cell looks, or `None` for a plain cell and for one outside the viewport alike. Its
     /// font size is relative to the document's default, as 10pt is to a shell's own font.
+    #[must_use]
     pub fn style(&self, row: u32, col: u32) -> Option<&style::CellStyle> {
         self.styles.get(self.at(row, col)?)?.as_ref()
     }
 
     /// What one cell is, or `None` when the read did not ask for roles or the cell is outside the
     /// viewport.
+    #[must_use]
     pub fn role(&self, row: u32, col: u32) -> Option<view::CellRole> {
         self.roles.as_ref()?.get(self.at(row, col)?).copied()
     }
 
     /// Every name anchor intersecting this rectangle; empty when not asked for.
+    #[must_use]
     pub fn names(&self) -> &[view::NameAnchor] {
         &self.names
     }
 
     /// The name bound to one cell, if any.
+    #[must_use]
     pub fn name_at(&self, row: u32, col: u32) -> Option<&str> {
         self.names
             .iter()
@@ -323,17 +334,20 @@ impl Viewport {
     }
 
     /// Every merge intersecting this rectangle, in address order of its top-left cell.
+    #[must_use]
     pub fn merges(&self) -> &[Merged] {
         &self.merges
     }
 
     /// The merge one cell is part of, its top-left or a covered cell. A renderer draws the
     /// top-left cell over the whole area.
+    #[must_use]
     pub fn merge_at(&self, row: u32, col: u32) -> Option<&Merged> {
         self.merges.iter().find(|m| m.contains(row, col))
     }
 
     /// Whether a checkbox is drawn in this cell, and if so whether it is ticked.
+    #[must_use]
     pub fn checkbox(&self, row: u32, col: u32) -> Option<bool> {
         self.checkboxes
             .iter()
@@ -342,12 +356,14 @@ impl Viewport {
     }
 
     /// Every checkbox in this rectangle, with whether it is ticked.
+    #[must_use]
     pub fn checkboxes(&self) -> &[(Pos, bool)] {
         &self.checkboxes
     }
 
     /// The misspelt words in what one cell displays, as character ranges into [`Viewport::text`].
     /// A merge's words are its top-left cell's.
+    #[must_use]
     pub fn misspelt(&self, row: u32, col: u32) -> &[Range<usize>] {
         self.misspelt
             .iter()
@@ -356,12 +372,14 @@ impl Viewport {
     }
 
     /// Whether one cell is hidden under a merge — inside one and not its top-left cell.
+    #[must_use]
     pub fn covered(&self, row: u32, col: u32) -> bool {
         self.merge_at(row, col)
             .is_some_and(|m| m.anchor != Pos::new(row, col))
     }
 
     /// One row of the viewport, left to right. `None` if the row is outside it.
+    #[must_use]
     pub fn row(&self, row: u32) -> Option<&[CellValue]> {
         if !self.rows.contains(&row) {
             return None;
@@ -408,6 +426,7 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -1683,6 +1702,7 @@ pub struct EnterOutcome {
 impl EnterOutcome {
     /// What a shell says after the entry in a document spelled the `locale` way, or `None` when
     /// every number was read the document's way.
+    #[must_use]
     pub fn note(&self, locale: Option<&locale::Locale>) -> Option<String> {
         let sentence = self.reading.as_ref()?.sentence(locale);
         Some(match self.readings {
@@ -1695,11 +1715,13 @@ impl EnterOutcome {
 
 /// What one cell displays: its number format applied, or the general one (§5.2). Public so
 /// `grind-xlsx`'s tests ask this rather than answering themselves.
+#[must_use]
 pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
     render_in(sheet, pos, null_date, None)
 }
 
 /// [`render`] in a document whose own locale is `locale` ([`Document::locale`]).
+#[must_use]
 pub fn render_in(
     sheet: &Sheet,
     pos: Pos,
@@ -1995,6 +2017,7 @@ fn apply_batch(state: &mut State, sheet: usize, updates: Vec<Action>) -> Result<
 
 /// Whether a checkbox is ticked: its linked cell's value (`TRUE`, or a non-zero number), else its
 /// own state.
+#[must_use]
 pub fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool {
     let Some(link) = &checkbox.link else {
         return checkbox.checked;

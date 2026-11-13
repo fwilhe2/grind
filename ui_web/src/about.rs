@@ -9,6 +9,7 @@
 use grind_core::third_party;
 
 /// The dialog's content.
+#[must_use]
 pub fn html() -> String {
     let mut out = String::new();
     out.push_str("<h2>Grind</h2>");

@@ -44,11 +44,13 @@ pub struct List {
 }
 
 impl List {
+    #[must_use]
     pub fn level(&self, ilvl: usize) -> Option<&Level> {
         self.levels.get(ilvl)
     }
 
     /// Whether every level is a bullet — the question "is this a bulleted list?" asks.
+    #[must_use]
     pub fn is_bulleted(&self) -> bool {
         self.levels.first().is_some_and(|l| l.format == "bullet")
     }
@@ -63,6 +65,7 @@ pub struct Numbering {
 type Overrides = HashMap<usize, (Option<Level>, Option<i64>)>;
 
 /// Read `word/numbering.xml`.
+#[must_use]
 pub fn read(bytes: &[u8], fonts: &Fonts) -> Numbering {
     let mut abstracts: HashMap<i64, Vec<Level>> = HashMap::new();
     // numId → (abstractNumId, overrides by level)
@@ -190,6 +193,7 @@ fn read_level(r: &mut Reader, fonts: &Fonts) -> grind_ooxml::Result<Level> {
 /// all. The handful every document uses are mapped to their Unicode meaning
 /// (`doc/docx-format.md` §4.3); anything else is the round bullet, which is what it most likely
 /// was, rather than a missing glyph.
+#[must_use]
 pub fn bullet(text: &str) -> char {
     match text.chars().next() {
         Some('\u{F0B7}' | '\u{F06C}' | '\u{2022}') | None => '•',
@@ -206,6 +210,7 @@ pub fn bullet(text: &str) -> char {
 
 /// `w:numFmt` as ODF's `style:num-format` (rng:2163). Every format with no ODF spelling is
 /// decimal, which is what it counts in even when it does not look like it.
+#[must_use]
 pub fn num_format(format: &str) -> &'static str {
     match format {
         "lowerLetter" => "a",
@@ -219,6 +224,7 @@ pub fn num_format(format: &str) -> &'static str {
 
 /// `w:lvlText` (`%1.%2.`) as ODF's prefix, suffix and how many levels the label shows: what
 /// comes before the first `%n`, what comes after the last, and how many `%n` there are.
+#[must_use]
 pub fn label_parts(text: &str) -> (String, String, usize) {
     let bytes: Vec<char> = text.chars().collect();
     let mut first = None;

@@ -145,6 +145,7 @@ impl ParagraphProps {
 impl ParagraphProps {
     /// The paragraph's box as a cell's look (`doc/odt-format.md` §5c fact 30): its borders,
     /// padding and fill. `None` when it draws nothing and takes no room.
+    #[must_use]
     pub fn look(&self) -> Option<crate::table_look::CellLook> {
         let background = self
             .background_color
@@ -165,12 +166,14 @@ impl ParagraphProps {
     }
 
     /// Whether this paragraph drops its space next to a neighbour of the same named style.
+    #[must_use]
     pub fn contextual(&self) -> bool {
         self.contextual_spacing.as_deref() == Some("true")
     }
 
     /// Whether this paragraph's box may join the next one's (`style:join-border`, `true` unless
     /// stated otherwise).
+    #[must_use]
     pub fn joins(&self) -> bool {
         self.join_border.as_deref() != Some("false")
     }
@@ -192,6 +195,7 @@ pub struct TabStop {
 impl ParagraphProps {
     /// Where this paragraph's tabs go, in points (`doc/odt-format.md` §5c fact 13): its own stops,
     /// then the default interval; unreadable ones are left out.
+    #[must_use]
     pub fn tabs(&self) -> grind_core::layout::Tabs {
         use grind_core::layout::{TabAlign, Tabs};
         let points = |length: &str| length_mm(length).map(|mm| (mm * 72.0 / 25.4) as f32);
@@ -276,6 +280,7 @@ pub struct NamedChar {
 
 /// What a run looks like: its named character styles (`names`, outermost first, space-separated),
 /// each down its chain, with the run's direct formatting over them.
+#[must_use]
 pub fn shown(
     styles: &HashMap<String, NamedChar>,
     names: Option<&str>,
@@ -310,6 +315,7 @@ pub(crate) const MAX_DEPTH: usize = 32;
 /// The properties of a paragraph styled `name`: the default style's, then each style from the
 /// chain's root down to `name` laid over them. An undeclared name or a looping chain stops where
 /// it stops (R5).
+#[must_use]
 pub fn resolve(
     styles: &HashMap<String, ParagraphStyle>,
     default: &ParagraphProps,

@@ -15,6 +15,7 @@
 
 /// Is this text a pattern rather than a literal? A lone `~` counts: `"~*"` is not the string
 /// `"~*"`.
+#[must_use]
 pub fn is_pattern(text: &str) -> bool {
     text.contains(['*', '?', '~'])
 }
@@ -51,6 +52,7 @@ fn same(a: char, b: char) -> bool {
 }
 
 /// Does `text`, in its entirety, match `pattern`?
+#[must_use]
 pub fn matches(pattern: &str, text: &str) -> bool {
     let text: Vec<char> = text.chars().collect();
     walk(&tokens(pattern), &text)
@@ -93,6 +95,7 @@ fn walk(tokens: &[Token], text: &[char]) -> bool {
 /// Where `pattern` first matches a stretch of `text`, searching from character `from` — `SEARCH`'s
 /// unanchored question: [`matches()`] against a prefix, with a `*` appended. Positions count
 /// characters.
+#[must_use]
 pub fn find(pattern: &str, text: &str, from: usize) -> Option<usize> {
     let mut open = tokens(pattern);
     open.push(Token::Star);

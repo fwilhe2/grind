@@ -55,6 +55,7 @@ impl Change {
 impl Change {
     /// What pressing a toggle asks for over `style` (the selection's agreed formatting, or
     /// [`here`]'s): the emphasis on, unless every character already has it.
+    #[must_use]
     pub fn toggle(emphasis: Emphasis, style: &CharStyle) -> Change {
         let on = !has(style, emphasis);
         match emphasis {
@@ -68,6 +69,7 @@ impl Change {
 }
 
 /// Whether `style` carries `emphasis` — what a toggle shows pressed in.
+#[must_use]
 pub fn has(style: &CharStyle, emphasis: Emphasis) -> bool {
     match emphasis {
         Emphasis::Bold => style.is_bold(),
@@ -152,6 +154,7 @@ pub const DEFAULT: &str = "Default";
 
 /// The sizes as a document spells them (`"11pt"`), with [`DEFAULT`] first and the document's own
 /// size next when it is not among them.
+#[must_use]
 pub fn sizes(current: Option<&str>) -> Vec<String> {
     let mut out: Vec<String> = SIZES.iter().map(|pt| format!("{pt}pt")).collect();
     if let Some(current) = current

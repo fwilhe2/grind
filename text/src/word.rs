@@ -13,6 +13,7 @@
 
 /// The `[start, end)` character range of the unit containing the character at `offset`, or the one
 /// before it when `offset` is at the end. `(0, 0)` for empty text.
+#[must_use]
 pub fn around(text: &str, offset: usize) -> (usize, usize) {
     let chars: Vec<char> = text.chars().collect();
     if chars.is_empty() {
@@ -37,6 +38,7 @@ pub fn around(text: &str, offset: usize) -> (usize, usize) {
 
 /// Where Ctrl+Right lands from `offset`: the end of the current or next word. `None` when no word
 /// is left, the cue to go on to the next block.
+#[must_use]
 pub fn next_end(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());
@@ -54,6 +56,7 @@ pub fn next_end(text: &str, offset: usize) -> Option<usize> {
 
 /// Where Ctrl+Left lands from `offset`: the start of the current or previous word. `None` when
 /// none is left — go to the previous block.
+#[must_use]
 pub fn previous_start(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());

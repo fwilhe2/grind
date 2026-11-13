@@ -59,6 +59,7 @@ pub enum Artifact {
 
 impl Artifact {
     /// What kind of document this is, for a message or a report.
+    #[must_use]
     pub fn kind(&self) -> grind_core::kind::DocumentKind {
         match self {
             Artifact::Spreadsheet(_) => grind_core::kind::DocumentKind::Spreadsheet,
@@ -108,6 +109,7 @@ impl Error {
 /// Every function a script may call, with its parameter names, types and documentation, as a Rhai
 /// definition file (`.d.rhai`) for an editor. Rhai's standard library is left out: a script's own
 /// vocabulary is what somebody is learning, and an editor already knows the rest.
+#[must_use]
 pub fn definitions() -> String {
     // `grind test`'s vocabulary too: a test is written in the same file as the model, so the
     // editor open on it should complete `assert_eq` as readily as `row`.
@@ -126,6 +128,7 @@ pub fn definitions() -> String {
 /// A method is told from a free function by its first parameter's type: a host type is capitalised
 /// (`Sheet`, `Row`), a built-in is not, and no constructor takes a host type — so `s.push(…)` gets
 /// a snippet without the receiver.
+#[must_use]
 pub fn snippets() -> String {
     let mut out = serde_json::Map::new();
     let mut doc: Vec<String> = Vec::new();

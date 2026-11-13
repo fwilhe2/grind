@@ -25,6 +25,7 @@ const WIDTH: usize = 60;
 
 /// The friendly name for an abbreviated function name, e.g. `PV` → `Present Value`. Ours, not the
 /// spec's.
+#[must_use]
 pub fn alias(name: &str) -> Option<&'static str> {
     ALIASES
         .iter()
@@ -46,6 +47,7 @@ pub fn explain_inline(formula: &str) -> Result<String, SyntaxError> {
 /// The friendly spelling of a function's signature: its aliased name and one label per parameter,
 /// `…` on the last when it repeats — the names [`explain`] uses, so a hint and an explanation
 /// agree.
+#[must_use]
 pub fn signature(name: &str) -> Option<(String, Vec<String>)> {
     let info = funcs::catalog()
         .iter()
@@ -145,6 +147,7 @@ fn renumber(label: &str, pass: usize) -> String {
 
 /// How many parameters `name`'s signature lists, and how many at its end repeat as a group. `None`
 /// for a function the catalog does not know.
+#[must_use]
 pub fn shape(name: &str) -> Option<(usize, usize)> {
     let info = funcs::catalog()
         .iter()

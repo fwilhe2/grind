@@ -44,6 +44,7 @@ impl Dialect {
         quote: '"',
     };
 
+    #[must_use]
     pub fn new(delimiter: char) -> Self {
         Dialect {
             delimiter,
@@ -86,6 +87,7 @@ impl Dialect {
     /// The dialect a file name asks for, for writing, where there is nothing to sniff: `.tsv` and
     /// `.tab` are tab-separated, everything else comma. Importing never uses this — a German
     /// Excel's `.csv` is semicolon-separated whatever it is called.
+    #[must_use]
     pub fn for_name(name: &str) -> Dialect {
         let extension = name
             .rsplit_once('.')
@@ -109,6 +111,7 @@ pub fn decode(bytes: Vec<u8>) -> Result<String, &'static str> {
 /// Whether a file name is a delimited file — `.csv`, `.tsv` or `.tab`, in any case. Plain text has
 /// no signature, so a caller asks this only after the bytes have said they are neither ODF nor a
 /// workbook.
+#[must_use]
 pub fn is_delimited_name(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     matches!(
@@ -134,6 +137,7 @@ pub struct Opened {
 /// fields land at `A1` of one sheet named after the file, read with [`Import::sniffed`], and come
 /// back as flat ODF under an ODF name, as `grind_xlsx::open` returns a workbook. Not UTF-8 is
 /// [`NOT_UTF8`].
+#[must_use]
 pub fn open(name: &str, bytes: &[u8]) -> Option<Result<Opened, String>> {
     if !is_delimited_name(name) {
         return None;
@@ -194,6 +198,7 @@ fn open_delimited(name: &str, bytes: &[u8]) -> Result<Opened, String> {
 /// * `\r\n`, `\n` and a lone `\r` all end a record.
 /// * A blank line is a record of one empty field, so later rows do not shift up.
 /// * A final record separator ends the file: `a\n` is one row.
+#[must_use]
 pub fn parse(text: &str, dialect: &Dialect) -> Vec<Vec<String>> {
     // Excel's UTF-8 signature; left in, the first header would not match its name.
     let text = text.trim_prefix('\u{feff}');
@@ -278,6 +283,7 @@ impl Default for Export {
 /// Write rows as delimited text. A field is quoted only when leaving it bare would change what a
 /// reader sees: it holds the delimiter, a quote, a line break, or leading or trailing whitespace.
 /// Everything else stays readable and diffable.
+#[must_use]
 pub fn write(rows: &[Vec<String>], options: &Export) -> String {
     let newline = match options.crlf {
         true => "\r\n",
@@ -353,6 +359,7 @@ impl Import {
     /// content ([`Dialect::sniff`]), and [`Import::dates`] on, since [`dated`] reads only ISO
     /// spellings and cannot misread `15/03/2026`. `text`, `formulas`, `locale` and `trim` stay
     /// off; each changes what a field means, and `grind sheet import-csv` offers all four.
+    #[must_use]
     pub fn sniffed(text: &str) -> Import {
         Import {
             dialect: Dialect::sniff(text),
@@ -411,6 +418,7 @@ impl Import {
 /// a four-digit year: `15/03/2026` and `03/15/2026` mean different days and the file does not say
 /// which, so those stay text; `1-2-3` is more often a part number. The parsers are
 /// [`crate::formula::date`]'s.
+#[must_use]
 pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
     use crate::numfmt::{Kind, datetime_preset, preset};
 
@@ -440,6 +448,7 @@ pub fn dated(field: &str, null_date: i64) -> Option<crate::numfmt::Format> {
 /// * `NaN`, `inf`, `Infinity` — names far more often than numbers.
 /// * A number in the wrong locale: numbers are recognised by the locale's own separators.
 /// * A leading `'`, doubled so it stays in the cell.
+#[must_use]
 pub fn input(field: &str, options: &Import) -> String {
     let field = match options.trim {
         true => field.trim(),

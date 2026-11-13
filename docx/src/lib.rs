@@ -66,6 +66,7 @@ fn find_part(package: &mut Package, seen: &mut Seen) -> Result<String> {
 /// main part found by relationship, and that part's root being `w:document` — a workbook's main
 /// part has the same relationship type, so the root is what tells them apart. An **encrypted**
 /// document answers `false`; [`import_bytes`] says so properly.
+#[must_use]
 pub fn sniff(bytes: &[u8]) -> bool {
     if !grind_ooxml::package::is_zip(bytes) {
         return false;
@@ -278,6 +279,7 @@ pub fn open(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
 ///
 /// **A shell must never save back to the document's own path**: writing ODF into a file called
 /// `.docx` is the one way this filter could destroy a user's data.
+#[must_use]
 pub fn suggested_name(document: &str) -> String {
     let stem = match document.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() && !ext.contains(['/', '\\']) => stem,

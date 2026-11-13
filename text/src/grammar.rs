@@ -18,6 +18,7 @@ pub struct Flag {
 
 impl Flag {
     /// `p12+40` — where the finding starts, in the address every verb takes.
+    #[must_use]
     pub fn address(&self) -> String {
         format!(
             "{}+{}",
@@ -26,6 +27,7 @@ impl Flag {
         )
     }
 
+    #[must_use]
     pub fn caret(&self) -> crate::Caret {
         crate::Caret {
             block: self.block,

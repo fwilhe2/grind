@@ -94,11 +94,13 @@ pub const RULES: [Rule; 8] = [
 
 /// Check a document against every rule `options` wants — all but [`MISSPELT`], which needs a
 /// dictionary ([`lint_with`]).
+#[must_use]
 pub fn lint(doc: &Document, options: &Options) -> Report {
     lint_with(doc, options, None)
 }
 
 /// [`lint`], and spelling as well when there is a `lexicon` to check it against.
+#[must_use]
 pub fn lint_with(doc: &Document, options: &Options, lexicon: Option<&dyn Lexicon>) -> Report {
     let mut report = Report::default();
     if options.wants(&HEADING_SKIP) {

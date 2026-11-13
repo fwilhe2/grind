@@ -18,6 +18,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Kind::Grammar => "grammar",
@@ -58,6 +59,7 @@ pub trait Checker: Send + Sync {
 }
 
 /// `findings` less any that touch a range of `skip`, sorted by where they start.
+#[must_use]
 pub fn outside(mut findings: Vec<Finding>, skip: &[Range<usize>]) -> Vec<Finding> {
     findings.retain(|f| {
         !skip

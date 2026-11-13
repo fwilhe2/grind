@@ -1869,6 +1869,7 @@ fn roman(mut n: usize) -> String {
 }
 
 /// Which marginal a section reference names, for `lib.rs`.
+#[must_use]
 pub fn pick(refs: &[(Which, String)], which: Which) -> Option<&str> {
     refs.iter()
         .find(|(w, _)| *w == which)

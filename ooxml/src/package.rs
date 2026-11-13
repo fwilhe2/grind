@@ -48,11 +48,13 @@ pub struct Package<'a> {
 }
 
 /// Are these bytes a zip at all?
+#[must_use]
 pub fn is_zip(bytes: &[u8]) -> bool {
     bytes.starts_with(ZIP_MAGIC)
 }
 
 /// Are these bytes an encrypted OOXML package rather than a plain one?
+#[must_use]
 pub fn is_encrypted(bytes: &[u8]) -> bool {
     bytes.starts_with(CFB_MAGIC)
 }
@@ -60,6 +62,7 @@ pub fn is_encrypted(bytes: &[u8]) -> bool {
 /// Normalise an OPC part name into the form the zip index is keyed by. A leading `/`, backslashes,
 /// `.` and `..` segments and percent encoding all name the plain form; a target climbing out of
 /// the package is a zip-slip and refused.
+#[must_use]
 pub fn normalise(name: &str) -> Option<String> {
     let mut out: Vec<String> = Vec::new();
     for raw in name.replace('\\', "/").split('/') {

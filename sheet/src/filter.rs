@@ -26,6 +26,7 @@ use crate::model::{Pos, Sheet};
 /// excluded. The empty cell first, then numbers (dates and times among them) by value, then
 /// everything else in code-point order — numbers by their text put `2,250.00 €` before `220.00 €`,
 /// and text by anything but code points would need a collation. At most `limit` values.
+#[must_use]
 pub fn offered(cells: &crate::Viewport, filter: &Filter, field: u32, limit: usize) -> Vec<String> {
     let col = filter.column(field);
     let mut seen = BTreeSet::new();
@@ -112,11 +113,13 @@ impl Filter {
     }
 
     /// The sheet column a field number names.
+    #[must_use]
     pub fn column(&self, field: u32) -> u32 {
         self.start.col.saturating_add(field)
     }
 
     /// The first row the filter may hide — past the heading, if there is one.
+    #[must_use]
     pub fn first_data_row(&self) -> u32 {
         match self.contains_header {
             true => self.start.row.saturating_add(1),
@@ -127,6 +130,7 @@ impl Filter {
     /// Whether this row is excluded: inside the range, with at least one field's value not among
     /// the ones it keeps (conditions are an and, §9.4's `table:filter-and`). Values are matched as
     /// shown in `locale`, so a German document's `1234,5` matches what a German LibreOffice saved.
+    #[must_use]
     pub fn hides(
         &self,
         sheet: &Sheet,
@@ -151,6 +155,7 @@ impl Filter {
 
     /// Whether writing to this cell could change which rows are hidden. The splicing writer asks,
     /// because `table:visibility` is on the row.
+    #[must_use]
     pub fn affects(&self, pos: Pos) -> bool {
         pos.row >= self.first_data_row()
             && pos.row <= self.end.row
@@ -159,6 +164,7 @@ impl Filter {
     }
 
     /// Every row this filter hides, in order.
+    #[must_use]
     pub fn hidden_rows(
         &self,
         sheet: &Sheet,

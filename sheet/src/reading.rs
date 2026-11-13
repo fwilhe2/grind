@@ -30,6 +30,7 @@ pub enum Reading {
 
 impl Reading {
     /// The sentence every shell shows after the entry.
+    #[must_use]
     pub fn sentence(&self, locale: Option<&Locale>) -> String {
         let (decimal, group) = locale::separators(locale);
         let decimal_name = locale::separator_name(decimal);

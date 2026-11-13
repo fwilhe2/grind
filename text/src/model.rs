@@ -47,6 +47,7 @@ pub const MAX_LIST_DEPTH: u32 = 9;
 /// offset in it: nest a list item deeper, un-nest one, or start a list from a block the caret is
 /// at the front of. `None` when none applies, leaving the key free — a literal tab mid-sentence,
 /// or nothing.
+#[must_use]
 pub fn indent_kind(kind: &BlockKind, offset: usize, by: i32) -> Option<BlockKind> {
     match kind {
         BlockKind::ListItem { depth } => {
@@ -230,6 +231,7 @@ impl Run {
     }
 
     /// The direct character formatting on this run; a tab, a break or a bookmark has none.
+    #[must_use]
     pub fn props(&self) -> Option<&CharStyle> {
         match self {
             Run::Text { props, .. } => Some(props),
@@ -238,6 +240,7 @@ impl Run {
     }
 
     /// The characters this run contributes to the paragraph's plain text.
+    #[must_use]
     pub fn text(&self) -> &str {
         match self {
             Run::Text { text, .. } => text,
@@ -252,11 +255,13 @@ impl Run {
     }
 
     /// How many characters it contributes — what a `p12+40` offset counts against.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.text().chars().count()
     }
 
     /// Whether it contributes no characters — true of every bookmark.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -266,6 +271,7 @@ impl Run {
 /// — the primitive under every caret edit. Only a [`Run::Text`] can be cut; a tab or a break is
 /// one atomic character. A zero-width run exactly at the offset goes to the second half, so
 /// `#intro` at the front of a paragraph follows the words it names when the paragraph is split.
+#[must_use]
 pub fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
     let mut head = Vec::new();
     let mut tail = Vec::new();
@@ -385,6 +391,7 @@ impl Cell {
 
     /// Whether two blocks are in the same cell — the fold the writer performs; a cell with two
     /// paragraphs is two blocks.
+    #[must_use]
     pub fn is_same(&self, other: &Cell) -> bool {
         self.table == other.table && self.row == other.row && self.column == other.column
     }
@@ -411,6 +418,7 @@ pub struct Block {
 }
 
 impl Block {
+    #[must_use]
     pub fn new(id: BlockId, kind: BlockKind) -> Self {
         Block {
             id,
@@ -433,11 +441,13 @@ impl Block {
         self.runs.iter().map(Run::len).sum()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// The outline level, for a heading. `None` for anything else.
+    #[must_use]
     pub fn outline_level(&self) -> Option<u32> {
         match self.kind {
             BlockKind::Heading { level } => Some(level),
@@ -447,6 +457,7 @@ impl Block {
 
     /// Whether any run carries direct formatting or a named style — what `grind text formatting`
     /// looks for.
+    #[must_use]
     pub fn is_styled(&self) -> bool {
         self.style.is_some()
             || self.runs.iter().any(|r| match r {
@@ -620,12 +631,14 @@ impl Default for Document {
 }
 
 impl Document {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// A document with no blocks, for a reader to fill from a file, which may hold none. A
     /// constructor because `next_id` is private.
+    #[must_use]
     pub fn empty() -> Self {
         Document {
             blocks: Vec::new(),
@@ -662,11 +675,13 @@ impl Document {
         id
     }
 
+    #[must_use]
     pub fn block(&self, index: usize) -> Option<&Block> {
         self.blocks.get(index)
     }
 
     /// Where a block with this id currently sits.
+    #[must_use]
     pub fn index_of(&self, id: BlockId) -> Option<usize> {
         self.blocks.iter().position(|b| b.id == id)
     }
@@ -704,6 +719,7 @@ impl Document {
     /// The blocks of the table the block at `index` is in — the maximal run of consecutive blocks
     /// naming it — or `None`, for the writer, a shell's grid and the projection alike. A paragraph
     /// between two tables of the same name makes them two.
+    #[must_use]
     pub fn table(&self, index: usize) -> Option<std::ops::Range<usize>> {
         let name = &self.block(index)?.cell.as_ref()?.table;
         let named = |block: &Block| block.cell.as_ref().is_some_and(|c| &c.table == name);
@@ -720,6 +736,7 @@ impl Document {
 
     /// How many rows and columns the table occupying `blocks` has, counting a spanned cell for
     /// every position it covers; derived, not stored.
+    #[must_use]
     pub fn table_extent(&self, blocks: std::ops::Range<usize>) -> (u32, u32) {
         let mut rows = 0;
         let mut columns = 0;
@@ -733,6 +750,7 @@ impl Document {
     /// The blocks belonging to the heading at `index` — itself and everything up to the next
     /// heading at the same level or higher — computed, since the body has no such container
     /// (`doc/odt-format.md` §2). `None` if not a heading.
+    #[must_use]
     pub fn section(&self, index: usize) -> Option<std::ops::Range<usize>> {
         let level = self.block(index)?.outline_level()?;
         let end = self.blocks[index + 1..]

@@ -10,6 +10,7 @@
 use crate::{App, BlockKind, Result};
 
 /// `3x4`, `3 4`, `3×4` or `3, 4` — rows, then columns, each at least one and not absurd.
+#[must_use]
 pub fn parse_size(answer: &str) -> Option<(u32, u32)> {
     let mut numbers = answer
         .split(|c: char| !c.is_ascii_digit())

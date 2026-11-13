@@ -72,6 +72,7 @@ pub enum Action {
 
 /// The whole map. `None` means the shell does not claim the key, and the browser
 /// keeps it — Ctrl+T and F5 are not ours to take.
+#[must_use]
 pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
     let reverse = |a, b| match chord.shift {
         true => a,
@@ -171,6 +172,7 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
 
 /// Apply a motion. Clamped to the sheet's own limits for a plain move, and to
 /// `extent` — the used region — for the edges, matching the other two shells.
+#[must_use]
 pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
     let page = page.max(1);
     match motion {
@@ -196,6 +198,7 @@ fn step(from: Pos, dir: Dir, by: u32) -> Pos {
 }
 
 /// Where the cursor goes after a commit — without the GTK window's tab-column memory.
+#[must_use]
 pub fn after_commit(from: Pos, direction: Option<Dir>) -> Pos {
     match direction {
         Some(dir) => step(from, dir, 1),

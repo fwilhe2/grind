@@ -73,6 +73,7 @@ fn apostrophe(c: char) -> bool {
 /// `ß` are all inside it), joined across a single apostrophe or hyphen that has a letter on both
 /// sides — `don't`, `l'eau`, `E-Mail-Adresse`. Digits are kept inside a word so that [`checkable`]
 /// can see them and skip the whole thing: `mp3` is not `mp` and a stray `3`.
+#[must_use]
 pub fn words(text: &str) -> Vec<Range<usize>> {
     let chars: Vec<char> = text.chars().collect();
     let mut out = Vec::new();
@@ -123,6 +124,7 @@ pub fn checkable(word: &str) -> bool {
 }
 
 /// The form a dictionary is asked about: `’` folded to `'`.
+#[must_use]
 pub fn normalise(word: &str) -> String {
     word.chars()
         .map(|c| if apostrophe(c) { '\'' } else { c })
@@ -143,6 +145,7 @@ pub fn known(lexicon: &dyn Lexicon, word: &str) -> bool {
 
 /// Whether the whitespace-delimited chunk around a word is prose: not a URL, an e-mail address, a
 /// path or a piece of code. `e.g.` and `lib.rs` are caught by an inner `.` with a letter after it.
+#[must_use]
 pub fn prose_chunk(chunk: &str) -> bool {
     let chars: Vec<char> = chunk.chars().collect();
     let inner_dot = chars
@@ -158,6 +161,7 @@ pub fn prose_chunk(chunk: &str) -> bool {
 /// Every word of `text` that should be checked, as `(range, word)` in characters — [`words`],
 /// less what [`checkable`] and [`prose_chunk`] rule out, and less any word overlapping one of the
 /// `skip` ranges (what an application knows is not prose: a link, a run of code).
+#[must_use]
 pub fn candidates(text: &str, skip: &[Range<usize>]) -> Vec<(Range<usize>, String)> {
     let chars: Vec<char> = text.chars().collect();
     words(text)

@@ -60,6 +60,7 @@ pub struct Outcome {
 }
 
 impl Tests {
+    #[must_use]
     pub fn passed(&self) -> bool {
         self.outcomes
             .iter()

@@ -35,6 +35,7 @@ impl Attrs {
     /// Where this element's start tag sits in the bytes being parsed, so a writer can splice a
     /// cell back into its place (R6). For an `Event::Empty` this is the whole element; for an
     /// `Event::Start`, the start tag only.
+    #[must_use]
     pub fn span(&self) -> std::ops::Range<usize> {
         self.span.clone()
     }
@@ -45,6 +46,7 @@ impl Attrs {
         self.items.iter().map(|(name, _)| name)
     }
 
+    #[must_use]
     pub fn get(&self, ns: Ns, local: &str) -> Option<&str> {
         self.items
             .iter()
@@ -54,6 +56,7 @@ impl Attrs {
 
     /// First of several accepted spellings of the same idea — a value type is written both
     /// `office:value-type` and `calcext:value-type` (§9).
+    #[must_use]
     pub fn get_any(&self, candidates: &[(Ns, &str)]) -> Option<&str> {
         candidates
             .iter()
@@ -63,6 +66,7 @@ impl Attrs {
     /// A count attribute such as `table:number-columns-repeated`. Missing or unparseable is 1, and
     /// anything over `limit` is clamped: a file claiming 4 000 000 000 repeats would otherwise
     /// exhaust memory (§9).
+    #[must_use]
     pub fn count(&self, ns: Ns, local: &str, limit: u32) -> u32 {
         self.get(ns, local)
             .and_then(|s| s.trim().parse::<i64>().ok())

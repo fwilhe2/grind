@@ -46,6 +46,7 @@ pub struct Scope<'a> {
 }
 
 /// Read one table part. `None` for anything that is not a table with a range and columns.
+#[must_use]
 pub fn read(bytes: &[u8], sheet: usize) -> Option<Table> {
     let mut reader = Reader::new(bytes);
     let (root, attrs) = reader.root().ok()??;
@@ -100,6 +101,7 @@ pub fn read(bytes: &[u8], sheet: usize) -> Option<Table> {
 impl Scope<'_> {
     /// The range a structured reference to `table` with this bracketed `body` (the text
     /// between its outermost `[` and `]`) names.
+    #[must_use]
     pub fn resolve(&self, table: &str, body: &str) -> Option<Reference> {
         let table = self
             .tables

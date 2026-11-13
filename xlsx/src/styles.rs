@@ -108,6 +108,7 @@ pub enum Appearance {
 impl Appearance {
     /// Whether this piece would show on a cell with nothing in it — a fill or a diagonal does,
     /// an underline or an indent does not.
+    #[must_use]
     pub fn shows_when_empty(self) -> bool {
         matches!(
             self,
@@ -116,6 +117,7 @@ impl Appearance {
     }
 
     /// A plain-English name, for a report a person reads.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Appearance::Underline => "double underline (drawn single)",
@@ -160,6 +162,7 @@ impl Look {
     /// Whether this look can be *seen* on a cell with nothing in it: a background or a border,
     /// carried or counted. A bold font or an alignment on an empty cell shows nothing, and
     /// dropping it from one loses nothing a person could have noticed.
+    #[must_use]
     pub fn shows_when_empty(&self) -> bool {
         let carried = self.style.as_ref().is_some_and(|style| {
             style.background.is_some() || style.borders.iter().any(Option::is_some)
@@ -192,22 +195,26 @@ impl Styles {
     /// The kind a cell with `s="index"` holds — `None` for a plain number, and for an index
     /// the part does not have. An out-of-range `s` is a claim about a style nobody wrote, and
     /// reading it as "no format" is what every consumer does.
+    #[must_use]
     pub fn kind(&self, index: usize) -> Option<NumberKind> {
         self.xfs.get(index).and_then(|xf| xf.kind)
     }
 
     /// The format a cell with `s="index"` displays through, where one could be spelled.
+    #[must_use]
     pub fn format(&self, index: usize) -> Option<&Format> {
         self.xfs.get(index).and_then(|xf| xf.format.as_ref())
     }
 
     /// What that cell's format lost on the way — empty where nothing did.
+    #[must_use]
     pub fn lost(&self, index: usize) -> &[Unspellable] {
         static NONE: &[Unspellable] = &[];
         self.xfs.get(index).map_or(NONE, |xf| &xf.lost)
     }
 
     /// What a cell with `s="index"` looks like. `None` for an index the part does not have.
+    #[must_use]
     pub fn look(&self, index: usize) -> Option<&Look> {
         self.looks.get(index)
     }
@@ -216,16 +223,19 @@ impl Styles {
     /// (`doc/xlsx-format.md` §4.12): **only what the `dxf` states**, nothing compared with the
     /// workbook's default, since a rule's style is drawn over the cell's own rather than
     /// instead of it.
+    #[must_use]
     pub fn dxf(&self, index: usize) -> Option<&Look> {
         self.dxfs.get(index)
     }
 
     /// The style a cell with `s="index"` carries, shared with every other cell naming it.
+    #[must_use]
     pub fn shared_style(&self, index: usize) -> Option<&Arc<CellStyle>> {
         self.shared.get(index).and_then(|(style, _)| style.as_ref())
     }
 
     /// The number format a cell with `s="index"` carries, shared the same way.
+    #[must_use]
     pub fn shared_format(&self, index: usize) -> Option<&Arc<Format>> {
         self.shared
             .get(index)
@@ -233,11 +243,13 @@ impl Styles {
     }
 
     /// The default font's size in points — what a cell naming none is set in.
+    #[must_use]
     pub fn default_size(&self) -> f64 {
         self.size.unwrap_or(DEFAULT_SIZE)
     }
 
     /// The unit of a column's width: the default font's digit, in pixels at 96 dpi.
+    #[must_use]
     pub fn digit_px(&self) -> f64 {
         self.digit_px.unwrap_or(crate::sheet::DIGIT_PX)
     }
@@ -333,6 +345,7 @@ struct Part {
 /// Read the styles part, with the theme's colour scheme in `theme` attribute order. Never fails: a
 /// styles part that will not parse leaves every cell a plain number with no look, and losing one
 /// part is no reason to refuse a workbook.
+#[must_use]
 pub fn read(bytes: &[u8], theme: &[[u8; 3]]) -> Styles {
     let mut reader = Reader::new(bytes);
     if !matches!(reader.root(), Ok(Some((ref root, _))) if root.is("styleSheet")) {

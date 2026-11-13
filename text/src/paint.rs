@@ -25,6 +25,7 @@ pub struct Piece<'a> {
 
 /// Cut `from..to` characters of a block into the runs it crosses: in order, none empty, together
 /// exactly the block's characters in that range.
+#[must_use]
 pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
     let mut out = Vec::new();
     for run in runs {
@@ -56,6 +57,7 @@ pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
 /// One piece's text split at the characters that are in the model and never drawn — `text:tab` and
 /// `text:line-break`, which a font would draw as a box — each segment with its starting offset, so
 /// each side is placed where the core measured it. Empty segments are dropped.
+#[must_use]
 pub fn drawable(start: usize, text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut at = start;
@@ -71,6 +73,7 @@ pub fn drawable(start: usize, text: &str) -> Vec<(usize, &str)> {
 
 /// The part of `block` a selection from `from` to `to` covers, as two offsets into it, or `None`.
 /// A block the selection runs through is covered to `usize::MAX`, which [`band`] clips per line.
+#[must_use]
 pub fn covered(block: usize, from: Caret, to: Caret) -> Option<(usize, usize)> {
     if from == to || block < from.block || block > to.block {
         return None;
@@ -90,6 +93,7 @@ pub fn covered(block: usize, from: Caret, to: Caret) -> Option<(usize, usize)> {
 /// edge, or `None`. The far end is the line's own width, not [`Layout::x_at`], which resolves an
 /// offset at a break to the later line and would leave the first line of a two-line selection
 /// unwashed.
+#[must_use]
 pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f32, f32)> {
     let from = start.max(line.start);
     let to = end.min(line.end);
@@ -107,6 +111,7 @@ pub fn band(layout: &Layout, line: &Line, start: usize, end: usize) -> Option<(f
 /// fallback for a list whose style states nothing (`crate::numbering`, `BlockView::mark`). Lists
 /// this build opens are written with a list style drawing the same marks (`Lgrind1`,
 /// `odf::write`).
+#[must_use]
 pub fn bullet(depth: u32) -> &'static str {
     const MARKS: [&str; 3] = ["\u{2022}", "\u{25e6}", "\u{25aa}"];
     MARKS[(depth.max(1) as usize - 1) % MARKS.len()]

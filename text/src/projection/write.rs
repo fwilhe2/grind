@@ -13,6 +13,7 @@ use crate::loc;
 use crate::model::{Block, BlockKind, Document, Run};
 
 /// Project a document: the text, and the token and span maps beside it.
+#[must_use]
 pub fn project(doc: &Document) -> Projection {
     let mut out = Emitter::new();
     out.header(DocumentKind::Text);
@@ -125,6 +126,7 @@ fn covered(doc: &Document, range: std::ops::Range<usize>, row: u32, column: u32)
 /// The projection this document was read from, with edited blocks put back in place (R6). `None`
 /// means regenerate: the sequence moved, or an edited block sits nowhere the file spelled. A block
 /// is one node, so an edit is one patch; an image is dropped either way, having no spelling.
+#[must_use]
 pub fn splice(doc: &Document) -> Option<String> {
     let source = doc.projection_source.as_deref()?;
     // The sequence moved, so `p12` in the file is no longer `p12` in the model.

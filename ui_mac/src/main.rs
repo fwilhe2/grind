@@ -165,6 +165,7 @@ fn resolve(command: Command) -> Result<Opening, String> {
 
 /// What a window would do with `opening`, in a sentence — the first line of a drive's transcript,
 /// and what this binary says off a Mac.
+#[must_use]
 pub fn intent(opening: &Opening) -> String {
     let what = match (opening.kind, &opening.path) {
         (Some(kind), Some(path)) => {

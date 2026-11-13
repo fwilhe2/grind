@@ -44,6 +44,7 @@ pub fn rect_text(
 /// canonical cell by cell. A formula that will not parse stays text, its characters kept (`'=(`), as
 /// [`crate::csv::input`] keeps one. `\r\n` and `\n`
 /// read alike, and a trailing line ending is not an extra row.
+#[must_use]
 pub fn parse_rows(text: &str) -> Vec<Vec<String>> {
     text.lines()
         .map(|line| {

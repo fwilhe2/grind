@@ -74,6 +74,7 @@ impl Placed {
     /// Where an extent `size` long starts, given the start and length of the box each `rel`
     /// names — `paper`, the text area or the body's (`content`) and the paragraph's — in a unit
     /// `scale` times a millimetre.
+    #[must_use]
     pub fn start(
         &self,
         scale: f64,
@@ -98,6 +99,7 @@ impl Placed {
 
 impl Paragraph {
     /// Its text as printed on page `page` (from 1) of `pages`.
+    #[must_use]
     pub fn text(&self, page: usize, pages: usize) -> String {
         self.pieces(page, pages).map(|(text, _)| text).collect()
     }

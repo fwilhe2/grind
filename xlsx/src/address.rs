@@ -14,6 +14,7 @@ use grind_sheet::{MAX_COLS, MAX_ROWS};
 /// `B2` → row 1, column 1. `None` for anything that is not a plain relative address inside the
 /// grid — a `$`, a sheet name, a range, or a position past `XFD1048576`. Lower case is accepted:
 /// `ST_CellRef` is upper-case, but a producer writing `b2` means B2.
+#[must_use]
 pub fn cell(r: &str) -> Option<Pos> {
     let split = r.find(|c: char| !c.is_ascii_alphabetic())?;
     let (letters, digits) = r.split_at(split);

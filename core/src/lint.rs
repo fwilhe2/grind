@@ -27,6 +27,7 @@ pub enum Severity {
 }
 
 impl Severity {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Severity::Error => "error",
@@ -106,6 +107,7 @@ pub struct Options {
 impl Options {
     /// Whether a rule should run at all. Checked once per rule rather than per finding, so a
     /// silenced rule costs nothing.
+    #[must_use]
     pub fn wants(&self, rule: &Rule) -> bool {
         (self.hints || rule.severity != Severity::Hint)
             && !self.off.iter().any(|off| off == rule.id)
@@ -151,15 +153,18 @@ impl Report {
         }
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.diagnostics.is_empty()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.diagnostics.len()
     }
 
     /// How many findings are at least this loud — what an exit status is made of.
+    #[must_use]
     pub fn count(&self, severity: Severity) -> usize {
         self.diagnostics
             .iter()

@@ -134,10 +134,12 @@ impl From<Column> for Stored {
 
 impl Column {
     /// One past the last row holding a value; trailing empties are never stored.
+    #[must_use]
     pub fn len(&self) -> u32 {
         self.ends.last().copied().unwrap_or(0)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }
@@ -152,6 +154,7 @@ impl Column {
             .map(|(i, _)| self.start(i)..self.ends[i])
     }
 
+    #[must_use]
     pub fn get(&self, row: u32) -> CellValue {
         match self.find(row) {
             Some((bi, off)) => self.blocks[bi].get(off),

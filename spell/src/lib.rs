@@ -52,6 +52,7 @@ impl Language {
     ];
 
     /// The BCP 47 tag of the dictionary itself.
+    #[must_use]
     pub fn tag(self) -> &'static str {
         match self {
             Language::English => "en-US",
@@ -66,6 +67,7 @@ impl Language {
 
     /// Its name, in itself — what a picker shows, since somebody looking for German looks for
     /// *Deutsch*.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Language::English => "English (US)",
@@ -84,6 +86,7 @@ impl Language {
     /// rather than the usual mistake of a flag for a language. Where the platform has no flag
     /// glyphs — Windows draws `DE` for them, GDI no colour glyph at all, a terminal disagrees
     /// with itself about the width — a shell shows [`Language::code`] instead.
+    #[must_use]
     pub fn flag(self) -> &'static str {
         match self {
             Language::English => "\u{1F1FA}\u{1F1F8}",
@@ -97,6 +100,7 @@ impl Language {
     }
 
     /// The language in two capitals — `DE` — where a flag cannot be drawn.
+    #[must_use]
     pub fn code(self) -> &'static str {
         match self {
             Language::English => "EN",
@@ -113,6 +117,7 @@ impl Language {
     /// `en-GB`. Matched on the language alone, since there is one dictionary per language: `en-GB`
     /// is checked as American English and `pt-BR` as European Portuguese, and each says so
     /// (`doc/spelling.md`, "Regional spellings").
+    #[must_use]
     pub fn from_tag(tag: &str) -> Option<Language> {
         let language = tag
             .split(['-', '_', '.', '@'])
@@ -160,6 +165,7 @@ impl Language {
 
     /// Whether this language's dictionary is here: always, in a build that carries them, and
     /// once [`Language::provide`] has been handed it in one that does not.
+    #[must_use]
     pub fn available(self) -> bool {
         cfg!(feature = "bundled") || self.cell().get().is_some()
     }
@@ -181,6 +187,7 @@ impl Language {
     /// Polish the slowest) and shared for the life of the process. In a build without the
     /// bundled dictionaries it is the one [`Language::provide`] was given, and asking for a
     /// language that was never provided is a bug in the caller: ask [`Language::available`].
+    #[must_use]
     pub fn dictionary(self) -> &'static spellbook::Dictionary {
         self.cell().get_or_init(|| {
             #[cfg(feature = "bundled")]
@@ -208,6 +215,7 @@ pub struct Speller {
 
 impl Speller {
     /// A speller for `language` alone.
+    #[must_use]
     pub fn new(language: Language, words: BTreeSet<String>) -> Self {
         Speller {
             language,
@@ -220,6 +228,7 @@ impl Speller {
     /// is checked with unless somebody named one. Suggestions, and the language messages name,
     /// are `first`'s. Where dictionaries are fetched rather than carried, "every other" is the
     /// ones that have arrived.
+    #[must_use]
     pub fn every(first: Language, words: BTreeSet<String>) -> Self {
         Speller {
             every: true,
@@ -303,6 +312,7 @@ pub enum Source {
 }
 
 impl Source {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Source::Named => "chosen",
@@ -325,11 +335,13 @@ pub struct Choice {
 
 impl Choice {
     /// Whether every language's words are accepted — anything but a language somebody named.
+    #[must_use]
     pub fn every(self) -> bool {
         self.source != Source::Named
     }
 
     /// What a status bar shows: `All languages`, or the one language's own name.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self.every() {
             true => Setting::Automatic.label(),
@@ -338,6 +350,7 @@ impl Choice {
     }
 
     /// The short form, for a narrow status line: `all`, or the one language's tag.
+    #[must_use]
     pub fn tag(self) -> &'static str {
         match self.every() {
             true => "all",
@@ -347,6 +360,7 @@ impl Choice {
 
     /// One sentence on what is checked and why — `every language, suggestions in Deutsch (guessed
     /// from the text)`, or `Deutsch (chosen)`.
+    #[must_use]
     pub fn describe(self) -> String {
         match self.every() {
             true => format!(
@@ -450,6 +464,7 @@ fn guess(app: &(impl Spelled + ?Sized), desktop: Option<Language>) -> Option<Lan
 /// no dictionary: `None` unless one language's words occur at least twice and more often than
 /// any other's. What decides which language's grammar rules run on it (`doc/grammar.md`
 /// decision 4).
+#[must_use]
 pub fn paragraph_language(text: &str) -> Option<Language> {
     match common_counts(text).as_slice() {
         [(best, language), (next, _), ..] if *best >= 2 && best > next => Some(*language),
@@ -461,6 +476,7 @@ pub fn paragraph_language(text: &str) -> Option<Language> {
 /// words is `language`'s, and no other language's occur more often. What lets a document's stated language stand for a short
 /// paragraph, and refuse it for one in a language this suite does not know (Welsh in a form
 /// that states `en-GB`).
+#[must_use]
 pub fn paragraph_supports(text: &str, language: Language) -> bool {
     let words = grind_core::spell::words(text).len();
     let counts = common_counts(text);
@@ -605,7 +621,8 @@ fn warm() {
                 .name("grind-spell-warm".into())
                 .spawn(|| {
                     for language in Language::ALL.into_iter().filter(|l| l.available()) {
-                        language.dictionary();
+                        // Parsed for the cache; the dictionary itself is not wanted here.
+                        let _ = language.dictionary();
                     }
                 });
         });
@@ -641,6 +658,7 @@ impl Setting {
     };
 
     /// `auto`, `off`, or a dictionary's tag — what a menu's state and a typed command carry.
+    #[must_use]
     pub fn tag(self) -> &'static str {
         match self {
             Setting::Automatic => "auto",
@@ -661,6 +679,7 @@ impl Setting {
 
     /// Its picture, for a status-bar picker: `🌐` for every language, the dictionary's flag for
     /// one ([`Language::flag`]), and `None` for off, which is a word rather than a picture.
+    #[must_use]
     pub fn flag(self) -> Option<&'static str> {
         match self {
             Setting::Automatic => Some("\u{1F310}"),
@@ -670,6 +689,7 @@ impl Setting {
     }
 
     /// The same in letters, where the platform cannot draw a flag: `ALL`, `DE`, `OFF`.
+    #[must_use]
     pub fn code(self) -> &'static str {
         match self {
             Setting::Automatic => "ALL",
@@ -679,6 +699,7 @@ impl Setting {
     }
 
     /// What a picker's button shows: the flag with emoji, the code without — `Off` either way.
+    #[must_use]
     pub fn chip(self, emoji: bool) -> &'static str {
         match (emoji, self.flag()) {
             (true, Some(flag)) => flag,
@@ -688,6 +709,7 @@ impl Setting {
     }
 
     /// One row of a picker: `🇩🇪  Deutsch`, or `DE  Deutsch`, or plain `Off`.
+    #[must_use]
     pub fn row(self, emoji: bool) -> String {
         match self {
             Setting::Off => self.label().to_owned(),
@@ -696,6 +718,7 @@ impl Setting {
     }
 
     /// What a menu calls it.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Setting::Automatic => "All languages",
@@ -779,6 +802,7 @@ pub mod preference {
     use grind_core::DocumentKind;
 
     /// Where the setting lives, or `None` with no home directory to put it in.
+    #[must_use]
     pub fn path() -> Option<PathBuf> {
         Some(config_dir()?.join("spelling"))
     }
@@ -859,6 +883,7 @@ pub mod personal {
     use super::*;
 
     /// Where the list lives, or `None` with no home directory to put it in.
+    #[must_use]
     pub fn path() -> Option<PathBuf> {
         Some(config_dir()?.join("words"))
     }
@@ -893,11 +918,13 @@ pub mod personal {
     }
 
     /// Every word on the list, sorted — what a *Personal Dictionary* view shows.
+    #[must_use]
     pub fn words() -> Vec<String> {
         load().into_iter().collect()
     }
 
     /// `text` without the line holding `word`; every other line, comments included, as it was.
+    #[must_use]
     pub fn without(text: &str, word: &str) -> String {
         let word = normalise(word.trim());
         let mut out: String = text

@@ -25,6 +25,7 @@ use crate::style::{CellStyle, EDGES};
 /// `None` means regenerate, never failure; `grind_core::projection::source` lists the boundaries.
 /// Unlike `odf::write::splice` there is no autofilter check: a projection writes no filter-derived
 /// row state.
+#[must_use]
 pub fn splice(doc: &Document) -> Option<String> {
     let source = doc.projection_source.as_deref()?;
     // A style, a format, a track, a name, a sheet added or renamed: all of them are somewhere a
@@ -69,6 +70,7 @@ fn replacement(sheet: &Sheet, pos: Pos, shape: grind_core::projection::Shape) ->
 }
 
 /// Project a whole document.
+#[must_use]
 pub fn project(doc: &Document) -> Projection {
     let mut out = Emitter::new();
     out.header(DocumentKind::Spreadsheet);

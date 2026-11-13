@@ -34,6 +34,7 @@ pub enum Form {
 impl Form {
     /// The form a path's extension asks for, and the flat form when it asks for nothing: in doubt,
     /// write the form that diffs (`doc/flat-first.md`). `.ods` and `.odt` still mean the package.
+    #[must_use]
     pub fn from_path(path: &Path) -> Form {
         match path.extension().and_then(|e| e.to_str()) {
             // The package extensions, named exhaustively. Everything else — including no
@@ -55,6 +56,7 @@ impl Form {
 
     /// The extension a new document of this kind is saved under, so a shell's Save As and the CLI
     /// agree (`doc/flat-first.md`).
+    #[must_use]
     pub fn extension(self, kind: crate::DocumentKind) -> &'static str {
         use crate::DocumentKind::{Presentation, Spreadsheet, Text};
         match (self, kind) {

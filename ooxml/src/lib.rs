@@ -64,6 +64,7 @@ impl From<std::io::Error> for Error {
 impl Error {
     /// The one outcome a corpus loop accepts beside success, for the same reason loop A
     /// accepts it.
+    #[must_use]
     pub fn is_encrypted(&self) -> bool {
         matches!(self, Error::Encrypted)
     }

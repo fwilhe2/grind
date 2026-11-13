@@ -51,6 +51,7 @@ impl Component {
 
     /// Every licence file it carries as one text, then where it comes from — what a shell
     /// shows for one component.
+    #[must_use]
     pub fn text(&self) -> String {
         let mut text = self.notices().collect::<Vec<_>>().join("\n\n");
         text.push_str("\n\n");
@@ -59,6 +60,7 @@ impl Component {
     }
 
     /// `name version`, or just the name.
+    #[must_use]
     pub fn title(&self) -> String {
         match self.version {
             "" => self.name.to_owned(),
@@ -68,6 +70,7 @@ impl Component {
 }
 
 /// Every component, sorted by name.
+#[must_use]
 pub fn components() -> &'static [Component] {
     data::COMPONENTS
 }

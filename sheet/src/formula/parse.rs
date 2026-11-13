@@ -148,6 +148,7 @@ fn shift(e: SyntaxError, by: usize) -> SyntaxError {
 /// What a formula says before its expression — `"of:="`, `"="`, `"of:=="`, or nothing — so a
 /// rewriter can put it back and renaming one sheet does not respell every formula in the file
 /// (R6).
+#[must_use]
 pub fn intro(formula: &str) -> &str {
     &formula[..formula.len() - strip_intro(formula).len()]
 }

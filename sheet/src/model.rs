@@ -26,6 +26,7 @@ pub enum CellValue {
 }
 
 impl CellValue {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         matches!(self, CellValue::Empty)
     }
@@ -71,6 +72,7 @@ pub struct Pos {
 }
 
 impl Pos {
+    #[must_use]
     pub fn new(row: u32, col: u32) -> Self {
         Self { row, col }
     }
@@ -240,6 +242,7 @@ impl Sheet {
     /// The row a point `offset_mm` below the top of `row` falls in — where a control whose offset
     /// carries it past its anchor cell is drawn (`doc/ods-format.md` §3.5). A row with no height
     /// is [`DEFAULT_ROW_MM`] tall.
+    #[must_use]
     pub fn row_holding(&self, mut row: u32, mut offset_mm: f64) -> u32 {
         let height = |row: u32| {
             self.row_height(row)
@@ -259,6 +262,7 @@ impl Sheet {
     }
 
     /// The conditional-format rules, first-holding-wins order.
+    #[must_use]
     pub fn rules(&self) -> &[crate::rule::Rule] {
         &self.rules
     }
@@ -275,6 +279,7 @@ impl Sheet {
     }
 
     /// The checkbox drawn in `pos`, if there is one.
+    #[must_use]
     pub fn checkbox(&self, pos: Pos) -> Option<&Checkbox> {
         self.checkboxes.get(&pos)
     }
@@ -297,6 +302,7 @@ impl Sheet {
 
     /// The merge `pos` is part of, as its top-left or a covered cell, with that merge's top-left
     /// cell. Only anchors in the rows the tallest merge could reach down from are looked at.
+    #[must_use]
     pub fn merge_at(&self, pos: Pos) -> Option<(Pos, Span)> {
         self.merges
             .reaching_down_to(pos.row, pos)
@@ -306,6 +312,7 @@ impl Sheet {
     }
 
     /// Whether `pos` is hidden under a merge: inside one, and not its top-left cell.
+    #[must_use]
     pub fn covered(&self, pos: Pos) -> bool {
         self.merge_at(pos).is_some_and(|(anchor, _)| anchor != pos)
     }
@@ -324,6 +331,7 @@ impl Sheet {
     }
 
     /// Every merge that overlaps the rectangle `start..=end`, by its top-left cell.
+    #[must_use]
     pub fn merges_within(&self, start: Pos, end: Pos) -> Vec<(Pos, Span)> {
         self.merges
             .reaching_down_to(start.row, Pos::new(end.row, u32::MAX))
@@ -339,6 +347,7 @@ impl Sheet {
     }
 
     /// Every chart on this sheet, in document order.
+    #[must_use]
     pub fn charts(&self) -> &[crate::chart::Chart] {
         &self.charts
     }
@@ -361,6 +370,7 @@ impl Sheet {
     }
 
     /// The sheet's autofilter, or `None` when it has none (§9.4).
+    #[must_use]
     pub fn filter(&self) -> Option<&crate::filter::Filter> {
         self.filter.as_ref()
     }
@@ -372,6 +382,7 @@ impl Sheet {
 
     /// Every row the filter hides, in order; empty without a filter. Matching is on what a cell
     /// displays, which needs the epoch and the document's locale.
+    #[must_use]
     pub fn hidden_rows(
         &self,
         null_date: i64,
@@ -384,6 +395,7 @@ impl Sheet {
     }
 
     /// Whether one row is hidden by the filter, without building the whole list.
+    #[must_use]
     pub fn row_hidden(
         &self,
         row: u32,
@@ -428,12 +440,14 @@ impl Sheet {
     }
 
     /// The row's height and whether it measures the row's content, as a writer pools them.
+    #[must_use]
     pub fn row_size(&self, row: u32) -> Option<(&str, bool)> {
         self.row_height(row)
             .map(|height| (height, self.row_measured(row)))
     }
 
     /// Whether the row's height measures its content, which may outgrow it.
+    #[must_use]
     pub fn row_measured(&self, row: u32) -> bool {
         self.measured_rows.contains(&row)
     }
@@ -454,6 +468,7 @@ impl Sheet {
     }
 
     /// Whether this column is hidden by hand.
+    #[must_use]
     pub fn col_hidden(&self, col: u32) -> bool {
         self.hidden_cols.contains(&col)
     }
@@ -472,6 +487,7 @@ impl Sheet {
     }
 
     /// Whether this row is hidden by hand, as distinct from [`Sheet::row_hidden`]'s filter answer.
+    #[must_use]
     pub fn row_manually_hidden(&self, row: u32) -> bool {
         self.manually_hidden_rows.contains(&row)
     }
@@ -502,6 +518,7 @@ impl Sheet {
         self.formulas.remove(&pos);
     }
 
+    #[must_use]
     pub fn formula_count(&self) -> usize {
         self.formulas.len()
     }
@@ -511,6 +528,7 @@ impl Sheet {
         self.formulas.iter().map(|(pos, f)| (*pos, f.as_str()))
     }
 
+    #[must_use]
     pub fn kind(&self, pos: Pos) -> Option<NumberKind> {
         self.kinds.get(&pos).copied()
     }
@@ -525,6 +543,7 @@ impl Sheet {
     }
 
     /// The cell's number format, or `None` when it is displayed as its plain value.
+    #[must_use]
     pub fn format(&self, pos: Pos) -> Option<&Format> {
         self.formats.get(&pos).map(|f| &**f)
     }
@@ -544,6 +563,7 @@ impl Sheet {
     }
 
     /// The cell's styling, or `None` when it is drawn plainly.
+    #[must_use]
     pub fn style(&self, pos: Pos) -> Option<&CellStyle> {
         self.styles.get(&pos).map(|s| &**s)
     }
@@ -575,6 +595,7 @@ impl Sheet {
         self.formats.iter().map(|(pos, f)| (*pos, &**f))
     }
 
+    #[must_use]
     pub fn get(&self, pos: Pos) -> CellValue {
         self.cols
             .get(pos.col as usize)
@@ -612,6 +633,7 @@ impl Sheet {
     }
 
     /// One past the last column holding anything — [`Sheet::used_rows`]'s twin, same reason.
+    #[must_use]
     pub fn used_cols(&self) -> u32 {
         let extra = [
             self.formulas.keys().map(|pos| pos.col).max(),
@@ -666,6 +688,7 @@ impl Sheet {
         out
     }
 
+    #[must_use]
     pub fn text_cells(&self) -> Vec<(Pos, String)> {
         let mut out = Vec::new();
         for (col, column) in self.cols.iter().enumerate() {
@@ -729,6 +752,7 @@ impl Sheet {
     /// ponytail: a rule drawn on blank rows below everything else does not survive a save, which
     /// keeps `A1:A1048576` from becoming a million rows. The upgrade is a rule on a column's
     /// `table:default-cell-style-name`.
+    #[must_use]
     pub fn ruled(&self, pos: Pos) -> bool {
         !self.rules.is_empty()
             && pos.row < self.used_rows()
@@ -795,6 +819,7 @@ pub struct Link {
 
 impl Link {
     /// An ODF cell address — `Checkliste.E5` — with the checkbox's own sheet folded away.
+    #[must_use]
     pub fn parse(address: &str, own_sheet: &str) -> Option<Self> {
         let reference = crate::a1::parse_bracketed(&format!("[{address}]")).ok()?;
         if reference.end.is_some() {
@@ -807,6 +832,7 @@ impl Link {
     }
 
     /// The address as ODF writes it, always with its sheet: `Checkliste.E5`.
+    #[must_use]
     pub fn address(&self, own_sheet: &str) -> String {
         let sheet = self.sheet.as_deref().unwrap_or(own_sheet);
         let mut cell = crate::a1::reference(Some(sheet), self.pos, self.pos).start;
@@ -864,6 +890,7 @@ pub struct Span {
 
 impl Span {
     /// The span from `start` to `end`, both inclusive, in either order.
+    #[must_use]
     pub fn between(start: Pos, end: Pos) -> (Pos, Self) {
         let anchor = Pos::new(start.row.min(end.row), start.col.min(end.col));
         let span = Self {
@@ -874,11 +901,13 @@ impl Span {
     }
 
     /// One cell, which is no merge at all.
+    #[must_use]
     pub fn is_single(&self) -> bool {
         self.cols <= 1 && self.rows <= 1
     }
 
     /// The bottom-right cell of the merge starting at `anchor`.
+    #[must_use]
     pub fn end(&self, anchor: Pos) -> Pos {
         Pos::new(
             anchor.row.saturating_add(self.rows.max(1) - 1),
@@ -887,6 +916,7 @@ impl Span {
     }
 
     /// Whether the merge starting at `anchor` takes in `pos`.
+    #[must_use]
     pub fn contains(&self, anchor: Pos, pos: Pos) -> bool {
         let end = self.end(anchor);
         (anchor.row..=end.row).contains(&pos.row) && (anchor.col..=end.col).contains(&pos.col)
@@ -981,6 +1011,7 @@ impl Document {
         self.names.get(&name.to_lowercase()).map(String::as_str)
     }
 
+    #[must_use]
     pub fn sheet(&self, i: usize) -> Option<&Sheet> {
         self.sheets.get(i)
     }
@@ -992,6 +1023,7 @@ impl Document {
     /// The whole document as plain text, for search rather than display: each sheet's name on a
     /// line, then a line per row holding a value, its values as they display, separated by tabs.
     /// Only cells holding a value are visited, so a wide, sparse sheet costs what it holds.
+    #[must_use]
     pub fn text(&self) -> String {
         let mut out = String::new();
         for sheet in &self.sheets {

@@ -34,6 +34,7 @@ fn rename_cellref(cell: &CellRef, from: &str, to: &str) -> CellRef {
 
 /// One reference with `from` renamed to `to`. Public for a chart, which holds its ranges as
 /// address strings (`chart::Series::values`).
+#[must_use]
 pub fn rename_in_reference(r: &Reference, from: &str, to: &str) -> Reference {
     Reference {
         // An external document's sheets are not this document's, so a reference into one is
@@ -51,6 +52,7 @@ pub fn rename_in_reference(r: &Reference, from: &str, to: &str) -> Reference {
 }
 
 /// Every reference in `expr` that names `from`, pointed at `to` instead.
+#[must_use]
 pub fn rename(expr: &Expr, from: &str, to: &str) -> Expr {
     match expr {
         Expr::Ref(r) => Expr::Ref(rename_in_reference(r, from, to)),
@@ -77,6 +79,7 @@ pub fn rename(expr: &Expr, from: &str, to: &str) -> Expr {
 /// One stored formula with `from` renamed to `to`, or `None` when nothing changed — including when
 /// the formula does not parse, since rewriting text nobody understood corrupts documents. The
 /// intro (`of:=`) is kept (R6).
+#[must_use]
 pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> {
     let expr = parse(formula).ok()?;
     let renamed = rename(&expr, from, to);
@@ -90,6 +93,7 @@ pub fn rename_in_formula(formula: &str, from: &str, to: &str) -> Option<String> 
 /// Every use of the named expression `from` in `expr`, spelled `to` instead (§5.11), as an AST
 /// substitution: `rate` inside `rate_2`, inside `"rate"` or as `RATE(…)` is left alone. Names
 /// match case-insensitively; the new spelling is `to` exactly.
+#[must_use]
 pub fn rename_name(expr: &Expr, from: &str, to: &str) -> Expr {
     substitute_name(expr, from, &Expr::Name(to.to_owned()))
 }
@@ -126,6 +130,7 @@ fn substitute_name(expr: &Expr, name: &str, with: &Expr) -> Expr {
 
 /// Whether `expr` uses the named expression `name` anywhere; a name that mentions itself cannot be
 /// inlined.
+#[must_use]
 pub fn uses_name(expr: &Expr, name: &str) -> bool {
     substitute_name(expr, name, &Expr::Empty) != *expr
 }
@@ -133,12 +138,14 @@ pub fn uses_name(expr: &Expr, name: &str) -> bool {
 /// Every use of the named expression `name` in `expr`, written out as its `definition`. A name
 /// evaluates its definition at the using cell (`Engine::named`), so a sheetless `[.A1]` in a
 /// definition means the same inlined.
+#[must_use]
 pub fn inline_name(expr: &Expr, name: &str, definition: &Expr) -> Expr {
     substitute_name(expr, name, definition)
 }
 
 /// [`inline_name`] over one stored formula, keeping its intro, or `None` when it does not use the
 /// name or does not parse — which a caller must tell apart before deleting the definition.
+#[must_use]
 pub fn inline_name_in_formula(formula: &str, name: &str, definition: &Expr) -> Option<String> {
     let expr = parse(formula).ok()?;
     let inlined = inline_name(&expr, name, definition);
@@ -150,6 +157,7 @@ pub fn inline_name_in_formula(formula: &str, name: &str, definition: &Expr) -> O
 
 /// [`rename_in_formula`] for a named expression: one stored formula with the name `from`
 /// spelled `to`, or `None` when nothing changed or the formula does not parse.
+#[must_use]
 pub fn rename_name_in_formula(formula: &str, from: &str, to: &str) -> Option<String> {
     let expr = parse(formula).ok()?;
     let renamed = rename_name(&expr, from, to);

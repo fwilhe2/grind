@@ -19,6 +19,7 @@ pub enum Listing {
 }
 
 impl Listing {
+    #[must_use]
     pub fn html(&self) -> String {
         match self {
             Listing::Lint(report) => html(report),
@@ -30,6 +31,7 @@ impl Listing {
 /// Every calculation found, as rows of the same pane: the address, the formula as a formula bar
 /// shows it, and what it comes to. The header says how many and which functions they use most
 /// (`grind_sheet::function_tally`), which is what the GNOME window's explorer says too.
+#[must_use]
 pub fn calculations_html(found: &[Calculation]) -> String {
     let tally = grind_sheet::function_tally(found)
         .into_iter()
@@ -63,6 +65,7 @@ pub fn calculations_html(found: &[Calculation]) -> String {
 
 /// The findings as markup: a header with the tally, then one row per finding, each carrying
 /// `data-address` for one listener on the pane to read.
+#[must_use]
 pub fn html(report: &Report) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -89,6 +92,7 @@ pub fn html(report: &Report) -> String {
 }
 
 /// The header line: what was found, or that nothing was.
+#[must_use]
 pub fn summary(report: &Report) -> String {
     if report.is_empty() {
         return "No problems found".to_owned();

@@ -30,6 +30,7 @@ pub enum Data {
 }
 
 impl Data {
+    #[must_use]
     pub fn bytes(&self) -> &[u8] {
         match self {
             Data::Static(bytes) => bytes,
@@ -57,6 +58,7 @@ pub struct Face {
 }
 
 impl Face {
+    #[must_use]
     pub fn bytes(&self) -> &[u8] {
         self.data.bytes()
     }
@@ -148,6 +150,7 @@ const DEFAULT: &str = "Liberation Serif";
 impl Fonts {
     /// Only the bundled faces — what a test and a reproducible build use. **Empty** in a build
     /// without `bundled-fonts`, whose caller fetches [`BUNDLED_NAMES`] and adds them itself.
+    #[must_use]
     pub fn bundled() -> Self {
         #[allow(unused_mut)]
         let mut fonts = Fonts::default();
@@ -217,24 +220,29 @@ impl Fonts {
     }
 
     /// Every face, in order.
+    #[must_use]
     pub fn faces(&self) -> &[Face] {
         &self.faces
     }
 
     /// The face at `id`.
+    #[must_use]
     pub fn face(&self, id: FaceId) -> &Face {
         &self.faces[id.0]
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.faces.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.faces.is_empty()
     }
 
     /// The face to set `family` in, at this weight and slant.
+    #[must_use]
     pub fn resolve(&self, family: Option<&str>, bold: bool, italic: bool) -> Resolved {
         self.resolve_hinted(family, bold, italic, None)
     }
@@ -311,6 +319,7 @@ pub fn wanted<'a>(named: impl IntoIterator<Item = &'a str>) -> Vec<String> {
 impl Fonts {
     /// The fonts installed on this machine, indexed but not read: only their names and where
     /// they are. Reading a face is [`Fonts::add_families`]'s, and only for the families asked for.
+    #[must_use]
     pub fn system_database() -> fontdb::Database {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();

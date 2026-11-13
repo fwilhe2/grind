@@ -14,6 +14,7 @@ use std::sync::Arc;
 use crate::fonts::Fonts;
 
 /// The picture's tree, or `None` for bytes that are no SVG this can read.
+#[must_use]
 pub fn tree(data: &[u8], fonts: &Fonts) -> Option<usvg::Tree> {
     let mut db = usvg::fontdb::Database::new();
     for face in fonts.faces() {

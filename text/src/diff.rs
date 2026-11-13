@@ -19,6 +19,7 @@ pub struct Diff {
 }
 
 impl Diff {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }
@@ -43,6 +44,7 @@ pub enum Change {
 }
 
 impl Change {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Change::Added => "added",
@@ -77,6 +79,7 @@ const ALIKE: f64 = 0.5;
 /// each side anchor the match instead.
 const MAX_TABLE: usize = 1 << 22;
 
+#[must_use]
 pub fn diff(before: &Document, after: &Document) -> Diff {
     let keys = |doc: &Document| -> Vec<(String, String)> {
         doc.blocks.iter().map(|b| (kind(b), b.text())).collect()

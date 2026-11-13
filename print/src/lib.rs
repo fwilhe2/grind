@@ -45,6 +45,7 @@ pub struct Report {
 
 impl Report {
     /// The one sentence every client shows after an export.
+    #[must_use]
     pub fn summary(&self) -> String {
         let paper = self.page.iso_name().unwrap_or_else(|| {
             let mm = |v: f64| (v * 10.0).round() / 10.0;

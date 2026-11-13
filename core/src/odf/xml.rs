@@ -12,6 +12,7 @@ use std::ops::Range;
 /// XML 1.0 cannot represent most control characters, literally or as a reference, so they are
 /// dropped, as are surrogates and `U+FFFE`/`U+FFFF`. Tab, newline and carriage return stay, the
 /// last as `&#13;`, since a literal one is normalised away on reading (XML 1.0 §2.11, §3.3.3).
+#[must_use]
 pub fn esc(s: &str) -> String {
     let clean: String = s
         .chars()
@@ -47,6 +48,7 @@ fn tag_at(bytes: &[u8], at: usize, tag: &[u8]) -> bool {
 /// How many bytes of `bytes` are a UTF-8 byte-order mark: 3 or 0. `quick-xml` skips a leading BOM
 /// and reports positions from the byte after it, so anything recording where an element was must
 /// add this back (`tdf117948_CollapseBeforeShape.ods`).
+#[must_use]
 pub fn bom_len(bytes: &[u8]) -> usize {
     if bytes.starts_with(b"\xEF\xBB\xBF") {
         3
@@ -61,6 +63,7 @@ pub fn bom_len(bytes: &[u8]) -> usize {
 /// The reader knows where an element began (`Attrs::span`); a writer replacing it in place needs
 /// its end, found by scanning that one element. Nesting of the same name is counted. `None` when
 /// there is no matching close, and the caller regenerates.
+#[must_use]
 pub fn element_extent(bytes: &[u8], start_tag: Range<usize>) -> Option<Range<usize>> {
     // Self-closed — `<text:p/>` — is the whole element already.
     if bytes.get(start_tag.end.checked_sub(2)?..start_tag.end)? == b"/>" {

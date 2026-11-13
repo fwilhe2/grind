@@ -58,6 +58,7 @@ pub enum Dropped {
 
 impl Dropped {
     /// A plain-English name, for a report a person reads.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Dropped::Comment => "comment",
@@ -115,12 +116,14 @@ impl Report {
     }
 
     /// Did the conversion lose anything at all? `--strict` is this question.
+    #[must_use]
     pub fn lossless(&self) -> bool {
         self.dropped.is_empty()
     }
 
     /// One sentence for a shell's notice bar: what arrived, and the kinds of thing that did not,
     /// largest first, at most three named — as `grind_xlsx::Report::summary` says it.
+    #[must_use]
     pub fn summary(&self) -> String {
         let plural = |n: usize, one: &str| match n {
             1 => format!("1 {one}"),

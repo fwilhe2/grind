@@ -70,6 +70,7 @@ pub struct ScriptError {
 }
 
 /// What this server can do, as the protocol asks a server to say it.
+#[must_use]
 pub fn capabilities() -> ServerCapabilities {
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),

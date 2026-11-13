@@ -66,6 +66,7 @@ pub enum Action<'a> {
     Run(&'static str),
 }
 
+#[must_use]
 pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
     // A composition owns the keyboard until it ends: the dead key that opens one (no character
     // yet) and every keystroke inside one (whose `key` differs by browser, dropping `` ` `` on one

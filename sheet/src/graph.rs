@@ -149,11 +149,13 @@ impl RefIndex {
     }
 
     /// Whether any formula or conditional-format rule reads this cell.
+    #[must_use]
     pub fn is_referenced(&self, at: Address) -> bool {
         self.read_by.contains_key(&at) || self.read_by_rules.contains(&at)
     }
 
     /// Whether a conditional-format rule reads this cell at some cell it covers.
+    #[must_use]
     pub fn read_by_a_rule(&self, at: Address) -> bool {
         self.read_by_rules.contains(&at)
     }
@@ -163,6 +165,7 @@ impl RefIndex {
     /// halves: counting range coverage flagged every value under a `SUM`, and counting any single
     /// reader flagged every value read by the formula beside it. A parameter is read from several
     /// places.
+    #[must_use]
     pub fn singled_out_by(&self, at: Address) -> usize {
         self.read_singly.get(&at).copied().unwrap_or(0)
     }
@@ -174,6 +177,7 @@ impl RefIndex {
 
     /// Whether the reverse index hit [`MAX_EDGES`] and stopped; past it
     /// [`RefIndex::is_referenced`] can be false for a cell that is read.
+    #[must_use]
     pub fn truncated(&self) -> bool {
         self.truncated
     }

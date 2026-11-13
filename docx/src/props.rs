@@ -34,6 +34,7 @@ impl Props {
         self.0.remove(key);
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -46,6 +47,7 @@ impl Props {
     }
 
     /// The properties as XML attributes, each preceded by a space, escaped.
+    #[must_use]
     pub fn attributes(&self) -> String {
         let mut out = String::new();
         for (k, v) in &self.0 {
@@ -79,6 +81,7 @@ pub struct ParaProps {
 }
 
 impl ParaProps {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.para.is_empty() && self.text.is_empty() && self.tabs.is_none()
     }
@@ -137,6 +140,7 @@ pub struct Fonts {
 }
 
 /// A number of points, as ODF writes a length: up to four decimals, no trailing zeros.
+#[must_use]
 pub fn pt(points: f64) -> String {
     let rounded = (points * 10_000.0).round() / 10_000.0;
     let mut s = format!("{rounded:.4}");
@@ -153,16 +157,19 @@ pub fn pt(points: f64) -> String {
 }
 
 /// Twentieths of a point.
+#[must_use]
 pub fn twips(t: i64) -> String {
     pt(t as f64 / 20.0)
 }
 
 /// English Metric Units — 12,700 to the point (§20.1.2.1, `ST_Coordinate`).
+#[must_use]
 pub fn emu(e: i64) -> String {
     pt(e as f64 / 12_700.0)
 }
 
 /// A colour Word spelled as six hex digits (`FF0000`) or `auto`; `#ff0000` or nothing.
+#[must_use]
 pub fn color(hex: &str) -> Option<String> {
     let hex = hex.trim();
     (hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
@@ -170,6 +177,7 @@ pub fn color(hex: &str) -> Option<String> {
 }
 
 /// `w:highlight`'s sixteen names (§17.18.40, `ST_HighlightColor`), as colours.
+#[must_use]
 pub fn highlight(name: &str) -> Option<&'static str> {
     Some(match name {
         "black" => "#000000",
@@ -205,6 +213,7 @@ pub fn shading(attrs: &Attrs) -> Option<String> {
 
 /// A family name as `fo:font-family` wants it: quoted when it holds a space, as XSL-FO does
 /// and as `grind_text::style` decodes.
+#[must_use]
 pub fn family(name: &str) -> String {
     if name.contains(' ') && !name.starts_with('\'') {
         format!("'{name}'")
@@ -572,6 +581,7 @@ pub fn read_ppr(r: &mut Reader) -> grind_ooxml::Result<ParaFacts> {
 
 /// `w:jc` (§17.18.44, `ST_Jc`). `start`/`end` are the 2nd edition's spellings of `left`/`right`,
 /// and LibreOffice writes them (`doc/docx-format.md` §3.1).
+#[must_use]
 pub fn alignment(jc: &str) -> Option<&'static str> {
     Some(match jc {
         "left" | "start" => "start",

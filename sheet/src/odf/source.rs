@@ -108,6 +108,7 @@ pub struct Table {
 
 impl Table {
     /// The default cell style the file declared for `col`.
+    #[must_use]
     pub fn column_default(&self, col: u32) -> Option<&str> {
         self.column_defaults
             .iter()
@@ -168,6 +169,7 @@ pub struct Cell {
 /// Dropped: what the writer always emits (value, type, formula, repeat count), and what describes
 /// a value that is no longer true once it changes (`office:currency`, LibreOffice's `calcext:`
 /// mirror of the value type).
+#[must_use]
 pub fn kept_attributes(start_tag: &[u8]) -> String {
     grind_core::odf::envelope::attributes_except(start_tag, &DROP)
 }
@@ -188,6 +190,7 @@ pub const DROP: [&str; 10] = [
 ];
 
 impl Source {
+    #[must_use]
     pub fn new(form: Form, bytes: Vec<u8>) -> Self {
         Self {
             form,
@@ -204,6 +207,7 @@ impl Source {
     }
 
     /// The element covering `col` of this row, if the file spelled one.
+    #[must_use]
     pub fn covering(&self, sheet: usize, row: u32, col: u32) -> Option<&Cell> {
         self.rows
             .get(&(sheet, row))?

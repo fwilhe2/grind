@@ -19,6 +19,7 @@
 /// Days from 1970-01-01 in the proleptic Gregorian calendar — Howard Hinnant's `days_from_civil`
 /// (public domain), exact for every year §4.3.3 asks for and for the corpus's negative ones
 /// (`-0001-11-25`).
+#[must_use]
 pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = y - i64::from(m <= 2);
     let era = if y >= 0 { y } else { y - 399 } / 400;
@@ -29,6 +30,7 @@ pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 }
 
 /// The inverse of [`days_from_civil`] — Hinnant's `civil_from_days`.
+#[must_use]
 pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719468;
     let era = if z >= 0 { z } else { z - 146096 } / 146097;
@@ -60,6 +62,7 @@ const DAY: f64 = 86_400.0;
 
 /// A two-digit year as the four-digit one it stands for (§3.4 item 7). Only 0..=99 are two-digit:
 /// `DATE(1899;1;1)` is 1899.
+#[must_use]
 pub fn expand_year(y: i64, null_year: i64) -> i64 {
     match (0..=99).contains(&y) {
         true => null_year + (y - null_year).rem_euclid(100),
@@ -69,12 +72,14 @@ pub fn expand_year(y: i64, null_year: i64) -> i64 {
 
 /// The calendar date a serial number names, under the epoch `null_date`. `floor`, so a negative
 /// serial names the day it falls in.
+#[must_use]
 pub fn ymd(serial: f64, null_date: i64) -> (i64, i64, i64) {
     civil_from_days(serial.floor() as i64 + null_date)
 }
 
 /// The serial number of a calendar date. Out-of-range months and days roll over, as §6.10.2
 /// requires of `DATE`: month 0 is the previous December, day 0 the last of the previous month.
+#[must_use]
 pub fn serial(y: i64, m: i64, d: i64, null_date: i64) -> f64 {
     let (y, m) = (y + (m - 1).div_euclid(12), (m - 1).rem_euclid(12) + 1);
     (days_from_civil(y, m, 1) + d - 1 - null_date) as f64
@@ -83,12 +88,14 @@ pub fn serial(y: i64, m: i64, d: i64, null_date: i64) -> f64 {
 /// The clock time a serial number names, as whole seconds since midnight (0..86400). Rounded once,
 /// as §6.10.17 says `SECOND` rounds, so `HOUR`, `MINUTE` and `SECOND` all describe one clock and
 /// 23:59:59.6 is not hour 23 with second 0.
+#[must_use]
 pub fn seconds_of_day(serial: f64) -> i64 {
     let fraction = serial - serial.floor();
     (fraction * DAY).round() as i64 % 86_400
 }
 
 /// Day of the week, 0 = Sunday — the raw axis §6.10.21's Table 6 is a relabelling of.
+#[must_use]
 pub fn weekday(serial: f64, null_date: i64) -> i64 {
     // 1970-01-01 was a Thursday, which is index 4 when Sunday is 0.
     (serial.floor() as i64 + null_date + 4).rem_euclid(7)
@@ -96,6 +103,7 @@ pub fn weekday(serial: f64, null_date: i64) -> i64 {
 
 /// ISO 8601 date or dateTime text → a serial number (§6.3.15). Accepts `YYYY-MM-DD`, a full
 /// `1899-12-26T12:00:00`, a leading `-` for a negative year, and a space where ISO writes `T`.
+#[must_use]
 pub fn parse_date(s: &str, null_date: i64) -> Option<f64> {
     let s = s.trim();
     let (date, clock) = match s.find(['T', ' ']) {
@@ -124,6 +132,7 @@ pub fn parse_date(s: &str, null_date: i64) -> Option<f64> {
 
 /// Time text → a fraction of a day (§6.3.16): an `xsd:duration` as `office:time-value` holds one
 /// (`PT17H20M00S`), or a clock as a formula's text holds one (`"17:20:00"`).
+#[must_use]
 pub fn parse_time(s: &str) -> Option<f64> {
     let s = s.trim();
     let (sign, rest) = match s.strip_prefix('-') {
@@ -177,6 +186,7 @@ fn parse_clock(s: &str) -> Option<f64> {
 
 /// `office:date-value` text for a serial number. A fractional serial is a DateTime (§4.3.4) and
 /// takes the combined spelling, as LibreOffice's files do.
+#[must_use]
 pub fn format_date(serial: f64, null_date: i64) -> String {
     let (y, m, d) = ymd(serial, null_date);
     let date = format!("{y:04}-{m:02}-{d:02}");
@@ -196,6 +206,7 @@ pub fn format_date(serial: f64, null_date: i64) -> String {
 
 /// `office:time-value` text — an `xsd:duration`, the form LibreOffice writes. Not wrapped at 24
 /// hours: the corpus holds `PT33H45M00S`, and wrapping would lose a day on every save.
+#[must_use]
 pub fn format_time(fraction: f64) -> String {
     let sign = if fraction < 0.0 { "-" } else { "" };
     let (h, m, s) = hms(fraction.abs() * DAY);
@@ -231,6 +242,7 @@ fn seconds_text(seconds: f64) -> String {
 /// ponytail: UTC, not local time (§6.10.16 says the current locale); `std` has no time zone. Off
 /// by at most one zone offset. Give `Engine` a clock from the shell when one has a locale worth
 /// respecting.
+#[must_use]
 pub fn now(null_date: i64) -> f64 {
     let seconds = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

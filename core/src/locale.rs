@@ -84,6 +84,7 @@ impl Locale {
     }
 
     /// A BCP 47 tag as a shell writes one — `de-DE`, or a bare `de`.
+    #[must_use]
     pub fn parse(tag: &str) -> Option<Locale> {
         let (language, country) = match tag.split_once(['-', '_']) {
             Some((language, country)) => (language, country),
@@ -101,6 +102,7 @@ impl Locale {
     }
 
     /// [`Locale::parse`]'s inverse — how a shell shows and takes a locale back.
+    #[must_use]
     pub fn tag(&self) -> String {
         match self.country.is_empty() {
             true => self.language.clone(),
@@ -109,6 +111,7 @@ impl Locale {
     }
 
     /// The name a person knows this locale by, when it is one of [`KNOWN`].
+    #[must_use]
     pub fn name(&self) -> Option<&'static str> {
         let tag = self.tag();
         KNOWN
@@ -121,6 +124,7 @@ impl Locale {
         COMMA_DECIMAL.contains(&self.language.to_lowercase().as_str())
     }
 
+    #[must_use]
     pub fn decimal(&self) -> char {
         match self.comma_decimal() {
             true => ',',
@@ -128,6 +132,7 @@ impl Locale {
         }
     }
 
+    #[must_use]
     pub fn group(&self) -> char {
         if SPACE_GROUPING.contains(&self.language.to_lowercase().as_str()) {
             // A no-break space: a thousands separator that wraps is not one.
@@ -152,6 +157,7 @@ pub fn from_environment() -> Option<Locale> {
 
 /// A POSIX locale name as the environment spells one — `de_DE.UTF-8`, `sv_SE@euro`, `fr` — as
 /// a locale. `C` and `POSIX` are the absence of one, and so is anything that is not a language.
+#[must_use]
 pub fn from_posix(value: &str) -> Option<Locale> {
     let name = value.split(['.', '@']).next().unwrap_or_default().trim();
     match name {
@@ -163,6 +169,7 @@ pub fn from_posix(value: &str) -> Option<Locale> {
 /// The desktop's locale for numbers: `LC_ALL`, then `LC_NUMERIC`, then `LANG`. What a window gives
 /// a new document (`doc/ods-format.md` §5.2); the CLI states none unless told, so a script's
 /// output does not depend on whose shell ran it.
+#[must_use]
 pub fn from_desktop() -> Option<Locale> {
     ["LC_ALL", "LC_NUMERIC", "LANG"]
         .into_iter()
@@ -191,12 +198,14 @@ fn from_config_file() -> Option<Locale> {
 pub const DEFAULT: (char, char) = ('.', ',');
 
 /// The decimal and grouping characters for an optional locale.
+#[must_use]
 pub fn separators(locale: Option<&Locale>) -> (char, char) {
     locale.map_or(DEFAULT, |l| (l.decimal(), l.group()))
 }
 
 /// One number spelled with `locale`'s separators — `1.234,5`, `1,234.5`, `1 234,5` — which shows
 /// both at once.
+#[must_use]
 pub fn sample(locale: Option<&Locale>) -> String {
     let (decimal, group) = separators(locale);
     format!("1{group}234{decimal}5")
@@ -204,6 +213,7 @@ pub fn sample(locale: Option<&Locale>) -> String {
 
 /// What a status bar shows for a document's number spelling: [`sample`], then the locale's tag
 /// when the document states one — `1.234,5 · de-DE`, or `1,234.5` for an unmarked document.
+#[must_use]
 pub fn badge(locale: Option<&Locale>) -> String {
     match locale {
         Some(locale) => format!("{} \u{00b7} {}", sample(Some(locale)), locale.tag()),
@@ -212,6 +222,7 @@ pub fn badge(locale: Option<&Locale>) -> String {
 }
 
 /// A separator's name in a sentence — `comma`, `point`, `space`.
+#[must_use]
 pub fn separator_name(c: char) -> &'static str {
     match c {
         ',' => "comma",

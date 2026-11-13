@@ -40,6 +40,7 @@ pub fn color(own: Option<&str>, fill: Option<&str>, dark: bool) -> Option<String
 
 /// Whether the page is being painted dark — `prefers-color-scheme`, which is what `Canvas`
 /// follows. `false` where there is no window to ask, which is every host test.
+#[must_use]
 pub fn page_is_dark() -> bool {
     web_sys::window()
         .and_then(|window| window.match_media("(prefers-color-scheme: dark)").ok())

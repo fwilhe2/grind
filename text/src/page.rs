@@ -119,6 +119,7 @@ pub enum Hand {
 
 impl Slot {
     /// A kind of page with no hand and no variants: itself as its first, plain and left page.
+    #[must_use]
     pub fn single(at: usize, height: f64, next: usize, measure: usize) -> Self {
         Slot {
             height,

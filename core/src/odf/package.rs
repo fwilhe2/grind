@@ -90,6 +90,7 @@ fn read_bounded(entry: &mut impl Read, limit: u64) -> std::io::Result<Vec<u8>> {
 
 /// Is this the package form rather than the flat form? Sniffed from the bytes, never the
 /// extension.
+#[must_use]
 pub fn is_package(bytes: &[u8]) -> bool {
     bytes.starts_with(ZIP_MAGIC)
 }
@@ -121,12 +122,14 @@ pub fn content_xml(bytes: &[u8]) -> Result<Vec<u8>> {
 
 /// `styles.xml`, if the package has one. Optional, so every failure is `None`: a style that lived
 /// only there is lost, never the document.
+#[must_use]
 pub fn styles_xml(bytes: &[u8]) -> Option<Vec<u8>> {
     part(bytes, "styles.xml")
 }
 
 /// Any other part of a package by its path, such as `Pictures/foo.jpg`. `None` for the flat form
 /// and for a part the zip does not hold.
+#[must_use]
 pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     if !is_package(bytes) {
         return None;
@@ -169,6 +172,7 @@ pub struct SubDocument {
 }
 
 /// The path of every entry in a package — empty for the flat form or an unreadable zip.
+#[must_use]
 pub fn entry_names(bytes: &[u8]) -> Vec<String> {
     if !is_package(bytes) {
         return Vec::new();
@@ -188,6 +192,7 @@ pub fn entry_names(bytes: &[u8]) -> Vec<String> {
 
 /// The two manifest entries a [`SubDocument`] needs: its directory, carrying its media type,
 /// and the `content.xml` inside it.
+#[must_use]
 pub fn subdocument_entries(sub: &SubDocument) -> [String; 2] {
     let dir = crate::odf::xml::esc(&sub.directory);
     [
@@ -205,6 +210,7 @@ pub fn subdocument_entries(sub: &SubDocument) -> [String; 2] {
 
 /// `META-INF/manifest.xml` for a minimal package: the document itself and `content.xml`, and
 /// nothing the package does not hold (§1.4).
+#[must_use]
 pub fn manifest(mimetype: &str) -> String {
     manifest_with(mimetype, false, &[])
 }

@@ -62,6 +62,7 @@ pub struct Inline {
 
 /// Spell a block's runs as one string, or `None` when a run has no spelling — an image, the text
 /// projection's named gap (`doc/projection-text.md`).
+#[must_use]
 pub fn write(runs: &[Run]) -> Option<Inline> {
     // A kept element (a footnote, a field) is spelled as the text it shows; the element itself is
     // a named gap (`doc/projection-text.md`).
@@ -142,6 +143,7 @@ pub fn write(runs: &[Run]) -> Option<Inline> {
 
 /// Read a string back into runs. With `raw` (the KDL string was `#"…"#`) the notation is off, and
 /// only tab and line break become runs of their own.
+#[must_use]
 pub fn read(text: &str, raw: bool) -> Vec<Run> {
     let chars: Vec<char> = text.chars().collect();
     let mut runs = Vec::new();

@@ -34,6 +34,7 @@ pub fn save(setting: &Setting) -> Result<(), String> {
 /// The palette's rows for the grammar finding at the caret: each replacement as
 /// `grammar.fix:N`, then Ignore the rule — offered for an empty query, the words that name them,
 /// or what the finding covers.
+#[must_use]
 pub fn offers(finding: &grind_text::grammar::Finding, covered: &str, query: &str) -> Vec<Entry> {
     let query = query.trim().to_lowercase();
     let asks = query.is_empty()

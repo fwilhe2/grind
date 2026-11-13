@@ -51,6 +51,7 @@ impl Role {
     /// The face of one block. A named style wins over the block's kind: `Title`, `Subtitle` and a
     /// code fence are paragraphs whose only signal is the name. A heading deeper than six is set
     /// as the sixth.
+    #[must_use]
     pub fn of(kind: &BlockKind, style: Option<&str>) -> Role {
         match (style, kind) {
             (Some("Title"), _) => Role::Title,
@@ -64,6 +65,7 @@ impl Role {
     }
 
     /// How much bigger than the body this face is.
+    #[must_use]
     pub fn scale(self) -> f64 {
         match self {
             Role::Heading(level) => HEADING_SCALE[usize::from(level.clamp(1, 6)) - 1],
@@ -73,15 +75,18 @@ impl Role {
         }
     }
 
+    #[must_use]
     pub fn bold(self) -> bool {
         matches!(self, Role::Heading(_) | Role::Title)
     }
 
+    #[must_use]
     pub fn italic(self) -> bool {
         self == Role::Subtitle
     }
 
     /// Whether this face is the shell's monospace family rather than its body one.
+    #[must_use]
     pub fn mono(self) -> bool {
         self == Role::Code
     }

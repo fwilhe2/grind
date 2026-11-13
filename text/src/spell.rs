@@ -28,11 +28,13 @@ pub struct Misspelling {
 
 impl Misspelling {
     /// `p12+40` — the address `grind text get`, a go-to box and a problems pane all take.
+    #[must_use]
     pub fn address(&self) -> String {
         format!("{}+{}", crate::loc::format(self.block), self.offset)
     }
 
     /// Where the word starts, for [`crate::find::step`] to step between.
+    #[must_use]
     pub fn caret(&self) -> crate::Caret {
         crate::Caret {
             block: self.block,
@@ -42,6 +44,7 @@ impl Misspelling {
 
     /// Whether this is the word being typed — the caret at its end — which every shell leaves
     /// alone while nothing is selected.
+    #[must_use]
     pub fn being_typed(&self, caret: crate::Caret) -> bool {
         caret.block == self.block && caret.offset == self.offset + self.len
     }
@@ -88,6 +91,7 @@ pub(crate) fn skipped(block: &Block) -> Vec<Range<usize>> {
 
 /// Every word of one block to check, as `(range, word)` — [`grind_core::spell::candidates`] less
 /// the block's non-prose runs.
+#[must_use]
 pub fn candidates(block: &Block) -> Vec<(Range<usize>, String)> {
     grind_core::spell::candidates(&block.text(), &skipped(block))
 }

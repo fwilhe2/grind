@@ -243,6 +243,7 @@ pub struct Names {
 }
 
 impl Names {
+    #[must_use]
     pub fn is_local(&self, sheet: usize, name: &str) -> bool {
         self.local
             .get(sheet)
@@ -316,6 +317,7 @@ pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) 
 
 /// `expr` with every renamed sheet's references following it — `formula::rename`, the core's
 /// AST substitution that a sheet rename already uses, so no string surgery happens here.
+#[must_use]
 pub fn renamed(expr: &Expr, renames: &[(String, String)]) -> Expr {
     renames.iter().fold(expr.clone(), |expr, (from, to)| {
         rename::rename(&expr, from, to)
@@ -324,6 +326,7 @@ pub fn renamed(expr: &Expr, renames: &[(String, String)]) -> Expr {
 
 /// A sheet name LibreOffice will keep: each of `[ ] * ? : / \` becomes `_`, and so does an
 /// apostrophe at either end. Everything else — spaces, CJK, 31 characters — is left alone.
+#[must_use]
 pub fn keepable(name: &str) -> String {
     let last = name.chars().count().saturating_sub(1);
     name.chars()

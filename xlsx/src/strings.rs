@@ -21,6 +21,7 @@ pub struct Item {
 
 /// Read the table. A part that stops parsing partway keeps what it had: an index past the end
 /// then reads as an empty string rather than failing the workbook.
+#[must_use]
 pub fn read(bytes: &[u8]) -> Vec<Item> {
     let mut reader = Reader::new(bytes);
     let mut out = Vec::new();

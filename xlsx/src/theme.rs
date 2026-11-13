@@ -26,6 +26,7 @@ const ORDER: [&str; 12] = [
 /// — including a Strict one, whose DrawingML namespace is unmeasured — so every theme colour is
 /// [`color::Resolved::Unknown`] and counted. A missing slot ends the table, or the later indices
 /// would shift onto wrong colours.
+#[must_use]
 pub fn read(bytes: &[u8]) -> Vec<[u8; 3]> {
     let mut slots: [Option<[u8; 3]>; 12] = [None; 12];
     let mut reader = Reader::new(bytes);

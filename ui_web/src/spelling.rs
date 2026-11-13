@@ -44,6 +44,7 @@ fn storage() -> Option<web_sys::Storage> {
 
 /// The remembered setting for `kind` — automatic when nothing was ever chosen, or when the
 /// browser will not say (a private window, blocked site data).
+#[must_use]
 pub fn load(kind: DocumentKind) -> Setting {
     storage()
         .and_then(|s| s.get_item(key(kind)).ok().flatten())
@@ -63,6 +64,7 @@ pub fn save(kind: DocumentKind, setting: Setting) -> Result<(), String> {
 }
 
 /// The words somebody added to their own dictionary.
+#[must_use]
 pub fn words() -> Vec<String> {
     storage()
         .and_then(|s| s.get_item(WORDS).ok().flatten())
@@ -107,6 +109,7 @@ pub fn remove_word(word: &str) -> Result<bool, String> {
 /// `suggestions` as `spell.fix:N`, then Ignore and Add. Offered for an empty query, for the words
 /// that name them, and for what somebody typing the correction they mean would be typing:
 /// `receive`, over the word `recieve`.
+#[must_use]
 pub fn offers(word: &str, suggestions: &[String], query: &str) -> Vec<crate::command::Entry> {
     use crate::command::Entry;
     let query = query.trim().to_lowercase();
@@ -152,6 +155,7 @@ pub const FORGET: &str = "Remove from your dictionary: ";
 /// The palette's rows for the personal dictionary, as `(command id, title)`: one per word, once
 /// the query is a beginning of [`FORGET`] at least `Remove` long, or [`FORGET`] and then part of
 /// a word — which is what `spell.words` opens the palette on, and what typing narrows.
+#[must_use]
 pub fn forget(query: &str, words: &[String]) -> Vec<(String, String)> {
     let query = query.trim_start().to_lowercase();
     let prefix = FORGET.to_lowercase();

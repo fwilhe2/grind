@@ -35,6 +35,7 @@ pub struct FuncInfo {
 }
 
 /// Every function this build implements, alphabetically.
+#[must_use]
 pub fn catalog() -> &'static [FuncInfo] {
     CATALOG
 }
@@ -81,6 +82,7 @@ fn parameter(part: &str) -> Option<(String, String)> {
 /// decides whether an array handed to a ForceArray parameter is iterated over (§3.3 2.2) or taken
 /// whole. One value when every alternative type is: `Number`, `Text|Number`, `Any`; not
 /// `NumberSequence`, `Reference|Array` or `Criteria`.
+#[must_use]
 pub fn takes_one_value(name: &str, index: usize) -> bool {
     const ONE: &[&str] = &[
         "Any",
@@ -108,6 +110,7 @@ pub fn takes_one_value(name: &str, index: usize) -> bool {
 
 /// The function group a help browser files `info` under, derived from the section number's second
 /// component (`6.16.61` is `6.16`, Mathematical) — `doc/small-group.md`'s own headings.
+#[must_use]
 pub fn category(info: &FuncInfo) -> &'static str {
     match info.section.split('.').nth(1) {
         Some("9") => "Database",

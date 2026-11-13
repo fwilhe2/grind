@@ -68,6 +68,7 @@ pub struct Typesetter {
 }
 
 impl Typesetter {
+    #[must_use]
     pub fn new(fonts: Fonts) -> Self {
         Typesetter {
             fonts,

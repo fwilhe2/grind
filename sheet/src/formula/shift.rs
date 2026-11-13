@@ -51,6 +51,7 @@ fn shift_reference(r: &Reference, rows: i64, cols: i64) -> Option<Reference> {
 }
 
 /// Every reference in `expr`, moved by `rows` rows and `cols` columns.
+#[must_use]
 pub fn shift(expr: &Expr, rows: i64, cols: i64) -> Expr {
     match expr {
         Expr::Ref(r) => match shift_reference(r, rows, cols) {

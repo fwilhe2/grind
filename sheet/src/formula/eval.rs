@@ -32,6 +32,7 @@ pub struct Address {
 }
 
 impl Address {
+    #[must_use]
     pub fn new(sheet: usize, pos: Pos) -> Self {
         Self { sheet, pos }
     }
@@ -115,6 +116,7 @@ struct Recorder {
 }
 
 impl<'a> Engine<'a> {
+    #[must_use]
     pub fn new(doc: &'a Document) -> Self {
         Self {
             doc,
@@ -131,6 +133,7 @@ impl<'a> Engine<'a> {
     /// (`doc/formula-workbench.md` §3.3). Seeding the memo is the whole mechanism: every formula
     /// cell is evaluated from its formula, so anything reading an overridden cell, however
     /// indirectly, sees the override. A formula cell can be overridden too.
+    #[must_use]
     pub fn with_overlay(doc: &'a Document, overlay: &HashMap<Address, Value>) -> Self {
         let mut engine = Self::new(doc);
         engine
@@ -143,6 +146,7 @@ impl<'a> Engine<'a> {
     /// question about what the sheet shows. Conditional-format rules evaluate through one
     /// (`crate::rule`), so drawing never recalculates, and a rule agrees with the values on screen
     /// even when they are stale, as LibreOffice's do.
+    #[must_use]
     pub fn over_cached(doc: &'a Document) -> Self {
         Self {
             cached: true,
@@ -476,6 +480,7 @@ pub(crate) fn intersect(a: &Area, b: &Area) -> Option<Area> {
 
 /// A stored cell as a value. The reader keeps a formula's cached result here too, which is
 /// what recalculation replaces.
+#[must_use]
 pub fn from_cell(cell: CellValue) -> Value {
     match cell {
         CellValue::Empty => Value::Empty,
@@ -488,6 +493,7 @@ pub fn from_cell(cell: CellValue) -> Value {
 /// A computed value on its way back into a cell — the inverse of [`from_cell`]. An error becomes
 /// its name as text, which is what LibreOffice writes (`doc/ods-format.md` §6) and what the reader
 /// takes back.
+#[must_use]
 pub fn to_cell(value: Value) -> CellValue {
     match value {
         Value::Empty => CellValue::Empty,
@@ -576,6 +582,7 @@ fn compare(op: Op, left: &Value, right: &Value) -> Value {
 
 /// How two values sort, by `compare`'s rules — also the lookup functions' order (§6.14.9: "Numbers
 /// before Text, Text before Logicals").
+#[must_use]
 pub fn order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
     match (coerce_empty(left, right), coerce_empty(right, left)) {
         (Value::Number(a), Value::Number(b)) => a.partial_cmp(&b),

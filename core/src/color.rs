@@ -17,6 +17,7 @@ pub const TEXT: f64 = 4.5;
 pub const VISIBLE: f64 = 3.0;
 
 /// A colour parsed from `#rrggbb`, the only form ODF stores (§5.1).
+#[must_use]
 pub fn parse(hex: &str) -> Option<Rgb> {
     let digits = hex.strip_prefix('#')?;
     if digits.len() != 6 || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
@@ -27,6 +28,7 @@ pub fn parse(hex: &str) -> Option<Rgb> {
 }
 
 /// WCAG relative luminance — the perceptual weight of a colour, on 0.0 to 1.0.
+#[must_use]
 pub fn luminance((r, g, b): Rgb) -> f64 {
     let channel = |value: u8| {
         let v = f64::from(value) / 255.0;
@@ -39,6 +41,7 @@ pub fn luminance((r, g, b): Rgb) -> f64 {
 }
 
 /// The WCAG contrast ratio between two colours, from 1.0 (identical) to 21.0 (black on white).
+#[must_use]
 pub fn contrast(a: Rgb, b: Rgb) -> f64 {
     let (a, b) = (luminance(a), luminance(b));
     let (light, dark) = match a > b {
@@ -50,6 +53,7 @@ pub fn contrast(a: Rgb, b: Rgb) -> f64 {
 
 /// Hue (degrees), saturation and lightness — the space a colour is moved in when it has to
 /// stay recognisably itself.
+#[must_use]
 pub fn hsl((r, g, b): Rgb) -> (f64, f64, f64) {
     let (r, g, b) = (
         f64::from(r) / 255.0,
@@ -78,6 +82,7 @@ pub fn hsl((r, g, b): Rgb) -> (f64, f64, f64) {
 }
 
 /// [`hsl`]'s inverse.
+#[must_use]
 pub fn from_hsl(h: f64, s: f64, l: f64) -> Rgb {
     let (h, s, l) = (h.rem_euclid(360.0), s.clamp(0.0, 1.0), l.clamp(0.0, 1.0));
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
@@ -99,6 +104,7 @@ pub fn from_hsl(h: f64, s: f64, l: f64) -> Rgb {
 /// automatic colour: the theme's `ink` where it reads, else black or white, whichever reads
 /// better. Without the fallback, a dark theme's near-white text on a document's pale heading row
 /// is unreadable.
+#[must_use]
 pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
     if contrast(ink, ground) >= TEXT {
         return ink;
@@ -116,6 +122,7 @@ pub fn automatic_ink(ground: Rgb, ink: Rgb) -> Rgb {
 /// - No colour of its own, on a fill of its own: [`automatic_ink`] on that fill.
 /// - A colour of its own on a `dark` page: lifted along its own hue until it reads ([`legible`]).
 /// - Anything else: the document's colour, as it is.
+#[must_use]
 pub fn document_ink(own: Option<Rgb>, fill: Option<Rgb>, page: Rgb, ink: Rgb, dark: bool) -> Rgb {
     match (own, fill) {
         (None, None) => ink,
@@ -128,6 +135,7 @@ pub fn document_ink(own: Option<Rgb>, fill: Option<Rgb>, page: Rgb, ink: Rgb, da
 /// `color`, moved along its own hue — lighter on a dark ground, darker on a light one — until it
 /// reaches `floor` against `ground`. Lightness rather than a blend towards white or black, which
 /// would desaturate it. When no lightness on that hue reads, the nearest comes back.
+#[must_use]
 pub fn legible(color: Rgb, ground: Rgb, floor: f64) -> Rgb {
     if contrast(color, ground) >= floor {
         return color;

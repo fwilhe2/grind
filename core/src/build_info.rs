@@ -17,6 +17,7 @@ pub const DATE: &str = env!("GRIND_BUILD_DATE");
 
 /// `version` is the caller's own `CARGO_PKG_VERSION`. For a caller such as clap that prints its
 /// own `name version` header; see [`describe`] for a standalone one.
+#[must_use]
 pub fn describe_version(version: &str) -> String {
     let profile = if cfg!(debug_assertions) {
         "debug build"
@@ -28,6 +29,7 @@ pub fn describe_version(version: &str) -> String {
 
 /// Like [`describe_version`], with a `name v` header of its own — for a standalone display
 /// (an about dialog) with no other caller printing a header.
+#[must_use]
 pub fn describe(name: &str, version: &str) -> String {
     format!("{name} v{}", describe_version(version))
 }

@@ -25,6 +25,7 @@ pub struct Misspelling {
 
 impl Misspelling {
     /// `Sheet1.B12` — the cell, as `grind sheet get`, a go-to box and a problems pane take it.
+    #[must_use]
     pub fn address(&self, sheet_name: &str) -> String {
         a1::format(Some(sheet_name), self.pos)
     }
@@ -68,6 +69,7 @@ pub fn check_sheet(
 
 /// The first [`GUESS_SAMPLE`] checkable words, sheet by sheet in reading order, for a guess at the
 /// language.
+#[must_use]
 pub fn sample(doc: &Document) -> Vec<String> {
     let mut out = Vec::new();
     for s in &doc.sheets {

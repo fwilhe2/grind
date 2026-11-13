@@ -38,6 +38,7 @@ pub enum FormulaError {
 
 impl FormulaError {
     /// The name as it is written into a formula and displayed (§5.12).
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             FormulaError::Null => "#NULL!",
@@ -52,6 +53,7 @@ impl FormulaError {
 
     /// The inverse of [`FormulaError::name`], for reading. An unknown error name maps to `#NAME?`
     /// rather than rejecting the document (§5.12); `None` means not an error name at all.
+    #[must_use]
     pub fn from_name(s: &str) -> Option<Self> {
         const KNOWN: [FormulaError; 7] = [
             FormulaError::Null,
@@ -97,6 +99,7 @@ pub enum Value {
 impl Value {
     /// A number, or `#NUM!` if it is not finite. Every operator and function returns through here,
     /// so a NaN or an infinity never escapes into the grid (§4.3.1).
+    #[must_use]
     pub fn number(n: f64) -> Self {
         if n.is_finite() {
             Value::Number(n)
@@ -105,6 +108,7 @@ impl Value {
         }
     }
 
+    #[must_use]
     pub fn error(&self) -> Option<FormulaError> {
         match self {
             Value::Error(e) => Some(*e),
@@ -226,6 +230,7 @@ fn parse_number(s: &str) -> Option<f64> {
 ///
 /// ponytail: the exponent spelling (`1E+20`) is asserted only against "no whitespace"; loop B will
 /// pin it.
+#[must_use]
 pub fn format_number(n: f64) -> String {
     if n == 0.0 {
         return "0".to_owned(); // also normalises -0.0

@@ -72,6 +72,7 @@ pub const XML: &str = "http://www.w3.org/XML/1998/namespace";
 pub const CONFIG: &str = "urn:oasis:names:tc:opendocument:xmlns:config:1.0";
 
 impl Ns {
+    #[must_use]
     pub fn from_uri(uri: &str) -> Ns {
         match uri {
             OFFICE => Ns::Office,
@@ -109,6 +110,7 @@ impl Name {
         }
     }
 
+    #[must_use]
     pub fn is(&self, ns: Ns, local: &str) -> bool {
         self.ns == ns && self.local == local
     }

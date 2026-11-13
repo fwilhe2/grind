@@ -213,6 +213,7 @@ type Look = (
 );
 
 impl Builder {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             // Sheets come from the file: a document declaring none stays empty rather than getting

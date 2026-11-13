@@ -43,6 +43,7 @@ pub enum Dropped {
 
 impl Dropped {
     /// A plain-English name, for a report a person reads.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Dropped::Chart => "chart",
@@ -141,6 +142,7 @@ impl Report {
 
     /// One sentence for a shell's notice bar: what arrived, and the kinds of thing that did not,
     /// largest first, at most three named — so every shell says the same about an import.
+    #[must_use]
     pub fn summary(&self) -> String {
         let plural = |n: usize, one: &str| match n {
             1 => format!("1 {one}"),
@@ -205,6 +207,7 @@ impl Report {
     /// counts — the value is right but no longer recalculates. An unknown function does not: the
     /// formula came through intact, and what grind can evaluate is not a fact about the
     /// conversion.
+    #[must_use]
     pub fn lossless(&self) -> bool {
         self.dropped.is_empty()
             && self.untranslated.is_empty()

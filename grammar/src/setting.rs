@@ -55,6 +55,7 @@ impl Setting {
         setting
     }
 
+    #[must_use]
     pub fn to_text(&self) -> String {
         let flag = |b: bool| if b { "on" } else { "off" };
         let mut out = format!("builtin {}\n", flag(self.builtin));
@@ -66,6 +67,7 @@ impl Setting {
     }
 
     /// Where it lives, or `None` with no home directory to put it in.
+    #[must_use]
     pub fn path() -> Option<PathBuf> {
         Some(grind_spell::config_dir()?.join("grammar"))
     }

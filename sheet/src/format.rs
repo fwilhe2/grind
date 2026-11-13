@@ -51,6 +51,7 @@ impl Toggle {
     /// Whether the control is on for a cell styled `style`. ODF's alignments are writing-direction
     /// relative, so `start`/`end` are written and `left`/`right` read the same; `oblique` reads as
     /// italic.
+    #[must_use]
     pub fn is_on(self, style: &CellStyle) -> bool {
         let align = style.align.as_deref();
         match self {
@@ -68,6 +69,7 @@ impl Toggle {
     /// The style to write over a cell styled `style` to turn the control `on` or off: that one
     /// field set or removed, everything else kept, `None` when nothing is left — for a control
     /// that already knows its new state.
+    #[must_use]
     pub fn set(self, style: &CellStyle, on: bool) -> Option<CellStyle> {
         let value = |value: &str| on.then(|| value.to_owned());
         restyled(style, |style| match self {
@@ -83,6 +85,7 @@ impl Toggle {
     }
 
     /// The style a press writes — [`Toggle::set`] to the opposite of [`Toggle::is_on`].
+    #[must_use]
     pub fn flipped(self, style: &CellStyle) -> Option<CellStyle> {
         self.set(style, !self.is_on(style))
     }
@@ -90,6 +93,7 @@ impl Toggle {
 
 /// A colour written into the text or (with `background`) the fill. `None` is Automatic: the
 /// attribute removed.
+#[must_use]
 pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> Option<CellStyle> {
     restyled(style, |style| match background {
         true => style.background = value,
@@ -102,6 +106,7 @@ pub fn coloured(style: &CellStyle, background: bool, value: Option<String>) -> O
 pub const BORDER: &str = "0.06pt solid #000000";
 
 /// A hairline round the cell (`on`), or every edge taken away — *All Borders* and *No Borders*.
+#[must_use]
 pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
     restyled(style, |style| {
         style.set_border(on.then(|| BORDER.to_owned()));
@@ -113,6 +118,7 @@ pub fn bordered(style: &CellStyle, on: bool) -> Option<CellStyle> {
 pub const INDENT_STEP_MM: f64 = 2.645_83;
 
 /// `steps` indent levels as a stored length — `0.265cm`, `0.529cm`, … — as the oracle spells it.
+#[must_use]
 pub fn indent_length(steps: i64) -> String {
     let cm = steps as f64 * INDENT_STEP_MM / 10.0;
     let text = format!("{cm:.3}");
@@ -122,6 +128,7 @@ pub fn indent_length(steps: i64) -> String {
 
 /// How many indent levels a cell styled `style` is in, to the nearest level, whatever unit its
 /// `fo:margin-left` uses.
+#[must_use]
 pub fn indent_level(style: &CellStyle) -> i64 {
     style
         .indent_mm()
@@ -130,6 +137,7 @@ pub fn indent_level(style: &CellStyle) -> i64 {
 
 /// Increase Indent (`step` 1) or Decrease Indent (-1), in whole levels and never below none, where
 /// the attribute is removed.
+#[must_use]
 pub fn indented(style: &CellStyle, step: i8) -> Option<CellStyle> {
     let level = (indent_level(style) + i64::from(step)).max(0);
     restyled(style, |style| {
@@ -148,6 +156,7 @@ pub const ROTATIONS: [(Option<u16>, &str); 5] = [
 ];
 
 /// Text turned `degrees` anticlockwise, or level again.
+#[must_use]
 pub fn rotated(style: &CellStyle, degrees: Option<u16>) -> Option<CellStyle> {
     restyled(style, |style| {
         style.rotation = degrees
@@ -158,6 +167,7 @@ pub fn rotated(style: &CellStyle, degrees: Option<u16>) -> Option<CellStyle> {
 }
 
 /// Which of [`ROTATIONS`] a cell styled `style` is turned by, if any is.
+#[must_use]
 pub fn rotation_chosen(style: &CellStyle) -> Option<usize> {
     let degrees = style.rotation_degrees();
     ROTATIONS
@@ -166,6 +176,7 @@ pub fn rotation_chosen(style: &CellStyle) -> Option<usize> {
 }
 
 /// A typed rotation — `45`, `up`, `down`, `none` — as [`rotated`] takes it.
+#[must_use]
 pub fn rotation_from_words(words: &str) -> Option<Option<u16>> {
     match words.trim() {
         "" | "none" | "level" | "0" => Some(None),
@@ -197,6 +208,7 @@ pub const MAX_DECIMALS: u8 = 10;
 /// `0..=MAX_DECIMALS`. A cell with no format starts from the `shown` decimals of its display
 /// ([`decimals_shown`]), so `1.5` becomes `1.50` or `2`. A date, time, boolean, text or foreign
 /// format answers `None`. `locale` is used only when there is no format to keep one from.
+#[must_use]
 pub fn stepped(
     current: Option<&Format>,
     step: i8,
@@ -221,6 +233,7 @@ pub fn stepped(
 /// Group Thousands over a cell formatted `current`: the separator toggled, everything else kept. A
 /// cell with no format starts from what it shows, as [`stepped`] does. Anything but a number,
 /// percentage or currency answers `None`.
+#[must_use]
 pub fn grouped(current: Option<&Format>, shown: u8, locale: Option<Locale>) -> Option<Format> {
     let (kind, decimals, grouping, symbol) = match current {
         None => (Kind::Number, shown, false, String::new()),
@@ -234,6 +247,7 @@ pub fn grouped(current: Option<&Format>, shown: u8, locale: Option<Locale>) -> O
 }
 
 /// Whether a cell formatted `current` groups its thousands — what *Group Thousands* is ticked by.
+#[must_use]
 pub fn is_grouped(current: Option<&Format>) -> bool {
     current
         .filter(|format| format.is_preset())
@@ -243,6 +257,7 @@ pub fn is_grouped(current: Option<&Format>) -> bool {
 /// The format a currency choice ([`numfmt::CURRENCIES`]) writes over a cell formatted `current`. A
 /// currency keeps its decimals, grouping and locale and changes only its symbol; anything else
 /// gets two decimals, grouped, in `locale`.
+#[must_use]
 pub fn currency(current: Option<&Format>, symbol: &str, locale: Option<Locale>) -> Format {
     match current.filter(|f| f.is_preset()) {
         Some(format) if format.preset_params().0 == Kind::Currency => {
@@ -256,6 +271,7 @@ pub fn currency(current: Option<&Format>, symbol: &str, locale: Option<Locale>) 
 
 /// Which of [`numfmt::CURRENCIES`] a cell is formatted as, by index — the one menu item with a
 /// check. `None` for no currency or another one (a document's `CHF`).
+#[must_use]
 pub fn currency_chosen(current: Option<&Format>) -> Option<usize> {
     let format = current.filter(|f| f.is_preset())?;
     let (kind, _, _, symbol) = format.preset_params();
@@ -279,6 +295,7 @@ pub fn decimals_shown(text: &str, locale: Option<&Locale>) -> u8 {
 }
 
 /// The locale a new format is written in: the cell's own format's, else the caller's fallback.
+#[must_use]
 pub fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<Locale> {
     match current.and_then(|f| f.locale.clone()) {
         Some(own) => Some(own),
@@ -316,6 +333,7 @@ impl Preset {
     ];
 
     /// The `numfmt` kind this preset builds, for the seven that are one.
+    #[must_use]
     pub fn kind(self) -> Option<Kind> {
         match self {
             Preset::General | Preset::DateTime => None,
@@ -331,6 +349,7 @@ impl Preset {
 
     /// Which preset a cell formatted `format` is — what a picker opens on. `None` for a format
     /// this build did not write.
+    #[must_use]
     pub fn of(format: Option<&Format>) -> Option<Preset> {
         let Some(format) = format else {
             return Some(Preset::General);
@@ -382,6 +401,7 @@ impl Preset {
 
     /// What a picker's face says about a cell formatted `format`: `123`, `%`, the currency symbol,
     /// `Date`, `Time`, `T/F`, `Abc`, or `Custom` for a format this build did not write.
+    #[must_use]
     pub fn face(format: Option<&Format>) -> String {
         let preset = match Preset::of(format) {
             None => return "Custom".to_owned(),

@@ -32,6 +32,7 @@ use crate::style::CharStyle;
 
 /// Whether a file name is a Markdown file — `.md`, `.markdown` or `.mdown`, in any case. Plain
 /// text has no signature, so this is asked only after the bytes said they are not ODF.
+#[must_use]
 pub fn is_markdown_name(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     matches!(
@@ -140,6 +141,7 @@ struct TableState {
 pub type Resolve<'r> = dyn Fn(&str) -> Option<Vec<u8>> + 'r;
 
 /// The resolver that has no files: only a `data:` URI comes in.
+#[must_use]
 pub fn nowhere(_: &str) -> Option<Vec<u8>> {
     None
 }
@@ -481,6 +483,7 @@ pub enum Pictures {
 
 impl Pictures {
     /// The directory a Markdown file's pictures go in by default: `notes.md`'s are `notes.images`.
+    #[must_use]
     pub fn beside(markdown_name: &str) -> Self {
         let file = markdown_name
             .rsplit(['/', '\\'])
@@ -530,6 +533,7 @@ impl Exported {
     }
 
     /// "Wrote README.md, and 2 pictures in README.images." — what every shell says after one.
+    #[must_use]
     pub fn summary(&self, name: &str) -> String {
         let dirs: BTreeSet<&str> = self
             .pictures
@@ -605,11 +609,13 @@ fn extension(mime: &str) -> &str {
 
 /// The document as CommonMark in one string, pictures as `data:` URIs — [`export`] with
 /// [`Pictures::Inline`].
+#[must_use]
 pub fn write(blocks: &[Block]) -> String {
     export(blocks, &Pictures::Inline).markdown
 }
 
 /// The document as CommonMark, its pictures where `pictures` says.
+#[must_use]
 pub fn export(blocks: &[Block], pictures: &Pictures) -> Exported {
     let mut sink = Out {
         mode: pictures,

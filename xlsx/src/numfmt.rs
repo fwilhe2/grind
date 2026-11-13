@@ -74,6 +74,7 @@ pub enum Unspellable {
 impl Unspellable {
     /// Whether losing this piece would **misstate the number**, and so costs the cell its
     /// whole format rather than one part of it.
+    #[must_use]
     pub fn refuses(self) -> bool {
         matches!(
             self,
@@ -88,6 +89,7 @@ impl Unspellable {
     }
 
     /// A plain-English name, for a report a person reads.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Unspellable::Fraction => "fraction format",
@@ -146,6 +148,7 @@ impl Translation {
 /// Every other id is a number, text or currency format. The East Asian date ids (27–36, 50–58) are
 /// not here: §18.8.30 does not define them and they are locale-dependent, so a cell using one
 /// shows its serial — visible and recoverable, rather than a wrong date.
+#[must_use]
 pub fn builtin(id: u32) -> Option<NumberKind> {
     match id {
         14..=17 | 22 => Some(NumberKind::Date),
@@ -196,6 +199,7 @@ fn builtin_code(id: u32) -> Option<&'static str> {
 
 /// The format a built-in id carries. Id 0 is `General`, which is the *absence* of a format
 /// and not a loss.
+#[must_use]
 pub fn of_builtin(id: u32) -> Translation {
     match id {
         0 => Translation::nothing(),
@@ -223,6 +227,7 @@ fn once(what: Unspellable) -> Vec<Unspellable> {
 /// hour or the nearest after is a second (`h:mm`, `mm:ss`), a month everywhere else, and `mmm` and
 /// longer are always months (`doc/xlsx-format.md` §3.2; `numfmt/datetime-codes.xlsx` has one cell
 /// per spelling). Case-insensitive, as Excel reads them.
+#[must_use]
 pub fn classify(code: &str) -> Option<NumberKind> {
     let first = sections(code).into_iter().next().unwrap_or_default();
     section(&first).kind()

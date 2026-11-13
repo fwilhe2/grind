@@ -395,6 +395,7 @@ fn check_bytes(name: &str, bytes: &[u8]) -> Result<(), Refusal> {
 
 /// FNV-1a over the bytes, quoted as HTTP wants a tag: the same file is the same tag across
 /// restarts and builds.
+#[must_use]
 pub fn etag(bytes: &[u8]) -> String {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for byte in bytes {

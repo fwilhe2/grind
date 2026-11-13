@@ -19,6 +19,7 @@ pub struct Request {
 
 impl Request {
     /// `target` is what the request line carries: a path and maybe `?query`.
+    #[must_use]
     pub fn new(method: &str, target: &str) -> Self {
         let (path, query) = target.split_once('?').unwrap_or((target, ""));
         Request {
@@ -29,6 +30,7 @@ impl Request {
         }
     }
 
+    #[must_use]
     pub fn with_header(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_owned(), value.to_owned()));
         self
@@ -39,6 +41,7 @@ impl Request {
         self
     }
 
+    #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
@@ -47,6 +50,7 @@ impl Request {
     }
 
     /// A query parameter, decoded.
+    #[must_use]
     pub fn param(&self, name: &str) -> Option<String> {
         self.query
             .split('&')
@@ -64,6 +68,7 @@ pub struct Response {
 }
 
 impl Response {
+    #[must_use]
     pub fn bytes(status: u16, content_type: &str, body: Vec<u8>) -> Self {
         Response {
             status,
@@ -82,6 +87,7 @@ impl Response {
         Response::json(status, &serde_json::json!({ "error": message.into() }))
     }
 
+    #[must_use]
     pub fn empty(status: u16) -> Self {
         Response {
             status,
@@ -90,11 +96,13 @@ impl Response {
         }
     }
 
+    #[must_use]
     pub fn with(mut self, name: &str, value: &str) -> Self {
         self.headers.push((name.to_owned(), value.to_owned()));
         self
     }
 
+    #[must_use]
     pub fn header(&self, name: &str) -> Option<&str> {
         self.headers
             .iter()
@@ -104,6 +112,7 @@ impl Response {
 }
 
 /// `%XX` decoded as UTF-8; `None` for a broken escape or bytes that are not UTF-8.
+#[must_use]
 pub fn percent_decode(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());

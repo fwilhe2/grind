@@ -14,12 +14,14 @@ use crate::nav::Selection;
 use crate::{App, CellValue, Pos};
 
 /// The rows the selection covers.
+#[must_use]
 pub fn rows(selection: Selection) -> Range<u32> {
     let (start, end) = selection.rect();
     start.row..end.row + 1
 }
 
 /// The columns the selection covers.
+#[must_use]
 pub fn cols(selection: Selection) -> Range<u32> {
     let (start, end) = selection.rect();
     start.col..end.col + 1
@@ -27,6 +29,7 @@ pub fn cols(selection: Selection) -> Range<u32> {
 
 /// The address a name defined over the selection points at — `Sheet1.B2:C9`, sheet-qualified so it
 /// means the same place from every sheet.
+#[must_use]
 pub fn name_target(sheet: &str, selection: Selection) -> String {
     let (start, end) = selection.rect();
     let one = crate::a1::format(Some(sheet), start);
@@ -391,6 +394,7 @@ pub fn locale(typed: &str) -> Result<Option<Locale>, NotATag> {
 
 /// A name's definition in display syntax for editing — `=$Sheet1.$A$1:$B$3`,
 /// `=SUM($Sheet1.$A$1:$A$9)` — or as stored when it cannot be printed.
+#[must_use]
 pub fn shown_definition(expression: &str) -> String {
     display::to_display(&format!("={expression}")).unwrap_or_else(|_| expression.to_owned())
 }

@@ -27,6 +27,7 @@ pub struct Candidate {
 /// The identifier being typed at `caret`, if an offer could replace it: a run of name characters
 /// where a function could start (after `=`, `(`, `;` or an operator) that is not already a call.
 /// `caret` is a byte offset, clamped.
+#[must_use]
 pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
     if !text.starts_with('=') {
         return None;
@@ -53,6 +54,7 @@ pub fn prefix_at(text: &str, caret: usize) -> Option<Range<usize>> {
 
 /// Everything worth offering for `prefix`: [`funcs::catalog`]'s functions first, then the
 /// document's names (the caller's read of `App::names`).
+#[must_use]
 pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
     let upper = prefix.to_uppercase();
     let functions = funcs::catalog()
@@ -77,6 +79,7 @@ pub fn candidates(prefix: &str, names: &[String]) -> Vec<Candidate> {
 /// Which call the caret is inside, and which argument of it — what a signature hint shows. Scanned
 /// backwards over the display text, counting parentheses and skipping string literals. A finished
 /// call (`=SUM(1;2)|`) does not count, nor does a grouping parenthesis.
+#[must_use]
 pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
     let head: Vec<char> = before(text, caret).chars().collect();
     let mut depth = 0i32;
@@ -114,6 +117,7 @@ pub fn call_at(text: &str, caret: usize) -> Option<(String, usize)> {
 /// Whether a reference may be inserted at `caret` — Point mode's predicate: a formula whose last
 /// thing before the caret is an operator, a separator, `(` or the `=`. Not after `SUM(B2`, so an
 /// arrow there moves on rather than extending a half-typed reference.
+#[must_use]
 pub fn ref_eligible(text: &str, caret: usize) -> bool {
     if !text.starts_with('=') {
         return false;
@@ -128,6 +132,7 @@ pub fn ref_eligible(text: &str, caret: usize) -> bool {
 /// F4: the reference the caret is in or at the end of, and its next spelling in Excel's cycle `B2`
 /// → `$B$2` → `B$2` → `$B2` → `B2`. Found with `display::spans`, the scanner that colours
 /// references.
+#[must_use]
 pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)> {
     let span = display::spans(text).into_iter().find(|span| {
         span.kind == TokenKind::Ref && span.range.start <= caret && caret <= span.range.end
@@ -163,6 +168,7 @@ pub fn cycle_absolute(text: &str, caret: usize) -> Option<(Range<usize>, String)
 /// A function's signature split into a head and one part per parameter. `friendly` picks
 /// [`friendly::signature`]'s plain-English labels, the ones [`friendly::explain`] uses, or the
 /// spec's `Syntax:` line split on `;`. `None` for a name the catalog does not know.
+#[must_use]
 pub fn signature_parts(name: &str, friendly: bool) -> Option<(String, Vec<String>)> {
     if friendly {
         return friendly::signature(name);
@@ -182,6 +188,7 @@ pub fn signature_parts(name: &str, friendly: bool) -> Option<(String, Vec<String
 /// the repeating tail: `SUM`'s fifth argument is still `Number…`, and `COUNTIFS`' fifth is the
 /// range of its third pair. Without a repeating part it clamps to the last; an unknown function
 /// hands the index back.
+#[must_use]
 pub fn part_for(name: &str, argument: usize) -> usize {
     let Some((len, group)) = friendly::shape(name) else {
         return argument;
@@ -197,6 +204,7 @@ pub fn part_for(name: &str, argument: usize) -> usize {
 
 /// The one line saying what a function does — the spec's own `Summary:`, for a hint that has
 /// room for it.
+#[must_use]
 pub fn brief(name: &str) -> Option<&'static str> {
     funcs::catalog()
         .iter()
@@ -268,6 +276,7 @@ impl Assist {
 
     /// Whether there is a list to steer, which gives Tab and the arrows their meaning while
     /// editing.
+    #[must_use]
     pub fn is_offering(&self) -> bool {
         !self.offers.is_empty()
     }
@@ -332,6 +341,7 @@ impl Piece {
 /// The band's content as runs: the offers if there are any, else the signature of the call the
 /// caret is in. `friendly` is the formula bar's own switch, so the hint and the bar agree. Empty
 /// when there is nothing to say.
+#[must_use]
 pub fn band(assist: &Assist, friendly: bool) -> Vec<Piece> {
     if assist.is_offering() {
         return offers_band(assist);
@@ -397,6 +407,7 @@ fn signature_band(name: &str, argument: usize, friendly: bool) -> Vec<Piece> {
 /// the bar holds, in display form, converted before it is read: in stored form a bare `A1` is a
 /// name. `None` for anything that is not a formula or will not parse, and the bar shows its own
 /// text. A reading only; nothing writes it back.
+#[must_use]
 pub fn friendly_line(text: &str) -> Option<String> {
     if !text.starts_with('=') {
         return None;
@@ -407,6 +418,7 @@ pub fn friendly_line(text: &str) -> Option<String> {
 
 /// Every function this build implements, one line each: name, plain-English alias, category and
 /// the spec's summary — the four columns of `grind sheet functions --long`.
+#[must_use]
 pub fn function_lines() -> Vec<String> {
     funcs::catalog()
         .iter()
@@ -423,6 +435,7 @@ pub fn function_lines() -> Vec<String> {
 
 /// What picking row `at` of [`function_lines`] inserts: `=NAME(`, or `NAME(` into an edit already
 /// open.
+#[must_use]
 pub fn function_insert(at: usize, editing: bool) -> Option<String> {
     let info = funcs::catalog().get(at)?;
     Some(match editing {

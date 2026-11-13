@@ -15,6 +15,7 @@ use crate::{App, BlockKind, BlockView, Caret, ImageView, Result};
 /// The MIME type of a picture's bytes, from their signature rather than a name, or `None` for
 /// bytes that are no picture known here — the formats `NSImage` reads and an ODF consumer can be
 /// expected to.
+#[must_use]
 pub fn mime(bytes: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
     Some(match () {
@@ -72,6 +73,7 @@ pub fn insert_below(app: &App, block: usize, mime: &str, data: Vec<u8>) -> Resul
 /// The picture a caret in `block` means, and its offset — what Alt Text… edits: the one just after
 /// the caret, else just before it, else, when the block is a picture ([`crate::picture_of`]), that
 /// one. A picture elsewhere in a long paragraph is not guessed at.
+#[must_use]
 pub fn at(block: &BlockView, offset: usize) -> Option<(usize, &ImageView)> {
     let image = |start: usize| {
         block
@@ -97,6 +99,7 @@ pub fn set_alt(app: &App, at: Caret, title: &str, description: &str) -> Result<(
 pub const SHORT: usize = 150;
 
 /// One sentence of advice about a short alternative text as it is typed, or `None`.
+#[must_use]
 pub fn advice(title: &str) -> Option<&'static str> {
     let title = title.trim();
     let lower = title.to_lowercase();

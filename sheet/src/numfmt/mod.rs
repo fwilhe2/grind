@@ -157,6 +157,7 @@ impl Op {
         ("=", Op::Eq),
     ];
 
+    #[must_use]
     pub fn spelling(self) -> &'static str {
         Op::SPELLINGS
             .iter()
@@ -168,6 +169,7 @@ impl Op {
 
 /// `style:condition="value()>=0"` as an operator and its operand's text. Anything else is `None`
 /// and the map is dropped, rather than evaluating a condition this does not model.
+#[must_use]
 pub fn parse_condition(condition: &str) -> Option<(Op, String)> {
     let rest = condition.trim().strip_prefix("value()")?.trim_start();
     let (text, op) = Op::SPELLINGS
@@ -222,6 +224,7 @@ const WEEKDAYS: [&str; 7] = [
 ];
 
 impl Format {
+    #[must_use]
     pub fn new(kind: Kind) -> Self {
         Self {
             kind,
@@ -235,6 +238,7 @@ impl Format {
     /// The colour `value` is drawn in through this format, if it says one: the branch's own for a
     /// number a `style:map` sends elsewhere, this style's otherwise. A text value takes only a
     /// text format's colour.
+    #[must_use]
     pub fn color_of(&self, value: &CellValue) -> Option<&str> {
         match value {
             CellValue::Number(n) => match self.branch(*n) {
@@ -262,6 +266,7 @@ impl Format {
     /// The [`preset`] arguments closest to this format — its kind, its first `number:number`'s
     /// digits and grouping, its currency symbol — which a format picker and `sheet format --show`
     /// both show. A format with no numeric part reports `(0, false)`.
+    #[must_use]
     pub fn preset_params(&self) -> (Kind, u8, bool, String) {
         let (decimals, grouping) = self
             .parts
@@ -288,6 +293,7 @@ impl Format {
     /// format. False for a document's format the vocabulary cannot spell (`DD.MM.YYYY`, a
     /// two-branch currency), which a picker must show as such rather than offer parameters that
     /// would replace it.
+    #[must_use]
     pub fn is_preset(&self) -> bool {
         let (kind, decimals, grouping, symbol) = self.preset_params();
         let same = |built: Format| built.in_locale(self.locale.clone()) == *self;
@@ -318,12 +324,14 @@ impl Format {
 
     /// The display text for `value`. Never fails: a format that does not fit its value falls back
     /// to the value's plain spelling, since a `date` style on a string is a real document.
+    #[must_use]
     pub fn render(&self, value: &CellValue, null_date: i64) -> String {
         self.render_as(value, null_date, false, None)
     }
 
     /// [`Format::render`] in a document whose locale is `fallback`, which a format with no locale
     /// of its own uses ([`crate::Document::locale`]).
+    #[must_use]
     pub fn render_in(
         &self,
         value: &CellValue,
@@ -618,6 +626,7 @@ pub const CURRENCIES: [(&str, &str); 3] =
 
 /// The currency a word names — `eur`/`euro`, `usd`/`dollar`, `gbp`/`pound`, or a symbol — ignoring
 /// case; anything else is `None`.
+#[must_use]
 pub fn currency_named(word: &str) -> Option<&'static str> {
     match word.to_lowercase().as_str() {
         "€" | "eur" | "euro" | "euros" => Some("€"),
@@ -629,6 +638,7 @@ pub fn currency_named(word: &str) -> Option<&'static str> {
 
 /// Whether a currency symbol goes before the amount (`$1,234.50`, `£1,234.50`) rather than after
 /// it with a no-break space (`1,234.50 €`), as every other symbol is spelled here.
+#[must_use]
 pub fn symbol_leads(symbol: &str) -> bool {
     matches!(symbol, "$" | "£")
 }
@@ -636,6 +646,7 @@ pub fn symbol_leads(symbol: &str) -> bool {
 /// Build one of the formats a shell can ask for by name — the whole "set a format" vocabulary, so
 /// a GUI's picker and `sheet format` produce the same `Format`. Dates and times are ISO, which
 /// reads the same in every locale; a caller wanting `DD.MM.YYYY` builds the parts.
+#[must_use]
 pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format {
     // Two decimals means two, always; `min_decimals` short of `decimals` is the "up to" form.
     let number = Part::Number {
@@ -703,6 +714,7 @@ fn trailing_currency(number: Part, symbol: &str) -> Vec<Part> {
 
 /// The ISO date-and-time format: [`preset`]'s `Date` with a clock after it. A DateTime is a Date
 /// whose value carries a fraction (§4.3.4), so the style differs and the kind does not.
+#[must_use]
 pub fn datetime_preset() -> Format {
     let mut format = preset(Kind::Date, 0, false, "");
     format.push(Part::Text(" ".into()));
@@ -712,6 +724,7 @@ pub fn datetime_preset() -> Format {
 
 /// The display text for a cell with no format of its own. A date prints as a date from its value
 /// type alone (§4.3.3), in the ISO spelling the reader accepts back.
+#[must_use]
 pub fn general(
     value: &CellValue,
     kind: Option<crate::model::NumberKind>,
@@ -722,6 +735,7 @@ pub fn general(
 
 /// [`general`] in a document whose locale is `locale`: numbers take its decimal separator
 /// ([`spell_number`]); dates and times stay ISO.
+#[must_use]
 pub fn general_in(
     value: &CellValue,
     kind: Option<crate::model::NumberKind>,
@@ -751,6 +765,7 @@ pub fn general_in(
 /// A number with no format, spelled in `locale`: [`format_number`]'s shortest round-trip spelling
 /// with the locale's decimal separator, and no grouping. Both shown and put in front of somebody
 /// editing it (`App::input_text`), so what is shown can be typed back.
+#[must_use]
 pub fn spell_number(n: f64, locale: Option<&Locale>) -> String {
     let plain = format_number(n);
     match locale::separators(locale).0 {
@@ -775,6 +790,7 @@ fn clock(serial: f64) -> String {
 /// notation from five decimals down to none. When none fits, [`overflow`]'s hashes are drawn. Only
 /// a number in the General format narrows; one whose format states its decimals shows `###`
 /// instead ([`crate::Viewport::narrower`]).
+#[must_use]
 pub fn narrower(n: f64, locale: Option<&Locale>) -> Vec<String> {
     let decimal = locale::separators(locale).0;
     let spell = |text: String| match decimal {
@@ -851,6 +867,7 @@ fn trim_fraction(text: &str) -> &str {
 ///
 /// `room` and `hash` (one `#`'s width in the cell's font) are in the shell's own unit. At least
 /// one `#`, and bounded for a pathological width.
+#[must_use]
 pub fn overflow(room: f64, hash: f64) -> String {
     let count = match hash > 0.0 && room.is_finite() {
         true => (room / hash).floor().clamp(1.0, 256.0) as usize,
@@ -861,6 +878,7 @@ pub fn overflow(room: f64, hash: f64) -> String {
 
 /// Whether a cell's value is one [`overflow`] covers: a number, which includes every date, time,
 /// percentage and currency, since the model holds all of them as one.
+#[must_use]
 pub fn is_number(value: &CellValue) -> bool {
     matches!(value, CellValue::Number(_))
 }

@@ -41,6 +41,7 @@ pub const PALETTE: [(&str, &str); 17] = [
 
 /// A [`PALETTE`] name as the colour a document stores, case-insensitively. `None` for anything
 /// else, including a hex a caller should keep as it is.
+#[must_use]
 pub fn palette(name: &str) -> Option<&'static str> {
     let name = name.trim().to_ascii_lowercase();
     PALETTE
@@ -95,6 +96,7 @@ pub fn border(value: &str) -> Result<String, String> {
 /// comparing borders across a LibreOffice round trip, which re-quantises the width
 /// (`doc/ods-format.md` §5.4). The width may be in any ODF unit: OpenOffice wrote `0.002cm`.
 /// `None` for anything else, including `"none"`.
+#[must_use]
 pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
     let mut fields = border.split_whitespace();
     let width = fields.next()?;
@@ -107,6 +109,7 @@ pub fn border_parts(border: &str) -> Option<(f64, &str, &str)> {
 /// An ODF length (`"2.258cm"`, `"0.889in"`, `"64pt"`) in millimetres — the one parser everything
 /// that measures a stored length goes through. `None` for anything that is not a number and one of
 /// §18's units; `px` has no defined size in a document and is not accepted.
+#[must_use]
 pub fn length_mm(length: &str) -> Option<f64> {
     let length = length.trim();
     let digits = length.trim_end_matches(|c: char| c.is_ascii_alphabetic());
@@ -122,6 +125,7 @@ pub fn length_mm(length: &str) -> Option<f64> {
 }
 
 /// A measurement back as an ODF length: millimetres, three decimals.
+#[must_use]
 pub fn mm_length(mm: f64) -> String {
     format!("{mm:.3}mm")
 }

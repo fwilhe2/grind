@@ -31,12 +31,14 @@ use kdl::{KdlEntry, KdlNode};
 /// Where a node sits in the text it was parsed from — its name through its closing brace, without
 /// the indentation before it and the newline after it. A range rather than `kdl`'s
 /// `miette::SourceSpan`, so the applications need not depend on `miette`.
+#[must_use]
 pub fn node_span(node: &KdlNode) -> Range<usize> {
     let span = node.span();
     span.offset()..span.offset() + span.len()
 }
 
 /// Where one value on a node sits — quotes included, whitespace around it excluded.
+#[must_use]
 pub fn entry_span(entry: &KdlEntry) -> Range<usize> {
     let span = entry.span();
     span.offset()..span.offset() + span.len()
@@ -74,6 +76,7 @@ pub struct Location {
 impl Location {
     /// The location of `span` in `text`. Linear in the file per call: fine for a capped lint
     /// report, not for anything per keystroke.
+    #[must_use]
     pub fn of(text: &str, span: Range<usize>) -> Self {
         let point = |offset: usize| {
             let before = &text[..offset];
@@ -120,17 +123,20 @@ impl Source {
     }
 
     /// The bytes as they were read.
+    #[must_use]
     pub fn text(&self) -> &str {
         &self.text
     }
 
     /// Where an address is, if the file spelled it at all.
+    #[must_use]
     pub fn site(&self, address: &str) -> Option<&Site> {
         self.sites.get(address)
     }
 
     /// Where an address is, as a line and column in the text as read — after an unsaved edit,
     /// still the place in the file on disk. `None` for an address the file did not spell.
+    #[must_use]
     pub fn locate(&self, address: &str) -> Option<Location> {
         self.site(address)
             .map(|site| Location::of(&self.text, site.span.clone()))
@@ -139,6 +145,7 @@ impl Source {
     /// Every address the file spelled and where, in file order — [`super::Projection::anchors`]
     /// for the file somebody wrote rather than the one this crate writes. What a language server's
     /// hover and inline values use.
+    #[must_use]
     pub fn anchors(&self) -> Vec<super::Anchor> {
         let mut anchors: Vec<super::Anchor> = self
             .sites
@@ -155,16 +162,19 @@ impl Source {
     }
 
     /// How many addresses were recorded.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.sites.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.sites.is_empty()
     }
 
     /// The text with each range replaced, or `None` — refuse and regenerate — if the ranges
     /// overlap or run past the end, which would mean the map and the text have come apart.
+    #[must_use]
     pub fn splice(&self, mut patches: Vec<(Range<usize>, String)>) -> Option<String> {
         patches.sort_by_key(|(range, _)| range.start);
         if patches

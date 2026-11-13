@@ -99,6 +99,7 @@ pub struct ListMark {
 
 /// `n` in a `style:num-format`: arabic, lower or upper letters (`z` then `aa`), lower or upper
 /// roman. Anything else is arabic; an empty format shows no number.
+#[must_use]
 pub fn number(n: u32, format: &str) -> String {
     match format {
         "" => String::new(),
@@ -163,6 +164,7 @@ fn drawable(bullet: &str) -> String {
 /// style, where a shell draws its own bullet (`crate::paint::bullet`). An item added by editing
 /// takes the [`ListMark`] of the item before it at its depth, so Enter in a numbered list numbers
 /// the new item.
+#[must_use]
 pub fn labels(doc: &Document, upto: usize) -> Vec<Option<String>> {
     let mut out = Vec::with_capacity(upto.min(doc.blocks.len()));
     // Per chain, the current number of each level from 1 (`None` where none has been seen).

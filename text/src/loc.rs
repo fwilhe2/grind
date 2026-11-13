@@ -158,11 +158,13 @@ pub fn parse_range(text: &str) -> Result<Range, ParseError> {
 }
 
 /// A block index back as the `p12` a person types — the 0→1 conversion.
+#[must_use]
 pub fn format(index: usize) -> String {
     format!("p{}", index + 1)
 }
 
 /// A block index and a character offset, as `p12+40`.
+#[must_use]
 pub fn format_offset(index: usize, offset: usize) -> String {
     format!("p{}+{}", index + 1, offset)
 }
@@ -229,6 +231,7 @@ fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
 
 /// The outline path of the heading at `index`, or `None` — the inverse of the walk, so `grind text
 /// outline` prints typeable addresses.
+#[must_use]
 pub fn outline_path(doc: &Document, index: usize) -> Option<Vec<u32>> {
     let mut counters: Vec<u32> = Vec::new();
     for (i, level) in doc.outline() {
@@ -295,6 +298,7 @@ pub fn resolve_caret_range(doc: &Document, range: &Range) -> Result<(Caret, Care
 }
 
 /// Whether a block is a heading — for a caller deciding whether `§` addressing applies.
+#[must_use]
 pub fn is_heading(doc: &Document, index: usize) -> bool {
     matches!(
         doc.block(index).map(|b| &b.kind),

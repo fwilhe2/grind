@@ -53,6 +53,7 @@ impl Default for Selection {
 }
 
 impl Selection {
+    #[must_use]
     pub fn at(pos: Pos) -> Self {
         Self {
             anchor: pos,
@@ -62,6 +63,7 @@ impl Selection {
 
     /// The selection as an inclusive rectangle, top-left first, as `App` methods take two
     /// positions.
+    #[must_use]
     pub fn rect(&self) -> (Pos, Pos) {
         (
             Pos::new(
@@ -75,16 +77,19 @@ impl Selection {
         )
     }
 
+    #[must_use]
     pub fn contains(&self, row: u32, col: u32) -> bool {
         let (start, end) = self.rect();
         (start.row..=end.row).contains(&row) && (start.col..=end.col).contains(&col)
     }
 
+    #[must_use]
     pub fn is_single(&self) -> bool {
         self.anchor == self.active
     }
 
     /// How many cells are inside — a `u64`, because a whole-sheet selection is not a `u32`.
+    #[must_use]
     pub fn cells(&self) -> u64 {
         let (start, end) = self.rect();
         u64::from(end.row - start.row + 1) * u64::from(end.col - start.col + 1)
@@ -92,6 +97,7 @@ impl Selection {
 
     /// Every row of one column, with the active cell at the top so revealing it scrolls to the
     /// head of the column.
+    #[must_use]
     pub fn whole_col(col: u32) -> Self {
         Self {
             anchor: Pos::new(MAX_ROWS - 1, col),
@@ -99,6 +105,7 @@ impl Selection {
         }
     }
 
+    #[must_use]
     pub fn whole_row(row: u32) -> Self {
         Self {
             anchor: Pos::new(row, MAX_COLS - 1),
@@ -161,6 +168,7 @@ pub fn moved(
 /// part in use, so a header click followed by `€` or a copy does not mean a million rows. A
 /// dragged rectangle past the last value is left as it is; an empty sheet still acts on the first
 /// cell of the row or column.
+#[must_use]
 pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
     let (start, end) = selection.rect();
     let (rows, cols) = used;
@@ -181,12 +189,14 @@ pub fn target(selection: Selection, used: (u32, u32)) -> (Pos, Pos) {
 ///
 /// ponytail: one `App::fill`, so one undo step, per line; a multi-source fill in the core is the
 /// upgrade.
+#[must_use]
 pub fn fills(selection: Selection, down: bool) -> Vec<(Pos, Pos, Pos)> {
     let (start, end) = selection.rect();
     fill_lines(start, end, down)
 }
 
 /// [`fills`] over a rectangle, for a shell whose selection is not this type.
+#[must_use]
 pub fn fill_lines(start: Pos, end: Pos, down: bool) -> Vec<(Pos, Pos, Pos)> {
     match down {
         true if end.row > start.row => (start.col..=end.col)
@@ -238,6 +248,7 @@ pub fn all(app: &App, sheet: usize) -> Selection {
 /// Move the active cell off any hidden track it landed on, in the direction it was travelling: a
 /// hidden track has no width, so a cursor on it is invisible. The anchor stays where it is, since
 /// moving it would change what the selection covers.
+#[must_use]
 pub fn onto_visible(selection: Selection, motion: Motion, rows: &Sizes, cols: &Sizes) -> Selection {
     let (row_forward, col_forward) = match motion {
         Motion::By(dir) | Motion::Page(dir) | Motion::Edge(dir) => match dir {

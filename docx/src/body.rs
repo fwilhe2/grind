@@ -85,6 +85,7 @@ pub enum Inline {
 impl Inline {
     /// Whether it is a position rather than content: a bookmark, a comment's ends, a tracked
     /// change's marks.
+    #[must_use]
     pub fn is_mark(&self) -> bool {
         matches!(
             self,
@@ -1249,6 +1250,7 @@ fn read_cell(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Cell> {
 /// that starts a page — the only way ODF has to say "a page starts here", since it has no
 /// break element inside a paragraph (`doc/docx-format.md` §2.4). A break at a paragraph's very
 /// end starts the *next* block on a page; one at its very start, the paragraph itself.
+#[must_use]
 pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
     let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut carry = false;

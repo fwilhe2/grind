@@ -228,6 +228,7 @@ struct TextFamily {
 }
 
 impl Builder {
+    #[must_use]
     pub fn new() -> Self {
         Builder {
             // Blocks come from the file; a document declaring none stays empty

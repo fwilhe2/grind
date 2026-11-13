@@ -70,6 +70,7 @@ use std::sync::{Arc, RwLock};
 ///
 /// `tests/scope.rs` holds it to `doc/text-core.md` in both directions, so an element cannot be
 /// read without being in the scope line, nor listed there without being read.
+#[must_use]
 pub fn implemented() -> Vec<&'static str> {
     vec![
         // Block level
@@ -176,6 +177,7 @@ pub struct BlockView {
 impl BlockView {
     /// What to draw in front of this block: its list label, a shell's bullet for a list item whose
     /// list states no style, or nothing.
+    #[must_use]
     pub fn mark(&self) -> Option<&str> {
         let BlockKind::ListItem { depth } = self.kind else {
             return None;
@@ -188,6 +190,7 @@ impl BlockView {
     }
 
     /// A heading's number from the outline style — `1`, `2.1.3` — or `None`.
+    #[must_use]
     pub fn number(&self) -> Option<&str> {
         match self.kind {
             BlockKind::Heading { .. } => self.label.as_deref().filter(|label| !label.is_empty()),
@@ -197,6 +200,7 @@ impl BlockView {
 
     /// A heading the outline leaves unnumbered (`text:is-list-header`), at its level's left margin
     /// with no label.
+    #[must_use]
     pub fn unnumbered(&self) -> bool {
         matches!(self.kind, BlockKind::Heading { .. }) && self.label.as_deref() == Some("")
     }
@@ -230,6 +234,7 @@ pub struct RunView {
 
 impl RunView {
     /// One past its last character.
+    #[must_use]
     pub fn end(&self) -> usize {
         self.start + self.text.chars().count()
     }
@@ -255,6 +260,7 @@ pub struct ImageView {
 ///
 /// A caption may be several runs — a field numbers Writer's `Figure 3:` — and is the block's
 /// text after the picture.
+#[must_use]
 pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
     match block.runs.as_slice() {
         [run] => run.image.as_ref().map(|image| (image, None)),
@@ -272,6 +278,7 @@ pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
 }
 
 impl Viewport {
+    #[must_use]
     pub fn get(&self, index: usize) -> Option<&BlockView> {
         self.items.get(index.checked_sub(self.blocks.start)?)
     }
@@ -280,10 +287,12 @@ impl Viewport {
         self.items.iter()
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
@@ -316,6 +325,7 @@ pub struct Heading {
 impl Heading {
     /// The address a user can type back — `§2.1.3`, which survives edits elsewhere where `p12`
     /// would not.
+    #[must_use]
     pub fn address(&self) -> String {
         loc::format_outline(&self.path)
     }
@@ -332,6 +342,7 @@ pub struct Match {
 }
 
 impl Match {
+    #[must_use]
     pub fn address(&self) -> String {
         loc::format_offset(self.index, self.offset)
     }
@@ -362,6 +373,7 @@ pub struct Counts {
 
 impl Counts {
     /// How many minutes the document takes to read, rounded up, at 230 words a minute.
+    #[must_use]
     pub fn reading_minutes(&self) -> usize {
         self.words.div_ceil(230)
     }
@@ -499,6 +511,7 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

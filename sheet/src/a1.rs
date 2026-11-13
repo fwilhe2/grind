@@ -153,6 +153,7 @@ fn sheet_index(app: &App, name: Option<&str>) -> Result<usize> {
 }
 
 /// A position as a user reads it. The only `+ 1` anywhere.
+#[must_use]
 pub fn format(sheet: Option<&str>, pos: Pos) -> String {
     let cell = format!("{}{}", lex::column_name(pos.col), pos.row + 1);
     match sheet {
@@ -208,6 +209,7 @@ pub fn definition(app: &App, target: &str) -> Result<String> {
 /// The reference covering a rectangle a user pointed at: relative on every axis, as a typed
 /// reference is unless it has a `$`. [`crate::formula::display::reference_text`] prints it as a
 /// formula bar shows it.
+#[must_use]
 pub fn reference(sheet: Option<&str>, start: Pos, end: Pos) -> Reference {
     let cell = |pos: Pos| lex::CellRef {
         sheet: sheet.map(str::to_owned),
@@ -230,6 +232,7 @@ pub fn reference(sheet: Option<&str>, start: Pos, end: Pos) -> Reference {
 }
 
 /// Whether a reference names exactly one cell — what `get` needs and `view` does not.
+#[must_use]
 pub fn is_single(reference: &Reference) -> bool {
     reference.end.is_none() && reference.start.row.is_some() && reference.start.col.is_some()
 }

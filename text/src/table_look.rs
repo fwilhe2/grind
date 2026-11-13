@@ -65,6 +65,7 @@ impl Placement {
     /// The table's left edge from the text area's and its width, in points, across a text area
     /// `column` points wide (`doc/odt-format.md` §5c fact 26). `None` for `margins` with nothing
     /// to say, which is the whole text area.
+    #[must_use]
     pub fn span(&self, column: f64) -> Option<(f64, f64)> {
         let pt = grind_core::page::pt;
         let width = self.width.map(pt).filter(|w| *w > 0.0);
@@ -101,6 +102,7 @@ impl CellLook {
     /// parts). A `double` border is as thick as its three widths together; across the top and
     /// bottom the outer width is outermost, down the sides the inner one is (§5c fact 18,
     /// measured). A `double` with no widths is three equal thirds.
+    #[must_use]
     pub fn edge(&self, side: usize) -> Option<Edge> {
         let border = self.border.get(side)?.as_deref()?;
         let (width, style, color) = grind_core::style::border_parts(border)?;
@@ -136,12 +138,14 @@ impl CellLook {
 
 impl TableLook {
     /// The look of the cell at `row`, `column`, if its style says anything.
+    #[must_use]
     pub fn cell(&self, row: u32, column: u32) -> Option<&CellLook> {
         self.cells.get(&(row, column))
     }
 
     /// The room the border across the top of `row` takes, in points: the thicker of its top border
     /// and the row above's bottom one — Writer draws one band between rows (§5c fact 18).
+    #[must_use]
     pub fn band_above(&self, row: u32, column: u32) -> f64 {
         let thickness = |look: Option<&CellLook>, side| {
             look.and_then(|look| look.edge(side))
@@ -156,6 +160,7 @@ impl TableLook {
 
     /// The room the border under `row` takes inside it, in points: its bottom border on the
     /// table's last row, nothing elsewhere (the next row's [`band_above`](Self::band_above)).
+    #[must_use]
     pub fn band_below(&self, row: u32, column: u32) -> f64 {
         if row + 1 != self.rows {
             return 0.0;

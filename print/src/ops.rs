@@ -22,6 +22,7 @@ impl Rgb {
     pub const BLACK: Rgb = Rgb(0, 0, 0);
 
     /// `#rrggbb`, ODF's only spelling of a colour (`fo:color`). Anything else is `None`.
+    #[must_use]
     pub fn parse(value: &str) -> Option<Rgb> {
         let hex = value.trim().strip_prefix('#')?;
         if hex.len() != 6 || !hex.is_ascii() {
@@ -72,6 +73,7 @@ pub enum Element {
 }
 
 impl Element {
+    #[must_use]
     pub fn block(&self) -> usize {
         match self {
             Element::Paragraph { block }

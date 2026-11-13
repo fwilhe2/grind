@@ -236,6 +236,7 @@ pub const UNBROKEN: usize = 16;
 /// Whatever fits in `width` at its indent is printed flat by [`Bare`]. A call that does not fit
 /// puts each argument on its own line, one level in; an operator chain breaks before each
 /// operator; brackets open and close on lines of their own. A range is never broken.
+#[must_use]
 pub fn pretty(e: &Expr, width: usize) -> String {
     lines(e, width).join("\n")
 }

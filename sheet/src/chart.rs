@@ -24,6 +24,7 @@ impl ChartKind {
     pub const ALL: [ChartKind; 3] = [ChartKind::Bar, ChartKind::Line, ChartKind::Pie];
 
     /// The kind's name as a control shows it — `Bar`, `Line`, `Pie`.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             ChartKind::Bar => "Bar",
@@ -33,6 +34,7 @@ impl ChartKind {
     }
 
     /// The `chart:class` this kind is spelled as.
+    #[must_use]
     pub fn class(self) -> &'static str {
         match self {
             ChartKind::Bar => "chart:bar",
@@ -43,6 +45,7 @@ impl ChartKind {
     }
 
     /// The kind a `chart:class` names; anything not drawn here is `None` (§9).
+    #[must_use]
     pub fn from_class(class: &str) -> Option<Self> {
         match class {
             "chart:bar" => Some(ChartKind::Bar),
@@ -100,6 +103,7 @@ impl Axis {
     /// `chart:display-label` no default (rng:10069), and LibreOffice draws no tick labels when it
     /// is absent (measured, `doc/chart-format.md`). Both writers always state it, so this covers
     /// files neither wrote.
+    #[must_use]
     pub fn bare() -> Self {
         Axis {
             label: None,
@@ -109,6 +113,7 @@ impl Axis {
     }
 
     /// Whether this axis needs drawing at all, beyond the marks themselves.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.label.is_none() && !self.tick_labels && !self.gridlines
     }
@@ -130,6 +135,7 @@ impl Legend {
     pub const ALL: [Legend; 4] = [Legend::End, Legend::Bottom, Legend::Top, Legend::Start];
 
     /// The `chart:legend-position` token.
+    #[must_use]
     pub fn token(self) -> &'static str {
         match self {
             Legend::Start => "start",
@@ -140,6 +146,7 @@ impl Legend {
     }
 
     /// The position a `chart:legend-position` token names; unrecognised is `End` (§9).
+    #[must_use]
     pub fn from_token(token: &str) -> Self {
         match token {
             "start" => Legend::Start,
@@ -190,6 +197,7 @@ fn clockwise_by_default() -> bool {
 
 impl Chart {
     /// A new chart at a given position, with no series yet — `App::add_chart` fills them in.
+    #[must_use]
     pub fn new(kind: ChartKind, x: String, y: String, width: String, height: String) -> Self {
         Chart {
             kind,
@@ -230,6 +238,7 @@ pub struct Spec {
 
 impl Spec {
     /// A new chart of `kind` pointing at nothing yet — every other field a new chart's default.
+    #[must_use]
     pub fn new(kind: ChartKind) -> Self {
         Spec {
             kind,
@@ -246,11 +255,13 @@ impl Spec {
     /// The legend a chart gets when nobody said: one when there is more than one thing to tell
     /// apart (two series, or a pie's slices), none for a single bar or line series, which the
     /// title names.
+    #[must_use]
     pub fn default_legend(&self) -> Option<Legend> {
         (self.kind == ChartKind::Pie || self.series.len() > 1).then_some(Legend::End)
     }
 
     /// An existing chart, as the spec that would make it — what an *Edit Chart* dialog opens on.
+    #[must_use]
     pub fn of(chart: &Chart) -> Self {
         Spec {
             kind: chart.kind,
@@ -303,6 +314,7 @@ pub struct Guess {
 ///   whether parts make a whole.
 ///
 /// `shape`, when given, replaces the answers about the block.
+#[must_use]
 pub fn guess(
     sheet: &crate::Sheet,
     start: Pos,
@@ -501,6 +513,7 @@ fn counts(cells: &[CellValue]) -> bool {
 /// or line series is one colour ([`Series::color`], else the default cycle at its position), so a
 /// legend can name it; a bar may override it per point when `point` is `Some`. A pie colours per
 /// slice: an override, else the cycle at the slice's position; `point` must be `Some`.
+#[must_use]
 pub fn effective_color(chart: &Chart, series: usize, point: Option<usize>) -> String {
     let s = &chart.series[series];
     let own = |point: usize| s.point_colors.get(point).cloned().flatten();
@@ -578,6 +591,7 @@ pub const SERIES_COLORS: [&str; 12] = [
 ];
 
 /// The `n`th colour a regenerated chart assigns, cycling past the end of the table.
+#[must_use]
 pub fn series_color(n: usize) -> &'static str {
     let name = SERIES_COLORS[n % SERIES_COLORS.len()];
     crate::style::palette(name).expect("every name in SERIES_COLORS is in PALETTE")
@@ -596,12 +610,14 @@ pub struct Ticks {
 impl Ticks {
     /// The top of the axis: the last tick, at or above the largest value. A plot is scaled against
     /// this, so the top gridline meets the top of the plot.
+    #[must_use]
     pub fn max(&self) -> f64 {
         self.values.last().copied().unwrap_or(1.0)
     }
 
     /// One tick spelled for an axis, rounded to the decimals [`Ticks::step`] needs (`0.3`, not
     /// `0.30000000000000004`).
+    #[must_use]
     pub fn label(&self, value: f64) -> String {
         let decimals = (-self.step.log10().floor()).clamp(0.0, 6.0) as usize;
         format!("{value:.decimals$}")
@@ -610,6 +626,7 @@ impl Ticks {
 
 /// The ticks of a value axis from zero to `max`: a step of 1, 2 or 5 times a power of ten, the
 /// smallest keeping the count near `TICK_TARGET`.
+#[must_use]
 pub fn axis_ticks(max: f64) -> Ticks {
     if !max.is_finite() || max <= 0.0 {
         return Ticks {
@@ -656,6 +673,7 @@ const TWELVE: f64 = -std::f64::consts::FRAC_PI_2;
 
 /// A pie's slices, in order, from its first series' values; a non-positive value takes no slice.
 /// Computed here so every shell draws the same pie. Empty when there is nothing to draw.
+#[must_use]
 pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
     let Some((_, values)) = data.series.first() else {
         return Vec::new();
@@ -689,6 +707,7 @@ pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
 /// Which slice a screen angle (`atan2(dy, dx)` from the centre) falls in, sharing [`pie_slices`]'
 /// arithmetic. `None` for a pie without slices; whether the point is inside the circle is the
 /// caller's question.
+#[must_use]
 pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
     let slices = pie_slices(data, clockwise);
     // How far round from twelve o'clock the point is, travelling the way this pie runs.
@@ -770,6 +789,7 @@ impl ChartData {
     /// One tick of the value axis, spelled in [`ChartData::value_format`] when that tells every
     /// tick apart — a format with no decimals would spell 0.5-steps `0, 1, 1, 2` — else as
     /// [`Ticks::label`] does.
+    #[must_use]
     pub fn tick_label(&self, ticks: &Ticks, value: f64) -> String {
         let Some((format, locale)) = &self.value_format else {
             return ticks.label(value);

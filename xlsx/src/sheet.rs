@@ -344,6 +344,7 @@ const DIGIT_EM: &[(&str, f64)] = &[
 
 /// Excel's maximum digit width for a default font of `family` at `size` points: the digit's
 /// advance at 96 dpi, rounded to a pixel — `MEASURED` against Excel's own widths.
+#[must_use]
 pub fn digit_px(family: Option<&str>, size: f64) -> f64 {
     family
         .and_then(|family| {
@@ -359,6 +360,7 @@ pub fn digit_px(family: Option<&str>, size: f64) -> f64 {
 /// A column width in characters of `digit` pixels, as the ODF length the model stores, at 96
 /// dpi. The width already includes Excel's padding — `9.140625` is its 64-pixel default column,
 /// which the UI calls 8.43 characters — so nothing is added.
+#[must_use]
 pub fn col_width(chars: f64, digit: f64) -> String {
     mm_length(chars * digit * 25.4 / 96.0)
 }

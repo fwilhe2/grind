@@ -40,6 +40,7 @@ impl Matrix {
     }
 
     /// Every element, row by row.
+    #[must_use]
     pub fn values(&self) -> &[Value] {
         &self.cells
     }

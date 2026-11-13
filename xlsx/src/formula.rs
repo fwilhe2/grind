@@ -75,6 +75,7 @@ impl Refusal {
     /// The [`Dropped`] kind this refusal counts as, where one exists — only for a construct the
     /// model has no home for. The rest are formulas ODF could hold, recorded in
     /// [`crate::Report::untranslated`].
+    #[must_use]
     pub fn dropped(self) -> Option<Dropped> {
         match self {
             Refusal::Array => Some(Dropped::ArrayFormula),
@@ -88,6 +89,7 @@ impl Refusal {
         }
     }
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Refusal::Array => "array formula",

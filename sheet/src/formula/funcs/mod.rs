@@ -59,6 +59,7 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
 }
 
 /// Every function name the evaluator answers to.
+#[must_use]
 pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
@@ -67,6 +68,7 @@ pub use catalog::{FuncInfo, catalog, category, parameters, takes_one_value};
 
 /// Every function a formula calls, outermost first, each named once and upper-cased — including
 /// ones this build does not implement. `None` when the formula will not parse.
+#[must_use]
 pub fn used(formula: &str) -> Option<Vec<String>> {
     let mut names = Vec::new();
     collect(&super::parse::parse(formula).ok()?, &mut names);
@@ -101,6 +103,7 @@ pub const SMALL_GROUP: usize = 110;
 
 /// The functions implemented beyond the Small Group (`doc/small-group.md`'s second half), reported
 /// apart from [`implemented`] so a coverage claim never reads as more than 110 of 110.
+#[must_use]
 pub fn beyond_small_group() -> &'static [&'static str] {
     BEYOND
 }
@@ -312,10 +315,12 @@ pub struct Args<'a, 'd> {
 }
 
 impl Args<'_, '_> {
+    #[must_use]
     pub fn len(&self) -> usize {
         self.args.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.args.is_empty()
     }
@@ -357,11 +362,13 @@ impl Args<'_, '_> {
     }
 
     /// The document's epoch (§3.4 `HOST-NULL-DATE`) — what makes a serial number a date.
+    #[must_use]
     pub fn null_date(&self) -> i64 {
         self.engine.null_date()
     }
 
     /// `HOST-NULL-YEAR` (§3.4 item 7) — how `DATE` reads a two-digit year.
+    #[must_use]
     pub fn null_year(&self) -> i64 {
         self.engine.null_year()
     }
@@ -467,6 +474,7 @@ impl Args<'_, '_> {
     ///
     /// Several functions distinguish it from an absent trailing parameter: §6.15.4's seven
     /// shapes of `IF` turn on exactly this.
+    #[must_use]
     pub fn omitted(&self, i: usize) -> bool {
         matches!(self.args.get(i), None | Some(Expr::Empty))
     }

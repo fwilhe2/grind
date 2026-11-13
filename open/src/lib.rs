@@ -31,6 +31,7 @@ pub struct Imported {
 }
 
 /// Whether these bytes are a workbook this build imports.
+#[must_use]
 pub fn is_workbook(bytes: &[u8]) -> bool {
     #[cfg(feature = "xlsx")]
     return grind_xlsx::sniff(bytes);
@@ -42,6 +43,7 @@ pub fn is_workbook(bytes: &[u8]) -> bool {
 }
 
 /// Whether these bytes are a Word document this build imports.
+#[must_use]
 pub fn is_word(bytes: &[u8]) -> bool {
     #[cfg(feature = "docx")]
     return grind_docx::sniff(bytes);
@@ -54,6 +56,7 @@ pub fn is_word(bytes: &[u8]) -> bool {
 
 /// Whether `name` is a CSV or TSV to import: bytes that are neither ODF nor a workbook, under a
 /// delimited name (`grind_sheet::csv::is_delimited_name`).
+#[must_use]
 pub fn is_delimited(name: &str, bytes: &[u8]) -> bool {
     !is_workbook(bytes)
         && grind_core::kind(bytes).is_none()
@@ -62,12 +65,14 @@ pub fn is_delimited(name: &str, bytes: &[u8]) -> bool {
 
 /// Whether `name` is a Markdown file to import: bytes that are not ODF, under a Markdown name
 /// (`grind_text::commonmark::is_markdown_name`).
+#[must_use]
 pub fn is_markdown(name: &str, bytes: &[u8]) -> bool {
     grind_core::kind(bytes).is_none() && grind_text::commonmark::is_markdown_name(name)
 }
 
 /// Which application opens a file: an ODF document's own kind, or the kind its import makes —
 /// `None` for bytes that are neither.
+#[must_use]
 pub fn kind(name: &str, bytes: &[u8]) -> Option<DocumentKind> {
     grind_core::kind(bytes).or(if is_workbook(bytes) || is_delimited(name, bytes) {
         Some(DocumentKind::Spreadsheet)
@@ -134,6 +139,7 @@ pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<
 /// blocks one per line ([`grind_text::Document::text`]), a spreadsheet's sheets row by row
 /// ([`grind_sheet::Document::text`]). `None` for bytes it does not open. Reads nothing but
 /// `bytes`: a Markdown file's pictures are not looked for.
+#[must_use]
 pub fn text(name: &str, bytes: &[u8]) -> Option<Result<String, String>> {
     let (kind, imported) = match import(name, bytes, &nowhere) {
         Some(Ok(imported)) => (imported.kind, Some(imported.odf)),
@@ -155,6 +161,7 @@ pub fn text(name: &str, bytes: &[u8]) -> Option<Result<String, String>> {
 
 /// [`import`] for a file on disk: named after its path, a Markdown file's pictures found beside
 /// it.
+#[must_use]
 pub fn import_file(path: &Path, bytes: &[u8]) -> Option<Result<Imported, String>> {
     import(&path.display().to_string(), bytes, &beside(path))
 }

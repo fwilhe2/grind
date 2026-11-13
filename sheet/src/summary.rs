@@ -59,6 +59,7 @@ pub fn status_text(app: &App, sheet: usize, start: Pos, end: Pos) -> String {
 
 /// The rectangle `start..=end` cut to what the sheet uses, or `None` when they do not overlap.
 /// `rows` and `cols` are one past the last used track; an empty sheet gives zero for both.
+#[must_use]
 pub fn clamp(start: Pos, end: Pos, rows: u32, cols: u32) -> Option<(Pos, Pos)> {
     if rows == 0 || cols == 0 || start.row >= rows || start.col >= cols {
         return None;

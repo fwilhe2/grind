@@ -85,15 +85,18 @@ pub struct Line {
 }
 
 impl Line {
+    #[must_use]
     pub fn len(&self) -> usize {
         self.end - self.start
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.start == self.end
     }
 
     /// Whether `offset` is one of the caret positions on this line — `start..=end`.
+    #[must_use]
     pub fn holds(&self, offset: usize) -> bool {
         (self.start..=self.end).contains(&offset)
     }
@@ -116,24 +119,29 @@ pub struct Layout {
 
 impl Layout {
     /// How far below the top of each line its baseline sits ([`Metrics::ascent`]).
+    #[must_use]
     pub fn baseline(&self) -> f32 {
         self.baseline
     }
 
+    #[must_use]
     pub fn lines(&self) -> &[Line] {
         &self.lines
     }
 
     /// How many characters were laid out.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.xs.len() - 1
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Total height — what a shell advances by before drawing the next block.
+    #[must_use]
     pub fn height(&self) -> f32 {
         self.lines.last().map_or(0.0, |l| l.top + l.height)
     }
@@ -144,6 +152,7 @@ impl Layout {
     /// of the next — and this resolves it to **the later line**, which is where a person
     /// watching a cursor walk off the end of a wrapped line expects it to appear. The one
     /// exception is the very last offset, which has no later line to go to.
+    #[must_use]
     pub fn line_at(&self, offset: usize) -> usize {
         let offset = offset.min(self.len());
         self.lines
@@ -157,6 +166,7 @@ impl Layout {
     ///
     /// **Nearest, never nothing**: above the first line is the first line and below the last is
     /// the last, since a click in the space around a paragraph means the line nearest it.
+    #[must_use]
     pub fn line_at_y(&self, y: f32) -> usize {
         self.lines
             .iter()
@@ -165,6 +175,7 @@ impl Layout {
     }
 
     /// The x of a caret offset, **relative to the start of its line**.
+    #[must_use]
     pub fn x_at(&self, offset: usize) -> f32 {
         let offset = offset.min(self.len());
         let line = &self.lines[self.line_at(offset)];
@@ -181,6 +192,7 @@ impl Layout {
 
     /// The caret offset nearest to `x` on `line` — hit-testing a click. Rounds rather than
     /// truncates: a click on the right half of a letter puts the caret after it.
+    #[must_use]
     pub fn offset_at(&self, line: usize, x: f32) -> usize {
         let Some(line) = self.lines.get(line) else {
             return self.len();
@@ -202,6 +214,7 @@ impl Layout {
     ///
     /// `goal_x` is the caller's to remember, so that walking down through a short line returns to
     /// the starting column; a shell keeps it until the caret moves horizontally.
+    #[must_use]
     pub fn step(&self, offset: usize, delta: isize, goal_x: f32) -> Option<usize> {
         let from = self.line_at(offset) as isize;
         let to = from.checked_add(delta)?;
@@ -264,12 +277,14 @@ pub struct Tabs {
 
 impl Tabs {
     /// Whether this places a tab at all, rather than leaving it the provider's width.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stops.is_empty() && self.interval <= 0.0
     }
 
     /// The first stop past `x`: one of the paragraph's own, else the next whole interval past
     /// both `x` and the last of its own. `None` when there is neither.
+    #[must_use]
     pub fn next(&self, x: f32) -> Option<TabStop> {
         const EPS: f32 = 1e-3;
         if let Some(stop) = self.stops.iter().find(|stop| stop.position > x + EPS) {

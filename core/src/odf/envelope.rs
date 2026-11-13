@@ -261,6 +261,7 @@ fn declared(element: &[u8], extra: &str) -> Vec<u8> {
 ///
 /// `None` when either document cannot be scanned — the caller then writes `generated` as it
 /// is, which can only happen for an original too broken to read anything back out of.
+#[must_use]
 pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
     let o = scan(original)?;
     let g = scan(generated)?;
@@ -520,6 +521,7 @@ fn leading_whitespace(bytes: &[u8], floor: usize, end: usize) -> &[u8] {
 /// Every `style:name` an original document's `office:automatic-styles` declares — the names a
 /// writer must not hand out again, so that what it generates never collides with what the
 /// file already uses outside the body (a header's own paragraph style, say).
+#[must_use]
 pub fn automatic_style_names(original: &[u8]) -> HashSet<String> {
     let Some(tree) = scan(original) else {
         return HashSet::new();
@@ -537,6 +539,7 @@ pub fn automatic_style_names(original: &[u8]) -> HashSet<String> {
 /// `office:styles` whose name is `None` and family is `family` — a `style:default-style`.
 /// Generic for the one caller that patches a document-wide default (the spreadsheet's locale),
 /// and named by structure rather than by any document type's vocabulary.
+#[must_use]
 pub fn default_style_range(bytes: &[u8], family: &str) -> Option<Range<usize>> {
     let tree = scan(bytes)?;
     let (index, _) = tree.find_top("styles")?;
@@ -548,6 +551,7 @@ pub fn default_style_range(bytes: &[u8], family: &str) -> Option<Range<usize>> {
 /// Where `bytes`' automatic style named `name`, of family `family`, is declared — the element,
 /// start tag through end tag. What a writer restyling something builds the new style *from*
 /// (`patch_style`), so that what its model never read on the old one is not lost.
+#[must_use]
 pub fn automatic_style_range(bytes: &[u8], family: &str, name: &str) -> Option<Range<usize>> {
     let tree = scan(bytes)?;
     let (index, _) = tree.find_top("automatic-styles")?;
@@ -563,6 +567,7 @@ pub fn automatic_style_range(bytes: &[u8], family: &str, name: &str) -> Option<R
 /// Where a new automatic style can go in `bytes` without touching anything else: the start of
 /// `office:automatic-styles`' end tag. `None` when the document has no such element, or it is
 /// self-closed — a splice then has nowhere to put a declaration and the writer regenerates.
+#[must_use]
 pub fn automatic_styles_end(bytes: &[u8]) -> Option<usize> {
     let tree = scan(bytes)?;
     let (_, node) = tree.find_top("automatic-styles")?;
@@ -583,6 +588,7 @@ pub type PropertyPatch<'a> = (&'a str, Vec<(String, Option<String>)>);
 /// model reads, its `style:map`s, a vendor's attributes.
 ///
 /// `None` when the element cannot be read, and the caller writes a style of its own instead.
+#[must_use]
 pub fn patch_style(
     element: &str,
     attributes: &[(&str, Option<&str>)],
@@ -799,12 +805,14 @@ pub fn check_against(original: &[u8], output: &[u8]) -> Result<()> {
 /// Every element and attribute inside `office:body`, counted and keyed by namespace URI rather
 /// than prefix (`{uri}local`, `{uri}element@{uri}attribute`). A writer knows which keys it owns;
 /// [`losses`] reports which of the rest went down. `None` when the document cannot be read.
+#[must_use]
 pub fn body_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
     vocabulary_within(document, None, false)
 }
 
 /// [`body_vocabulary`] for the whole document below the root — what a conversion between the two
 /// forms (`odf::forms`) is held to.
+#[must_use]
 pub fn document_vocabulary(document: &[u8]) -> Option<BTreeMap<String, usize>> {
     vocabulary_within(document, None, true)
 }
@@ -936,6 +944,7 @@ pub fn losses_allowing(
 
 /// The prefix `document` binds to `uri` on its root, if any — what a caller patching an
 /// attribute in that namespace has to spell it with.
+#[must_use]
 pub fn prefix_for(document: &[u8], uri: &str) -> Option<String> {
     scan(document)?
         .declarations
@@ -985,6 +994,7 @@ pub fn attributes_except(start_tag: &[u8], drop: &[&str]) -> String {
 /// The start tag at the front of `element` with each `(name, value)` set: replaced where the
 /// tag has the attribute, appended where it does not, and removed where `value` is `None`.
 /// Every other byte of the tag is kept. Names are qualified as the document spells them.
+#[must_use]
 pub fn set_attributes(element: &str, changes: &[(&str, Option<&str>)]) -> String {
     let end = element.find('>').unwrap_or(element.len());
     let self_closed = element[..end].ends_with('/');

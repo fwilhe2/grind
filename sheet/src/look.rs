@@ -32,6 +32,7 @@ pub enum VAlign {
 /// boolean or an error centred (`doc/sheet-shell.md`), so a column of figures lines up and a
 /// number read as text shows. An error is a value spelled exactly as one of the error names — `#
 /// of items` is text.
+#[must_use]
 pub fn by_type(value: &CellValue) -> Align {
     match value {
         CellValue::Number(_) => Align::Right,
@@ -49,6 +50,7 @@ fn is_error(text: &str) -> bool {
 /// `fo:text-align` as a left-to-right grid draws it: `start`/`end` and the `left`/`right` other
 /// producers write. Anything else — `justify`, or a value from a newer ODF — is `None`, and the
 /// value's own rule applies (R5).
+#[must_use]
 pub fn by_style(value: &str) -> Option<Align> {
     match value {
         "start" | "left" => Some(Align::Left),
@@ -68,6 +70,7 @@ pub fn align(value: &CellValue, style: Option<&CellStyle>) -> Align {
 
 /// Where a cell's text sits down its box: `style:vertical-align`'s `top` and `middle`, else the
 /// bottom, where LibreOffice puts it (`doc/ods-format.md` §5.1).
+#[must_use]
 pub fn valign(style: Option<&CellStyle>) -> VAlign {
     match style.and_then(|style| style.vertical_align.as_deref()) {
         Some("top") => VAlign::Top,
@@ -77,16 +80,19 @@ pub fn valign(style: Option<&CellStyle>) -> VAlign {
 }
 
 /// Whether a cell's text is bold: `fo:font-weight` of `bold`, or 600 and up.
+#[must_use]
 pub fn is_bold(style: Option<&CellStyle>) -> bool {
     bold_weight(style.and_then(|style| style.font_weight.as_deref()))
 }
 
 /// Whether a cell's text is set italic — `italic`, or `oblique`, which a grid draws the same.
+#[must_use]
 pub fn is_italic(style: Option<&CellStyle>) -> bool {
     italic_style(style.and_then(|style| style.font_style.as_deref()))
 }
 
 /// [`is_bold`]'s rule over a raw `fo:font-weight`.
+#[must_use]
 pub fn bold_weight(weight: Option<&str>) -> bool {
     match weight {
         Some("bold") => true,
@@ -96,6 +102,7 @@ pub fn bold_weight(weight: Option<&str>) -> bool {
 }
 
 /// [`is_italic`]'s rule over the raw `fo:font-style`.
+#[must_use]
 pub fn italic_style(style: Option<&str>) -> bool {
     matches!(style, Some("italic" | "oblique"))
 }
@@ -120,6 +127,7 @@ pub fn needed_height(laid: &grind_core::layout::Layout, style: Option<&CellStyle
 
 /// Whether a cell can need a taller row than the default and so has to be laid out: it wraps,
 /// breaks a line (which LibreOffice grows a row for, wrapping or not), or is larger or turned.
+#[must_use]
 pub fn grows_row(style: Option<&CellStyle>, text: &str) -> bool {
     wraps(style)
         || text.contains('\n')
@@ -127,6 +135,7 @@ pub fn grows_row(style: Option<&CellStyle>, text: &str) -> bool {
 }
 
 /// Whether a cell's text wraps at its column's width rather than running on — `fo:wrap-option`.
+#[must_use]
 pub fn wraps(style: Option<&CellStyle>) -> bool {
     style.is_some_and(|style| style.wrap.as_deref() == Some("wrap"))
 }
@@ -139,6 +148,7 @@ pub const DEFAULT_FONT_PT: f64 = 10.0;
 /// percentage, another unit). A multiple, because a shell draws its default cell in its own UI
 /// font, and a cell made twice as large must be twice that. Drawing and measuring share this, so a
 /// cell is never drawn at one size and measured at another.
+#[must_use]
 pub fn font_scale(font_size: Option<&str>) -> Option<f64> {
     font_size
         .and_then(|size| size.strip_suffix("pt"))
@@ -149,6 +159,7 @@ pub fn font_scale(font_size: Option<&str>) -> Option<f64> {
 
 /// The four style properties that change how wide a cell's text is, for `grind_core::layout`. No
 /// family: cells do not carry one.
+#[must_use]
 pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
     grind_core::style::TextStyle {
         font_family: None,

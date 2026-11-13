@@ -41,6 +41,7 @@ use crate::Result;
 use crate::model::Document;
 
 /// Project a document: the text, and the token and span maps beside it.
+#[must_use]
 pub fn project(doc: &Document) -> Projection {
     write::project(doc)
 }
@@ -52,6 +53,7 @@ pub fn read(text: &str) -> Result<Document> {
 
 /// The bytes a `.grind` is saved as: the file it came from with edited blocks put back when
 /// possible (R6), a fresh projection otherwise. The one door out.
+#[must_use]
 pub fn save(doc: &Document) -> Vec<u8> {
     match write::splice(doc) {
         Some(text) => text.into_bytes(),

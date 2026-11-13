@@ -22,6 +22,7 @@ pub struct Sizes {
 
 impl Sizes {
     /// `sizes` is taken in any order; ties keep the last one given.
+    #[must_use]
     pub fn new(default: f64, count: u32, mut sizes: Vec<(u32, f64)>) -> Self {
         // Reversed first, so a stable sort and `dedup` keep the last entry given for an index;
         // `with` and `from_lengths` rely on it.
@@ -76,6 +77,7 @@ impl Sizes {
         self.sizes.partition_point(|(i, _)| *i < index)
     }
 
+    #[must_use]
     pub fn size_of(&self, index: u32) -> f64 {
         match self.sizes.binary_search_by_key(&index, |(i, _)| *i) {
             Ok(k) => self.sizes[k].1,
@@ -84,11 +86,13 @@ impl Sizes {
     }
 
     /// Content-space offset of a track's leading edge. `count` itself is the far end.
+    #[must_use]
     pub fn offset_of(&self, index: u32) -> f64 {
         f64::from(index) * self.default + self.run[self.before(index)]
     }
 
     /// The track containing a content-space offset, clamped to the sheet.
+    #[must_use]
     pub fn at(&self, offset: f64) -> u32 {
         let offset = offset.max(0.0);
         // The last sized track that starts at or before `offset`; everything else is one of the
@@ -111,16 +115,19 @@ impl Sizes {
         index.min(u64::from(self.count.saturating_sub(1))) as u32
     }
 
+    #[must_use]
     pub fn count(&self) -> u32 {
         self.count
     }
 
     /// Content-space size of the whole axis.
+    #[must_use]
     pub fn total(&self) -> f64 {
         self.offset_of(self.count)
     }
 
     /// The same axis at a zoom factor; every size scales, the default included.
+    #[must_use]
     pub fn scaled(&self, factor: f64) -> Self {
         Self::new(
             self.default * factor,
@@ -135,6 +142,7 @@ impl Sizes {
     /// The same axis on whole device pixels: every size rounded, a visible track kept at least one
     /// wide. A length rarely is a whole number of pixels (0.5cm is 18.9px at 96dpi), and a grid
     /// that keeps the fraction draws equal rows alternately one pixel apart and blurs its lines.
+    #[must_use]
     pub fn snapped(&self) -> Self {
         let snap = |size: f64| match size {
             0.0 => 0.0,
@@ -151,6 +159,7 @@ impl Sizes {
     }
 
     /// The same axis with one track resized — what a resize drag paints before it commits.
+    #[must_use]
     pub fn with(&self, index: u32, size: f64) -> Self {
         let mut sizes = self.sizes.clone();
         sizes.push((index, size));
@@ -158,12 +167,14 @@ impl Sizes {
     }
 
     /// Whether this track is hidden — zero size, kept explicitly.
+    #[must_use]
     pub fn is_hidden(&self, index: u32) -> bool {
         self.size_of(index) == 0.0
     }
 
     /// The maximal run of hidden tracks containing `index`, half-open, or `None` when `index` is
     /// visible. A linear walk: documents hide a few tracks at a time.
+    #[must_use]
     pub fn hidden_run(&self, index: u32) -> Option<(u32, u32)> {
         if !self.is_hidden(index) {
             return None;
@@ -181,11 +192,13 @@ impl Sizes {
 
     /// The first track at or after `from` with any width, or `None` past the end — so scrolling
     /// does not stall on a hidden column.
+    #[must_use]
     pub fn next_visible(&self, from: u32) -> Option<u32> {
         (from..self.count).find(|i| !self.is_hidden(*i))
     }
 
     /// The last track at or before `from` that has any width, or `None` before the start.
+    #[must_use]
     pub fn prev_visible(&self, from: u32) -> Option<u32> {
         (0..=from.min(self.count.saturating_sub(1)))
             .rev()
@@ -194,6 +207,7 @@ impl Sizes {
 
     /// The nearest visible track to `index`, looking `forward` first, then back: a cursor on a
     /// hidden track cannot be seen. Falls back to `index` when everything is hidden.
+    #[must_use]
     pub fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
         if !self.is_hidden(index) {
             return index;
@@ -208,6 +222,7 @@ impl Sizes {
     /// The first track that puts `index` at the far end of a `span`-long view — the least
     /// scrolling that brings it into sight from below or the right. Walked back from `index`, so
     /// jumping to the far corner costs a screenful of arithmetic.
+    #[must_use]
     pub fn start_showing(&self, index: u32, span: f64) -> u32 {
         let mut used = self.size_of(index);
         let mut at = index;
@@ -224,6 +239,7 @@ impl Sizes {
 
     /// The first track that can start a `span`-long view without blank space after the last one —
     /// a scrollbar's maximum, walked back from the end.
+    #[must_use]
     pub fn last_start(&self, span: f64) -> u32 {
         let mut used = 0.0;
         let mut index = self.count;

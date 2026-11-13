@@ -21,18 +21,22 @@ pub struct Frame {
 }
 
 impl Frame {
+    #[must_use]
     pub fn new(x: f64, y: f64, w: f64, h: f64) -> Self {
         Frame { x, y, w, h }
     }
 
+    #[must_use]
     pub fn right(&self) -> f64 {
         self.x + self.w
     }
 
+    #[must_use]
     pub fn bottom(&self) -> f64 {
         self.y + self.h
     }
 
+    #[must_use]
     pub fn contains(&self, x: f64, y: f64) -> bool {
         x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
     }
@@ -82,6 +86,7 @@ impl Grip {
     }
 
     /// Whether the grip is one of the four corners — the handles Shift keeps proportions on.
+    #[must_use]
     pub fn is_corner(self) -> bool {
         matches!(
             self,
@@ -90,6 +95,7 @@ impl Grip {
     }
 
     /// The pointer this grip shows, as a CSS cursor name, which each shell maps to its own.
+    #[must_use]
     pub fn cursor(self) -> &'static str {
         match self {
             Grip::Body => "move",
@@ -136,6 +142,7 @@ pub const CLICK_SLOP: f64 = 4.0;
 
 /// Every handle's square on a chart at `frame`, `size` across, centred on its edge or corner so
 /// half of it sits outside the chart.
+#[must_use]
 pub fn handles(frame: &Frame, size: f64) -> [(Grip, Frame); 8] {
     Grip::HANDLES.map(|grip| {
         let (cx, cy) = grip.centre(frame);
@@ -149,6 +156,7 @@ pub fn handles(frame: &Frame, size: f64) -> [(Grip, Frame); 8] {
 /// What the point `(x, y)` has of a chart at `frame`: a handle when `selected`, its body when
 /// inside it, or nothing. `size` and `slop` are [`HANDLE`] and [`HANDLE_SLOP`] in the shell's
 /// unit.
+#[must_use]
 pub fn grip_at(
     frame: &Frame,
     selected: bool,
@@ -174,6 +182,7 @@ pub fn grip_at(
 
 /// Which of several charts the point has, topmost (last in document order) first, with the grip.
 /// The `selected` chart is asked first, since its handles reach outside its frame.
+#[must_use]
 pub fn hit(
     frames: &[Option<Frame>],
     selected: Option<usize>,
@@ -199,6 +208,7 @@ pub fn hit(
 /// frame; a handle moves its own edges, never shrinking the chart below `min` (the dragged edge
 /// stops). With `keep_ratio` a corner keeps the proportions, following the axis the pointer moved
 /// further along.
+#[must_use]
 pub fn dragged(start: &Frame, grip: Grip, dx: f64, dy: f64, min: f64, keep_ratio: bool) -> Frame {
     if grip == Grip::Body {
         return Frame::new(start.x + dx, start.y + dy, start.w, start.h);
@@ -244,6 +254,7 @@ pub fn dragged(start: &Frame, grip: Grip, dx: f64, dy: f64, min: f64, keep_ratio
 }
 
 /// Whether a drag of this far is a move at all, or a click that selects.
+#[must_use]
 pub fn is_click(dx: f64, dy: f64, slop: f64) -> bool {
     dx.abs() < slop && dy.abs() < slop
 }
@@ -260,6 +271,7 @@ pub enum Key {
 }
 
 /// What an arrow does, `large` with Shift: `(dx, dy)` in CSS pixels at 1× for the shell to scale.
+#[must_use]
 pub fn nudge(dx: i8, dy: i8, large: bool) -> Key {
     let step = match large {
         true => NUDGE_LARGE,
@@ -270,11 +282,13 @@ pub fn nudge(dx: i8, dy: i8, large: bool) -> Key {
 
 /// A frame no further left or up than the sheet's corner, since `svg:x`/`svg:y` are offsets from
 /// it.
+#[must_use]
 pub fn kept_on_sheet(frame: Frame) -> Frame {
     Frame::new(frame.x.max(0.0), frame.y.max(0.0), frame.w, frame.h)
 }
 
 /// The sentence a deletion says, naming how to get the chart back.
+#[must_use]
 pub fn deleted_sentence(undo_key: &str) -> String {
     format!("Chart deleted — {undo_key} brings it back")
 }

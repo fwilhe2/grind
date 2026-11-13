@@ -48,6 +48,7 @@ impl Rule {
     }
 
     /// Whether `pos` is in one of its ranges.
+    #[must_use]
     pub fn covers(&self, pos: Pos) -> bool {
         self.ranges
             .iter()
@@ -55,6 +56,7 @@ impl Rule {
     }
 
     /// Whether any of its ranges shares a cell with `start:end`.
+    #[must_use]
     pub fn touches(&self, start: Pos, end: Pos) -> bool {
         self.ranges.iter().any(|(a, b)| {
             a.row <= end.row && start.row <= b.row && a.col <= end.col && start.col <= b.col
@@ -63,6 +65,7 @@ impl Rule {
 
     /// The condition as it reads at `pos`: parsed, with relative references moved from
     /// [`Rule::base`]. `None` when it does not parse, and then it never holds.
+    #[must_use]
     pub fn condition_at(&self, pos: Pos) -> Option<Expr> {
         let expr = parse(&self.condition).ok()?;
         Some(self.moved(&expr, pos))
@@ -111,6 +114,7 @@ pub fn applied<'d>(
 
 /// A rule's condition as written on a `style:map`: `is-true-formula(…)` (`doc/ods-format.md`
 /// §3.6).
+#[must_use]
 pub fn odf_condition(condition: &str) -> String {
     format!("is-true-formula({})", strip_intro(condition))
 }
@@ -126,6 +130,7 @@ fn strip_intro(condition: &str) -> &str {
 /// `cell-content-is-between(1,5)`) are read as formulas about the cell, relative to `base`
 /// (`doc/conditional-format.md` §1). Anything else is `None`, and the file's map is kept where a
 /// save does not touch it.
+#[must_use]
 pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
     let condition = condition.trim();
     if let Some(inner) = call(condition, "is-true-formula") {
@@ -162,6 +167,7 @@ pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
 /// An order of `n` rules honouring every `(a, b)` in `before` (`a` first), otherwise their
 /// numbering. A file states the maps' order per cell style, a partial order; a cycle is broken by
 /// numbering.
+#[must_use]
 pub fn priority(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
     let mut pending: Vec<usize> = vec![0; n];
     for (_, b) in before {
@@ -187,6 +193,7 @@ pub fn priority(n: usize, before: &[(usize, usize)]) -> Vec<usize> {
 
 /// Rectangles of cells joined where they can be — side by side on the same rows, then stacked on
 /// the same columns — so one run per row in a file comes back as the range somebody chose.
+#[must_use]
 pub fn rectangles(mut rects: Vec<(Pos, Pos)>) -> Vec<(Pos, Pos)> {
     let join = |rects: &mut Vec<(Pos, Pos)>, beside: fn(&(Pos, Pos), &(Pos, Pos)) -> bool| {
         let mut out: Vec<(Pos, Pos)> = Vec::with_capacity(rects.len());
@@ -255,6 +262,7 @@ impl Look {
     ];
 
     /// What a picker calls it, in sentence case.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Look::RedFill => "Light red fill",
@@ -269,6 +277,7 @@ impl Look {
     }
 
     /// One word for it, for a shell whose verbs are typed: `:rule red =B2>0`.
+    #[must_use]
     pub fn word(self) -> &'static str {
         match self {
             Look::RedFill => "red",
@@ -283,6 +292,7 @@ impl Look {
     }
 
     /// The look a [`Look::word`] names, case-insensitively.
+    #[must_use]
     pub fn from_word(word: &str) -> Option<Look> {
         Look::ALL
             .into_iter()
@@ -290,6 +300,7 @@ impl Look {
     }
 
     /// The style it draws over a cell.
+    #[must_use]
     pub fn style(self) -> CellStyle {
         let fill = |background: &str, color: &str| CellStyle {
             background: Some(background.to_owned()),
@@ -319,6 +330,7 @@ impl Look {
     }
 
     /// Which look `style` is, when it is exactly one of them.
+    #[must_use]
     pub fn of(style: &CellStyle) -> Option<Look> {
         Look::ALL.into_iter().find(|look| look.style() == *style)
     }
@@ -336,12 +348,14 @@ pub fn condition_from_display(text: &str) -> Result<String, crate::formula::disp
 
 /// A rule's condition as a window shows it, display syntax with its `=`; one that will not parse
 /// is shown as stored.
+#[must_use]
 pub fn condition_to_display(rule: &Rule) -> String {
     crate::formula::display::to_display(strip_intro(&rule.condition))
         .unwrap_or_else(|_| rule.condition.clone())
 }
 
 /// A rule's ranges as A1 text: `B2:B9 D2`.
+#[must_use]
 pub fn ranges_text(rule: &Rule) -> String {
     rule.ranges
         .iter()
@@ -351,6 +365,7 @@ pub fn ranges_text(rule: &Rule) -> String {
 }
 
 /// What a rule draws, in words: a [`Look`]'s label, or the properties it sets.
+#[must_use]
 pub fn look_text(style: &CellStyle) -> String {
     if let Some(look) = Look::of(style) {
         return look.label().to_owned();
@@ -384,6 +399,7 @@ pub fn look_text(style: &CellStyle) -> String {
 }
 
 /// One rule as one tab-separated line: `B2:B9   =B2>0   Light red fill`.
+#[must_use]
 pub fn summary(rule: &Rule) -> String {
     format!(
         "{}\t{}\t{}",
@@ -440,11 +456,13 @@ pub fn add_from_input(
 
 /// What a new rule's condition field starts with: the selection's top-left cell, so only the
 /// comparison is left to type.
+#[must_use]
 pub fn condition_hint(start: Pos) -> String {
     format!("={}>", crate::a1::format(None, start))
 }
 
 /// What a new rule's range field starts with: the selection.
+#[must_use]
 pub fn range_hint(start: Pos, end: Pos) -> String {
     match start == end {
         true => crate::a1::format(None, start),

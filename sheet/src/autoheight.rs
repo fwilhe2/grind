@@ -83,6 +83,7 @@ pub fn grown_rows(
 /// The heights a grid gives its rows, in its own unit, for a `Sizes` that keeps the last entry
 /// per row: what [`grown_rows`] measured, then the document's own `sized` heights — each final,
 /// except a row in `measured` ([`crate::Sheet::row_measured`]), which keeps whichever is taller.
+#[must_use]
 pub fn heights(
     grown: Vec<(u32, f64)>,
     sized: Vec<(u32, f64)>,

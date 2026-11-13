@@ -35,6 +35,7 @@ impl Default for PageGeometry {
 
 impl PageGeometry {
     /// A4 portrait with 2 cm margins all round: the page a document gets when it states none.
+    #[must_use]
     pub fn a4() -> Self {
         PageGeometry::iso_a(4).expect("A4 is in the series")
     }
@@ -42,6 +43,7 @@ impl PageGeometry {
     /// ISO 216's A series, `A0` through `A10`, portrait, with 2 cm margins — derived as the
     /// standard defines it: A0 is 841 × 1189 mm, and each next size halves the longer side,
     /// rounded down to a whole millimetre.
+    #[must_use]
     pub fn iso_a(n: u8) -> Option<Self> {
         if n > 10 {
             return None;
@@ -61,6 +63,7 @@ impl PageGeometry {
     }
 
     /// A paper name as a person types it — `a4`, `A3`, `a4-landscape`. Only the A series.
+    #[must_use]
     pub fn paper(name: &str) -> Option<Self> {
         let name = name.trim().to_ascii_lowercase();
         let (size, landscape) = match name.strip_suffix("-landscape") {
@@ -72,6 +75,7 @@ impl PageGeometry {
     }
 
     /// The same page turned on its side: the longer edge across.
+    #[must_use]
     pub fn landscape(self) -> Self {
         if self.width >= self.height {
             return self;
@@ -109,16 +113,19 @@ impl PageGeometry {
     }
 
     /// The width text is set in: the page less its side margins, never negative.
+    #[must_use]
     pub fn text_width(&self) -> f64 {
         (self.width - self.left - self.right).max(0.0)
     }
 
     /// The height text is set in: the page less its top and bottom margins, never negative.
+    #[must_use]
     pub fn text_height(&self) -> f64 {
         (self.height - self.top - self.bottom).max(0.0)
     }
 
     /// The ISO 216 name of this size if it is one, either way up: `"A4"`, `"A5"`.
+    #[must_use]
     pub fn iso_name(&self) -> Option<String> {
         let (short, long) = (self.width.min(self.height), self.width.max(self.height));
         (0..=10u8).find_map(|n| {
@@ -130,6 +137,7 @@ impl PageGeometry {
 }
 
 /// Millimetres to PostScript points.
+#[must_use]
 pub fn pt(mm: f64) -> f64 {
     mm / MM_PER_PT
 }

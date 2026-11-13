@@ -41,6 +41,7 @@ pub struct Emitter {
 }
 
 impl Emitter {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -201,6 +202,7 @@ impl Emitter {
     }
 
     /// The finished projection.
+    #[must_use]
     pub fn finish(self) -> Projection {
         debug_assert!(
             self.line.is_none() && self.frames.is_empty(),
@@ -246,6 +248,7 @@ impl Emitter {
 
 /// How a value is spelled in a projection: `KdlValue`'s `Display` plus the escapes the container
 /// adds. Public because `source.rs` splices values and must spell them the same way.
+#[must_use]
 pub fn repr(value: &KdlValue) -> String {
     escape_disallowed(&value.to_string())
 }
@@ -291,6 +294,7 @@ fn kind_of(value: &KdlValue) -> TokenKind {
 impl DocumentKind {
     /// The one word a projection header spells this kind as (`doc/dsl.md` §3.3) — an identifier,
     /// unlike [`DocumentKind::label`].
+    #[must_use]
     pub fn label_word(self) -> &'static str {
         match self {
             DocumentKind::Spreadsheet => "spreadsheet",

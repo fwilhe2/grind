@@ -63,6 +63,7 @@ pub struct Book(Rc<RefCell<Vec<Sheet>>>);
 
 impl Book {
     /// The one-sheet book, for a script that returned a bare `sheet(…)`.
+    #[must_use]
     pub fn of(sheet: Sheet) -> Book {
         Book(Rc::new(RefCell::new(vec![sheet])))
     }

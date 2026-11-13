@@ -74,12 +74,14 @@ pub struct Styles {
 }
 
 impl Styles {
+    #[must_use]
     pub fn get(&self, id: &str) -> Option<&Style> {
         self.by_id.get(id)
     }
 
     /// The chain from `id` up through `w:basedOn`, nearest first, stopping at a cycle — a
     /// style based on itself is a malformed file that must still load.
+    #[must_use]
     pub fn chain(&self, id: &str) -> Vec<&Style> {
         let mut out = Vec::new();
         let mut seen = HashSet::new();
@@ -104,6 +106,7 @@ impl Styles {
     /// A style *named* `heading 1` that states no level is not a heading — measured against the
     /// oracle (§3.2); Word itself writes the level into every heading style it saves, so the
     /// name is never needed for a document Word wrote.
+    #[must_use]
     pub fn outline(&self, id: &str) -> Option<i64> {
         self.stated_outline(id)
             .filter(|level| (0..9).contains(level))
@@ -124,6 +127,7 @@ impl Styles {
     ///
     /// A style at body level stated below a heading style gets none of that heading's
     /// numbering (§4.6).
+    #[must_use]
     pub fn numbering(&self, id: &str) -> Option<(Option<i64>, Option<i64>)> {
         let chain = self.chain(id);
         let from = chain
@@ -139,6 +143,7 @@ impl Styles {
     }
 
     /// A table style's look, its own over what it is based on.
+    #[must_use]
     pub fn table_look(&self, id: &str) -> TableLook {
         let mut look = TableLook::default();
         for style in self.chain(id).into_iter().rev() {
@@ -165,6 +170,7 @@ impl Styles {
 /// The name a style is shown by: Word's own, with the first letter capitalised — Word stores
 /// its built-in styles lower-case (`heading 1`, `toc 1`) and shows them capitalised, and it is
 /// the shown name a person searches for.
+#[must_use]
 pub fn display_name(style: &Style) -> String {
     let name = style.name.clone().unwrap_or_else(|| style.id.clone());
     let mut chars = name.chars();
@@ -177,6 +183,7 @@ pub fn display_name(style: &Style) -> String {
 /// An ODF style name for a display name: an NCName, with every character that may not be in one
 /// written as `_xx_` in hex — the spelling LibreOffice uses (`Heading 1` → `Heading_20_1`), so a
 /// style imported here and one LibreOffice wrote have the same name.
+#[must_use]
 pub fn encode(display: &str) -> String {
     let mut out = String::new();
     for (i, c) in display.chars().enumerate() {
@@ -196,6 +203,7 @@ pub fn encode(display: &str) -> String {
 }
 
 /// Read `word/styles.xml`.
+#[must_use]
 pub fn read(bytes: &[u8], fonts: &Fonts) -> Styles {
     let mut styles = Styles::default();
     let mut reader = Reader::new(bytes);
@@ -392,6 +400,7 @@ fn name_styles(styles: &mut Styles) {
 }
 
 /// Read the theme's major and minor fonts.
+#[must_use]
 pub fn read_fonts(bytes: &[u8]) -> Fonts {
     use grind_ooxml::names::Ns;
     let mut fonts = Fonts::default();
@@ -431,6 +440,7 @@ pub fn read_fonts(bytes: &[u8]) -> Fonts {
 /// `w:family` (§17.8.3.10) is `roman`, `swiss`, `modern`, `script`, `decorative` or `auto`, and
 /// the first five are ODF's own words for the same classes (rng:10418). What a printer falls back
 /// on when the family is not installed (`grind_text::Document::font_generics`).
+#[must_use]
 pub fn read_font_table(bytes: &[u8]) -> Vec<(String, &'static str)> {
     let mut out = Vec::new();
     let mut reader = Reader::new(bytes);
@@ -470,6 +480,7 @@ pub fn read_font_table(bytes: &[u8]) -> Vec<(String, &'static str)> {
 
 /// Paragraph and text properties a style resolves to through its whole chain — used for a
 /// table style, which ODF cannot name, and for nothing else: every other style stays a name.
+#[must_use]
 pub fn resolved(styles: &Styles, id: &str) -> ParaProps {
     let mut out = ParaProps::default();
     for style in styles.chain(id).into_iter().rev() {
@@ -479,6 +490,7 @@ pub fn resolved(styles: &Styles, id: &str) -> ParaProps {
 }
 
 /// The text properties a character style chain sets — used for a hyperlink run, which names one.
+#[must_use]
 pub fn text_props(styles: &Styles, id: &str) -> Props {
     resolved(styles, id).text
 }

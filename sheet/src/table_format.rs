@@ -64,6 +64,7 @@ impl TotalsFunction {
     ];
 
     /// The spelling a CLI flag or a `:command` argument takes, and what [`std::str::FromStr`] parses.
+    #[must_use]
     pub fn id(self) -> &'static str {
         match self {
             TotalsFunction::Sum => "sum",
@@ -78,6 +79,7 @@ impl TotalsFunction {
     }
 
     /// The OpenFormula function the row's formulas call.
+    #[must_use]
     pub fn function(self) -> &'static str {
         match self {
             TotalsFunction::Sum => "SUM",
@@ -92,6 +94,7 @@ impl TotalsFunction {
     }
 
     /// What a menu, a dropdown or a palette row calls it.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             TotalsFunction::Sum => "Sum",
@@ -107,6 +110,7 @@ impl TotalsFunction {
 
     /// The word in the totals row's leftmost cell: "Total" for a sum, the function's own name
     /// otherwise.
+    #[must_use]
     pub fn row_label(self) -> &'static str {
         match self {
             TotalsFunction::Sum => "Total",
@@ -116,6 +120,7 @@ impl TotalsFunction {
     }
 
     /// Every id, comma-separated, for the error naming an unknown one.
+    #[must_use]
     pub fn ids() -> String {
         Self::ALL
             .iter()

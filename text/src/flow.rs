@@ -34,6 +34,7 @@ pub struct Spacing {
 
 impl Spacing {
     /// How far a block's text is indented: one step per list level, nothing otherwise.
+    #[must_use]
     pub fn indent_of(&self, kind: &BlockKind) -> f64 {
         match kind {
             BlockKind::ListItem { depth } => f64::from(*depth) * self.indent,
@@ -44,6 +45,7 @@ impl Spacing {
     /// The space above a block, before collapsing against the gap under the one above. A heading
     /// gets [`Spacing::heading`], as does a `Title` or `Subtitle` paragraph, which every shell
     /// sets in a heading's face.
+    #[must_use]
     pub fn above(&self, kind: &BlockKind, style: Option<&str>) -> f64 {
         match (kind, style) {
             (BlockKind::Heading { .. }, _) | (_, Some("Title" | "Subtitle")) => self.heading,
@@ -55,6 +57,7 @@ impl Spacing {
     /// its indent, at least one unit. A shell's [`Faces`] must answer exactly this, or a list item
     /// breaks lines in one place and draws them in another; a block in a table is set at its
     /// cell's width ([`across`]).
+    #[must_use]
     pub fn measure(&self, kind: &BlockKind, column: f64) -> f64 {
         (column - self.indent_of(kind)).max(1.0)
     }
@@ -87,6 +90,7 @@ pub struct Slot {
 }
 
 impl Slot {
+    #[must_use]
     pub fn bottom(&self) -> f64 {
         self.top + self.height
     }
@@ -106,10 +110,12 @@ pub struct CellBox {
 }
 
 impl CellBox {
+    #[must_use]
     pub fn bottom(&self) -> f64 {
         self.top + self.height
     }
 
+    #[must_use]
     pub fn right_edge(&self) -> f64 {
         self.left + self.width
     }
@@ -132,6 +138,7 @@ pub struct Flow {
 impl Flow {
     /// An empty flow whose first block starts `top` below the document's top, across a column
     /// `measure` wide.
+    #[must_use]
     pub fn new(top: f64, measure: f64) -> Self {
         Flow {
             slots: Vec::new(),
@@ -209,30 +216,36 @@ impl Flow {
     }
 
     /// The measure an ordinary block is laid out at.
+    #[must_use]
     pub fn measure(&self) -> f64 {
         self.measure
     }
 
     /// Every table cell's box, in document order.
+    #[must_use]
     pub fn cells(&self) -> &[CellBox] {
         &self.cells
     }
 
     /// Every block's box, in document order.
+    #[must_use]
     pub fn slots(&self) -> &[Slot] {
         &self.slots
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.slots.is_empty()
     }
 
     /// How tall the whole document is — the scrollbar's extent.
+    #[must_use]
     pub fn height(&self) -> f64 {
         self.height
     }
 
     /// The slot for the block at `index`, looked up by block rather than by position in the list.
+    #[must_use]
     pub fn slot(&self, index: usize) -> Option<&Slot> {
         match self.slots.binary_search_by_key(&index, |slot| slot.index) {
             Ok(at) => self.slots.get(at),
@@ -244,6 +257,7 @@ impl Flow {
     /// hands its ends to [`App::get_viewport`]. A scan from either end, not a binary search: in a
     /// table the second block of a tall cell sits below the first block beside it. The slice may
     /// include a just-off-screen block of the same table.
+    #[must_use]
     pub fn visible(&self, top: f64, bottom: f64) -> &[Slot] {
         let first = self.slots.iter().position(|slot| slot.bottom() >= top);
         let last = self.slots.iter().rposition(|slot| slot.top < bottom);
@@ -256,6 +270,7 @@ impl Flow {
     /// Which block a click at `(x, y)` landed in, `x` from the column's left edge — the nearest,
     /// never none, since a document has no outside. Vertical distance dominates and horizontal
     /// only breaks ties, which picks the column inside a table.
+    #[must_use]
     pub fn at(&self, x: f64, y: f64) -> Option<usize> {
         let mut best: Option<(&Slot, (f64, f64))> = None;
         for slot in &self.slots {
@@ -280,6 +295,7 @@ impl Flow {
 
     /// Where the scroll must be for `target` (a line's top and height) to be on screen, moving as
     /// little as possible.
+    #[must_use]
     pub fn follow(&self, scroll: f64, page: f64, target: (f64, f64)) -> f64 {
         let (top, height) = target;
         let scroll = match scroll {
@@ -291,6 +307,7 @@ impl Flow {
     }
 
     /// The furthest down the document the view may be scrolled, for a view `page` tall.
+    #[must_use]
     pub fn limit(&self, page: f64) -> f64 {
         (self.height - page).max(0.0)
     }
@@ -309,6 +326,7 @@ pub struct Across {
 /// A cell's box across a column `column` wide: its left edge and width, in equal shares of the
 /// columns (the answer that never overflows the measure). A merged cell takes every column it
 /// spans.
+#[must_use]
 pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     let share = column / f64::from(columns.max(1));
     (
@@ -320,6 +338,7 @@ pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
 /// [`cell_x`] for a table whose columns state widths (`widths`, `None` where a column states
 /// none): unstated columns share what is left, and the stated ones are scaled to fill the table's
 /// width, as Writer does (`doc/odt-format.md` §5c fact 26).
+#[must_use]
 pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
     let count = columns.max(1) as usize;
     let stated: f64 = widths.iter().take(count).flatten().sum();

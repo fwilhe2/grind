@@ -25,6 +25,7 @@ pub struct Diff {
 }
 
 impl Diff {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.sheets.is_empty() && self.names.is_empty()
     }
@@ -83,6 +84,7 @@ pub struct NameChange {
     pub after: Option<String>,
 }
 
+#[must_use]
 pub fn diff(before: &Document, after: &Document) -> Diff {
     let mut out = Diff::default();
     let mut unmatched_after: Vec<usize> = Vec::new();

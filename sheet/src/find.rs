@@ -44,6 +44,7 @@ impl Search {
 
     /// The byte ranges of `haystack` this search matches, left to right, never overlapping. An
     /// empty needle matches nothing.
+    #[must_use]
     pub fn occurrences(&self, haystack: &str) -> Vec<Range<usize>> {
         if self.needle.is_empty() {
             return Vec::new();
@@ -83,6 +84,7 @@ impl Search {
     }
 
     /// `haystack` with every occurrence replaced by `with`, or `None` when there is none.
+    #[must_use]
     pub fn replaced(&self, haystack: &str, with: &str) -> Option<String> {
         let hits = self.occurrences(haystack);
         if hits.is_empty() {
@@ -112,6 +114,7 @@ pub enum Towards {
 
 /// Which of `hits` a step from `at` lands on, wrapping at either end; `None` only when there are
 /// none. `hits` is `(sheet, cell)` in [`crate::App::find`]'s order.
+#[must_use]
 pub fn step(hits: &[(usize, Pos)], at: (usize, Pos), towards: Towards) -> Option<usize> {
     let key = |(sheet, pos): (usize, Pos)| (sheet, pos.row, pos.col);
     let at = key(at);
@@ -140,6 +143,7 @@ pub struct Hit {
 
 impl Hit {
     /// The cell as an address a user can type back in: `Sheet1.B2`, ODF's own spelling.
+    #[must_use]
     pub fn address(&self) -> String {
         format!("{}.{}", self.sheet_name, crate::a1::format(None, self.pos))
     }

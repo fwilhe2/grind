@@ -776,6 +776,7 @@ const fn cmd(
 /// The commands matching `needle`, best first — or, for an empty query, the common ones in
 /// declared order. The rank is simple and **stable**: a first row that moves as a fourth letter is
 /// typed is one nobody trusts to press Enter on.
+#[must_use]
 pub fn filter(commands: &[Command], needle: &str) -> Vec<Entry> {
     let needle = needle.trim();
     if needle.is_empty() {

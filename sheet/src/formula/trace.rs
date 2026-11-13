@@ -69,6 +69,7 @@ pub enum CameTo {
 impl Trace {
     /// Every node depth-first with how deep it is — the rows a trace is read in, one per
     /// line, which is what the CLI prints and what a list-shaped shell draws.
+    #[must_use]
     pub fn rows(&self) -> Vec<(usize, &Node)> {
         fn walk<'a>(node: &'a Node, depth: usize, out: &mut Vec<(usize, &'a Node)>) {
             out.push((depth, node));
@@ -85,6 +86,7 @@ impl Trace {
     /// on it, or `None` for a line that starts none (a closing bracket). An operator broken over
     /// several lines does not claim its first line, which shows only its left operand; the root
     /// always claims the line with `=`.
+    #[must_use]
     pub fn by_line<'a>(&'a self, text: &str) -> Vec<Option<&'a Node>> {
         let mut starts = Vec::new();
         let mut at = 0;
@@ -156,10 +158,12 @@ impl Overlay {
         self.values.remove(&Address::new(sheet, pos));
     }
 
+    #[must_use]
     pub fn get(&self, sheet: usize, pos: Pos) -> Option<&Value> {
         self.values.get(&Address::new(sheet, pos))
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }

@@ -53,6 +53,7 @@ pub enum CellRole {
 
 impl CellRole {
     /// The role's name as the CLI prints it and JSON spells it — stable kebab-case.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             CellRole::Empty => "empty",
@@ -70,6 +71,7 @@ impl CellRole {
     /// One character standing for the role (§4.6), so the mode works without colour: `◆` a named
     /// input, `◇` an unnamed one, `!` the unnamed constant, `=` a formula, `→` one reading another
     /// sheet, `T` a label, `✕` an error, `~` a stale value. Every role's is distinct.
+    #[must_use]
     pub fn marker(self) -> &'static str {
         match self {
             CellRole::Empty => "",
@@ -87,6 +89,7 @@ impl CellRole {
     /// The colour of this role's marker, after the financial-modelling convention: inputs blue,
     /// formulas the ordinary ink, another sheet's a third hue. A shell resolves the ink and lifts
     /// a palette colour to be legible on its ground.
+    #[must_use]
     pub fn hue(self) -> Hue {
         match self {
             CellRole::Empty => Hue::None,
@@ -106,6 +109,7 @@ impl CellRole {
     /// Whether this role is a diagnostic — something wrong rather than something true (§4.3).
     /// Roles get a fill or text colour, diagnostics a mark, so an ordinary model does not look
     /// like a wall of warnings.
+    #[must_use]
     pub fn is_diagnostic(self) -> bool {
         matches!(
             self,
@@ -152,11 +156,13 @@ pub struct NameAnchor {
 }
 
 impl NameAnchor {
+    #[must_use]
     pub fn contains(&self, at: Address) -> bool {
         self.sheet == at.sheet && self.rows.contains(&at.pos.row) && self.cols.contains(&at.pos.col)
     }
 
     /// Whether this anchor covers more than one cell, drawn once at the first visible cell (§3.2).
+    #[must_use]
     pub fn is_range(&self) -> bool {
         self.rows.len() > 1 || self.cols.len() > 1
     }
@@ -175,6 +181,7 @@ pub struct Analysis {
 }
 
 impl Analysis {
+    #[must_use]
     pub fn build(doc: &Document) -> Self {
         let refs = RefIndex::build(doc);
         let names = Names::build(doc);
@@ -206,6 +213,7 @@ impl Analysis {
     /// The role of one cell; `sheet` must be the sheet `at` names. The order of the arms is the
     /// disjointness rule: a formula's role is decided at build time; then a name wins; then text
     /// is a label; then a referenced literal is a magic constant; anything left is data.
+    #[must_use]
     pub fn role(&self, sheet: &Sheet, at: Address) -> CellRole {
         if let Some(role) = self.formulas.get(&at) {
             return *role;
@@ -232,6 +240,7 @@ impl Analysis {
     }
 
     /// Every name anchor in the document, in declaration order.
+    #[must_use]
     pub fn anchors(&self) -> &[NameAnchor] {
         self.names.anchors()
     }
@@ -247,16 +256,19 @@ impl Analysis {
     }
 
     /// The name bound to one cell, if any.
+    #[must_use]
     pub fn name_at(&self, at: Address) -> Option<&str> {
         self.names.at(at)
     }
 
     /// The names this was built on, for [`Names::display`] and the rest of Part I.
+    #[must_use]
     pub fn names(&self) -> &Names {
         &self.names
     }
 
     /// The reference index this was built on (§4.4).
+    #[must_use]
     pub fn refs(&self) -> &RefIndex {
         &self.refs
     }
@@ -273,6 +285,7 @@ impl Names {
     /// A name anchors only when its expression names a sheet (§3.5): `Document::names` is one flat
     /// map, so an unqualified `[.B2]` would hint on every sheet's B2. Both writers store named
     /// ranges fully qualified.
+    #[must_use]
     pub fn build(doc: &Document) -> Self {
         let engine = Engine::new(doc);
         let mut anchors = Vec::new();
@@ -312,6 +325,7 @@ impl Names {
         Self { anchors }
     }
 
+    #[must_use]
     pub fn anchors(&self) -> &[NameAnchor] {
         &self.anchors
     }
@@ -332,6 +346,7 @@ impl Names {
     }
 
     /// The name bound to one cell, if any.
+    #[must_use]
     pub fn at(&self, at: Address) -> Option<&str> {
         self.anchors
             .iter()
@@ -356,6 +371,7 @@ impl Names {
 
     /// The same substitution, stopping at the expression; exposed because loop B checks that
     /// display form with names re-parses to this.
+    #[must_use]
     pub fn substitute(&self, doc: &Document, at: Address, expr: &Expr) -> Expr {
         self.rewrite(&Engine::new(doc), at, expr)
     }
@@ -363,6 +379,7 @@ impl Names {
     /// The name denoting exactly this reference, resolved from `at`: by area, through
     /// [`Engine::area`], since `[$Rates.$A$1]` and `[Rates.A1]` are different text for the same
     /// cell.
+    #[must_use]
     pub fn of(&self, doc: &Document, at: Address, reference: &Reference) -> Option<&str> {
         self.resolve(&Engine::new(doc), at, reference)
     }
@@ -477,6 +494,7 @@ impl Overlays {
     };
 
     /// Whether anything is being asked for — whether the analysis has to exist at all.
+    #[must_use]
     pub fn any(self) -> bool {
         self.roles || self.names
     }

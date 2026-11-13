@@ -46,12 +46,14 @@ pub struct Section {
 impl Section {
     /// Whether this section starts on a new page — every kind but `continuous` and
     /// `nextColumn` does, and `nextPage` is what an absent `w:type` means (§17.6.22).
+    #[must_use]
     pub fn starts_a_page(&self) -> bool {
         !matches!(self.start.as_deref(), Some("continuous" | "nextColumn"))
     }
 
     /// Whether two sections are set on the same page — the question a later section is
     /// asked, since the model has one page for the whole document.
+    #[must_use]
     pub fn same_page(&self, other: &Section) -> bool {
         (
             self.width,

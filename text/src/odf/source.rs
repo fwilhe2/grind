@@ -100,6 +100,7 @@ pub struct TableSource {
 /// What a picture read as — type, bytes, size, anchor and alternative text — as one number, so the
 /// writer can tell whether an image run is still a frame the file spelled ([`Source::frames`]).
 /// `None` for any other run.
+#[must_use]
 pub fn image_key(run: &crate::model::Run) -> Option<u64> {
     use std::hash::{Hash, Hasher};
     let crate::model::Run::Image {
@@ -133,6 +134,7 @@ pub struct Sibling {
 impl Source {
     /// The automatic style a run's formatting was read from, when it says more than the model
     /// reads ([`CharStyle::origin`]) — what a restyle of that run is built from.
+    #[must_use]
     pub fn base_of(&self, props: &CharStyle) -> Option<&TextStyle> {
         let name = props.origin.name()?;
         self.styles.iter().find(|style| style.name == name)
@@ -141,6 +143,7 @@ impl Source {
     /// The name this file already uses for exactly this formatting, if any. Parentless only: the
     /// writer emits character styles that inherit from nothing and puts a named style in a span
     /// around them, so reusing one with a parent would apply the parent twice.
+    #[must_use]
     pub fn style_named(&self, props: &CharStyle) -> Option<&str> {
         self.styles
             .iter()
@@ -166,6 +169,7 @@ pub struct Block {
 
 /// The attributes of a block's start tag minus the ones the writer produces from the model, sliced
 /// verbatim so they keep the document's prefixes.
+#[must_use]
 pub fn kept_attributes(start_tag: &[u8]) -> String {
     // What the writer always emits, and what would therefore appear twice.
     grind_core::odf::envelope::attributes_except(
@@ -175,6 +179,7 @@ pub fn kept_attributes(start_tag: &[u8]) -> String {
 }
 
 impl Source {
+    #[must_use]
     pub fn new(form: Form, bytes: Vec<u8>) -> Self {
         Self {
             form,

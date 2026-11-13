@@ -30,6 +30,7 @@ pub fn hits(app: &App, needle: &str) -> Vec<Caret> {
 }
 
 /// The far end of a hit starting at `from`: exactly as many characters as the needle.
+#[must_use]
 pub fn end_of(from: Caret, needle: &str) -> Caret {
     Caret {
         block: from.block,
@@ -39,6 +40,7 @@ pub fn end_of(from: Caret, needle: &str) -> Caret {
 
 /// Which of `hits` (in document order) a step from `at` lands on, wrapping; `None` only when there
 /// are none.
+#[must_use]
 pub fn step(hits: &[Caret], at: Caret, towards: Towards) -> Option<usize> {
     if hits.is_empty() {
         return None;

@@ -31,6 +31,7 @@
 /// no right answer; this is the oracle's (`doc/xlsx-format.md` §2.1), keeps the mapping monotone,
 /// and shows a date beside the one meant rather than a refusal. Negative serials are not dates in
 /// this system and are carried unchanged.
+#[must_use]
 pub fn correct(serial: f64) -> f64 {
     if (0.0..60.0).contains(&serial) {
         serial + 1.0

@@ -35,6 +35,7 @@ pub const PRESENTATION: &str = "application/vnd.oasis.opendocument.presentation"
 
 impl DocumentKind {
     /// The media type a document of this kind carries.
+    #[must_use]
     pub fn media_type(self) -> &'static str {
         match self {
             DocumentKind::Spreadsheet => SPREADSHEET,
@@ -45,6 +46,7 @@ impl DocumentKind {
 
     /// The `grind` subcommand that opens one, for an error message that tells a user what to
     /// do instead of only what went wrong. `None` for a kind no app handles.
+    #[must_use]
     pub fn command(self) -> Option<&'static str> {
         match self {
             DocumentKind::Spreadsheet => Some("sheet"),
@@ -54,6 +56,7 @@ impl DocumentKind {
     }
 
     /// The plain-language name, for a banner or a diagnostic.
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             DocumentKind::Spreadsheet => "spreadsheet",
@@ -109,6 +112,7 @@ const MAX_EVENTS: usize = 4096;
 /// What kind of document these bytes are, or `None` if nothing here says — a truncated file, a zip
 /// that is not ODF, or XML with no media type and no body element. Callers word their own
 /// diagnostic.
+#[must_use]
 pub fn kind(bytes: &[u8]) -> Option<DocumentKind> {
     if is_package(bytes) {
         return package_kind(bytes);

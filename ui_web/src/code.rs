@@ -16,6 +16,7 @@ use grind_core::projection::{Projection, TokenKind};
 /// The whole projection as markup: one `<div class="code-line">` per line, with its gutter and
 /// coloured pieces. `cursor` is the line the selection is on; `None` when the projection does not
 /// spell the selection (an empty cell, mostly), and then no line is current.
+#[must_use]
 pub fn html(projection: &Projection, cursor: Option<usize>) -> String {
     let mut out = String::with_capacity(projection.text().len() * 2);
     for index in 0..projection.line_count() {
@@ -49,6 +50,7 @@ pub fn html(projection: &Projection, cursor: Option<usize>) -> String {
 /// The class name a kind is painted with. `style.css` holds the colours, which is where a
 /// shell's colours belong — [`TokenKind::name`] is the core's word for the *thing*, and this is
 /// the page's word for the same thing, deliberately equal so the stylesheet reads as the enum.
+#[must_use]
 pub fn class(kind: TokenKind) -> &'static str {
     kind.name()
 }

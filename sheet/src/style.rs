@@ -59,11 +59,13 @@ pub struct CellStyle {
 
 impl CellStyle {
     /// Nothing set at all — a cell style that is worth neither writing nor pooling.
+    #[must_use]
     pub fn is_plain(&self) -> bool {
         *self == CellStyle::default()
     }
 
     /// The `fo:border` shorthand, when every edge agrees and is present.
+    #[must_use]
     pub fn uniform_border(&self) -> Option<&str> {
         let first = self.borders[0].as_deref()?;
         self.borders
@@ -73,6 +75,7 @@ impl CellStyle {
     }
 
     /// Whether the text is underlined: anything but `none`.
+    #[must_use]
     pub fn is_underlined(&self) -> bool {
         !matches!(self.underline.as_deref(), None | Some("none"))
     }
@@ -86,6 +89,7 @@ impl CellStyle {
     }
 
     /// The rotation in degrees, anticlockwise, normalised to `0..360` — `None` for none.
+    #[must_use]
     pub fn rotation_degrees(&self) -> Option<f64> {
         let degrees = self.rotation.as_deref()?.trim();
         // ODF's angle may carry a unit (`deg`, `rad`, `grad`); a bare number is degrees.
@@ -103,6 +107,7 @@ impl CellStyle {
     }
 
     /// Whether the text is struck through — [`CellStyle::is_underlined`]'s twin.
+    #[must_use]
     pub fn is_struck(&self) -> bool {
         !matches!(self.line_through.as_deref(), None | Some("none"))
     }
@@ -113,6 +118,7 @@ impl CellStyle {
 
     /// This style drawn over `under`: what this one sets wins, the rest is `under`'s — how a
     /// conditional-format rule's style is applied (`doc/conditional-format.md` §1).
+    #[must_use]
     pub fn over(&self, under: Option<&CellStyle>) -> CellStyle {
         let Some(under) = under else {
             return self.clone();
