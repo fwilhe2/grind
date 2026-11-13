@@ -92,7 +92,7 @@ pub enum Target {
 
 /// The window's content: which recent documents there are, by name, and which target has the
 /// keyboard.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Welcome {
     pub recent: Vec<String>,
     pub focus: usize,
@@ -188,7 +188,7 @@ impl Welcome {
 }
 
 /// The colours the window is drawn in.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Palette {
     /// The window's ground.
     pub ground: Rgb,

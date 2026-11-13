@@ -43,7 +43,7 @@ pub enum Mark {
 }
 
 /// One block's place in the document's structure.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Element {
     Paragraph {
         block: usize,

@@ -67,7 +67,7 @@ pub fn digest(bytes: &[u8]) -> String {
 }
 
 /// One block as the comparison sees it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Seen {
     pub kind: String,
     pub cell: Option<(u32, u32)>,

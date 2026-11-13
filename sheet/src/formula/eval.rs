@@ -39,7 +39,7 @@ impl Address {
 
 /// A resolved rectangle of cells — what a reference becomes once the sheet name is looked
 /// up and the open axis of a whole-row or whole-column reference is bounded.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Area {
     pub sheet: usize,
     pub rows: Range<u32>,

@@ -20,7 +20,7 @@ use crate::text::format::{Facts, points};
 
 /// The active cell, read once for a command: its style, its format, and how many decimals the
 /// text it shows has — what a decimal step starts a plain cell from.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Active {
     pub style: CellStyle,
     pub format: Option<Format>,
@@ -31,7 +31,7 @@ pub struct Active {
 // One of these lives for the length of one command and is never stored, so boxing the style to
 // even the variants out would cost an allocation per click to save bytes nobody keeps.
 #[allow(clippy::large_enum_variant)]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Write {
     /// `App::set_style` — `None` is no style at all.
     Style(Option<CellStyle>),

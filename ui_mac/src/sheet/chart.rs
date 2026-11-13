@@ -221,7 +221,7 @@ pub fn key(selector: &str) -> Option<KeyAction> {
 }
 
 /// One change a chart's context menu makes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
     Kind(ChartKind),
     Legend(Option<ChartLegend>),

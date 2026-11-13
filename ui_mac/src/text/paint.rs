@@ -49,7 +49,7 @@ pub const MARKED_CLAUSE: f64 = 2.0;
 
 /// The colours a page is drawn in, already resolved — from `NSColor`'s semantic colours in the
 /// view's appearance at draw time, or [`Palette::LIGHT`] and [`Palette::DARK`] for a render.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Palette {
     /// The paper — `textBackgroundColor`.
     pub page: Rgb,

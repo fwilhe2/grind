@@ -13,7 +13,7 @@ use grind_text::RunView;
 use grind_text::style::CharStyle;
 
 /// One stretch of a line that is uniform in everything the page can draw.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Piece {
     /// In the block's own character offsets, the same ones a [`grind_text::Caret`] counts.
     pub range: Range<usize>,

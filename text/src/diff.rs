@@ -13,7 +13,7 @@
 use crate::loc;
 use crate::model::{Block, BlockKind, Document};
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct Diff {
     pub blocks: Vec<BlockChange>,
 }
@@ -24,7 +24,7 @@ impl Diff {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct BlockChange {
     pub change: Change,
     pub before: Option<Side>,
@@ -55,14 +55,14 @@ impl Change {
 }
 
 /// One block on one side: its address there (`p12`), what kind it is and its text.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Side {
     pub at: String,
     pub kind: String,
     pub text: String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Piece {
     Same(String),
     Removed(String),

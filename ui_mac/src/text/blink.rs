@@ -18,7 +18,7 @@ use std::time::Duration;
 pub const PERIOD: Duration = Duration::from_millis(500);
 
 /// Whether the caret is lit, and when it was last woken.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Blink {
     pub lit: bool,
     woken: Duration,

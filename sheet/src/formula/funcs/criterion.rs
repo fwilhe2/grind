@@ -29,7 +29,7 @@ use super::super::wildcard;
 use super::Args;
 
 /// What a conditional function does with the cells that matched.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// `COUNTIF` (§6.13.9) — how many matched, whatever they hold.
     Count,

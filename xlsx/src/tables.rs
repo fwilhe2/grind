@@ -16,7 +16,7 @@ use crate::xml::{Handled, Reader};
 use grind_sheet::formula::lex::{Axis, CellRef, Reference};
 
 /// One `<table>` part, in 0-based coordinates.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Table {
     /// The `displayName` — what a formula calls it — compared case-insensitively.
     pub name: String,

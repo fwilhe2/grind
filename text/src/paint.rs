@@ -14,7 +14,7 @@ use crate::style::CharStyle;
 use crate::{Caret, RunView};
 
 /// One run of uniform formatting, clipped to a line.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Piece<'a> {
     /// Where it starts, in characters from the start of the block — the unit [`Layout::x_at`]
     /// takes.

@@ -9,7 +9,7 @@
 use crate::xml::{Handled, Reader, Spreadsheet as _};
 
 /// One `<si>`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Item {
     /// The runs, flattened. Whitespace is content and is never trimmed.
     pub text: String,

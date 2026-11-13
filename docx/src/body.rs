@@ -29,7 +29,7 @@ use crate::section::Section;
 use crate::xml::{Attrs, Handled, Name, Reader, Word as _, WordAttrs as _};
 
 /// A run's formatting, its character style and its hyperlink.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Run {
     pub props: Props,
     /// A character style *id*.
@@ -37,7 +37,7 @@ pub struct Run {
     pub href: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Image {
     pub data: Vec<u8>,
     pub mime: String,
@@ -48,7 +48,7 @@ pub struct Image {
     pub inline: bool,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Inline {
     Text(String, Run),
     Tab(Run),

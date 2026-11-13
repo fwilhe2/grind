@@ -29,7 +29,7 @@ pub enum Kind {
 }
 
 /// What a table style says about a table built from it.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct TableLook {
     /// `w:tblBorders`: `top`, `left`, `bottom`, `right`, `insideH`, `insideV`, as ODF lines.
     pub borders: BTreeMap<&'static str, Option<String>>,

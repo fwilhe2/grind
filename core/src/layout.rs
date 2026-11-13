@@ -230,7 +230,7 @@ pub fn wrap_indented(
 }
 
 /// How a tab character's text lines up against its stop (`style:type`, rng:13921).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TabAlign {
     /// The text after the tab starts at the stop.
     Left,

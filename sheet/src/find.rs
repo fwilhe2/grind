@@ -146,7 +146,7 @@ impl Hit {
 }
 
 /// What one [`crate::App::replace`] did.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Replaced {
     /// How many cells were rewritten.
     pub cells: usize,

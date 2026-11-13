@@ -17,7 +17,7 @@ use crate::props::{self, Fonts, Props};
 use crate::xml::{Handled, Reader, Word as _, WordAttrs as _};
 
 /// One level of a list.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Level {
     /// `w:numFmt` — `decimal`, `bullet`, `lowerLetter`, … (§17.18.59).
     pub format: String,
@@ -35,7 +35,7 @@ pub struct Level {
 }
 
 /// One `numId`'s list: its nine levels.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct List {
     pub levels: Vec<Level>,
     /// The abstract definition it came from — two `numId`s sharing one are the same list to

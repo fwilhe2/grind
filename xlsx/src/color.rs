@@ -30,7 +30,7 @@ pub struct Color {
     pub tint: f64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Spelling {
     /// `auto="1"`, or a `<color/>` that says nothing.
     #[default]

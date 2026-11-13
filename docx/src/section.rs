@@ -19,7 +19,7 @@ pub enum Which {
 }
 
 /// One section's page, in twips, as the file states it.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Section {
     pub width: Option<i64>,
     pub height: Option<i64>,

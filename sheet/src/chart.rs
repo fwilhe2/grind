@@ -56,7 +56,7 @@ impl ChartKind {
 /// One `chart:series` (rng:857): a range of values and optionally one naming it
 /// (`chart:label-cell-address`), both address strings kept verbatim and resolved only when the
 /// chart's data is read.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Series {
     pub values: String,
     pub label: Option<String>,
@@ -152,7 +152,7 @@ impl Legend {
 
 /// A chart, as modelled: no subtitle or footer, one categories range and one values range per
 /// series (`doc/chart-format.md`).
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chart {
     pub kind: ChartKind,
     /// `chart:categories`' own range (rng:454) — the axis labels, shared by every series.
@@ -213,7 +213,7 @@ impl Chart {
 /// `Data.A2:A5`) resolved by [`parse_range`] against the chart's sheet; a stored range is one too,
 /// so [`Spec::of`] can hand an existing chart to a dialog. A series is `RANGE[=LABEL]`. Position
 /// is not here ([`crate::App::reshape_chart`]).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Spec {
     pub kind: ChartKind,
     pub categories: Option<String>,
@@ -283,7 +283,7 @@ pub struct Shape {
 
 /// What [`guess`] read: the block (one cell grows into its table), the [`Shape`] it read it as,
 /// and the chart that makes.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Guess {
     pub start: Pos,
     pub end: Pos,

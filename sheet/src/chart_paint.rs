@@ -40,7 +40,7 @@ impl Rect {
 }
 
 /// The shell's theme colours, which the document's colours are lifted against on a dark page.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Colours {
     /// The ground under the chart.
     pub page: Rgb,

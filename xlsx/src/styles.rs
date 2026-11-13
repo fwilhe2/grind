@@ -143,7 +143,7 @@ impl Appearance {
 }
 
 /// What one cell format looks like, translated.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Look {
     /// `None` when there is nothing to carry: a plain cell has no style rather than an empty
     /// one, as in `odf/read.rs`.

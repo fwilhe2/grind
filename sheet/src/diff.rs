@@ -18,7 +18,7 @@ use crate::a1;
 use crate::formula::parse::parse;
 use crate::model::{CellValue, Document, Pos, Sheet};
 
-#[derive(Debug, Default, PartialEq, Serialize)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Diff {
     pub sheets: Vec<SheetDiff>,
     pub names: Vec<NameChange>,
@@ -30,7 +30,7 @@ impl Diff {
     }
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct SheetDiff {
     /// The sheet's name after; before, for one that was removed.
     pub name: String,
@@ -57,7 +57,7 @@ pub enum SheetChange {
     Changed,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct CellChange {
     /// `B7`, on the sheet the change is listed under.
     pub at: String,
@@ -69,14 +69,14 @@ pub struct CellChange {
 
 /// What a cell holds: its formula, if any, and the value it shows — text quoted, so `"12"` and
 /// `12` differ.
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct Content {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub formula: Option<String>,
     pub value: String,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct NameChange {
     pub name: String,
     pub before: Option<String>,

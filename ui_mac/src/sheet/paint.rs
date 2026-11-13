@@ -35,7 +35,7 @@ pub const OUTLINE: f64 = 2.0;
 /// draw time (decision 8), so dark mode, high contrast and the user's accent follow the system;
 /// a render fills it the same way under a named appearance. [`Palette::LIGHT`] and
 /// [`Palette::DARK`] are fixed stand-ins for tests and for a host with no AppKit to ask.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Palette {
     /// The sheet's own ground — `textBackgroundColor`.
     pub page: Rgb,
