@@ -122,7 +122,7 @@ fn saving_changes_only_the_checkboxes_that_changed() {
     let original = sample();
     let app = open(&original);
     assert_eq!(app.save_bytes(Form::Flat).unwrap(), original);
-    let before = String::from_utf8(original.clone()).unwrap();
+    let before = String::from_utf8(original).unwrap();
 
     app.toggle_checkbox(0, Pos::new(2, 1)).unwrap();
     let ticked = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();

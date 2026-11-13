@@ -785,7 +785,7 @@ mod tests {
         let over = ppr(
             r#"<w:tabs><w:tab w:val="clear" w:pos="720"/><w:tab w:val="center" w:pos="4500"/></w:tabs>"#,
         );
-        let mut props = base.props.clone();
+        let mut props = base.props;
         props.layer(&over.props);
         let tabs = props.tabs.unwrap();
         assert_eq!(

@@ -439,17 +439,16 @@ fn read_shape(sheet: &crate::Sheet, start: Pos, end: Pos) -> Shape {
         matches!(value(pos), CellValue::Number(_)) && crate::date_kind(sheet, pos).is_none()
     };
     let cols = start.col..=end.col;
-    let any_number_in = |rows: std::ops::RangeInclusive<u32>,
+    let any_number_in = |mut rows: std::ops::RangeInclusive<u32>,
                          cols: std::ops::RangeInclusive<u32>| {
-        rows.clone()
-            .any(|row| cols.clone().any(|col| is_number(Pos::new(row, col))))
+        rows.any(|row| cols.clone().any(|col| is_number(Pos::new(row, col))))
     };
 
     // A first row of text (nothing in it a number), over rows that hold numbers.
     let header_row = end.row > start.row
         && cols.clone().any(|col| is_text(Pos::new(start.row, col)))
         && !cols.clone().any(|col| is_number(Pos::new(start.row, col)))
-        && any_number_in(start.row + 1..=end.row, cols.clone());
+        && any_number_in(start.row + 1..=end.row, cols);
     let first_body_row = start.row + u32::from(header_row);
 
     // A first column of names: text or dates, or a counting sequence — beside columns that hold

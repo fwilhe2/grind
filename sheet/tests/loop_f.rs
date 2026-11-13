@@ -282,7 +282,7 @@ fn the_span_map_finds_a_cell_and_a_cell_finds_its_line() {
     assert!(
         projected.text()[span.clone()].starts_with("cell C9"),
         "{:?}",
-        &projected.text()[span.clone()]
+        &projected.text()[span]
     );
     assert_eq!(projected.address_at(span.start + 1), Some("Sales.C9"));
 

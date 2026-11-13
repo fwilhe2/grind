@@ -132,7 +132,7 @@ pub fn present(
         .build();
 
     let advise = {
-        let (advice, count) = (advice.clone(), count.clone());
+        let (advice, count) = (advice, count);
         move |text: &str| {
             advice.set_label(picture::advice(text).unwrap_or(""));
             let n = text.trim().chars().count();

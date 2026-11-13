@@ -167,7 +167,7 @@ pub(crate) fn scan(bytes: &[u8]) -> Option<Tree> {
                         name: style_attribute(&reader, e, "name"),
                         family: style_attribute(&reader, e, "family"),
                         start: span.clone(),
-                        range: span.clone(),
+                        range: span,
                     });
                     index = Some(nodes.len() - 1);
                     if depth == 1 {
@@ -333,7 +333,7 @@ pub fn merge(original: &[u8], generated: &[u8]) -> Option<Vec<u8>> {
                             let lt = o_open.iter().position(|c| *c == b'<').unwrap_or(0);
                             out.extend_from_slice(&o_open[..lt]);
                             out.extend_from_slice(&declared(&o_open[lt..], &local));
-                            let g_content = &generated[g_inner.clone()];
+                            let g_content = &generated[g_inner];
                             let trimmed = g_content.len()
                                 - g_content
                                     .iter()
@@ -608,13 +608,13 @@ pub fn patch_style(
                 let name = e.name().as_ref().to_owned();
                 match depth {
                     0 => {
-                        start_tag = Some(span.clone());
+                        start_tag = Some(span);
                         if empty {
                             break;
                         }
                     }
-                    1 if empty => children.push((name, span.clone(), span.clone())),
-                    1 => open_child = Some((name, span.clone())),
+                    1 if empty => children.push((name, span.clone(), span)),
+                    1 => open_child = Some((name, span)),
                     _ => {}
                 }
                 if !empty {

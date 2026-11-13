@@ -456,12 +456,7 @@ pub fn tracks(mine: &Sheet, other: &Sheet) -> Vec<Track> {
         size(Axis::Row, row, Some(height), other.row_height(row));
     }
     let hidden = |axis, a: Vec<u32>, b: Vec<u32>, out: &mut Vec<Track>| {
-        for index in a
-            .iter()
-            .chain(&b)
-            .copied()
-            .collect::<std::collections::BTreeSet<_>>()
-        {
+        for index in a.iter().chain(&b).copied() {
             let (ours, theirs) = (a.contains(&index), b.contains(&index));
             if ours != theirs {
                 out.push(Track {

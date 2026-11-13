@@ -58,8 +58,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>, changed: impl Fn() + 'static) {
     fill(&list, &error, &changed);
 
     let adding = {
-        let (entry, error, list, changed) =
-            (entry.clone(), error.clone(), list.clone(), changed.clone());
+        let (entry, error, list, changed) = (entry.clone(), error, list, changed.clone());
         move || match grind_spell::personal::word(&entry.text()) {
             Err(why) => say(&error, why),
             Ok(word) => match grind_spell::personal::add(&word) {

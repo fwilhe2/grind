@@ -59,7 +59,7 @@ fn findings_are_addressed_by_block_and_a_links_text_is_not_checked() {
         r##"<text:p>fine</text:p><text:p>one xx two <text:a xlink:href="#x">xx</text:a></text:p>"##,
     );
     let checker = Arc::new(Doubles::default());
-    app.set_checker(Some(checker.clone()));
+    app.set_checker(Some(checker));
     let flags = app.grammar(0..app.block_count());
     assert_eq!(flags.len(), 1, "the link's xx is not prose: {flags:?}");
     assert_eq!(flags[0].block, 1);

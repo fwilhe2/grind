@@ -176,14 +176,14 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     // A toggle already knows its new state, so it asks for that rather than a flip. Alignment is
     // `start`/`end`, relative to the writing direction (§16.5), as `sheet style --align` writes.
     let toggles = [
-        (bold.clone(), Toggle::Bold),
-        (italic.clone(), Toggle::Italic),
-        (underline.clone(), Toggle::Underline),
-        (strike.clone(), Toggle::Strike),
-        (wrap.clone(), Toggle::Wrap),
-        (left.clone(), Toggle::AlignStart),
-        (center.clone(), Toggle::AlignCenter),
-        (right.clone(), Toggle::AlignEnd),
+        (bold, Toggle::Bold),
+        (italic, Toggle::Italic),
+        (underline, Toggle::Underline),
+        (strike, Toggle::Strike),
+        (wrap, Toggle::Wrap),
+        (left, Toggle::AlignStart),
+        (center, Toggle::AlignCenter),
+        (right, Toggle::AlignEnd),
     ];
     for (button, toggle) in &toggles {
         let (apply, toggle) = (field(grid, app, &updating), *toggle);
@@ -244,8 +244,8 @@ pub fn strip(grid: &Grid, app: &Arc<App>) -> Rc<Strip> {
     // --- reading ---
 
     let refresh = {
-        let (app, picker, updating) = (app.clone(), picker.clone(), updating.clone());
-        let face = numbers.clone();
+        let (app, picker, updating) = (app.clone(), picker, updating);
+        let face = numbers;
         let colors = (color, background);
         let grid = grid.downgrade();
         move || {

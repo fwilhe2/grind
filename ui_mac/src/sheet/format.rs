@@ -290,7 +290,7 @@ mod tests {
             family: "Georgia".into(),
             size: 18.0,
             bold: true,
-            ..before.clone()
+            ..before
         };
         let written = font_restyle(&CellStyle::default(), &before, &after)
             .unwrap()
@@ -299,7 +299,7 @@ mod tests {
         assert!(Toggle::Bold.is_on(&written));
         let only_family = Facts {
             family: "Georgia".into(),
-            ..before.clone()
+            ..before
         };
         assert_eq!(
             font_restyle(&CellStyle::default(), &before, &only_family),

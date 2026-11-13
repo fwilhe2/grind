@@ -190,7 +190,7 @@ fn a_structural_edit_keeps_every_byte_outside_the_body() {
                     grind_core::odf::package::content_xml(&after).unwrap(),
                 )
             }
-            _ => (before.clone(), after.clone()),
+            _ => (before, after.clone()),
         };
         assert_eq!(
             outside_body(&old_content),

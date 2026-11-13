@@ -6500,7 +6500,7 @@ fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, command
     match picked {
         0 => {}
         id if id == ignore => {
-            let rule = flag.finding.rule.clone();
+            let rule = flag.finding.rule;
             // SAFETY: a fresh borrow, taken after the popup has closed.
             unsafe {
                 with_text(hwnd, |text| {
@@ -8484,8 +8484,8 @@ fn text_pick_size(hwnd: HWND) {
 fn text_pick_color(hwnd: HWND, highlight: bool) {
     let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
     let current = match highlight {
-        true => style.background.clone(),
-        false => style.color.clone(),
+        true => style.background,
+        false => style.color,
     };
     let items = crate::strip::colour_choices();
     let initial = crate::strip::colour_row(current.as_deref());

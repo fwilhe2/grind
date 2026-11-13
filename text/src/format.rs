@@ -173,7 +173,7 @@ mod tests {
             font_weight: Some("bold".to_owned()),
             ..Default::default()
         };
-        let mut italicised = bold.clone();
+        let mut italicised = bold;
         Change::Italic(true).apply(&mut italicised);
         assert!(italicised.is_bold());
         assert!(italicised.is_italic());

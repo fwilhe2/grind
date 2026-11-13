@@ -346,10 +346,7 @@ impl Ui {
         // A hidden column is **left out** of the `<col>`s, the header and the cells. A zero-width
         // `<col>` in a `max-content` table is sized from its content, so the hidden column showed
         // at full width.
-        let shown: Vec<u32> = cols
-            .clone()
-            .filter(|col| !hidden_cols.contains(col))
-            .collect();
+        let shown: Vec<u32> = cols.filter(|col| !hidden_cols.contains(col)).collect();
         for &col in &shown {
             let declaration = self.dom.document.create_element("col")?;
             declaration.set_attribute("style", &format!("width:{:.1}px", widths.size(col)))?;
@@ -946,7 +943,7 @@ impl Ui {
         let reference = grind_sheet::a1::format(None, cell);
         let span = pending.map_or(caret..caret, |(span, _)| span);
         let end = span.start + reference.len();
-        let mut next = text.clone();
+        let mut next = text;
         next.replace_range(span.clone(), &reference);
         self.dom.formula.set_value(&next);
         let at = utf16::units_before(&next, end) as u32;

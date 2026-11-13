@@ -933,7 +933,7 @@ fn plan(doc: &Document, source: &super::source::Source) -> Vec<Plan> {
                         None => hidden_here.into_iter().collect(),
                         // Hidden as written: every row of it may differ, which for a long run
                         // is more copies than the element is worth.
-                        Some(_) if span.len() <= 10_000 => span.clone().collect(),
+                        Some(_) if span.len() <= 10_000 => span.collect(),
                         Some(_) => {
                             rows.push(RowFix::Rewrite);
                             scope
@@ -1153,7 +1153,7 @@ fn origin_body(
         }
     }
 
-    let text = apply(bytes, inner.clone(), patches);
+    let text = apply(bytes, inner, patches);
     text.trim_end().to_owned()
 }
 

@@ -504,8 +504,7 @@ fn a_name_that_is_a_pathspec_commits_only_itself() {
     std::fs::write(dir.0.join("untracked.fods"), &sheet).unwrap();
     let server = Server::new(&dir.0, None, &[]).unwrap();
 
-    let made =
-        server.handle(&send("POST", "/api/v1/docs?name=%3A(glob)*.fods").with_body(sheet.clone()));
+    let made = server.handle(&send("POST", "/api/v1/docs?name=%3A(glob)*.fods").with_body(sheet));
     assert_eq!(made.status, 201);
     let committed = git(&dir.0, &["show", "--name-only", "--format=", "HEAD"]);
     assert_eq!(committed.trim(), ":(glob)*.fods");

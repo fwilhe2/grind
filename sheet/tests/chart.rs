@@ -369,7 +369,7 @@ fn set_chart_style_sets_and_undoes_axis_labels() {
     .unwrap();
 
     let series = app.charts(0).unwrap()[0].series.clone();
-    app.set_chart_style(0, 0, titled("Party"), titled("Votes"), series.clone())
+    app.set_chart_style(0, 0, titled("Party"), titled("Votes"), series)
         .unwrap();
     let chart = &app.charts(0).unwrap()[0];
     assert_eq!(chart.x_axis.label.as_deref(), Some("Party"));

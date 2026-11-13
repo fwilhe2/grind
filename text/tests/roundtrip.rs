@@ -1091,7 +1091,7 @@ fn a_character_style_over_a_whole_paragraph_is_hoisted_into_it() {
             vec![
                 styled("Cambria ", font.clone()),
                 text("plain "),
-                styled("Cambria", font.clone()),
+                styled("Cambria", font),
             ],
         ),
     ]);

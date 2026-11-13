@@ -135,7 +135,7 @@ fn every_edit_to_a_writer_document_saves_or_is_refused() {
                                 grind_core::odf::package::content_xml(&out).unwrap(),
                             )
                         }
-                        _ => (bytes.clone(), out.clone()),
+                        _ => (bytes.clone(), out),
                     };
                     let (old, new) = (outside_body(&before), outside_body(&after));
                     assert_eq!(

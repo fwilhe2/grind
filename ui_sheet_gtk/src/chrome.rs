@@ -340,8 +340,7 @@ pub fn formula_bar(grid: &Grid, app: &Arc<App>, friendly: bool) -> Rc<FormulaBar
                 chip.set_visible(false);
                 return;
             }
-            let (app, chip, grid, pending2) =
-                (app.clone(), chip.clone(), grid.clone(), pending.clone());
+            let (app, chip, grid, pending2) = (app.clone(), chip, grid, pending.clone());
             pending.set(Some(glib::timeout_add_local_once(
                 std::time::Duration::from_millis(150),
                 move || {

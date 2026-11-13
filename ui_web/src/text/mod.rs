@@ -600,14 +600,7 @@ impl Ui {
             misspelt: &misspelt,
             flagged: &flagged,
         };
-        for piece in runs::cut_marked(
-            line.clone(),
-            &block.runs,
-            within,
-            caret,
-            &anchors_here,
-            &marks,
-        ) {
+        for piece in runs::cut_marked(line, &block.runs, within, caret, &anchors_here, &marks) {
             if anchors_here.contains(&piece.range.start) {
                 let tick = self.dom.document.create_element("span")?;
                 tick.set_class_name("mark-tick");
@@ -869,11 +862,7 @@ impl Ui {
             .filter(|heading| heading.text.to_lowercase().contains(&lower))
             .take(6)
             .map(|heading| {
-                Entry::target(
-                    format!("goto:{}", heading.index),
-                    heading.text.clone(),
-                    "Outline",
-                )
+                Entry::target(format!("goto:{}", heading.index), heading.text, "Outline")
             })
             .collect();
         for (name, index) in self.app.bookmarks() {

@@ -223,7 +223,7 @@ mod tests {
         let georgia = Facts {
             family: "Georgia".into(),
             bold: true,
-            ..before.clone()
+            ..before
         };
         assert_eq!(
             font_changes(&before, &georgia),

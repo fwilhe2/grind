@@ -814,10 +814,7 @@ fn excels_maxifs_and_minifs_take_the_extreme_of_what_matched() {
     mixed_is("=COM.MICROSOFT.MAXIFS([.C1:.D8];[.A1:.B8];\"x\")", n(8.0));
     // A matched error is the answer, one that did not match is skipped.
     let div = Value::Error(FormulaError::DivZero);
-    mixed_is(
-        "=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"x\")",
-        div.clone(),
-    );
+    mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"x\")", div);
     mixed_is("=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"y\")", n(100.0));
     mixed_is(
         "=COM.MICROSOFT.MAXIFS([.B1:.B8];[.A1:.A8];\"x\";[.C1:.C8];\"<>8\")",

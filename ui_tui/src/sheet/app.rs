@@ -3776,7 +3776,7 @@ mod tests {
         let mut app = App::new(
             Arc::new(CoreApp::new()),
             Arc::new(RedrawFlag::default()),
-            Some(file.clone()),
+            Some(file),
         );
         type_str(&mut app, "i7");
         press(&mut app, KeyCode::Enter);

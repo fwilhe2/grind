@@ -2287,7 +2287,7 @@ mod imp {
             // all its content, and `replace` ends by placing the caret, which collapses that
             // selection.
             self.editor.grab_focus();
-            let placed = self.replace(span.clone(), &text);
+            let placed = self.replace(span, &text);
             self.pending.replace(Some(Pending {
                 span: placed,
                 anchor: selection.anchor,
@@ -3059,10 +3059,10 @@ mod imp {
                         if s.point_colors.len() <= p {
                             s.point_colors.resize(p + 1, None);
                         }
-                        s.point_colors[p] = picked.clone();
+                        s.point_colors[p] = picked;
                     }
                     None => {
-                        s.color = picked.clone();
+                        s.color = picked;
                         if let Some(p) = point
                             && let Some(own) = s.point_colors.get_mut(p)
                         {

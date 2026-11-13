@@ -354,7 +354,7 @@ mod tests {
         assert!(
             projection.text()[cell.clone()].starts_with("leaf A1"),
             "{:?}",
-            &projection.text()[cell.clone()]
+            &projection.text()[cell]
         );
         assert!(
             block.start < cell.start && block.end >= cell.end,

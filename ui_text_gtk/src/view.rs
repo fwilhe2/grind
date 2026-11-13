@@ -2138,9 +2138,8 @@ mod tests {
         );
 
         let went = Rc::new(std::cell::RefCell::new(String::new()));
-        let dialog = crate::lint::dialog(&app, {
-            let went = went.clone();
-            move |address: &str| went.borrow_mut().push_str(address)
+        let dialog = crate::lint::dialog(&app, move |address: &str| {
+            went.borrow_mut().push_str(address)
         });
         assert_eq!(dialog.title().as_str(), "Check Document");
         assert!(dialog.child().is_some(), "it has content to show");
