@@ -435,7 +435,7 @@ fn our_import_agrees_with_euro_office() {
     oracle::run(&EURO_OFFICE, FLOOR);
 }
 
-/// GRIND_LOOP_D_CORPUS=~/samples scripts/euro-office-tests.sh outside -- --nocapture
+/// `GRIND_LOOP_D_CORPUS`=~/samples scripts/euro-office-tests.sh outside -- --nocapture
 #[test]
 fn outside_corpus_against_euro_office() {
     oracle::run_outside(&EURO_OFFICE);

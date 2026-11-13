@@ -185,7 +185,7 @@ fn parse_clock(s: &str) -> Option<f64> {
     Some((h * 3600.0 + m * 60.0 + sec) / DAY)
 }
 
-/// `office:date-value` text for a serial number. A fractional serial is a DateTime (§4.3.4) and
+/// `office:date-value` text for a serial number. A fractional serial is a `DateTime` (§4.3.4) and
 /// takes the combined spelling, as LibreOffice's files do.
 #[must_use]
 pub fn format_date(serial: f64, null_date: i64) -> String {

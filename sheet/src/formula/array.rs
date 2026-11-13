@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! ForceArray (§6.3.4): one parameter's expression evaluated in array mode, for a function such as
+//! `ForceArray` (§6.3.4): one parameter's expression evaluated in array mode, for a function such as
 //! `SUMPRODUCT`.
 //!
 //! Not array formulas, which `doc/not-doing.md` keeps out: the function reduces the [`Matrix`] to

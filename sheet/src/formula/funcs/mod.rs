@@ -373,7 +373,7 @@ impl Args<'_, '_> {
         self.engine.null_year()
     }
 
-    /// §6.3.15 DateParam and §6.3.16 TimeParam, both a serial number (a DateTime "is a Date plus
+    /// §6.3.15 `DateParam` and §6.3.16 `TimeParam`, both a serial number (a `DateTime` "is a Date plus
     /// Time", §4.3.4). Text goes to the ISO parsers, then to §6.3.5's number conversion, so
     /// `YEAR("2")` agrees with `YEAR(2)`.
     pub fn serial(&mut self, i: usize) -> Result<f64, FormulaError> {
@@ -395,7 +395,7 @@ impl Args<'_, '_> {
         self.value(i).to_logical()
     }
 
-    /// §6.3.8 Conversion to NumberSequenceList: every argument flattened into one list of
+    /// §6.3.8 Conversion to `NumberSequenceList`: every argument flattened into one list of
     /// numbers, references filtered and scalars converted.
     pub fn numbers(&mut self) -> Result<Vec<f64>, FormulaError> {
         self.numbers_range(0..self.args.len())
@@ -442,7 +442,7 @@ impl Args<'_, '_> {
         }
     }
 
-    /// The `i`th argument evaluated in array mode — a ForceArray parameter (§6.3.4,
+    /// The `i`th argument evaluated in array mode — a `ForceArray` parameter (§6.3.4,
     /// `array.rs`).
     pub fn array(&mut self, i: usize) -> super::array::Matrix {
         match self.args.get(i) {
@@ -479,7 +479,7 @@ impl Args<'_, '_> {
         matches!(self.args.get(i), None | Some(Expr::Empty))
     }
 
-    /// §6.3.13 Conversion to LogicalSequence, over every argument. Numbers are included, as in
+    /// §6.3.13 Conversion to `LogicalSequence`, over every argument. Numbers are included, as in
     /// LibreOffice: `AND([.A1:.A3])` over 1s and 0s is TRUE there, and the oracle wins.
     pub fn logicals(&mut self) -> Result<Vec<bool>, FormulaError> {
         let mut out = Vec::new();

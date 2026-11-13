@@ -1871,7 +1871,7 @@ impl Ui {
 
     /// A typed character, read as markdown-shaped notation as it lands (`grind_text::markdown`):
     /// `**bold**` becomes bold and its markers go, `` `code` `` monospace, `# ` makes a heading,
-    /// ``` fences a code paragraph. One `App::type_markdown` action, so one Ctrl+Z takes back
+    /// three backticks fence a code paragraph. One `App::type_markdown` action, so one Ctrl+Z takes back
     /// `**bold**`. Pasting does not go through it ([`Ui::paste_text`]): clipboard text is text.
     fn type_text(&self, text: &str) {
         // A document with no blocks at all has nowhere to put a character, and the first

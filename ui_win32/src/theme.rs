@@ -182,7 +182,7 @@ pub struct Theme {
     /// an inversion.
     pub background: Rgb,
     /// A control's ground at rest: the name box, the formula bar, a strip button. Fluent's
-    /// *ControlFillColorDefault*, composited onto the backdrop.
+    /// *`ControlFillColorDefault`*, composited onto the backdrop.
     pub card: Rgb,
     /// The same control hovered, and pressed — Fluent's *Secondary* and *Tertiary* fills. In
     /// light, pressed is quieter than hover on purpose: pressing recedes, hovering lifts.
@@ -193,10 +193,10 @@ pub struct Theme {
     pub subtle_hover: Rgb,
     pub subtle_pressed: Rgb,
 
-    /// A control's own outline — Fluent's *ControlStrokeColorDefault*.
+    /// A control's own outline — Fluent's *`ControlStrokeColorDefault`*.
     pub stroke: Rgb,
     /// The hairline between two bands of chrome, and the line closing the header band.
-    /// Fluent's *DividerStrokeColorDefault*: quieter than [`Theme::stroke`], because a divider
+    /// Fluent's *`DividerStrokeColorDefault`*: quieter than [`Theme::stroke`], because a divider
     /// separates and an outline contains.
     pub divider: Rgb,
     /// The hairlines between cells.
@@ -207,7 +207,7 @@ pub struct Theme {
     /// falls.
     pub grid_line_soft: Rgb,
 
-    /// Text in a cell, or in a document, that has no colour of its own — Fluent's *TextFillColor
+    /// Text in a cell, or in a document, that has no colour of its own — Fluent's *`TextFillColor`
     /// Primary*.
     pub text: Rgb,
     /// A label rather than a value: a header button's letter, the status bar, a picker's caption.
@@ -235,7 +235,7 @@ pub struct Theme {
     pub selection: Rgb,
 
     /// The notice bar — a document that needs recalculating, a recalculation that was skipped, a
-    /// save that failed. Fluent's *InfoBar*, severity caution: not an accent and not an error
+    /// save that failed. Fluent's *`InfoBar`*, severity caution: not an accent and not an error
     /// red, because a banner that shouts is one people learn to ignore.
     pub banner: Rgb,
     pub banner_text: Rgb,
@@ -256,7 +256,7 @@ pub struct Theme {
     pub focus_inner: Rgb,
 
     /// A misspelt word's squiggle in the text pane (`doc/spelling.md`) — Fluent's
-    /// *SystemFillColorCritical*, the one place this shell paints an error red, since a word
+    /// *`SystemFillColorCritical`*, the one place this shell paints an error red, since a word
     /// marked wrong is exactly the error that colour says.
     pub misspelt: Rgb,
 }

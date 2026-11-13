@@ -11,7 +11,7 @@
 //! It needs only the corpus, so on a machine with no LibreOffice checkout it is silent;
 //! `ooxmlgen.rs`'s vendored workbooks are the half that never is.
 //!
-//! GRIND_LO_CORPUS=/path/to/libreoffice/core cargo test -p grind-xlsx
+//! `GRIND_LO_CORPUS=/path/to/libreoffice/core` cargo test -p grind-xlsx
 //!
 //! CI's `corpus` job already sparse-checks out `sc/qa/unit/data`, which holds `xlsx/`.
 

@@ -880,7 +880,7 @@ impl App {
 
     /// Type text at a caret, reading the markdown-shaped notation as each character lands
     /// ([`crate::markdown`]): `**bold**` becomes bold and its markers go, `` `code` `` becomes
-    /// monospace, `# ` makes a heading, ``` fences a code block. Opt-in: [`App::insert_text`]
+    /// monospace, `# ` makes a heading, three backticks fence a code block. Opt-in: [`App::insert_text`]
     /// keeps asterisks as asterisks. One action, so one undo takes back the whole of `**bold**`.
     ///
     /// `resume` ends the notation where its marker does: after a closing marker the next character

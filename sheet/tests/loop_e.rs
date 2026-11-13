@@ -56,7 +56,7 @@ const FIRST_ROW: u32 = 11;
 
 // --- randomness -------------------------------------------------------------------------
 
-/// SplitMix64. Twenty lines for what a dependency would do, and the reason a disagreement
+/// `SplitMix64`. Twenty lines for what a dependency would do, and the reason a disagreement
 /// replays exactly from `GRIND_FUZZ_SEED`.
 struct Rng(u64);
 

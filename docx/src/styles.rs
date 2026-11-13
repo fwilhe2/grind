@@ -69,7 +69,7 @@ pub struct Styles {
     pub default_paragraph: Option<String>,
     /// The table style a table naming none is built from.
     pub default_table: Option<String>,
-    /// Each style's ODF name, by id — unique, and an XML NCName.
+    /// Each style's ODF name, by id — unique, and an XML `NCName`.
     pub odf_names: HashMap<String, String>,
 }
 
@@ -180,7 +180,7 @@ pub fn display_name(style: &Style) -> String {
     }
 }
 
-/// An ODF style name for a display name: an NCName, with every character that may not be in one
+/// An ODF style name for a display name: an `NCName`, with every character that may not be in one
 /// written as `_xx_` in hex — the spelling LibreOffice uses (`Heading 1` → `Heading_20_1`), so a
 /// style imported here and one LibreOffice wrote have the same name.
 #[must_use]

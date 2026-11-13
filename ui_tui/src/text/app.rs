@@ -3711,7 +3711,7 @@ mod tests {
         }
     }
 
-    /// Backticks, both halves: `` `code` `` is a monospace run, and ``` is a code *block* —
+    /// Backticks, both halves: `` `code` `` is a monospace run, and three backticks are a code *block* —
     /// a named paragraph style, which is what ODF has for one.
     #[test]
     fn backticks_make_code_inline_and_a_fence_makes_a_block() {

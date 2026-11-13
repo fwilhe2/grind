@@ -63,7 +63,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     })
 }
 
-/// A whole NumberSequence in, one number out — `SUM` and `PRODUCT` (§6.16.61, §6.16.47).
+/// A whole `NumberSequence` in, one number out — `SUM` and `PRODUCT` (§6.16.61, §6.16.47).
 fn sequence(args: &mut Args, f: impl Fn(&[f64]) -> f64) -> Answer {
     Ok(Value::number(f(&args.numbers()?)))
 }

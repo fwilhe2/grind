@@ -6,7 +6,7 @@
 //! means, and how the keyboard walks along it.
 //!
 //! Decision 13: **drawn by this shell, in the non-client band where Windows' own bar would be**,
-//! on the window's ground in Fluent's *MenuBar* proportions. The system's bar is a `COLOR_MENUBAR`
+//! on the window's ground in Fluent's *`MenuBar`* proportions. The system's bar is a `COLOR_MENUBAR`
 //! strip that ignores the dark theme and draws a hairline no palette chose, with no documented way
 //! to change either. The *popups* are still Windows' own (`TrackPopupMenuEx` over the `HMENU`s
 //! `build_menu` makes), so every item, accelerator label, check and mnemonic is the system's.
@@ -15,9 +15,9 @@
 
 use crate::sheet::geom::{Rect, scale};
 
-/// Fluent's *MenuBar* at 100%: the band, an item inside it, and an item's text inset.
+/// Fluent's *`MenuBar`* at 100%: the band, an item inside it, and an item's text inset.
 pub mod size {
-    /// The band's height — Fluent's compact *MenuBar*, which leaves the window's chrome a row
+    /// The band's height — Fluent's compact *`MenuBar`*, which leaves the window's chrome a row
     /// shorter than the standard 40 without the titles feeling cramped.
     pub const BAND: f64 = 36.0;
     /// An item's height, centred on the band.

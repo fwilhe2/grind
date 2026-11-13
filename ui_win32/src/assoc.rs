@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! File associations: **offered, never taken** (`doc/windows-shell.md`, "File associations"). Per
-//! extension, a ProgID of ours goes under `.ext\OpenWithProgids` — Explorer's *Open with* and the
+//! extension, a `ProgID` of ours goes under `.ext\OpenWithProgids` — Explorer's *Open with* and the
 //! "How do you want to open this file?" chooser — and the set is published as `Capabilities` under
 //! `RegisteredApplications`, which lists Grind in Settings > Apps > Default apps. **The
 //! extension's own default value is never written**, nor anything under `UserChoice`: whatever
@@ -16,7 +16,7 @@
 //! copied anywhere and an association naming its old place is a failing double-click.
 //! `--unregister` removes exactly what this file writes, which is why the list is data.
 //!
-//! The portable half — types, ProgIDs, every value and where it goes — is tested on Linux; the
+//! The portable half — types, `ProgIDs`, every value and where it goes — is tested on Linux; the
 //! `cfg(windows)` block at the bottom only walks the lists.
 
 /// One type this shell opens, and how.
@@ -259,7 +259,7 @@ pub fn needed(registered: &[Option<String>], exe: &str) -> bool {
     registered.len() != TYPES.len() || registered.iter().any(|r| r.as_deref() != Some(&open))
 }
 
-/// The keys [`needed`] reads: every ProgID's open command, one per type.
+/// The keys [`needed`] reads: every `ProgID`'s open command, one per type.
 pub fn witnesses() -> Vec<String> {
     TYPES
         .iter()

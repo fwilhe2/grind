@@ -11,7 +11,7 @@
 //!
 //! * **In:** a block quote is its paragraphs; an ordered list becomes a bulleted one; a rule and
 //!   raw HTML are dropped; a soft break is a space. A fenced block is a run of [`PREFORMATTED`]
-//!   paragraphs, one per line, as typing ``` makes. A picture comes in when its bytes can be had
+//!   paragraphs, one per line, as typing three backticks makes. A picture comes in when its bytes can be had
 //!   (a `data:` URI, or what the caller's [`Resolve`] finds) and is its alt text otherwise.
 //! * **Out:** underline, colour, highlight, size, bookmarks, picture sizes and table spans are
 //!   dropped; a list item is always `- `, and a table's first row is its header.

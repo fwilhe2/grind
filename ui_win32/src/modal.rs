@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a modal goes and what is inside it — Fluent's *ContentDialog*, measured, and **fitted to
+//! Where a modal goes and what is inside it — Fluent's *`ContentDialog`*, measured, and **fitted to
 //! the screen it opens on**. Every modal is one shape (decision 12): no caption of its own, a
 //! title in the type ramp's *Subtitle*, a body, and a **footer** of a quieter ground holding the
 //! buttons — numbers here so they test without a window.
@@ -14,7 +14,7 @@
 
 use crate::sheet::geom::{Rect, scale};
 
-/// ContentDialog's measurements at 100%, in Fluent's own words where it has them.
+/// `ContentDialog`'s measurements at 100%, in Fluent's own words where it has them.
 pub mod size {
     /// `ContentDialogPadding` — round the content, and round the buttons inside the footer.
     pub const PAD: f64 = 24.0;
@@ -179,7 +179,7 @@ pub enum End {
 ///
 /// Two rules, chosen by what is in the footer:
 ///
-/// - **Only answers**: ContentDialog's own, the buttons share the footer in equal columns — and at
+/// - **Only answers**: `ContentDialog`'s own, the buttons share the footer in equal columns — and at
 ///   least two columns, so that a lone *Close* takes the trailing half rather than the whole width.
 /// - **Anything at the leading end too**: each button as wide as its text (an answer no narrower
 ///   than [`size::BUTTON_MIN`]), the leading ones from the left, the answers from the right.

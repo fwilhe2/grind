@@ -3,6 +3,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //! The command line as clap parses it: every subcommand, its arguments and their values. Every
 //! `///` here is `--help` text, written for the person running the command.
+#![allow(
+    clippy::doc_markdown,
+    reason = "these doc comments are printed by --help, where a backtick is a character"
+)]
 
 use super::*;
 

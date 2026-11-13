@@ -416,7 +416,7 @@ const ID_LIST: usize = 12;
 /// What a button in the footer is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Role {
-    /// The answer Enter gives, drawn in the accent — ContentDialog's *primary* button. One per
+    /// The answer Enter gives, drawn in the accent — `ContentDialog`'s *primary* button. One per
     /// modal, **always the safe one** where an answer destroys something, or pressing Enter twice
     /// deletes.
     Default,
@@ -663,7 +663,7 @@ fn rect_of(rect: Rect) -> RECT {
     }
 }
 
-/// The smoke over the owner while a modal is up — Fluent's *SmokeFillColorDefault*, black at
+/// The smoke over the owner while a modal is up — Fluent's *`SmokeFillColorDefault`*, black at
 /// 30%, which is what says "the window behind this is waiting" more plainly than a disabled
 /// window does on its own. Destroyed when the guard is, so no path out of a modal leaves it.
 struct Smoke(HWND);
@@ -1874,7 +1874,7 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
     }
 }
 
-/// Fluent's TextBox round a field: a control's ground and stroke, a stronger line along the
+/// Fluent's `TextBox` round a field: a control's ground and stroke, a stronger line along the
 /// bottom, and that line in the accent, two pixels thick, while it has the keyboard.
 fn text_box(modal: &Modal, out: HDC, well: RECT, focused: bool) {
     let theme = modal.theme;
@@ -2010,7 +2010,7 @@ fn focus_ring(dc: HDC, rect: RECT, radius: i32, theme: Theme) {
     outline(2, theme.focus_inner);
 }
 
-/// A list row: Fluent's ListView item — a rounded subtle fill under the pointer and under the
+/// A list row: Fluent's `ListView` item — a rounded subtle fill under the pointer and under the
 /// selection, a short accent pill at the leading edge of the selected one, and for a list of
 /// choices a check box instead of the pill. A row with a tab in it is two columns, the second in
 /// the secondary ink and against the trailing edge — the shortcut list's key, say.
@@ -2395,7 +2395,7 @@ pub fn confirm(owner: HWND, title: &str, text: &str, verb: &str) -> bool {
 }
 
 /// Ask for one line of text; `None` when cancelled or empty. `title` heads the dialog and `label`
-/// sits over the field (Fluent's TextBox *header*).
+/// sits over the field (Fluent's `TextBox` *header*).
 pub fn prompt(owner: HWND, title: &str, label: &str, initial: &str) -> Option<String> {
     run(
         Spec {

@@ -711,7 +711,7 @@ fn trailing_currency(number: Part, symbol: &str) -> Vec<Part> {
     ]
 }
 
-/// The ISO date-and-time format: [`preset`]'s `Date` with a clock after it. A DateTime is a Date
+/// The ISO date-and-time format: [`preset`]'s `Date` with a clock after it. A `DateTime` is a Date
 /// whose value carries a fraction (§4.3.4), so the style differs and the kind does not.
 #[must_use]
 pub fn datetime_preset() -> Format {

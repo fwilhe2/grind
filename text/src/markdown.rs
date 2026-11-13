@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(typing("` `"), None, "empty");
     }
 
-    /// A fence is the whole block and nothing else, so ``` mid-sentence is three backticks.
+    /// A fence is the whole block and nothing else, so three backticks mid-sentence stay three characters.
     #[test]
     fn three_backticks_alone_are_a_fence() {
         assert!(is_fence("```", 3));

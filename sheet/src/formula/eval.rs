@@ -386,7 +386,7 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// §6.3.7 Conversion to NumberSequence over a whole area — the referenced-cells case,
+    /// §6.3.7 Conversion to `NumberSequence` over a whole area — the referenced-cells case,
     /// where text and empty cells are skipped rather than converted.
     pub fn numbers_in(&mut self, area: &Area, out: &mut Vec<f64>) -> Result<(), FormulaError> {
         for cell in area.cells().collect::<Vec<_>>() {

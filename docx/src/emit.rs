@@ -1808,7 +1808,7 @@ fn flatten_tables(blocks: &[Block]) -> Vec<Block> {
     out
 }
 
-/// A comment's range name: the id, made an NCName.
+/// A comment's range name: the id, made an `NCName`.
 fn comment_name(id: &str) -> String {
     format!(
         "comment{}",

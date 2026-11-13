@@ -35,7 +35,7 @@
 //!
 //! The comparison and the runs are `oracle/mod.rs`'s, shared with `loop_d_euro_office.rs`.
 //!
-//! cargo test -p grind-xlsx --test loop_d -- --nocapture
+//! cargo test -p grind-xlsx --test `loop_d` -- --nocapture
 
 mod oracle;
 
@@ -445,7 +445,7 @@ fn our_import_agrees_with_the_oracles() {
     oracle::run(&LIBREOFFICE, FLOOR);
 }
 
-/// GRIND_LOOP_D_CORPUS=~/samples cargo test -p grind-xlsx --release --test loop_d outside -- --nocapture
+/// `GRIND_LOOP_D_CORPUS`=~/samples cargo test -p grind-xlsx --release --test `loop_d` outside -- --nocapture
 #[test]
 fn outside_corpus_against_the_oracle() {
     oracle::run_outside(&LIBREOFFICE);

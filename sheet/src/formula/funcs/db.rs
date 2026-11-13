@@ -154,7 +154,8 @@ fn aggregate(op: Op, numbers: &[f64]) -> Answer {
     }))
 }
 
-/// Does record `row` satisfy the criteria? Rows are ORed, cells within a row ANDed.
+/// Does record `row` satisfy the criteria? Any row of them may match, and every cell of that
+/// row must.
 fn selects(
     args: &mut Args,
     db: &Area,

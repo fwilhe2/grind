@@ -190,9 +190,9 @@ fn iso_week(day: f64, null_date: i64) -> i64 {
     ((thursday - date::serial(year, 1, 1, null_date)) / 7.0).floor() as i64 + 1
 }
 
-/// The `Holidays` parameter of §6.10.15 and §6.10.23: a DateSequence, each date's time
+/// The `Holidays` parameter of §6.10.15 and §6.10.23: a `DateSequence`, each date's time
 /// dropped. Text and empty cells inside a range are nothing, as in any sequence; a text
-/// *argument* is a date, as any DateParam is.
+/// *argument* is a date, as any `DateParam` is.
 fn holidays(args: &mut Args, i: usize) -> Result<BTreeSet<i64>, FormulaError> {
     if i >= args.len() || args.omitted(i) {
         return Ok(BTreeSet::new());

@@ -141,7 +141,7 @@ pub struct Style(CellStyle);
 #[derive(Clone)]
 pub struct Fmt {
     kind: Option<numfmt::Kind>,
-    /// `datetime` is not a [`numfmt::Kind`] — §4.3.4's DateTime is a Date whose value carries
+    /// `datetime` is not a [`numfmt::Kind`] — §4.3.4's `DateTime` is a Date whose value carries
     /// a fraction — so it is its own flag, as it is in the CLI.
     datetime: bool,
     decimals: u8,

@@ -2080,7 +2080,7 @@ fn database_ranges(out: &mut String, doc: &Document) {
 /// trip; ISO reads the same in every locale (§3.4 Note 2).
 static DATE_DEFAULT: LazyLock<Format> = LazyLock::new(|| numfmt::preset(Kind::Date, 0, false, ""));
 
-/// A date that carries a time is a DateTime (§4.3.4) and needs a style that shows both,
+/// A date that carries a time is a `DateTime` (§4.3.4) and needs a style that shows both,
 /// since a format cannot look at the value it is given.
 static DATETIME_DEFAULT: LazyLock<Format> = LazyLock::new(numfmt::datetime_preset);
 

@@ -317,7 +317,7 @@ mod mac {
     }
 
     /// The modifiers a real keyboard would have set: the stroke's own, and for a key from
-    /// AppKit's function-key range (U+F700–U+F8FF) the Function flag — with NumericPad as well
+    /// AppKit's function-key range (U+F700–U+F8FF) the Function flag — with `NumericPad` as well
     /// for the four arrows, which is what the hardware sends for them.
     fn flags(stroke: &Stroke) -> NSEventModifierFlags {
         let mut flags = NSEventModifierFlags::empty();

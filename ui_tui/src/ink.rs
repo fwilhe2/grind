@@ -8,7 +8,7 @@
 //! **on both**:
 //!
 //! - **A colour of the document's own, on no fill**, becomes the named colour of its **hue
-//!   family** that reads on light *and* dark ([`READABLE`]): navy is LightBlue, not black, which
+//!   family** that reads on light *and* dark ([`READABLE`]): navy is `LightBlue`, not black, which
 //!   vanished on every dark theme.
 //! - **A grey, black or white of its own** is the terminal's own ink: it has no hue to keep, and
 //!   black on dark is exactly what cannot be seen.

@@ -149,7 +149,7 @@ fn roman(mut n: u32) -> String {
     out
 }
 
-/// A bullet as drawable: a symbol font's private-use code point (Word's `` from Symbol) is no
+/// A bullet as drawable: a symbol font's private-use code point (Word's U+F0B7 from Symbol) is no
 /// glyph in other faces, so it is drawn as the plain bullet it stands for.
 fn drawable(bullet: &str) -> String {
     match bullet.chars().next() {

@@ -67,7 +67,7 @@ fn series(rate: f64, nper: f64, pay_type: f64) -> f64 {
     (1.0 + rate * pay_type) * growth(rate, nper) / rate
 }
 
-/// The trailing `[ ; Fv = 0 ] [ ; PayType = 0 ]` the five annuity functions share. PayType is a
+/// The trailing `[ ; Fv = 0 ] [ ; PayType = 0 ]` the five annuity functions share. `PayType` is a
 /// flag (§6.12.41), so `PayType = 2` is `1`, not an extra period's interest.
 fn tail(args: &mut Args, first: usize) -> Result<(f64, f64), FormulaError> {
     let fv = if args.omitted(first) {
@@ -416,7 +416,7 @@ mod tests {
     use crate::model::{CellValue, Document, Pos, Sheet};
 
     /// A1:A3 is a cash flow — an investment of 100 and two years of 60 — because `IRR` takes
-    /// a NumberSequence, so a second scalar argument would be its `Guess` and not a flow.
+    /// a `NumberSequence`, so a second scalar argument would be its `Guess` and not a flow.
     fn eval(formula: &str) -> Value {
         let mut sheet = Sheet::new("Sheet1");
         for (row, value) in [-100.0, 60.0, 60.0].into_iter().enumerate() {

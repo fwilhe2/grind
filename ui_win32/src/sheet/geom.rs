@@ -474,7 +474,7 @@ impl GridGeom {
         self.first_col = step(&self.cols, self.first_col, delta, self.max_first_col());
     }
 
-    /// How many rows a PageDown moves — the body's worth, and never fewer than one, so that a
+    /// How many rows a `PageDown` moves — the body's worth, and never fewer than one, so that a
     /// window shorter than a single row still goes somewhere.
     pub fn page_rows(&self) -> i64 {
         let body = self.body();

@@ -1619,7 +1619,7 @@ mod imp {
 
         /// A typed character, read as markdown-shaped notation as it lands
         /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `# ` makes a
-        /// heading, ``` fences a code paragraph. One `App::type_markdown` action, so one Ctrl+Z
+        /// heading, three backticks fence a code paragraph. One `App::type_markdown` action, so one Ctrl+Z
         /// takes back the whole of `**bold**`.
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };

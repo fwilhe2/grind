@@ -79,7 +79,7 @@ fn parameter(part: &str) -> Option<(String, String)> {
 }
 
 /// Whether the `index`th argument of a call to `name` is one value rather than a range — which
-/// decides whether an array handed to a ForceArray parameter is iterated over (§3.3 2.2) or taken
+/// decides whether an array handed to a `ForceArray` parameter is iterated over (§3.3 2.2) or taken
 /// whole. One value when every alternative type is: `Number`, `Text|Number`, `Any`; not
 /// `NumberSequence`, `Reference|Array` or `Criteria`.
 #[must_use]

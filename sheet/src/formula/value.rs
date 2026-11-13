@@ -185,7 +185,7 @@ impl From<FormulaError> for Value {
     }
 }
 
-/// §6.3.7 Conversion to NumberSequence, the reference case — `SUM(A1:C9)`. Text (even numeric
+/// §6.3.7 Conversion to `NumberSequence`, the reference case — `SUM(A1:C9)`. Text (even numeric
 /// text), empty cells and logicals are skipped, which is why `SUM(A1:A3)` and `SUM(A1;A2;A3)`
 /// differ when a cell holds `"7"`: a scalar argument goes through [`Value::to_number`]. The first
 /// error stops the sequence, which is observably the spec's propagation (§4.6).

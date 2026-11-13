@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! §6.18 Statistical Functions — the Small Group's eight (`AVERAGEIF` is in `criterion.rs`), and
-//! `LARGE`, `SMALL`, `MEDIAN` and `RANK` from beyond it. All take a NumberSequence, so text and
+//! `LARGE`, `SMALL`, `MEDIAN` and `RANK` from beyond it. All take a `NumberSequence`, so text and
 //! empty cells in a range are skipped, not counted as zero.
 
 use super::super::value::{FormulaError, Value};

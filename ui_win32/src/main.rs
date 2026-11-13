@@ -316,7 +316,7 @@ mod tests {
     /// A text test for a binary fact observable only on `windows-latest`: `VS_VERSION_INFO` is a
     /// `#define` in `winver.h`, `grind.rc` includes no headers, and an undefined identifier in a
     /// resource's name position is a **string name** to `rc.exe`, not an error. So the resource
-    /// linked as `RT_VERSION`/"VS_VERSION_INFO", while `GetFileVersionInfo`, Explorer and
+    /// linked as `RT_VERSION`/"`VS_VERSION_INFO`", while `GetFileVersionInfo`, Explorer and
     /// `win32.yml` ask for `RT_VERSION`/1 and found nothing. Measured by compiling both spellings
     /// and reading the linked PE's resource directory.
     #[test]

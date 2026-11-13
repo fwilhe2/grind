@@ -1247,7 +1247,7 @@ pub fn shortcuts() -> Vec<String> {
 }
 
 /// Which verb a keystroke asks for, if any — consulted **before** the navigation keymap, so Ctrl+S
-/// is Save though `S` can be typed into a cell, and Ctrl+PageDown is "next sheet" though PageDown
+/// is Save though `S` can be typed into a cell, and Ctrl+PageDown is "next sheet" though `PageDown`
 /// is a motion. Silent about Delete: clearing is a verb, but the key means it only in Ready mode,
 /// which is `sheet/state.rs`'s to decide.
 pub fn accelerator(key: Key, mods: Mods) -> Option<Command> {
