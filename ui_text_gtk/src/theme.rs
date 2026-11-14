@@ -43,6 +43,8 @@ pub struct Palette {
     /// A grammar or punctuation finding's wavy underline — the theme's accent, blue by default,
     /// so it is never mistaken for spelling's red (`doc/grammar.md` decision 2).
     pub grammar: gdk::RGBA,
+    /// Every find hit in view, quieter than the selection the current one is.
+    pub found: gdk::RGBA,
 }
 
 impl Palette {
@@ -68,6 +70,7 @@ impl Palette {
             selection: with_alpha(accent, 0.35),
             misspelt: named(widget, "error_color").unwrap_or(gdk::RGBA::new(0.88, 0.11, 0.14, 1.0)),
             grammar: accent,
+            found: with_alpha(accent, 0.15),
         }
     }
 }

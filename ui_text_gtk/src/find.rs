@@ -144,6 +144,7 @@ impl Find {
             if !bar.is_search_mode()
                 && let Some(find) = weak.upgrade()
             {
+                find.doc.set_found(None);
                 find.doc.grab_focus();
             }
         });
@@ -216,6 +217,7 @@ impl Find {
     fn go(&self, towards: Towards) {
         let needle = self.entry.text().to_string();
         self.entry.remove_css_class("error");
+        self.doc.set_found(Some(&needle));
         if needle.is_empty() {
             self.count.set_text("");
             return;

@@ -59,6 +59,7 @@ impl Doc {
     /// observer, so it covers this widget's own edits too (rule 3).
     pub fn invalidate(&self) {
         self.imp().session.changed();
+        self.imp().refind();
         self.imp().clamp_caret();
         // The observer runs *after* the edit's own caret move, which followed the caret
         // through the layout as it was before the edit — so Enter on the last line left the
@@ -283,6 +284,16 @@ impl Doc {
         if let Some(sheet) = shown.strip.sheet(page) {
             adjustment.set_value(sheet.y - crate::strip::PAD);
         }
+    }
+
+    /// Mark every occurrence of `needle`, ignoring case, as the find bar finds them — or, with
+    /// `None`, none. Kept up to date as the document changes.
+    pub fn set_found(&self, needle: Option<&str>) {
+        let imp = self.imp();
+        imp.needle
+            .replace(needle.filter(|n| !n.is_empty()).map(str::to_owned));
+        imp.refind();
+        self.queue_draw();
     }
 
     /// Told the zoom whenever it changes — the status bar's readout.
@@ -515,6 +526,9 @@ mod imp {
         pub grammar_ignored: RefCell<Vec<String>>,
         /// What the input method is composing and has not committed, with its own attributes.
         pub preedit: RefCell<Option<(String, gtk::pango::AttrList)>>,
+        /// What the find bar looks for, and where it is, in document order.
+        pub needle: RefCell<Option<String>>,
+        pub found: RefCell<Vec<(Caret, Caret)>>,
     }
 
     // Spelled out rather than derived: neither `Caret` nor `ScrollablePolicy` has a
@@ -558,6 +572,8 @@ mod imp {
                 grammar_spot: RefCell::new(None),
                 grammar_ignored: RefCell::new(Vec::new()),
                 preedit: RefCell::new(None),
+                needle: RefCell::new(None),
+                found: RefCell::new(Vec::new()),
             }
         }
     }
@@ -1095,14 +1111,24 @@ mod imp {
                         ))
                     })
             };
+            let Some(blocks) = blocks_on(set, pages.clone()) else {
+                return;
+            };
+            let found = self.found.borrow();
+            let first = found.partition_point(|(from, _)| from.block < blocks.start);
+            for &(from, to) in found[first..]
+                .iter()
+                .take_while(|(from, _)| from.block < blocks.end)
+            {
+                for (x, y, w, h) in bands(from, to) {
+                    snapshot.append_color(&palette.found, &rect(x, y, w, h));
+                }
+            }
             if let Some((from, to)) = selection {
                 for (x, y, w, h) in bands(from, to) {
                     snapshot.append_color(&palette.selection, &rect(x, y, w, h));
                 }
             }
-            let Some(blocks) = blocks_on(set, pages.clone()) else {
-                return;
-            };
             let at = |block: usize, offset: usize| Caret { block, offset };
 
             // The word still being typed is not underlined: the caret at its end with nothing
@@ -1848,6 +1874,18 @@ mod imp {
             for hook in self.on_moved.borrow().iter() {
                 hook(caret);
             }
+        }
+
+        /// Find the needle again, in the document as it is now.
+        pub fn refind(&self) {
+            let found = match (self.needle.borrow().as_deref(), self.app()) {
+                (Some(needle), Some(app)) => grind_text::find::hits(&app, needle)
+                    .into_iter()
+                    .map(|from| (from, grind_text::find::end_of(from, needle)))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            self.found.replace(found);
         }
 
         /// Show the caret and start it blinking again, as the desktop's settings say: a full
@@ -2689,6 +2727,19 @@ mod tests {
         find.next();
         find.next();
         assert_eq!(doc.selection(), Some((at(0, 0), at(0, 8))), "wrapped");
+
+        // Every hit is marked, and stays marked as the document changes under it.
+        assert_eq!(doc.imp().found.borrow().len(), 3);
+        app.insert(0, BlockKind::Paragraph, "an appendix first")
+            .unwrap();
+        doc.invalidate();
+        assert_eq!(doc.imp().found.borrow()[0], (at(0, 3), at(0, 11)));
+        assert_eq!(doc.imp().found.borrow().len(), 4);
+        find.bar.set_search_mode(false);
+        assert!(
+            doc.imp().found.borrow().is_empty(),
+            "closing the bar clears them"
+        );
     }
 
     /// Replace All writes exactly what was typed, over every block, and says how many changed.
