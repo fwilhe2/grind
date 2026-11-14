@@ -127,6 +127,31 @@ impl Strip {
     }
 }
 
+/// The zoom levels a step moves between, as fractions of a page's printed size. A pinch or
+/// a fit lands between them, and stays inside the first and the last.
+pub const ZOOMS: [f64; 15] = [
+    0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0,
+];
+
+/// The next level in from `at`, or out — whichever level is past it, so a zoom between two
+/// steps to the nearer one that way.
+pub fn zoom_step(at: f64, inward: bool) -> f64 {
+    let past = if inward {
+        ZOOMS.iter().find(|&&level| level > at + 1e-6)
+    } else {
+        ZOOMS.iter().rev().find(|&&level| level < at - 1e-6)
+    };
+    past.copied()
+        .unwrap_or(at)
+        .clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1])
+}
+
+/// The zoom at which a page `width` points wide, with the desk either side, fills a window
+/// `window` pixels wide, at `scale` pixels per point at 100%.
+pub fn fit_width(width: f64, window: f64, scale: f64) -> f64 {
+    ((window - 2.0 * PAD) / (width * scale).max(1.0)).clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1])
+}
+
 /// Where a scroll must be for a stretch `from..from + length` to be in a view `view` long over
 /// content `content` long, moving as little as possible.
 pub fn follow(scroll: f64, view: f64, content: f64, from: f64, length: f64) -> f64 {
@@ -204,6 +229,37 @@ mod tests {
         // Left of the sheet is a negative x on it: the margin, to whatever asks.
         assert!(strip.on_page(1, sheet.x - 15.0, sheet.y).unwrap().0 < 0.0);
         assert_eq!(strip.on_page(5, 0.0, 0.0), None);
+    }
+
+    #[test]
+    fn a_zoom_steps_to_the_next_level_past_it_and_stops_at_either_end() {
+        assert_eq!(zoom_step(1.0, true), 1.1);
+        assert_eq!(zoom_step(1.0, false), 0.9);
+        assert_eq!(zoom_step(1.03, true), 1.1, "between two, the next one in");
+        assert_eq!(zoom_step(1.03, false), 1.0);
+        assert_eq!(zoom_step(4.0, true), 4.0);
+        assert_eq!(zoom_step(0.25, false), 0.25);
+        assert_eq!(
+            zoom_step(9.0, false),
+            4.0,
+            "outside the range, back into it"
+        );
+    }
+
+    #[test]
+    fn fitting_the_width_leaves_the_desk_either_side() {
+        let zoom = fit_width(595.0, 595.0 + 2.0 * PAD, 1.0);
+        assert!((zoom - 1.0).abs() < 1e-9);
+        assert_eq!(
+            fit_width(595.0, 100.0, 1.0),
+            ZOOMS[0],
+            "never smaller than the least"
+        );
+        assert_eq!(
+            fit_width(595.0, 99_999.0, 1.0),
+            4.0,
+            "nor larger than the most"
+        );
     }
 
     #[test]

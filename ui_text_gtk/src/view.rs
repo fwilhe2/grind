@@ -178,6 +178,83 @@ impl Doc {
         self.imp().caret_rect()
     }
 
+    /// The caret's page and how many there are, counted from one for a reader.
+    pub fn page_of_caret(&self) -> Option<(usize, usize)> {
+        let shown = self.imp().shown()?;
+        let spot = grind_print::place::locate(&shown.set, self.caret())?;
+        Some((spot.page + 1, shown.set.pages.len()))
+    }
+
+    /// How large the pages are drawn: 1.0 is their printed size.
+    pub fn zoom(&self) -> f64 {
+        self.imp().zoom.get()
+    }
+
+    /// Draw the pages at `zoom`, keeping what is under `anchor` (a point in the widget, its
+    /// middle when `None`) where it is. Never written to the document.
+    pub fn set_zoom(&self, zoom: f64, anchor: Option<(f64, f64)>) {
+        let imp = self.imp();
+        let levels = crate::strip::ZOOMS;
+        let zoom = zoom.clamp(levels[0], levels[levels.len() - 1]);
+        let (width, height) = (self.width(), self.height());
+        let (ax, ay) = anchor.unwrap_or((f64::from(width) / 2.0, f64::from(height) / 2.0));
+        let (left, top) = imp.scrolled();
+        let held = imp.shown().and_then(|shown| {
+            let page = shown.strip.page_at(ay + top)?;
+            Some((page, shown.strip.on_page(page, ax + left, ay + top)?))
+        });
+        imp.zoom.set(zoom);
+        imp.size_scrollbars(width, height);
+        if let (Some((page, (x, y))), Some(shown)) = (held, imp.shown())
+            && let Some((x, y)) = shown.strip.in_strip(page, x, y)
+        {
+            if let Some(adjustment) = imp.hadjustment.borrow().as_ref() {
+                adjustment.set_value(x - ax);
+            }
+            if let Some(adjustment) = imp.vadjustment.borrow().as_ref() {
+                adjustment.set_value(y - ay);
+            }
+        }
+        self.queue_draw();
+        for hook in imp.on_zoomed.borrow().iter() {
+            hook(zoom);
+        }
+    }
+
+    /// One zoom level in or out, about the caret when it is in view.
+    pub fn zoom_step(&self, inward: bool) {
+        let anchor = self
+            .imp()
+            .point_of(self.caret())
+            .filter(|&(x, y, _)| {
+                (0.0..f64::from(self.width())).contains(&x)
+                    && (0.0..f64::from(self.height())).contains(&y)
+            })
+            .map(|(x, y, _)| (x, y));
+        self.set_zoom(crate::strip::zoom_step(self.zoom(), inward), anchor);
+    }
+
+    /// The zoom at which the widest page fills the window's width.
+    pub fn fit_width(&self) {
+        let Some(shown) = self.imp().shown() else {
+            return;
+        };
+        let widest = shown
+            .set
+            .pages
+            .iter()
+            .map(|page| f64::from(page.width))
+            .fold(0.0, f64::max);
+        let scale = f64::from(crate::print::pixels_per_point(1.0, 1.0));
+        let zoom = crate::strip::fit_width(widest, f64::from(self.width()), scale);
+        self.set_zoom(zoom, None);
+    }
+
+    /// Told the zoom whenever it changes — the status bar's readout.
+    pub fn connect_zoomed(&self, f: impl Fn(f64) + 'static) {
+        self.imp().on_zoomed.borrow_mut().push(Box::new(f));
+    }
+
     /// Set the caret from an address the user typed — `p12`, `#intro`, `§2.1.3`. A jump
     /// replaces the caret rather than extending anything, so any selection goes with it.
     pub fn go_to(&self, caret: Caret) {
@@ -331,6 +408,7 @@ mod imp {
 
     type NoticeHook = Box<dyn Fn(String)>;
     type MovedHook = Box<dyn Fn(Caret)>;
+    type ZoomedHook = Box<dyn Fn(f64)>;
 
     /// How thick the caret is, in pixels.
     const CARET: f64 = 1.5;
@@ -370,6 +448,9 @@ mod imp {
         /// Told a link's target when it is followed — Ctrl+click on one.
         pub on_link: RefCell<Vec<NoticeHook>>,
         pub on_moved: RefCell<Vec<MovedHook>>,
+        pub on_zoomed: RefCell<Vec<ZoomedHook>>,
+        /// The zoom a pinch started from, while one is under way.
+        pub pinched: Cell<Option<f64>>,
         /// The last press — its time, where, and how many in a row — so a second press on the same
         /// spot is a double-click. Counted here rather than by a second gesture, since the drag
         /// planting the caret and a click gesture would both answer one press in an order GTK does
@@ -418,6 +499,8 @@ mod imp {
                 on_notice: RefCell::new(Vec::new()),
                 on_link: RefCell::new(Vec::new()),
                 on_moved: RefCell::new(Vec::new()),
+                on_zoomed: RefCell::new(Vec::new()),
+                pinched: Cell::new(None),
                 presses: Cell::new(None),
                 menu: std::cell::OnceCell::new(),
                 speller: RefCell::new(None),
@@ -589,6 +672,62 @@ mod imp {
             ));
             widget.add_controller(drag);
 
+            // Ctrl+wheel zooms about the pointer, a notch a level; a plain wheel goes on to the
+            // scrolled window.
+            let wheel = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+            wheel.connect_scroll(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                #[upgrade_or]
+                glib::Propagation::Proceed,
+                move |wheel, _, dy| {
+                    let ctrl = wheel
+                        .current_event_state()
+                        .contains(gtk::gdk::ModifierType::CONTROL_MASK);
+                    if !ctrl || dy == 0.0 {
+                        return glib::Propagation::Proceed;
+                    }
+                    let anchor = wheel
+                        .current_event()
+                        .and_then(|event| event.position())
+                        .and_then(|(x, y)| {
+                            let native = doc.native()?;
+                            let (dx, dy) = native.surface_transform();
+                            let point = gtk::graphene::Point::new((x - dx) as f32, (y - dy) as f32);
+                            let point = native.compute_point(&doc, &point)?;
+                            Some((f64::from(point.x()), f64::from(point.y())))
+                        });
+                    let zoom = crate::strip::zoom_step(doc.zoom(), dy < 0.0);
+                    doc.set_zoom(zoom, anchor);
+                    glib::Propagation::Stop
+                }
+            ));
+            widget.add_controller(wheel);
+
+            // A touchpad's pinch, about its middle.
+            let pinch = gtk::GestureZoom::new();
+            pinch.connect_begin(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, _| doc.imp().pinched.set(Some(doc.zoom()))
+            ));
+            pinch.connect_scale_changed(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |pinch, scale| {
+                    let Some(from) = doc.imp().pinched.get() else {
+                        return;
+                    };
+                    doc.set_zoom(from * scale, pinch.bounding_box_center());
+                }
+            ));
+            pinch.connect_end(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, _| doc.imp().pinched.set(None)
+            ));
+            widget.add_controller(pinch);
+
             // A link says where it goes when the pointer rests on it, and how to get there —
             // the target is otherwise invisible, since the text is what is drawn.
             widget.set_has_tooltip(true);
@@ -728,7 +867,7 @@ mod imp {
         }
 
         /// How far the view is scrolled, across and down, in pixels.
-        fn scrolled(&self) -> (f64, f64) {
+        pub(super) fn scrolled(&self) -> (f64, f64) {
             let value = |adjustment: &RefCell<Option<gtk::Adjustment>>| {
                 adjustment
                     .borrow()
@@ -1627,7 +1766,7 @@ mod imp {
         }
 
         /// Size both scrollbars to the strip of pages in a window this big.
-        fn size_scrollbars(&self, width: i32, height: i32) {
+        pub(super) fn size_scrollbars(&self, width: i32, height: i32) {
             let Some(shown) = self.shown() else { return };
             let (across, down) = shown.strip.size();
             // A line of twelve-point text, which is what a wheel notch is counted in.
@@ -1878,6 +2017,10 @@ mod tests {
         (
             "the pages are drawn on the desk, one under the other",
             the_pages_are_drawn_on_the_desk,
+        ),
+        (
+            "a zoom keeps the point under the pointer where it was",
+            a_zoom_keeps_the_point_under_the_pointer,
         ),
         (
             "Tab nests a list item and Shift+Tab ends the list",
@@ -2582,6 +2725,46 @@ mod tests {
         gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
         assert!(snapshot.to_node().is_some(), "something was drawn");
         assert!(!imp.tiles.borrow().is_empty(), "and the page kept");
+    }
+
+    /// Zooming in about a point leaves the same spot of the same page under it, and the
+    /// caret's line grows with the zoom.
+    fn a_zoom_keeps_the_point_under_the_pointer() {
+        let paragraph = "All work and no play makes a dull document. ".repeat(40);
+        let paragraphs: Vec<&str> = (0..8).map(|_| paragraph.as_str()).collect();
+        let (doc, _app) = shell(&paragraphs);
+        let (across, down) = (gtk::Adjustment::default(), gtk::Adjustment::default());
+        doc.set_hadjustment(Some(&across));
+        doc.set_vadjustment(Some(&down));
+        doc.allocate(600, 400, -1, None);
+        let imp = doc.imp();
+        down.set_value(300.0);
+        let under = |x: f64, y: f64| {
+            let shown = imp.shown().expect("set");
+            let (left, top) = imp.scrolled();
+            let page = shown.strip.page_at(y + top).expect("a page");
+            (
+                page,
+                shown.strip.on_page(page, x + left, y + top).expect("on it"),
+            )
+        };
+        let before = under(250.0, 150.0);
+        let line = imp.point_of(doc.caret()).expect("placed").2;
+        doc.set_zoom(2.0, Some((250.0, 150.0)));
+        assert_eq!(doc.zoom(), 2.0);
+        let after = under(250.0, 150.0);
+        assert_eq!(before.0, after.0, "the same page");
+        assert!((before.1.0 - after.1.0).abs() < 1.0 && (before.1.1 - after.1.1).abs() < 1.0);
+        let grown = imp.point_of(doc.caret()).expect("placed").2;
+        assert!(
+            (grown - 2.0 * line).abs() < 0.5,
+            "{line} at 100%, {grown} at 200%"
+        );
+
+        doc.zoom_step(false);
+        assert!(doc.zoom() < 2.0);
+        doc.set_zoom(99.0, None);
+        assert_eq!(doc.zoom(), 4.0, "held inside the levels");
     }
 
     /// Authoring a list, which this window could not do at all: Tab at the front of a

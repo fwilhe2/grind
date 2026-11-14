@@ -166,6 +166,8 @@ struct Ui {
     /// flag for one, `Off` — a menu over `spell-language` and the personal dictionary, the
     /// spreadsheet window's picker (`doc/spelling.md`, "The picker on the status bar").
     spelling_picker: gtk::MenuButton,
+    /// Beside it, how large the pages are drawn, as a menu of the zoom actions.
+    zoom: gtk::MenuButton,
     address: gtk::Entry,
     goto: gtk::MenuButton,
     undo: gtk::Button,
@@ -288,6 +290,13 @@ impl Ui {
         status.add_css_class("dim-label");
         status.set_hexpand(true);
         let spelling_picker = spelling_picker();
+        let zoom = gtk::MenuButton::builder()
+            .label("100%")
+            .tooltip_text("Zoom")
+            .menu_model(&zoom_menu())
+            .direction(gtk::ArrowType::Up)
+            .build();
+        zoom.add_css_class("flat");
         let status_bar = gtk::Box::builder()
             .margin_start(12)
             .margin_end(6)
@@ -295,6 +304,7 @@ impl Ui {
             .margin_bottom(2)
             .build();
         status_bar.append(&status);
+        status_bar.append(&zoom);
         status_bar.append(&spelling_picker);
 
         let content = adw::ToolbarView::builder().content(&toasts).build();
@@ -326,6 +336,7 @@ impl Ui {
             banner,
             status,
             spelling_picker,
+            zoom,
             address,
             goto,
             undo,
@@ -389,6 +400,11 @@ impl Ui {
             #[strong(rename_to = ui)]
             self,
             move |_| ui.refresh()
+        ));
+        self.doc.connect_zoomed(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            move |zoom| ui.zoom.set_label(&format!("{:.0}%", zoom * 100.0))
         ));
 
         self.address.connect_activate(glib::clone!(
@@ -659,11 +675,17 @@ impl Ui {
         };
         // The language is the picker's to say, at the line's end.
         self.reconsider_spelling(counts.words);
-        self.status.set_text(&if here.is_empty() {
-            words
-        } else {
-            format!("{here}  ·  {words}")
-        });
+        let parts: Vec<String> = [
+            self.doc
+                .page_of_caret()
+                .map(|(page, of)| format!("Page {page} of {of}")),
+            (!here.is_empty()).then_some(here),
+            Some(words),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        self.status.set_text(&parts.join("  ·  "));
         self.status.set_tooltip_text(Some(&format!(
             "At {} — {} blocks",
             grind_text::loc::format_offset(caret.block, caret.offset),
@@ -1619,6 +1641,15 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.doc.copy();
         }),
         ("paste", &["<Control>v"][..], |ui| ui.doc.paste()),
+        // Ctrl+0 is Paragraph, as in every word processor, so 100% has no key.
+        ("zoom-in", &["<Control>plus", "<Control>equal"][..], |ui| {
+            ui.doc.zoom_step(true);
+        }),
+        ("zoom-out", &["<Control>minus"][..], |ui| {
+            ui.doc.zoom_step(false);
+        }),
+        ("zoom-fit", &[][..], |ui| ui.doc.fit_width()),
+        ("zoom-reset", &[][..], |ui| ui.doc.set_zoom(1.0, None)),
         ("select-all", &["<Control>a"][..], |ui| ui.doc.select_all()),
         // The three keys every word processor has, over the same call the bar's toggles make —
         // on when the selection (or the caret's pending style) is not already, off when it is.
@@ -1699,6 +1730,8 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
                 ("Check the document", "F8"),
                 ("Show bookmarks", "<Control><Shift>n"),
                 ("Show the source", "<Control><Shift>u"),
+                ("Zoom in", "<Control>plus <Control>equal"),
+                ("Zoom out", "<Control>minus"),
                 ("Insert a picture", "<Control><Shift>i"),
                 ("Alt text for the picture", "<Control><Alt>a"),
                 ("Insert a table", "<Control><Shift>t"),
@@ -1745,6 +1778,20 @@ fn shortcut_rows() -> Vec<ShortcutGroup> {
             ],
         ),
     ]
+}
+
+/// The status bar's zoom menu.
+fn zoom_menu() -> gio::Menu {
+    let menu = gio::Menu::new();
+    let steps = gio::Menu::new();
+    steps.append(Some("Zoom In"), Some("win.zoom-in"));
+    steps.append(Some("Zoom Out"), Some("win.zoom-out"));
+    menu.append_section(None, &steps);
+    let sizes = gio::Menu::new();
+    sizes.append(Some("Fit Width"), Some("win.zoom-fit"));
+    sizes.append(Some("Actual Size"), Some("win.zoom-reset"));
+    menu.append_section(None, &sizes);
+    menu
 }
 
 fn primary_menu() -> gio::Menu {
@@ -2169,6 +2216,7 @@ mod tests {
         for (menu, model) in [
             ("the primary menu", primary_menu()),
             ("the page's menu", view::context_menu_model()),
+            ("the zoom menu", zoom_menu()),
         ] {
             for action in menu_actions(model.upcast_ref()) {
                 // The three stateful readings are added beside the table, not in it.
