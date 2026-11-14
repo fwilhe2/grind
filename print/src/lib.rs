@@ -13,6 +13,7 @@ pub mod ops;
 pub mod pdf;
 pub mod place;
 pub mod raster;
+pub mod session;
 pub mod svg;
 pub mod text;
 

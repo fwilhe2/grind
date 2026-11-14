@@ -147,6 +147,59 @@ pub fn hit(doc: &Document, page: usize, x: f32, y: f32) -> Option<Caret> {
     })
 }
 
+/// Every line of the document in reading order, with its page.
+fn lines(doc: &Document) -> impl Iterator<Item = (usize, &LineBox)> {
+    doc.pages
+        .iter()
+        .enumerate()
+        .flat_map(|(number, page)| page.lines.iter().map(move |line| (number, line)))
+}
+
+/// Which line of [`lines`] a caret is on — at a soft break the later one, as [`locate`] has it.
+fn line_of(doc: &Document, at: Caret) -> Option<usize> {
+    let mut found = None;
+    for (index, (_, line)) in lines(doc).enumerate() {
+        if !line.holds(at) {
+            continue;
+        }
+        found = Some(index);
+        if at.offset < line.end || line.last {
+            break;
+        }
+    }
+    found
+}
+
+/// Move a caret `delta` lines — Down and Up, and a screenful with a bigger number — keeping as
+/// near `goal_x` as each line allows, across paragraphs, table cells and pages. It stops at
+/// the document's first and last line. `goal_x` is a page x, a [`Spot::x`] the caller keeps
+/// until the caret moves sideways.
+#[must_use]
+pub fn step(doc: &Document, at: Caret, delta: isize, goal_x: f32) -> Caret {
+    let Some(from) = line_of(doc, at) else {
+        return at;
+    };
+    let to = from.saturating_add_signed(delta);
+    match lines(doc).nth(to).or_else(|| lines(doc).last()) {
+        Some((_, line)) if to != from => Caret {
+            block: line.block,
+            offset: line.offset_at(goal_x),
+        },
+        _ => at,
+    }
+}
+
+/// The two ends of the caret's own line — Home and End.
+#[must_use]
+pub fn line_bounds(doc: &Document, at: Caret) -> Option<(Caret, Caret)> {
+    let (_, line) = lines(doc).nth(line_of(doc, at)?)?;
+    let caret = |offset| Caret {
+        block: line.block,
+        offset,
+    };
+    Some((caret(line.start), caret(line.end)))
+}
+
 /// The rectangles covering the text between two carets, in either order: one per line, on its
 /// page. What a selection, a find hit or a misspelt word's underline is drawn from.
 #[must_use]
@@ -353,6 +406,94 @@ mod tests {
                 block: right.index,
                 offset: 10
             })
+        );
+    }
+
+    #[test]
+    fn down_and_up_walk_the_lines_across_paragraphs_and_pages() {
+        let app = long();
+        let doc = set(&app);
+        let all: Vec<(usize, &LineBox)> = lines(&doc).collect();
+        // From the first line down to the last, one line at a time, never skipping one.
+        let mut at = Caret {
+            block: 0,
+            offset: 0,
+        };
+        let goal = locate(&doc, at).unwrap().x;
+        for (index, (_, line)) in all.iter().enumerate().skip(1) {
+            at = step(&doc, at, 1, goal);
+            assert_eq!(line_of(&doc, at), Some(index), "{at:?}");
+            assert_eq!(at.block, line.block);
+        }
+        assert_eq!(
+            step(&doc, at, 1, goal),
+            at,
+            "the last line is where Down stops"
+        );
+        // A screenful up, and back to the top however far is asked.
+        let up = step(&doc, at, -30, goal);
+        assert_eq!(line_of(&doc, up), Some(all.len() - 31));
+        let top = step(&doc, at, -100_000, goal);
+        assert_eq!(line_of(&doc, top), Some(0));
+        assert_eq!(step(&doc, top, -1, goal), top);
+    }
+
+    #[test]
+    fn down_keeps_its_column_through_a_short_line() {
+        let app = fodt(
+            "",
+            "<text:p>a long line of some text</text:p><text:p>x</text:p><text:p>a long line of some text</text:p>",
+        );
+        let doc = set(&app);
+        let from = Caret {
+            block: 0,
+            offset: 20,
+        };
+        let goal = locate(&doc, from).unwrap().x;
+        let short = step(&doc, from, 1, goal);
+        assert_eq!(
+            short,
+            Caret {
+                block: 1,
+                offset: 1
+            }
+        );
+        assert_eq!(
+            step(&doc, short, 1, goal),
+            Caret {
+                block: 2,
+                offset: 20
+            }
+        );
+    }
+
+    #[test]
+    fn home_and_end_are_the_ends_of_the_carets_own_line() {
+        let app = fodt("", &format!("<text:p>{}</text:p>", "word ".repeat(40)));
+        let doc = set(&app);
+        let lines = &doc.pages[0].lines;
+        let second = &lines[1];
+        let inside = Caret {
+            block: 0,
+            offset: second.start + 3,
+        };
+        let ends = line_bounds(&doc, inside).unwrap();
+        assert_eq!((ends.0.offset, ends.1.offset), (second.start, second.end));
+        // The offset two lines share is the later line's start.
+        let shared = Caret {
+            block: 0,
+            offset: second.start,
+        };
+        assert_eq!(line_bounds(&doc, shared).unwrap().0.offset, second.start);
+        assert_eq!(
+            line_bounds(
+                &doc,
+                Caret {
+                    block: 9,
+                    offset: 0
+                }
+            ),
+            None
         );
     }
 
