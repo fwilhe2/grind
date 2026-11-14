@@ -436,6 +436,11 @@ fn size_of(style: &TextStyle) -> f32 {
 }
 
 impl Metrics for Typesetter {
+    fn hyphens(&self, language: &str, word: &str, head: usize, tail: usize) -> Vec<usize> {
+        crate::hyphen::bundled(language)
+            .map_or_default(|patterns| patterns.points(word, head, tail))
+    }
+
     /// The shaped advances, cumulative per **character**: a cluster's advance (a ligature, a
     /// base with its marks) is shared evenly between the characters it covers, so a caret
     /// inside `fi` lands halfway across it rather than nowhere.

@@ -171,6 +171,10 @@ impl Metrics for RoleFace<'_> {
         }
     }
 
+    fn hyphens(&self, language: &str, word: &str, head: usize, tail: usize) -> Vec<usize> {
+        self.setter.hyphens(language, word, head, tail)
+    }
+
     fn identity(&self) -> Option<u64> {
         use std::hash::{Hash, Hasher};
         let mut state = std::collections::hash_map::DefaultHasher::new();
@@ -363,6 +367,8 @@ pub struct Column<'a> {
     pub tabs: &'a HashMap<usize, grind_core::layout::Tabs>,
     /// Each block's alignment, where its paragraph style states one other than the start.
     pub aligns: &'a HashMap<usize, Aligned>,
+    /// Each block's hyphenation, where its paragraph style asks for it.
+    pub hyphenations: &'a HashMap<usize, grind_core::layout::Hyphenate>,
     /// Each table's look, by name ([`grind_text::table_look`]).
     pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
@@ -413,6 +419,7 @@ impl grind_text::Faces for Column<'_> {
             align: self.aligns.get(&index).map_or_default(|a| a.0),
             last: self.aligns.get(&index).map_or_default(|a| a.1),
             single_word: self.aligns.get(&index).is_some_and(|a| a.2),
+            hyphenate: self.hyphenations.get(&index).cloned(),
         }
     }
 
@@ -550,6 +557,7 @@ mod tests {
         let indents = HashMap::new();
         let tabs = HashMap::new();
         let aligns = HashMap::new();
+        let hyphenations = HashMap::new();
         let looks = HashMap::new();
         let insets = HashMap::new();
         let column = Column {
@@ -557,6 +565,7 @@ mod tests {
             indents: &indents,
             tabs: &tabs,
             aligns: &aligns,
+            hyphenations: &hyphenations,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,

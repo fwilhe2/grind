@@ -1511,6 +1511,9 @@ impl Context<Builder> for ParagraphStyleDef {
             props.font_weight = get("font-weight");
             props.font_style = get("font-style");
             props.letter_spacing = get("letter-spacing");
+            props.hyphenate = get("hyphenate");
+            props.hyphenation_remain = get("hyphenation-remain-char-count");
+            props.hyphenation_push = get("hyphenation-push-char-count");
             props.letter_kerning = attrs.get(Ns::Style, "letter-kerning").map(str::to_owned);
             // The automatic colour stated replaces an inherited one, and is black on paper
             // (`doc/odt-format.md` §5c fact 45).

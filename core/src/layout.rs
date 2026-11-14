@@ -46,6 +46,13 @@ pub trait Metrics {
     fn identity(&self) -> Option<u64> {
         None
     }
+
+    /// Where `word` may be hyphenated in `language` (`fo:language`): each character offset a
+    /// hyphen may go before, leaving at least `head` letters before it and `tail` after. The
+    /// default knows no language and never hyphenates.
+    fn hyphens(&self, _language: &str, _word: &str, _head: usize, _tail: usize) -> Vec<usize> {
+        Vec::new()
+    }
 }
 
 /// One character wide per character, one unit tall: what the CLI measures with (`grind text view
@@ -314,6 +321,19 @@ pub struct Setting {
     /// Whether a justified line with no space to widen spreads its letters instead
     /// (`style:justify-single-word`).
     pub single_word: bool,
+    /// Whether words may be hyphenated at the end of a line, and how (`fo:hyphenate`,
+    /// `doc/odt-format.md` §5c fact 55).
+    pub hyphenate: Option<Hyphenate>,
+}
+
+/// Hyphenation as a paragraph asks for it: its language, and the fewest letters a break leaves
+/// before it and after it (`fo:hyphenation-remain-char-count`, `-push-char-count`; zero for
+/// whatever the language's patterns ask).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Hyphenate {
+    pub language: String,
+    pub head: usize,
+    pub tail: usize,
 }
 
 /// How a tab character's text lines up against its stop (`style:type`, rng:13921).
@@ -391,11 +411,13 @@ impl std::hash::Hash for Setting {
             align,
             last,
             single_word,
+            hyphenate,
         } = self;
         first.to_bits().hash(state);
         align.hash(state);
         last.hash(state);
         single_word.hash(state);
+        hyphenate.hash(state);
         tabs.interval.to_bits().hash(state);
         for stop in &tabs.stops {
             stop.position.to_bits().hash(state);
@@ -429,7 +451,10 @@ pub fn wrap_set(
     // Each soft hyphen, by character offset, with the width of the hyphen it shows as when a
     // line breaks after it.
     let mut hyphens: Vec<(usize, f32)> = Vec::new();
+    // Where each fragment starts, in characters, for finding the style a hyphen is set in.
+    let mut starts: Vec<usize> = Vec::with_capacity(fragments.len());
     for fragment in fragments {
+        starts.push(xs.len() - 1);
         let origin = *xs.last().expect("xs starts with one element");
         fragment_advances.clear();
         metrics.advances(fragment.text, fragment.style, &mut fragment_advances);
@@ -467,6 +492,50 @@ pub fn wrap_set(
         char_of_byte[byte] = index;
     }
     char_of_byte[text.len()] = len;
+    let chars: Vec<char> = text.chars().collect();
+
+    // Every place a line may end, in characters: UAX #14's, and inside a word where the
+    // paragraph is hyphenated and the language's patterns allow.
+    let mut opportunities: Vec<(usize, BreakOpportunity)> = linebreaks(&text)
+        .map(|(byte, opportunity)| (char_of_byte[byte], opportunity))
+        .collect();
+    if let Some(hyphenate) = &setting.hyphenate {
+        let width_at = |at: usize| {
+            let fragment = &fragments[starts.partition_point(|&start| start <= at).max(1) - 1];
+            let mut hyphen = Vec::new();
+            metrics.advances("-", fragment.style, &mut hyphen);
+            hyphen.last().copied().unwrap_or(0.0)
+        };
+        let mut word = 0;
+        while word < chars.len() {
+            if !chars[word].is_alphabetic() {
+                word += 1;
+                continue;
+            }
+            let end = (word..chars.len())
+                .find(|&at| !chars[at].is_alphabetic())
+                .unwrap_or(chars.len());
+            // A word the document hyphenates itself is left as it says.
+            let manual = hyphens.iter().any(|&(at, _)| (word..end).contains(&at));
+            if !manual {
+                let letters: String = chars[word..end].iter().collect();
+                for point in metrics.hyphens(
+                    &hyphenate.language,
+                    &letters,
+                    hyphenate.head,
+                    hyphenate.tail,
+                ) {
+                    let at = word + point;
+                    hyphens.push((at - 1, width_at(at - 1)));
+                    opportunities.push((at, BreakOpportunity::Allowed));
+                }
+            }
+            word = end;
+        }
+        opportunities
+            .sort_by_key(|&(at, opportunity)| (at, opportunity == BreakOpportunity::Allowed));
+        opportunities.dedup_by_key(|&mut (at, _)| at);
+    }
 
     // The hyphen a line ending at `end` shows: a soft hyphen's, when the line breaks right after
     // one, and never on the paragraph's last line.
@@ -498,7 +567,6 @@ pub fn wrap_set(
         *top += height;
     };
 
-    let chars: Vec<char> = text.chars().collect();
     let text_chars = &chars;
     let tabbed = !tabs.is_empty() && chars.contains(&'\t');
     let advance: Vec<f32> = if tabbed {
@@ -592,8 +660,7 @@ pub fn wrap_set(
         width <= 0.0 || span(from, visible, first_line) + hyphen_at(to) <= room
     };
 
-    for (byte, opportunity) in linebreaks(&text) {
-        let at = char_of_byte[byte];
+    for (at, opportunity) in opportunities {
         if at <= start {
             continue;
         }
@@ -1399,6 +1466,79 @@ mod tests {
         assert_eq!(
             (spread.x_at(1), spread.x_at(4), spread.x_at(5)),
             (4.75, 19.0, 20.0)
+        );
+    }
+
+    /// `Fixed`, knowing that `hyphenation` breaks as `hy-phen-ation`.
+    struct Hyphenating;
+
+    impl Metrics for Hyphenating {
+        fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
+            Fixed.advances(text, style, out);
+        }
+        fn line_height(&self, style: &TextStyle) -> f32 {
+            Fixed.line_height(style)
+        }
+        fn hyphens(&self, language: &str, word: &str, head: usize, tail: usize) -> Vec<usize> {
+            if language != "en" || word != "hyphenation" {
+                return Vec::new();
+            }
+            [2, 6]
+                .into_iter()
+                .filter(|&p| p >= head && 11 - p >= tail)
+                .collect()
+        }
+    }
+
+    /// A hyphenated paragraph breaks inside a word at the last point that fits with its hyphen
+    /// (`doc/odt-format.md` §5c fact 55); an unhyphenated one never does.
+    #[test]
+    fn a_hyphenated_paragraph_breaks_a_word_at_its_last_point_that_fits() {
+        let style = TextStyle::default();
+        let set = |hyphenate: Option<Hyphenate>, width: f32| {
+            let setting = Setting {
+                hyphenate,
+                ..Setting::default()
+            };
+            wrap_set(
+                &[Fragment {
+                    text: "so hyphenation",
+                    style: &style,
+                }],
+                width,
+                &Hyphenating,
+                &setting,
+            )
+            .lines()
+            .iter()
+            .map(|line| (line.start, line.end, line.hyphen))
+            .collect::<Vec<_>>()
+        };
+        let en = |head, tail| {
+            Some(Hyphenate {
+                language: "en".into(),
+                head,
+                tail,
+            })
+        };
+        // `so hyphen-` is ten wide: it fits in ten. In six, `so hy-`, then `phen-` and `ation`.
+        assert_eq!(set(en(0, 0), 10.0), [(0, 9, 1.0), (9, 14, 0.0)]);
+        assert_eq!(set(en(0, 0), 6.0), [(0, 5, 1.0), (5, 9, 1.0), (9, 14, 0.0)]);
+        // Three letters before a break at the least: in seven, `so hy-` is not a line, so the
+        // break is at the space and `hyphen-` fits on the next.
+        assert_eq!(set(en(0, 0), 7.0), [(0, 5, 1.0), (5, 9, 1.0), (9, 14, 0.0)]);
+        assert_eq!(set(en(3, 0), 7.0), [(0, 3, 0.0), (3, 9, 1.0), (9, 14, 0.0)]);
+        assert_eq!(set(None, 10.0), [(0, 3, 0.0), (3, 14, 0.0)]);
+        assert_eq!(
+            set(
+                Some(Hyphenate {
+                    language: "fr".into(),
+                    head: 0,
+                    tail: 0
+                }),
+                10.0
+            ),
+            [(0, 3, 0.0), (3, 14, 0.0)]
         );
     }
 }

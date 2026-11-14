@@ -1004,6 +1004,16 @@ oracle turned out to be unable to answer the font questions (fact 4).
    build). In a document stating `style:tab-stop-distance` nowhere — no default paragraph style
    at all — a tab after `Lorem` sends the next word to 1.25 cm from the paragraph's left margin
    (35.45 pt), justified or not.
+55. **Hyphenation** — `MEASURED` (2026-11-14, 26.8.2.2, Liberation Serif 12 pt, `fo:language="en"
+   fo:country="US"`, a 5 cm measure, the same sentence of long words three times). Without
+   `fo:hyphenate` (rng:13773) no word is broken. With `fo:hyphenate="true"` every line is filled
+   greedily and a word that does not fit is broken at the **last** of its hyphenation points that
+   does, a hyphen drawn at the line's end: `characteris-`, `extraordi-`, `considera-`, `in-`,
+   `accumu-`. With no counts stated a break may leave **two** letters before it (`in-`); with
+   `fo:hyphenation-remain-char-count="4"` and `fo:hyphenation-push-char-count="4"` (rng:13777,
+   13781) it may not — `incomprehensibilities` went whole to the next line — and `accu-mulate`
+   kept four on either side. The points are libhyphen's patterns for the language
+   (`print/hyphenation/`), with their own minimums (two and three letters for English).
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

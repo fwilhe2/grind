@@ -609,13 +609,22 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[3, 60],
     },
     Component {
+        name: "English hyphenation patterns (hyph_en_US)",
+        version: "2.8.10",
+        licence: "LGPL-2.1-or-later",
+        copyright: "Copyright (C) 1991, 1999 Free Software Foundation, Inc.",
+        source: "https://github.com/hunspell/hyphen",
+        kind: Kind::Dictionary,
+        notices: &[61],
+    },
+    Component {
         name: "equivalent",
         version: "1.0.2",
         licence: "Apache-2.0 OR MIT",
         copyright: "Copyright (c) 2016--2023",
         source: "https://github.com/indexmap-rs/equivalent",
         kind: Kind::Crate,
-        notices: &[3, 61],
+        notices: &[3, 62],
     },
     Component {
         name: "errno",
@@ -624,7 +633,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Chris Wong",
         source: "https://github.com/lambda-fairy/rust-errno",
         kind: Kind::Crate,
-        notices: &[3, 62],
+        notices: &[3, 63],
     },
     Component {
         name: "euclid",
@@ -633,7 +642,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2012-2013 Mozilla Foundation",
         source: "https://github.com/servo/euclid",
         kind: Kind::Crate,
-        notices: &[63, 3, 64],
+        notices: &[64, 3, 65],
     },
     Component {
         name: "European Portuguese dictionary (pt_PT)",
@@ -642,7 +651,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) 2006-2009 José João de Almeida, Rui Vilela and Alberto Simões.",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/pt-PT",
         kind: Kind::Dictionary,
-        notices: &[65],
+        notices: &[66],
     },
     Component {
         name: "event-listener",
@@ -669,7 +678,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2015 The Fancy Regex Authors.",
         source: "https://github.com/fancy-regex/fancy-regex",
         kind: Kind::Crate,
-        notices: &[66],
+        notices: &[67],
     },
     Component {
         name: "fdeflate",
@@ -678,7 +687,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By The image-rs Developers",
         source: "https://github.com/image-rs/fdeflate",
         kind: Kind::Crate,
-        notices: &[67, 68],
+        notices: &[68, 69],
     },
     Component {
         name: "field-offset",
@@ -687,7 +696,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2021 Diggory Blake, and other contributors.",
         source: "https://github.com/Diggsey/rust-field-offset",
         kind: Kind::Crate,
-        notices: &[67, 69],
+        notices: &[68, 70],
     },
     Component {
         name: "filedescriptor",
@@ -696,7 +705,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[70],
+        notices: &[71],
     },
     Component {
         name: "finl_unicode",
@@ -705,7 +714,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 1991-2023 Unicode, Inc.",
         source: "https://github.com/dahosek/finl_unicode",
         kind: Kind::Crate,
-        notices: &[8, 2, 71],
+        notices: &[8, 2, 72],
     },
     Component {
         name: "fixedbitset",
@@ -714,7 +723,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015-2017",
         source: "https://github.com/petgraph/fixedbitset",
         kind: Kind::Crate,
-        notices: &[3, 72],
+        notices: &[3, 73],
     },
     Component {
         name: "flate2",
@@ -723,7 +732,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2026 Alex Crichton",
         source: "https://github.com/rust-lang/flate2-rs",
         kind: Kind::Crate,
-        notices: &[3, 73],
+        notices: &[3, 74],
     },
     Component {
         name: "float-cmp",
@@ -732,7 +741,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2020 Optimal Computing (NZ) Ltd",
         source: "https://github.com/mikedilger/float-cmp",
         kind: Kind::Crate,
-        notices: &[74],
+        notices: &[75],
     },
     Component {
         name: "fluent-uri",
@@ -741,7 +750,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2021 Scallop Ye",
         source: "https://github.com/yescallop/fluent-uri-rs",
         kind: Kind::Crate,
-        notices: &[75],
+        notices: &[76],
     },
     Component {
         name: "fnv",
@@ -750,7 +759,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Contributors",
         source: "https://github.com/servo/rust-fnv",
         kind: Kind::Crate,
-        notices: &[3, 76],
+        notices: &[3, 77],
     },
     Component {
         name: "foldhash",
@@ -759,7 +768,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2024 Orson Peters",
         source: "https://github.com/orlp/foldhash",
         kind: Kind::Crate,
-        notices: &[77],
+        notices: &[78],
     },
     Component {
         name: "font-types",
@@ -768,7 +777,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Colin Rothfels",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[78, 79],
+        notices: &[79, 80],
     },
     Component {
         name: "font-types",
@@ -777,7 +786,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[80, 81],
+        notices: &[81, 82],
     },
     Component {
         name: "fontconfig-parser",
@@ -786,7 +795,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2021 Riey",
         source: "https://github.com/Riey/fontconfig-parser",
         kind: Kind::Crate,
-        notices: &[82],
+        notices: &[83],
     },
     Component {
         name: "fontdb",
@@ -795,7 +804,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/fontdb",
         kind: Kind::Crate,
-        notices: &[83],
+        notices: &[84],
     },
     Component {
         name: "fontdb",
@@ -804,7 +813,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/fontdb",
         kind: Kind::Crate,
-        notices: &[83],
+        notices: &[84],
     },
     Component {
         name: "futures-channel",
@@ -813,7 +822,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-core",
@@ -822,7 +831,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-executor",
@@ -831,7 +840,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-io",
@@ -840,7 +849,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-macro",
@@ -849,7 +858,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-task",
@@ -858,7 +867,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "futures-util",
@@ -867,7 +876,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Alex Crichton",
         source: "https://github.com/rust-lang/futures-rs",
         kind: Kind::Crate,
-        notices: &[84, 85],
+        notices: &[85, 86],
     },
     Component {
         name: "gdk-pixbuf",
@@ -912,7 +921,16 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Bartłomiej Kamiński",
         source: "https://github.com/fizyk20/generic-array.git",
         kind: Kind::Crate,
-        notices: &[86],
+        notices: &[87],
+    },
+    Component {
+        name: "German hyphenation patterns (hyph_de_DE)",
+        version: "0.20060120",
+        licence: "LGPL-2.1-or-later",
+        copyright: "Copyright (C) 1991, 1999 Free Software Foundation, Inc.",
+        source: "https://www.tug.org/tex-archive/language/hyphenation/dehyphn.tex",
+        kind: Kind::Dictionary,
+        notices: &[88],
     },
     Component {
         name: "getrandom",
@@ -921,7 +939,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-2024 The rust-random Project Developers",
         source: "https://github.com/rust-random/getrandom",
         kind: Kind::Crate,
-        notices: &[87, 88],
+        notices: &[89, 90],
     },
     Component {
         name: "getrandom",
@@ -930,7 +948,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-2025 The rust-random Project Developers",
         source: "https://github.com/rust-random/getrandom",
         kind: Kind::Crate,
-        notices: &[87, 89],
+        notices: &[89, 91],
     },
     Component {
         name: "getrandom",
@@ -939,7 +957,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-2026 The rust-random Project Developers",
         source: "https://github.com/rust-random/getrandom",
         kind: Kind::Crate,
-        notices: &[87, 90],
+        notices: &[89, 92],
     },
     Component {
         name: "gif",
@@ -948,7 +966,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 nwin",
         source: "https://github.com/image-rs/image-gif",
         kind: Kind::Crate,
-        notices: &[3, 91],
+        notices: &[3, 93],
     },
     Component {
         name: "gio",
@@ -1011,7 +1029,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) Olivier R. and the Grammalecte contributors. https://grammalecte.net/",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/fr",
         kind: Kind::Dictionary,
-        notices: &[92],
+        notices: &[94],
     },
     Component {
         name: "graphene-rs",
@@ -1083,7 +1101,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) HarfBuzz developers",
         source: "https://github.com/harfbuzz/harfrust",
         kind: Kind::Crate,
-        notices: &[93],
+        notices: &[95],
     },
     Component {
         name: "hashbrown",
@@ -1119,7 +1137,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2013-2014 The Rust Project Developers.",
         source: "https://github.com/KokaKiwi/rust-hex",
         kind: Kind::Crate,
-        notices: &[9, 94],
+        notices: &[9, 96],
     },
     Component {
         name: "httpdate",
@@ -1128,7 +1146,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Pyfisch",
         source: "https://github.com/pyfisch/httpdate",
         kind: Kind::Crate,
-        notices: &[95, 96],
+        notices: &[97, 98],
     },
     Component {
         name: "ident_case",
@@ -1137,7 +1155,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Ted Driggs <ted.driggs@outlook.com>",
         source: "https://github.com/TedDriggs/ident_case",
         kind: Kind::Crate,
-        notices: &[97],
+        notices: &[99],
     },
     Component {
         name: "igerman98 German dictionary (de_DE)",
@@ -1146,7 +1164,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/de",
         kind: Kind::Dictionary,
-        notices: &[98],
+        notices: &[100],
     },
     Component {
         name: "image-webp",
@@ -1155,7 +1173,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/image-rs/image-webp",
         kind: Kind::Crate,
-        notices: &[67, 68],
+        notices: &[68, 69],
     },
     Component {
         name: "imagesize",
@@ -1164,7 +1182,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Maiddog",
         source: "https://github.com/Roughsketch/imagesize",
         kind: Kind::Crate,
-        notices: &[99],
+        notices: &[101],
     },
     Component {
         name: "indexmap",
@@ -1173,7 +1191,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016--2017",
         source: "https://github.com/indexmap-rs/indexmap",
         kind: Kind::Crate,
-        notices: &[3, 100],
+        notices: &[3, 102],
     },
     Component {
         name: "indoc",
@@ -1191,7 +1209,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Stephen M.",
         source: "https://github.com/ratatui/instability",
         kind: Kind::Crate,
-        notices: &[101],
+        notices: &[103],
     },
     Component {
         name: "is_terminal_polyfill",
@@ -1209,7 +1227,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) 2010-2016 Andrea Pescetti.",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/it",
         kind: Kind::Dictionary,
-        notices: &[102],
+        notices: &[104],
     },
     Component {
         name: "itertools",
@@ -1245,7 +1263,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Dylan Ede",
         source: "https://github.com/ratatui/kasuari",
         kind: Kind::Crate,
-        notices: &[103, 104],
+        notices: &[105, 106],
     },
     Component {
         name: "kdl",
@@ -1254,7 +1272,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2020 Kat Marchán",
         source: "https://github.com/kdl-org/kdl-rs",
         kind: Kind::Crate,
-        notices: &[11, 105],
+        notices: &[11, 107],
     },
     Component {
         name: "krilla",
@@ -1263,7 +1281,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Laurenz Stampfl <laurenz.stampfl@gmail.com>",
         source: "https://github.com/LaurenzV/krilla",
         kind: Kind::Crate,
-        notices: &[106],
+        notices: &[108],
     },
     Component {
         name: "krilla-svg",
@@ -1272,7 +1290,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Laurenz Stampfl <laurenz.stampfl@gmail.com>",
         source: "https://github.com/LaurenzV/krilla",
         kind: Kind::Crate,
-        notices: &[107],
+        notices: &[109],
     },
     Component {
         name: "kurbo",
@@ -1281,7 +1299,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Raph Levien",
         source: "https://github.com/linebender/kurbo",
         kind: Kind::Crate,
-        notices: &[11, 108],
+        notices: &[11, 110],
     },
     Component {
         name: "lab",
@@ -1290,7 +1308,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 🐝🐝🐝",
         source: "https://github.com/TooManyBees/lab",
         kind: Kind::Crate,
-        notices: &[109],
+        notices: &[111],
     },
     Component {
         name: "lazy_static",
@@ -1299,7 +1317,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2010 The Rust Project Developers",
         source: "https://github.com/rust-lang-nursery/lazy-static.rs",
         kind: Kind::Crate,
-        notices: &[3, 110],
+        notices: &[3, 112],
     },
     Component {
         name: "libadwaita",
@@ -1326,7 +1344,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) The Rust Project Developers",
         source: "https://github.com/rust-lang/libc",
         kind: Kind::Crate,
-        notices: &[8, 111],
+        notices: &[8, 113],
     },
     Component {
         name: "Liberation Fonts",
@@ -1335,7 +1353,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2012 Red Hat, Inc.",
         source: "https://github.com/liberationfonts/liberation-fonts",
         kind: Kind::Font,
-        notices: &[112],
+        notices: &[114],
     },
     Component {
         name: "libm",
@@ -1344,7 +1362,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Jorge Aparicio",
         source: "https://github.com/rust-lang/compiler-builtins",
         kind: Kind::Crate,
-        notices: &[113],
+        notices: &[115],
     },
     Component {
         name: "line-clipping",
@@ -1353,7 +1371,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2024 Josh McKinney",
         source: "https://github.com/ratatui/line-clipping",
         kind: Kind::Crate,
-        notices: &[114, 115],
+        notices: &[116, 117],
     },
     Component {
         name: "linux-raw-sys",
@@ -1362,7 +1380,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `linux-raw-sys` project are retained by their contributors.",
         source: "https://github.com/sunfishcode/linux-raw-sys",
         kind: Kind::Crate,
-        notices: &[116, 3, 117, 2],
+        notices: &[118, 3, 119, 2],
     },
     Component {
         name: "litrs",
@@ -1371,7 +1389,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Project Developers",
         source: "https://github.com/LukasKalbertodt/litrs",
         kind: Kind::Crate,
-        notices: &[8, 118],
+        notices: &[8, 120],
     },
     Component {
         name: "lock_api",
@@ -1398,7 +1416,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Jerome Froelich",
         source: "https://github.com/jeromefroe/lru-rs.git",
         kind: Kind::Crate,
-        notices: &[119],
+        notices: &[121],
     },
     Component {
         name: "lsp-server",
@@ -1416,7 +1434,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Markus Westerlind",
         source: "https://github.com/gluon-lang/lsp-types",
         kind: Kind::Crate,
-        notices: &[120],
+        notices: &[122],
     },
     Component {
         name: "mac_address",
@@ -1425,7 +1443,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2018 Wesley Norris",
         source: "https://github.com/rep-nop/mac_address",
         kind: Kind::Crate,
-        notices: &[121, 122],
+        notices: &[123, 124],
     },
     Component {
         name: "memchr",
@@ -1443,7 +1461,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/memmap2-rs",
         kind: Kind::Crate,
-        notices: &[123, 124],
+        notices: &[125, 126],
     },
     Component {
         name: "memmem",
@@ -1461,7 +1479,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Gilad Naaman",
         source: "https://github.com/Gilnaa/memoffset",
         kind: Kind::Crate,
-        notices: &[125],
+        notices: &[127],
     },
     Component {
         name: "miette",
@@ -1479,7 +1497,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2009 The Go Authors.",
         source: "https://github.com/Alexhuszagh/minimal-lexical",
         kind: Kind::Crate,
-        notices: &[19, 2, 126],
+        notices: &[19, 2, 128],
     },
     Component {
         name: "miniz_oxide",
@@ -1488,7 +1506,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[127, 67, 128, 129],
+        notices: &[129, 68, 130, 131],
     },
     Component {
         name: "miniz_oxide",
@@ -1497,7 +1515,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[127, 67, 128, 129],
+        notices: &[129, 68, 130, 131],
     },
     Component {
         name: "mio",
@@ -1506,7 +1524,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Carl Lerche and other MIO contributors",
         source: "https://github.com/tokio-rs/mio",
         kind: Kind::Crate,
-        notices: &[130],
+        notices: &[132],
     },
     Component {
         name: "nix",
@@ -1515,7 +1533,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
         kind: Kind::Crate,
-        notices: &[131],
+        notices: &[133],
     },
     Component {
         name: "nix",
@@ -1524,7 +1542,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
         kind: Kind::Crate,
-        notices: &[131],
+        notices: &[133],
     },
     Component {
         name: "nom",
@@ -1533,7 +1551,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2019 Geoffroy Couprie",
         source: "https://github.com/Geal/nom",
         kind: Kind::Crate,
-        notices: &[132],
+        notices: &[134],
     },
     Component {
         name: "num-conv",
@@ -1542,7 +1560,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt",
         source: "https://github.com/jhpratt/num-conv",
         kind: Kind::Crate,
-        notices: &[67, 133],
+        notices: &[68, 135],
     },
     Component {
         name: "num-derive",
@@ -1569,7 +1587,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 Jacob Pratt",
         source: "https://github.com/jhpratt/num_threads",
         kind: Kind::Crate,
-        notices: &[134, 135],
+        notices: &[136, 137],
     },
     Component {
         name: "objc2",
@@ -1578,7 +1596,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[136],
+        notices: &[138],
     },
     Component {
         name: "objc2-app-kit",
@@ -1587,7 +1605,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-app-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[137],
+        notices: &[139],
     },
     Component {
         name: "objc2-core-foundation",
@@ -1596,7 +1614,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[138],
+        notices: &[140],
     },
     Component {
         name: "objc2-core-graphics",
@@ -1605,7 +1623,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-graphics authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[139],
+        notices: &[141],
     },
     Component {
         name: "objc2-core-text",
@@ -1614,7 +1632,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-text authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[140],
+        notices: &[142],
     },
     Component {
         name: "objc2-encode",
@@ -1623,7 +1641,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[141],
+        notices: &[143],
     },
     Component {
         name: "objc2-foundation",
@@ -1632,7 +1650,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[142],
+        notices: &[144],
     },
     Component {
         name: "objc2-io-surface",
@@ -1641,7 +1659,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-io-surface authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[143],
+        notices: &[145],
     },
     Component {
         name: "objc2-pdf-kit",
@@ -1650,7 +1668,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-pdf-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[144],
+        notices: &[146],
     },
     Component {
         name: "once_cell",
@@ -1677,7 +1695,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © OASIS Open 2025 .",
         source: "https://docs.oasis-open.org/office/OpenDocument/v1.4/",
         kind: Kind::Text,
-        notices: &[145],
+        notices: &[147],
     },
     Component {
         name: "ordered-float",
@@ -1686,7 +1704,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Jonathan Reem",
         source: "https://github.com/reem/rust-ordered-float",
         kind: Kind::Crate,
-        notices: &[146],
+        notices: &[148],
     },
     Component {
         name: "palette",
@@ -1695,7 +1713,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 147],
+        notices: &[3, 149],
     },
     Component {
         name: "palette_derive",
@@ -1704,7 +1722,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 147],
+        notices: &[3, 149],
     },
     Component {
         name: "palette_math",
@@ -1713,7 +1731,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 147],
+        notices: &[3, 149],
     },
     Component {
         name: "pango",
@@ -1740,7 +1758,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014-2020 The Rust Project Developers",
         source: "https://github.com/smol-rs/parking",
         kind: Kind::Crate,
-        notices: &[3, 2, 148],
+        notices: &[3, 2, 150],
     },
     Component {
         name: "parking_lot",
@@ -1767,7 +1785,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Laurenz <laurmaedje@gmail.com>, Martin Haug <mhaug@live.de>",
         source: "https://github.com/typst/pdf-writer",
         kind: Kind::Crate,
-        notices: &[8, 97],
+        notices: &[8, 99],
     },
     Component {
         name: "pest",
@@ -1812,7 +1830,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[149],
+        notices: &[151],
     },
     Component {
         name: "phf_generator",
@@ -1821,7 +1839,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[149],
+        notices: &[151],
     },
     Component {
         name: "phf_macros",
@@ -1830,7 +1848,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[149],
+        notices: &[151],
     },
     Component {
         name: "phf_shared",
@@ -1839,7 +1857,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[149],
+        notices: &[151],
     },
     Component {
         name: "pico-args",
@@ -1848,7 +1866,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/pico-args",
         kind: Kind::Crate,
-        notices: &[150],
+        notices: &[152],
     },
     Component {
         name: "pin-project-lite",
@@ -1857,7 +1875,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/taiki-e/pin-project-lite",
         kind: Kind::Crate,
-        notices: &[67, 2],
+        notices: &[68, 2],
     },
     Component {
         name: "png",
@@ -1866,7 +1884,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 nwin",
         source: "https://github.com/image-rs/image-png",
         kind: Kind::Crate,
-        notices: &[3, 151],
+        notices: &[3, 153],
     },
     Component {
         name: "Polish dictionary (pl_PL)",
@@ -1875,7 +1893,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) 2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project.",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/pl",
         kind: Kind::Dictionary,
-        notices: &[152],
+        notices: &[154],
     },
     Component {
         name: "polycool",
@@ -1884,7 +1902,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Raph Levien",
         source: "https://github.com/linebender/kurbo",
         kind: Kind::Crate,
-        notices: &[11, 108],
+        notices: &[11, 110],
     },
     Component {
         name: "portable-atomic",
@@ -1893,7 +1911,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/taiki-e/portable-atomic",
         kind: Kind::Crate,
-        notices: &[67, 2],
+        notices: &[68, 2],
     },
     Component {
         name: "powerfmt",
@@ -1902,7 +1920,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 Jacob Pratt et al.",
         source: "https://github.com/jhpratt/powerfmt",
         kind: Kind::Crate,
-        notices: &[153, 154],
+        notices: &[155, 156],
     },
     Component {
         name: "proc-macro-crate",
@@ -1929,7 +1947,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2015 Google Inc.",
         source: "https://github.com/raphlinus/pulldown-cmark",
         kind: Kind::Crate,
-        notices: &[155],
+        notices: &[157],
     },
     Component {
         name: "quick-error",
@@ -1938,7 +1956,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The quick-error Developers",
         source: "http://github.com/tailhook/quick-error",
         kind: Kind::Crate,
-        notices: &[9, 156],
+        notices: &[9, 158],
     },
     Component {
         name: "quick-xml",
@@ -1947,7 +1965,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Johann Tuffe",
         source: "https://github.com/tafia/quick-xml",
         kind: Kind::Crate,
-        notices: &[157],
+        notices: &[159],
     },
     Component {
         name: "quote",
@@ -1965,7 +1983,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[158],
+        notices: &[160],
     },
     Component {
         name: "r-efi",
@@ -1974,7 +1992,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[158],
+        notices: &[160],
     },
     Component {
         name: "rand",
@@ -1983,7 +2001,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[159, 160, 161],
+        notices: &[161, 162, 163],
     },
     Component {
         name: "rand_core",
@@ -1992,7 +2010,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[159, 162, 161],
+        notices: &[161, 164, 163],
     },
     Component {
         name: "ratatui",
@@ -2001,7 +2019,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[163],
+        notices: &[165],
     },
     Component {
         name: "ratatui-core",
@@ -2010,7 +2028,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[163],
+        notices: &[165],
     },
     Component {
         name: "ratatui-crossterm",
@@ -2019,7 +2037,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[163],
+        notices: &[165],
     },
     Component {
         name: "ratatui-macros",
@@ -2028,7 +2046,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2024 Dheepak Krishnamurthy",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[164],
+        notices: &[166],
     },
     Component {
         name: "ratatui-termina",
@@ -2037,7 +2055,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Florian Dehau <work@fdehau.com>, The Ratatui Developers",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[165],
+        notices: &[167],
     },
     Component {
         name: "ratatui-termwiz",
@@ -2046,7 +2064,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[163],
+        notices: &[165],
     },
     Component {
         name: "ratatui-widgets",
@@ -2055,7 +2073,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[163],
+        notices: &[165],
     },
     Component {
         name: "read-fonts",
@@ -2064,7 +2082,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Colin Rothfels",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[78, 79],
+        notices: &[79, 80],
     },
     Component {
         name: "read-fonts",
@@ -2073,7 +2091,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[80, 81],
+        notices: &[81, 82],
     },
     Component {
         name: "redox_syscall",
@@ -2082,7 +2100,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Redox OS Developers",
         source: "https://gitlab.redox-os.org/redox-os/syscall",
         kind: Kind::Crate,
-        notices: &[166],
+        notices: &[168],
     },
     Component {
         name: "regex",
@@ -2118,7 +2136,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[67, 167],
+        notices: &[68, 169],
     },
     Component {
         name: "rgb",
@@ -2127,7 +2145,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Kornel",
         source: "https://github.com/kornelski/rust-rgb",
         kind: Kind::Crate,
-        notices: &[168],
+        notices: &[170],
     },
     Component {
         name: "rhai",
@@ -2136,7 +2154,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Jonathan Turner, Lukáš Hozda, Stephen Chung, jhwgh1968",
         source: "https://github.com/rhaiscript/rhai",
         kind: Kind::Crate,
-        notices: &[67, 2],
+        notices: &[68, 2],
     },
     Component {
         name: "rhai_codegen",
@@ -2145,7 +2163,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) jhwgh1968, Stephen Chung",
         source: "https://github.com/rhaiscript/rhai",
         kind: Kind::Crate,
-        notices: &[169],
+        notices: &[171],
     },
     Component {
         name: "RLA-ES Spanish dictionary (es_ES)",
@@ -2154,7 +2172,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) Santiago Bosio and the RLA-ES contributors. https://github.com/sbosio/rla-es",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/es",
         kind: Kind::Dictionary,
-        notices: &[170],
+        notices: &[172],
     },
     Component {
         name: "roxmltree",
@@ -2163,7 +2181,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 171],
+        notices: &[3, 173],
     },
     Component {
         name: "roxmltree",
@@ -2172,7 +2190,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 171],
+        notices: &[3, 173],
     },
     Component {
         name: "Rust standard library",
@@ -2181,7 +2199,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) The Rust Project contributors",
         source: "https://github.com/rust-lang/rust",
         kind: Kind::Runtime,
-        notices: &[172],
+        notices: &[174],
     },
     Component {
         name: "rustc-hash",
@@ -2199,7 +2217,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `rustix` project are retained by their contributors.",
         source: "https://github.com/bytecodealliance/rustix",
         kind: Kind::Crate,
-        notices: &[173, 3, 117, 2],
+        notices: &[175, 3, 119, 2],
     },
     Component {
         name: "rustversion",
@@ -2217,7 +2235,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) HarfBuzz developers",
         source: "https://github.com/harfbuzz/rustybuzz",
         kind: Kind::Crate,
-        notices: &[93],
+        notices: &[95],
     },
     Component {
         name: "ryu",
@@ -2226,7 +2244,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By David Tolnay <dtolnay@gmail.com>",
         source: "https://github.com/dtolnay/ryu",
         kind: Kind::Crate,
-        notices: &[8, 174],
+        notices: &[8, 176],
     },
     Component {
         name: "scopeguard",
@@ -2235,7 +2253,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2019 Ulrik Sverdrup \"bluss\" and scopeguard developers",
         source: "https://github.com/bluss/scopeguard",
         kind: Kind::Crate,
-        notices: &[3, 175],
+        notices: &[3, 177],
     },
     Component {
         name: "SCOWL English dictionary (en_US)",
@@ -2244,7 +2262,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "COPYRIGHT, SOURCES, and CREDITS:",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/en",
         kind: Kind::Dictionary,
-        notices: &[176],
+        notices: &[178],
     },
     Component {
         name: "serde",
@@ -2298,7 +2316,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2006-2009 Graydon Hoare",
         source: "https://github.com/RustCrypto/hashes",
         kind: Kind::Crate,
-        notices: &[22, 177],
+        notices: &[22, 179],
     },
     Component {
         name: "signal-hook",
@@ -2307,7 +2325,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 178],
+        notices: &[3, 180],
     },
     Component {
         name: "signal-hook",
@@ -2316,7 +2334,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 178],
+        notices: &[3, 180],
     },
     Component {
         name: "signal-hook-mio",
@@ -2325,7 +2343,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 178],
+        notices: &[3, 180],
     },
     Component {
         name: "signal-hook-registry",
@@ -2334,7 +2352,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 178],
+        notices: &[3, 180],
     },
     Component {
         name: "simd-adler32",
@@ -2343,7 +2361,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Marvin Countryman <me@maar.vin>",
         source: "https://github.com/mcountryman/simd-adler32",
         kind: Kind::Crate,
-        notices: &[179],
+        notices: &[181],
     },
     Component {
         name: "simplecss",
@@ -2352,7 +2370,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/linebender/simplecss",
         kind: Kind::Crate,
-        notices: &[3, 180],
+        notices: &[3, 182],
     },
     Component {
         name: "siphasher",
@@ -2361,7 +2379,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2012-2016 The Rust Project Developers.",
         source: "https://github.com/jedisct1/rust-siphash",
         kind: Kind::Crate,
-        notices: &[181],
+        notices: &[183],
     },
     Component {
         name: "skrifa",
@@ -2370,7 +2388,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Colin Rothfels",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[78, 79],
+        notices: &[79, 80],
     },
     Component {
         name: "skrifa",
@@ -2379,7 +2397,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[80, 81],
+        notices: &[81, 82],
     },
     Component {
         name: "slab",
@@ -2388,7 +2406,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Carl Lerche",
         source: "https://github.com/tokio-rs/slab",
         kind: Kind::Crate,
-        notices: &[182],
+        notices: &[184],
     },
     Component {
         name: "slotmap",
@@ -2397,7 +2415,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Orson Peters <orsonpeters@gmail.com>",
         source: "https://github.com/orlp/slotmap",
         kind: Kind::Crate,
-        notices: &[183],
+        notices: &[185],
     },
     Component {
         name: "smallvec",
@@ -2406,7 +2424,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 The Servo Project Developers",
         source: "https://github.com/servo/rust-smallvec",
         kind: Kind::Crate,
-        notices: &[3, 184],
+        notices: &[3, 186],
     },
     Component {
         name: "smartstring",
@@ -2415,7 +2433,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Bodil Stokke <bodil@bodil.org>",
         source: "https://github.com/bodil/smartstring",
         kind: Kind::Crate,
-        notices: &[185],
+        notices: &[187],
     },
     Component {
         name: "spellbook",
@@ -2424,7 +2442,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Michael Davis <mcarsondavis@gmail.com>",
         source: "https://github.com/helix-editor/spellbook",
         kind: Kind::Crate,
-        notices: &[186],
+        notices: &[188],
     },
     Component {
         name: "stable_deref_trait",
@@ -2433,7 +2451,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Robert Grosse",
         source: "https://github.com/storyyeller/stable_deref_trait",
         kind: Kind::Crate,
-        notices: &[3, 187],
+        notices: &[3, 189],
     },
     Component {
         name: "static_assertions",
@@ -2442,7 +2460,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Nikolai Vazquez",
         source: "https://github.com/nvzqz/static-assertions-rs",
         kind: Kind::Crate,
-        notices: &[11, 188],
+        notices: &[11, 190],
     },
     Component {
         name: "strict-num",
@@ -2451,7 +2469,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/strict-num",
         kind: Kind::Crate,
-        notices: &[189],
+        notices: &[191],
     },
     Component {
         name: "strsim",
@@ -2460,7 +2478,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Danny Guo",
         source: "https://github.com/rapidfuzz/strsim-rs",
         kind: Kind::Crate,
-        notices: &[190],
+        notices: &[192],
     },
     Component {
         name: "strum",
@@ -2469,7 +2487,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[191],
+        notices: &[193],
     },
     Component {
         name: "strum_macros",
@@ -2478,7 +2496,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[191],
+        notices: &[193],
     },
     Component {
         name: "subsetter",
@@ -2487,7 +2505,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/typst/subsetter",
         kind: Kind::Crate,
-        notices: &[8, 97, 192],
+        notices: &[8, 99, 194],
     },
     Component {
         name: "svgtypes",
@@ -2496,7 +2514,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/linebender/svgtypes",
         kind: Kind::Crate,
-        notices: &[3, 193],
+        notices: &[3, 195],
     },
     Component {
         name: "syn",
@@ -2532,7 +2550,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2016 Nika Layzell",
         source: "https://github.com/mystor/synstructure",
         kind: Kind::Crate,
-        notices: &[194],
+        notices: &[196],
     },
     Component {
         name: "termina",
@@ -2541,7 +2559,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2025 Michael Davis",
         source: "https://github.com/helix-editor/termina",
         kind: Kind::Crate,
-        notices: &[195, 186],
+        notices: &[197, 188],
     },
     Component {
         name: "terminfo",
@@ -2550,7 +2568,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By meh. <meh@schizofreni.co>",
         source: "https://github.com/meh/rust-terminfo",
         kind: Kind::Crate,
-        notices: &[196],
+        notices: &[198],
     },
     Component {
         name: "termios",
@@ -2559,7 +2577,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 David Cuddeback",
         source: "https://github.com/dcuddeback/termios-rs",
         kind: Kind::Crate,
-        notices: &[197],
+        notices: &[199],
     },
     Component {
         name: "termwiz",
@@ -2568,7 +2586,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[70],
+        notices: &[71],
     },
     Component {
         name: "thin-vec",
@@ -2622,7 +2640,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[67, 198],
+        notices: &[68, 200],
     },
     Component {
         name: "time-core",
@@ -2631,7 +2649,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[67, 198],
+        notices: &[68, 200],
     },
     Component {
         name: "tiny-keccak",
@@ -2640,7 +2658,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By debris <marek.kotewicz@gmail.com>",
         source: "https://github.com/debris/tiny-keccak",
         kind: Kind::Crate,
-        notices: &[199],
+        notices: &[201],
     },
     Component {
         name: "tiny-skia",
@@ -2649,7 +2667,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia",
         kind: Kind::Crate,
-        notices: &[200],
+        notices: &[202],
     },
     Component {
         name: "tiny-skia-path",
@@ -2658,7 +2676,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia/tree/master/path",
         kind: Kind::Crate,
-        notices: &[200],
+        notices: &[202],
     },
     Component {
         name: "tiny_http",
@@ -2667,7 +2685,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2019 The tiny-http contributors",
         source: "https://github.com/tiny-http/tiny-http",
         kind: Kind::Crate,
-        notices: &[3, 201],
+        notices: &[3, 203],
     },
     Component {
         name: "tinyvec",
@@ -2676,7 +2694,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Daniel \"Lokathor\" Gee.",
         source: "https://github.com/Lokathor/tinyvec",
         kind: Kind::Crate,
-        notices: &[11, 202, 28],
+        notices: &[11, 204, 28],
     },
     Component {
         name: "toml_datetime",
@@ -2712,7 +2730,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/harfbuzz/ttf-parser",
         kind: Kind::Crate,
-        notices: &[3, 193],
+        notices: &[3, 195],
     },
     Component {
         name: "typed-path",
@@ -2730,7 +2748,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014 Paho Lurie-Gregg",
         source: "https://github.com/paholg/typenum",
         kind: Kind::Crate,
-        notices: &[203, 204, 205],
+        notices: &[205, 206, 207],
     },
     Component {
         name: "ucd-trie",
@@ -2748,7 +2766,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2026 Sean McArthur",
         source: "https://github.com/seanmonstar/unicase",
         kind: Kind::Crate,
-        notices: &[3, 206],
+        notices: &[3, 208],
     },
     Component {
         name: "unicode-bidi",
@@ -2757,7 +2775,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/servo/unicode-bidi",
         kind: Kind::Crate,
-        notices: &[207, 3, 20],
+        notices: &[209, 3, 20],
     },
     Component {
         name: "unicode-bidi-mirroring",
@@ -2766,7 +2784,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/unicode-bidi-mirroring",
         kind: Kind::Crate,
-        notices: &[3, 83],
+        notices: &[3, 84],
     },
     Component {
         name: "unicode-ccc",
@@ -2775,7 +2793,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/unicode-ccc",
         kind: Kind::Crate,
-        notices: &[3, 83],
+        notices: &[3, 84],
     },
     Component {
         name: "unicode-ident",
@@ -2784,7 +2802,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 1991-2023 Unicode, Inc.",
         source: "https://github.com/dtolnay/unicode-ident",
         kind: Kind::Crate,
-        notices: &[8, 2, 71],
+        notices: &[8, 2, 72],
     },
     Component {
         name: "unicode-linebreak",
@@ -2802,7 +2820,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-properties",
         kind: Kind::Crate,
-        notices: &[208, 3, 20],
+        notices: &[210, 3, 20],
     },
     Component {
         name: "unicode-script",
@@ -2811,7 +2829,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 The Unicode-rs Developers",
         source: "https://github.com/unicode-rs/unicode-script",
         kind: Kind::Crate,
-        notices: &[209, 210],
+        notices: &[211, 212],
     },
     Component {
         name: "unicode-segmentation",
@@ -2820,7 +2838,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-segmentation",
         kind: Kind::Crate,
-        notices: &[208, 3, 20],
+        notices: &[210, 3, 20],
     },
     Component {
         name: "unicode-truncate",
@@ -2829,7 +2847,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Aetf <aetf@unlimitedcodeworks.xyz>",
         source: "https://github.com/Aetf/unicode-truncate",
         kind: Kind::Crate,
-        notices: &[208, 3, 211],
+        notices: &[210, 3, 213],
     },
     Component {
         name: "unicode-vo",
@@ -2838,7 +2856,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/unicode-vo",
         kind: Kind::Crate,
-        notices: &[3, 180],
+        notices: &[3, 182],
     },
     Component {
         name: "unicode-width",
@@ -2847,7 +2865,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[208, 3, 20],
+        notices: &[210, 3, 20],
     },
     Component {
         name: "unicode-width",
@@ -2856,7 +2874,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[208, 3, 20],
+        notices: &[210, 3, 20],
     },
     Component {
         name: "usvg",
@@ -2865,7 +2883,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[67, 167],
+        notices: &[68, 169],
     },
     Component {
         name: "utf8parse",
@@ -2874,7 +2892,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Joe Wilm",
         source: "https://github.com/alacritty/vte",
         kind: Kind::Crate,
-        notices: &[8, 212],
+        notices: &[8, 214],
     },
     Component {
         name: "uuid",
@@ -2883,7 +2901,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 The Rust Project Developers",
         source: "https://github.com/uuid-rs/uuid",
         kind: Kind::Crate,
-        notices: &[3, 213],
+        notices: &[3, 215],
     },
     Component {
         name: "vtparse",
@@ -2892,7 +2910,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[214],
+        notices: &[216],
     },
     Component {
         name: "wasi",
@@ -2901,7 +2919,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By The Cranelift Project Developers",
         source: "https://github.com/bytecodealliance/wasi",
         kind: Kind::Crate,
-        notices: &[3, 117, 2],
+        notices: &[3, 119, 2],
     },
     Component {
         name: "wasip2",
@@ -2910,7 +2928,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/bytecodealliance/wasi-rs",
         kind: Kind::Crate,
-        notices: &[3, 117, 2],
+        notices: &[3, 119, 2],
     },
     Component {
         name: "wasm-bindgen",
@@ -2973,7 +2991,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 dAxpeDDa",
         source: "https://github.com/daxpedda/web-time",
         kind: Kind::Crate,
-        notices: &[215, 216],
+        notices: &[217, 218],
     },
     Component {
         name: "weezl",
@@ -2982,7 +3000,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) HeroicKatora 2020",
         source: "https://github.com/image-rs/weezl",
         kind: Kind::Crate,
-        notices: &[3, 217],
+        notices: &[3, 219],
     },
     Component {
         name: "wezterm-bidi",
@@ -2991,7 +3009,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[218],
+        notices: &[220],
     },
     Component {
         name: "wezterm-blob-leases",
@@ -3000,7 +3018,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2023-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[219],
+        notices: &[221],
     },
     Component {
         name: "wezterm-color-types",
@@ -3009,7 +3027,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[220],
+        notices: &[222],
     },
     Component {
         name: "wezterm-dynamic",
@@ -3018,7 +3036,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[221],
+        notices: &[223],
     },
     Component {
         name: "wezterm-dynamic-derive",
@@ -3027,7 +3045,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[70],
+        notices: &[71],
     },
     Component {
         name: "wezterm-input-types",
@@ -3036,7 +3054,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[222],
+        notices: &[224],
     },
     Component {
         name: "winapi",
@@ -3045,7 +3063,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015-2018 The winapi-rs Developers",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[9, 223],
+        notices: &[9, 225],
     },
     Component {
         name: "winapi-i686-pc-windows-gnu",
@@ -3054,7 +3072,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[224],
+        notices: &[226],
     },
     Component {
         name: "winapi-x86_64-pc-windows-gnu",
@@ -3063,7 +3081,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[225],
+        notices: &[227],
     },
     Component {
         name: "windows",
@@ -3072,7 +3090,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-collections",
@@ -3081,7 +3099,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-core",
@@ -3090,7 +3108,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-future",
@@ -3099,7 +3117,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-implement",
@@ -3108,7 +3126,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-interface",
@@ -3117,7 +3135,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-link",
@@ -3126,7 +3144,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-numerics",
@@ -3135,7 +3153,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-result",
@@ -3144,7 +3162,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-strings",
@@ -3153,7 +3171,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-sys",
@@ -3162,7 +3180,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-sys",
@@ -3171,7 +3189,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-targets",
@@ -3180,7 +3198,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows-threading",
@@ -3189,7 +3207,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_aarch64_gnullvm",
@@ -3198,7 +3216,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_aarch64_msvc",
@@ -3207,7 +3225,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_i686_gnu",
@@ -3216,7 +3234,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_i686_gnullvm",
@@ -3225,7 +3243,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_i686_msvc",
@@ -3234,7 +3252,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_x86_64_gnu",
@@ -3243,7 +3261,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_x86_64_gnullvm",
@@ -3252,7 +3270,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "windows_x86_64_msvc",
@@ -3261,7 +3279,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[226, 227],
+        notices: &[228, 229],
     },
     Component {
         name: "winnow",
@@ -3270,7 +3288,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[228],
+        notices: &[230],
     },
     Component {
         name: "winnow",
@@ -3279,7 +3297,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[228],
+        notices: &[230],
     },
     Component {
         name: "wit-bindgen",
@@ -3288,7 +3306,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Alex Crichton <alex@alexcrichton.com>",
         source: "https://github.com/bytecodealliance/wit-bindgen",
         kind: Kind::Crate,
-        notices: &[3, 117, 2],
+        notices: &[3, 119, 2],
     },
     Component {
         name: "write-fonts",
@@ -3297,7 +3315,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Colin Rothfels",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[78, 79],
+        notices: &[79, 80],
     },
     Component {
         name: "xmlwriter",
@@ -3306,7 +3324,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/xmlwriter",
         kind: Kind::Crate,
-        notices: &[229],
+        notices: &[231],
     },
     Component {
         name: "xmp-writer",
@@ -3315,7 +3333,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Martin Haug <mhaug@live.de>",
         source: "https://github.com/typst/xmp-writer",
         kind: Kind::Crate,
-        notices: &[8, 97],
+        notices: &[8, 99],
     },
     Component {
         name: "yoke",
@@ -3324,7 +3342,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[230],
+        notices: &[232],
     },
     Component {
         name: "yoke-derive",
@@ -3333,7 +3351,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[230],
+        notices: &[232],
     },
     Component {
         name: "zerocopy",
@@ -3342,7 +3360,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[231, 232, 233],
+        notices: &[233, 234, 235],
     },
     Component {
         name: "zerocopy-derive",
@@ -3351,7 +3369,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[231, 232, 233],
+        notices: &[233, 234, 235],
     },
     Component {
         name: "zerofrom",
@@ -3360,7 +3378,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[230],
+        notices: &[232],
     },
     Component {
         name: "zerofrom-derive",
@@ -3369,7 +3387,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[230],
+        notices: &[232],
     },
     Component {
         name: "zip",
@@ -3378,7 +3396,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
         kind: Kind::Crate,
-        notices: &[234],
+        notices: &[236],
     },
     Component {
         name: "zlib-rs",
@@ -3387,7 +3405,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/trifectatechfoundation/zlib-rs",
         kind: Kind::Crate,
-        notices: &[235],
+        notices: &[237],
     },
     Component {
         name: "zmij",
@@ -3405,7 +3423,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2011 Google Inc.",
         source: "https://github.com/zopfli-rs/zopfli",
         kind: Kind::Crate,
-        notices: &[236],
+        notices: &[238],
     },
     Component {
         name: "zune-core",
@@ -3414,7 +3432,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image",
         kind: Kind::Crate,
-        notices: &[11, 237, 238],
+        notices: &[11, 239, 240],
     },
     Component {
         name: "zune-jpeg",
@@ -3423,7 +3441,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg",
         kind: Kind::Crate,
-        notices: &[11, 237, 238],
+        notices: &[11, 239, 240],
     },
 ];
 
@@ -7343,6 +7361,186 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."#,
+    r#"hyph_en_US.dic, from ushyphmax.tex by Gerard D.C. Kuiken and the TUGboat hyphenation exception log, prepared for libhyphen by László Németh.
+
+Offered under the GNU GPL version 2, the GNU LGPL version 2.1 or later, or the MPL 1.1; used here under the LGPL, unmodified.
+
+GNU LESSER GENERAL PUBLIC LICENSE
+
+Version 2.1, February 1999
+
+Copyright (C) 1991, 1999 Free Software Foundation, Inc.
+51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+[This is the first released version of the Lesser GPL.  It also counts as the successor of the GNU Library Public License, version 2, hence the version number 2.1.]
+
+Preamble
+
+The licenses for most software are designed to take away your freedom to share and change it. By contrast, the GNU General Public Licenses are intended to guarantee your freedom to share and change free software--to make sure the software is free for all its users.
+
+This license, the Lesser General Public License, applies to some specially designated software packages--typically libraries--of the Free Software Foundation and other authors who decide to use it. You can use it too, but we suggest you first think carefully about whether this license or the ordinary General Public License is the better strategy to use in any particular case, based on the explanations below.
+
+When we speak of free software, we are referring to freedom of use, not price. Our General Public Licenses are designed to make sure that you have the freedom to distribute copies of free software (and charge for this service if you wish); that you receive source code or can get it if you want it; that you can change the software and use pieces of it in new free programs; and that you are informed that you can do these things.
+
+To protect your rights, we need to make restrictions that forbid distributors to deny you these rights or to ask you to surrender these rights. These restrictions translate to certain responsibilities for you if you distribute copies of the library or if you modify it.
+
+For example, if you distribute copies of the library, whether gratis or for a fee, you must give the recipients all the rights that we gave you. You must make sure that they, too, receive or can get the source code. If you link other code with the library, you must provide complete object files to the recipients, so that they can relink them with the library after making changes to the library and recompiling it. And you must show them these terms so they know their rights.
+
+We protect your rights with a two-step method: (1) we copyright the library, and (2) we offer you this license, which gives you legal permission to copy, distribute and/or modify the library.
+
+To protect each distributor, we want to make it very clear that there is no warranty for the free library. Also, if the library is modified by someone else and passed on, the recipients should know that what they have is not the original version, so that the original author's reputation will not be affected by problems that might be introduced by others.
+
+Finally, software patents pose a constant threat to the existence of any free program. We wish to make sure that a company cannot effectively restrict the users of a free program by obtaining a restrictive license from a patent holder. Therefore, we insist that any patent license obtained for a version of the library must be consistent with the full freedom of use specified in this license.
+
+Most GNU software, including some libraries, is covered by the ordinary GNU General Public License. This license, the GNU Lesser General Public License, applies to certain designated libraries, and is quite different from the ordinary General Public License. We use this license for certain libraries in order to permit linking those libraries into non-free programs.
+
+When a program is linked with a library, whether statically or using a shared library, the combination of the two is legally speaking a combined work, a derivative of the original library. The ordinary General Public License therefore permits such linking only if the entire combination fits its criteria of freedom. The Lesser General Public License permits more lax criteria for linking other code with the library.
+
+We call this license the "Lesser" General Public License because it does Less to protect the user's freedom than the ordinary General Public License. It also provides other free software developers Less of an advantage over competing non-free programs. These disadvantages are the reason we use the ordinary General Public License for many libraries. However, the Lesser license provides advantages in certain special circumstances.
+
+For example, on rare occasions, there may be a special need to encourage the widest possible use of a certain library, so that it becomes a de-facto standard. To achieve this, non-free programs must be allowed to use the library. A more frequent case is that a free library does the same job as widely used non-free libraries. In this case, there is little to gain by limiting the free library to free software only, so we use the Lesser General Public License.
+
+In other cases, permission to use a particular library in non-free programs enables a greater number of people to use a large body of free software. For example, permission to use the GNU C Library in non-free programs enables many more people to use the whole GNU operating system, as well as its variant, the GNU/Linux operating system.
+
+Although the Lesser General Public License is Less protective of the users' freedom, it does ensure that the user of a program that is linked with the Library has the freedom and the wherewithal to run that program using a modified version of the Library.
+
+The precise terms and conditions for copying, distribution and modification follow. Pay close attention to the difference between a "work based on the library" and a "work that uses the library". The former contains code derived from the library, whereas the latter must be combined with the library in order to run.
+
+GNU LESSER GENERAL PUBLIC LICENSE
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+0. This License Agreement applies to any software library or other program which contains a notice placed by the copyright holder or other authorized party saying it may be distributed under the terms of this Lesser General Public License (also called "this License"). Each licensee is addressed as "you".
+
+A "library" means a collection of software functions and/or data prepared so as to be conveniently linked with application programs (which use some of those functions and data) to form executables.
+
+The "Library", below, refers to any such software library or work which has been distributed under these terms. A "work based on the Library" means either the Library or any derivative work under copyright law: that is to say, a work containing the Library or a portion of it, either verbatim or with modifications and/or translated straightforwardly into another language. (Hereinafter, translation is included without limitation in the term "modification".)
+
+"Source code" for a work means the preferred form of the work for making modifications to it. For a library, complete source code means all the source code for all modules it contains, plus any associated interface definition files, plus the scripts used to control compilation and installation of the library.
+
+Activities other than copying, distribution and modification are not covered by this License; they are outside its scope. The act of running a program using the Library is not restricted, and output from such a program is covered only if its contents constitute a work based on the Library (independent of the use of the Library in a tool for writing it). Whether that is true depends on what the Library does and what the program that uses the Library does.
+
+1. You may copy and distribute verbatim copies of the Library's complete source code as you receive it, in any medium, provided that you conspicuously and appropriately publish on each copy an appropriate copyright notice and disclaimer of warranty; keep intact all the notices that refer to this License and to the absence of any warranty; and distribute a copy of this License along with the Library.
+
+You may charge a fee for the physical act of transferring a copy, and you may at your option offer warranty protection in exchange for a fee.
+
+2. You may modify your copy or copies of the Library or any portion of it, thus forming a work based on the Library, and copy and distribute such modifications or work under the terms of Section 1 above, provided that you also meet all of these conditions:
+
+     a) The modified work must itself be a software library.
+
+     b) You must cause the files modified to carry prominent notices stating that you changed the files and the date of any change.
+
+     c) You must cause the whole of the work to be licensed at no charge to all third parties under the terms of this License.
+
+     d) If a facility in the modified Library refers to a function or a table of data to be supplied by an application program that uses the facility, other than as an argument passed when the facility is invoked, then you must make a good faith effort to ensure that, in the event an application does not supply such function or table, the facility still operates, and performs whatever part of its purpose remains meaningful.
+
+(For example, a function in a library to compute square roots has a purpose that is entirely well-defined independent of the application. Therefore, Subsection 2d requires that any application-supplied function or table used by this function must be optional: if the application does not supply it, the square root function must still compute square roots.)
+
+These requirements apply to the modified work as a whole. If identifiable sections of that work are not derived from the Library, and can be reasonably considered independent and separate works in themselves, then this License, and its terms, do not apply to those sections when you distribute them as separate works. But when you distribute the same sections as part of a whole which is a work based on the Library, the distribution of the whole must be on the terms of this License, whose permissions for other licensees extend to the entire whole, and thus to each and every part regardless of who wrote it.
+
+Thus, it is not the intent of this section to claim rights or contest your rights to work written entirely by you; rather, the intent is to exercise the right to control the distribution of derivative or collective works based on the Library.
+
+In addition, mere aggregation of another work not based on the Library with the Library (or with a work based on the Library) on a volume of a storage or distribution medium does not bring the other work under the scope of this License.
+
+3. You may opt to apply the terms of the ordinary GNU General Public License instead of this License to a given copy of the Library. To do this, you must alter all the notices that refer to this License, so that they refer to the ordinary GNU General Public License, version 2, instead of to this License. (If a newer version than version 2 of the ordinary GNU General Public License has appeared, then you can specify that version instead if you wish.) Do not make any other change in these notices.
+
+Once this change is made in a given copy, it is irreversible for that copy, so the ordinary GNU General Public License applies to all subsequent copies and derivative works made from that copy.
+
+This option is useful when you wish to copy part of the code of the Library into a program that is not a library.
+
+4. You may copy and distribute the Library (or a portion or derivative of it, under Section 2) in object code or executable form under the terms of Sections 1 and 2 above provided that you accompany it with the complete corresponding machine-readable source code, which must be distributed under the terms of Sections 1 and 2 above on a medium customarily used for software interchange.
+
+If distribution of object code is made by offering access to copy from a designated place, then offering equivalent access to copy the source code from the same place satisfies the requirement to distribute the source code, even though third parties are not compelled to copy the source along with the object code.
+
+5. A program that contains no derivative of any portion of the Library, but is designed to work with the Library by being compiled or linked with it, is called a "work that uses the Library". Such a work, in isolation, is not a derivative work of the Library, and therefore falls outside the scope of this License.
+
+However, linking a "work that uses the Library" with the Library creates an executable that is a derivative of the Library (because it contains portions of the Library), rather than a "work that uses the library". The executable is therefore covered by this License. Section 6 states terms for distribution of such executables.
+
+When a "work that uses the Library" uses material from a header file that is part of the Library, the object code for the work may be a derivative work of the Library even though the source code is not. Whether this is true is especially significant if the work can be linked without the Library, or if the work is itself a library. The threshold for this to be true is not precisely defined by law.
+
+If such an object file uses only numerical parameters, data structure layouts and accessors, and small macros and small inline functions (ten lines or less in length), then the use of the object file is unrestricted, regardless of whether it is legally a derivative work. (Executables containing this object code plus portions of the Library will still fall under Section 6.)
+
+Otherwise, if the work is a derivative of the Library, you may distribute the object code for the work under the terms of Section 6. Any executables containing that work also fall under Section 6, whether or not they are linked directly with the Library itself.
+
+6. As an exception to the Sections above, you may also combine or link a "work that uses the Library" with the Library to produce a work containing portions of the Library, and distribute that work under terms of your choice, provided that the terms permit modification of the work for the customer's own use and reverse engineering for debugging such modifications.
+
+You must give prominent notice with each copy of the work that the Library is used in it and that the Library and its use are covered by this License. You must supply a copy of this License. If the work during execution displays copyright notices, you must include the copyright notice for the Library among them, as well as a reference directing the user to the copy of this License. Also, you must do one of these things:
+
+     a) Accompany the work with the complete corresponding machine-readable source code for the Library including whatever changes were used in the work (which must be distributed under Sections 1 and 2 above); and, if the work is an executable linked with the Library, with the complete machine-readable "work that uses the Library", as object code and/or source code, so that the user can modify the Library and then relink to produce a modified executable containing the modified Library. (It is understood that the user who changes the contents of definitions files in the Library will not necessarily be able to recompile the application to use the modified definitions.)
+
+     b) Use a suitable shared library mechanism for linking with the Library. A suitable mechanism is one that (1) uses at run time a copy of the library already present on the user's computer system, rather than copying library functions into the executable, and (2) will operate properly with a modified version of the library, if the user installs one, as long as the modified version is interface-compatible with the version that the work was made with.
+
+     c) Accompany the work with a written offer, valid for at least three years, to give the same user the materials specified in Subsection 6a, above, for a charge no more than the cost of performing this distribution.
+
+     d) If distribution of the work is made by offering access to copy from a designated place, offer equivalent access to copy the above specified materials from the same place.
+
+     e) Verify that the user has already received a copy of these materials or that you have already sent this user a copy.
+
+For an executable, the required form of the "work that uses the Library" must include any data and utility programs needed for reproducing the executable from it. However, as a special exception, the materials to be distributed need not include anything that is normally distributed (in either source or binary form) with the major components (compiler, kernel, and so on) of the operating system on which the executable runs, unless that component itself accompanies the executable.
+
+It may happen that this requirement contradicts the license restrictions of other proprietary libraries that do not normally accompany the operating system. Such a contradiction means you cannot use both them and the Library together in an executable that you distribute.
+
+7. You may place library facilities that are a work based on the Library side-by-side in a single library together with other library facilities not covered by this License, and distribute such a combined library, provided that the separate distribution of the work based on the Library and of the other library facilities is otherwise permitted, and provided that you do these two things:
+
+     a) Accompany the combined library with a copy of the same work based on the Library, uncombined with any other library facilities. This must be distributed under the terms of the Sections above.
+
+     b) Give prominent notice with the combined library of the fact that part of it is a work based on the Library, and explaining where to find the accompanying uncombined form of the same work.
+
+8. You may not copy, modify, sublicense, link with, or distribute the Library except as expressly provided under this License. Any attempt otherwise to copy, modify, sublicense, link with, or distribute the Library is void, and will automatically terminate your rights under this License. However, parties who have received copies, or rights, from you under this License will not have their licenses terminated so long as such parties remain in full compliance.
+
+9. You are not required to accept this License, since you have not signed it. However, nothing else grants you permission to modify or distribute the Library or its derivative works. These actions are prohibited by law if you do not accept this License. Therefore, by modifying or distributing the Library (or any work based on the Library), you indicate your acceptance of this License to do so, and all its terms and conditions for copying, distributing or modifying the Library or works based on it.
+
+10. Each time you redistribute the Library (or any work based on the Library), the recipient automatically receives a license from the original licensor to copy, distribute, link with or modify the Library subject to these terms and conditions. You may not impose any further restrictions on the recipients' exercise of the rights granted herein. You are not responsible for enforcing compliance by third parties with this License.
+
+11. If, as a consequence of a court judgment or allegation of patent infringement or for any other reason (not limited to patent issues), conditions are imposed on you (whether by court order, agreement or otherwise) that contradict the conditions of this License, they do not excuse you from the conditions of this License. If you cannot distribute so as to satisfy simultaneously your obligations under this License and any other pertinent obligations, then as a consequence you may not distribute the Library at all. For example, if a patent license would not permit royalty-free redistribution of the Library by all those who receive copies directly or indirectly through you, then the only way you could satisfy both it and this License would be to refrain entirely from distribution of the Library.
+
+If any portion of this section is held invalid or unenforceable under any particular circumstance, the balance of the section is intended to apply, and the section as a whole is intended to apply in other circumstances.
+
+It is not the purpose of this section to induce you to infringe any patents or other property right claims or to contest validity of any such claims; this section has the sole purpose of protecting the integrity of the free software distribution system which is implemented by public license practices. Many people have made generous contributions to the wide range of software distributed through that system in reliance on consistent application of that system; it is up to the author/donor to decide if he or she is willing to distribute software through any other system and a licensee cannot impose that choice.
+
+This section is intended to make thoroughly clear what is believed to be a consequence of the rest of this License.
+
+12. If the distribution and/or use of the Library is restricted in certain countries either by patents or by copyrighted interfaces, the original copyright holder who places the Library under this License may add an explicit geographical distribution limitation excluding those countries, so that distribution is permitted only in or among countries not thus excluded. In such case, this License incorporates the limitation as if written in the body of this License.
+
+13. The Free Software Foundation may publish revised and/or new versions of the Lesser General Public License from time to time. Such new versions will be similar in spirit to the present version, but may differ in detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Library specifies a version number of this License which applies to it and "any later version", you have the option of following the terms and conditions either of that version or of any later version published by the Free Software Foundation. If the Library does not specify a license version number, you may choose any version ever published by the Free Software Foundation.
+
+14. If you wish to incorporate parts of the Library into other free programs whose distribution conditions are incompatible with these, write to the author to ask for permission. For software which is copyrighted by the Free Software Foundation, write to the Free Software Foundation; we sometimes make exceptions for this. Our decision will be guided by the two goals of preserving the free status of all derivatives of our free software and of promoting the sharing and reuse of software generally.
+
+NO WARRANTY
+
+15. BECAUSE THE LIBRARY IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY FOR THE LIBRARY, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE LIBRARY "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE LIBRARY IS WITH YOU. SHOULD THE LIBRARY PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+16. IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR REDISTRIBUTE THE LIBRARY AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE LIBRARY (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE LIBRARY TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+END OF TERMS AND CONDITIONS
+
+How to Apply These Terms to Your New Libraries
+
+If you develop a new library, and you want it to be of the greatest possible use to the public, we recommend making it free software that everyone can redistribute and change. You can do so by permitting redistribution under these terms (or, alternatively, under the terms of the ordinary General Public License).
+
+To apply these terms, attach the following notices to the library. It is safest to attach them to the start of each source file to most effectively convey the exclusion of warranty; and each file should have at least the "copyright" line and a pointer to where the full notice is found.
+
+     one line to give the library's name and an idea of what it does.
+     Copyright (C) year  name of author
+
+     This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation; either version 2.1 of the License, or (at your option) any later version.
+
+     This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+
+     You should have received a copy of the GNU Lesser General Public License along with this library; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA Also add information on how to contact you by electronic and paper mail.
+
+You should also get your employer (if you work as a programmer) or your school, if any, to sign a "copyright disclaimer" for the library, if necessary. Here is a sample; alter the names:
+
+Yoyodyne, Inc., hereby disclaims all copyright interest in
+the library `Frob' (a library for tweaking knobs) written
+by James Random Hacker.
+
+signature of Ty Coon, 1 April 1990
+Ty Coon, President of Vice
+That's all there is to it!"#,
     r#"Copyright (c) 2016--2023
 
 Permission is hereby granted, free of charge, to any
@@ -8516,6 +8714,186 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
+    r#"hyph_de_DE.dic, based on the TeX hyphenation tables dehyphn.tex (revision 31), converted by Marco Huggenberger and revised by Daniel Naber.
+
+Under the GNU LGPL; used here unmodified.
+
+GNU LESSER GENERAL PUBLIC LICENSE
+
+Version 2.1, February 1999
+
+Copyright (C) 1991, 1999 Free Software Foundation, Inc.
+51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+[This is the first released version of the Lesser GPL.  It also counts as the successor of the GNU Library Public License, version 2, hence the version number 2.1.]
+
+Preamble
+
+The licenses for most software are designed to take away your freedom to share and change it. By contrast, the GNU General Public Licenses are intended to guarantee your freedom to share and change free software--to make sure the software is free for all its users.
+
+This license, the Lesser General Public License, applies to some specially designated software packages--typically libraries--of the Free Software Foundation and other authors who decide to use it. You can use it too, but we suggest you first think carefully about whether this license or the ordinary General Public License is the better strategy to use in any particular case, based on the explanations below.
+
+When we speak of free software, we are referring to freedom of use, not price. Our General Public Licenses are designed to make sure that you have the freedom to distribute copies of free software (and charge for this service if you wish); that you receive source code or can get it if you want it; that you can change the software and use pieces of it in new free programs; and that you are informed that you can do these things.
+
+To protect your rights, we need to make restrictions that forbid distributors to deny you these rights or to ask you to surrender these rights. These restrictions translate to certain responsibilities for you if you distribute copies of the library or if you modify it.
+
+For example, if you distribute copies of the library, whether gratis or for a fee, you must give the recipients all the rights that we gave you. You must make sure that they, too, receive or can get the source code. If you link other code with the library, you must provide complete object files to the recipients, so that they can relink them with the library after making changes to the library and recompiling it. And you must show them these terms so they know their rights.
+
+We protect your rights with a two-step method: (1) we copyright the library, and (2) we offer you this license, which gives you legal permission to copy, distribute and/or modify the library.
+
+To protect each distributor, we want to make it very clear that there is no warranty for the free library. Also, if the library is modified by someone else and passed on, the recipients should know that what they have is not the original version, so that the original author's reputation will not be affected by problems that might be introduced by others.
+
+Finally, software patents pose a constant threat to the existence of any free program. We wish to make sure that a company cannot effectively restrict the users of a free program by obtaining a restrictive license from a patent holder. Therefore, we insist that any patent license obtained for a version of the library must be consistent with the full freedom of use specified in this license.
+
+Most GNU software, including some libraries, is covered by the ordinary GNU General Public License. This license, the GNU Lesser General Public License, applies to certain designated libraries, and is quite different from the ordinary General Public License. We use this license for certain libraries in order to permit linking those libraries into non-free programs.
+
+When a program is linked with a library, whether statically or using a shared library, the combination of the two is legally speaking a combined work, a derivative of the original library. The ordinary General Public License therefore permits such linking only if the entire combination fits its criteria of freedom. The Lesser General Public License permits more lax criteria for linking other code with the library.
+
+We call this license the "Lesser" General Public License because it does Less to protect the user's freedom than the ordinary General Public License. It also provides other free software developers Less of an advantage over competing non-free programs. These disadvantages are the reason we use the ordinary General Public License for many libraries. However, the Lesser license provides advantages in certain special circumstances.
+
+For example, on rare occasions, there may be a special need to encourage the widest possible use of a certain library, so that it becomes a de-facto standard. To achieve this, non-free programs must be allowed to use the library. A more frequent case is that a free library does the same job as widely used non-free libraries. In this case, there is little to gain by limiting the free library to free software only, so we use the Lesser General Public License.
+
+In other cases, permission to use a particular library in non-free programs enables a greater number of people to use a large body of free software. For example, permission to use the GNU C Library in non-free programs enables many more people to use the whole GNU operating system, as well as its variant, the GNU/Linux operating system.
+
+Although the Lesser General Public License is Less protective of the users' freedom, it does ensure that the user of a program that is linked with the Library has the freedom and the wherewithal to run that program using a modified version of the Library.
+
+The precise terms and conditions for copying, distribution and modification follow. Pay close attention to the difference between a "work based on the library" and a "work that uses the library". The former contains code derived from the library, whereas the latter must be combined with the library in order to run.
+
+GNU LESSER GENERAL PUBLIC LICENSE
+TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION
+
+0. This License Agreement applies to any software library or other program which contains a notice placed by the copyright holder or other authorized party saying it may be distributed under the terms of this Lesser General Public License (also called "this License"). Each licensee is addressed as "you".
+
+A "library" means a collection of software functions and/or data prepared so as to be conveniently linked with application programs (which use some of those functions and data) to form executables.
+
+The "Library", below, refers to any such software library or work which has been distributed under these terms. A "work based on the Library" means either the Library or any derivative work under copyright law: that is to say, a work containing the Library or a portion of it, either verbatim or with modifications and/or translated straightforwardly into another language. (Hereinafter, translation is included without limitation in the term "modification".)
+
+"Source code" for a work means the preferred form of the work for making modifications to it. For a library, complete source code means all the source code for all modules it contains, plus any associated interface definition files, plus the scripts used to control compilation and installation of the library.
+
+Activities other than copying, distribution and modification are not covered by this License; they are outside its scope. The act of running a program using the Library is not restricted, and output from such a program is covered only if its contents constitute a work based on the Library (independent of the use of the Library in a tool for writing it). Whether that is true depends on what the Library does and what the program that uses the Library does.
+
+1. You may copy and distribute verbatim copies of the Library's complete source code as you receive it, in any medium, provided that you conspicuously and appropriately publish on each copy an appropriate copyright notice and disclaimer of warranty; keep intact all the notices that refer to this License and to the absence of any warranty; and distribute a copy of this License along with the Library.
+
+You may charge a fee for the physical act of transferring a copy, and you may at your option offer warranty protection in exchange for a fee.
+
+2. You may modify your copy or copies of the Library or any portion of it, thus forming a work based on the Library, and copy and distribute such modifications or work under the terms of Section 1 above, provided that you also meet all of these conditions:
+
+     a) The modified work must itself be a software library.
+
+     b) You must cause the files modified to carry prominent notices stating that you changed the files and the date of any change.
+
+     c) You must cause the whole of the work to be licensed at no charge to all third parties under the terms of this License.
+
+     d) If a facility in the modified Library refers to a function or a table of data to be supplied by an application program that uses the facility, other than as an argument passed when the facility is invoked, then you must make a good faith effort to ensure that, in the event an application does not supply such function or table, the facility still operates, and performs whatever part of its purpose remains meaningful.
+
+(For example, a function in a library to compute square roots has a purpose that is entirely well-defined independent of the application. Therefore, Subsection 2d requires that any application-supplied function or table used by this function must be optional: if the application does not supply it, the square root function must still compute square roots.)
+
+These requirements apply to the modified work as a whole. If identifiable sections of that work are not derived from the Library, and can be reasonably considered independent and separate works in themselves, then this License, and its terms, do not apply to those sections when you distribute them as separate works. But when you distribute the same sections as part of a whole which is a work based on the Library, the distribution of the whole must be on the terms of this License, whose permissions for other licensees extend to the entire whole, and thus to each and every part regardless of who wrote it.
+
+Thus, it is not the intent of this section to claim rights or contest your rights to work written entirely by you; rather, the intent is to exercise the right to control the distribution of derivative or collective works based on the Library.
+
+In addition, mere aggregation of another work not based on the Library with the Library (or with a work based on the Library) on a volume of a storage or distribution medium does not bring the other work under the scope of this License.
+
+3. You may opt to apply the terms of the ordinary GNU General Public License instead of this License to a given copy of the Library. To do this, you must alter all the notices that refer to this License, so that they refer to the ordinary GNU General Public License, version 2, instead of to this License. (If a newer version than version 2 of the ordinary GNU General Public License has appeared, then you can specify that version instead if you wish.) Do not make any other change in these notices.
+
+Once this change is made in a given copy, it is irreversible for that copy, so the ordinary GNU General Public License applies to all subsequent copies and derivative works made from that copy.
+
+This option is useful when you wish to copy part of the code of the Library into a program that is not a library.
+
+4. You may copy and distribute the Library (or a portion or derivative of it, under Section 2) in object code or executable form under the terms of Sections 1 and 2 above provided that you accompany it with the complete corresponding machine-readable source code, which must be distributed under the terms of Sections 1 and 2 above on a medium customarily used for software interchange.
+
+If distribution of object code is made by offering access to copy from a designated place, then offering equivalent access to copy the source code from the same place satisfies the requirement to distribute the source code, even though third parties are not compelled to copy the source along with the object code.
+
+5. A program that contains no derivative of any portion of the Library, but is designed to work with the Library by being compiled or linked with it, is called a "work that uses the Library". Such a work, in isolation, is not a derivative work of the Library, and therefore falls outside the scope of this License.
+
+However, linking a "work that uses the Library" with the Library creates an executable that is a derivative of the Library (because it contains portions of the Library), rather than a "work that uses the library". The executable is therefore covered by this License. Section 6 states terms for distribution of such executables.
+
+When a "work that uses the Library" uses material from a header file that is part of the Library, the object code for the work may be a derivative work of the Library even though the source code is not. Whether this is true is especially significant if the work can be linked without the Library, or if the work is itself a library. The threshold for this to be true is not precisely defined by law.
+
+If such an object file uses only numerical parameters, data structure layouts and accessors, and small macros and small inline functions (ten lines or less in length), then the use of the object file is unrestricted, regardless of whether it is legally a derivative work. (Executables containing this object code plus portions of the Library will still fall under Section 6.)
+
+Otherwise, if the work is a derivative of the Library, you may distribute the object code for the work under the terms of Section 6. Any executables containing that work also fall under Section 6, whether or not they are linked directly with the Library itself.
+
+6. As an exception to the Sections above, you may also combine or link a "work that uses the Library" with the Library to produce a work containing portions of the Library, and distribute that work under terms of your choice, provided that the terms permit modification of the work for the customer's own use and reverse engineering for debugging such modifications.
+
+You must give prominent notice with each copy of the work that the Library is used in it and that the Library and its use are covered by this License. You must supply a copy of this License. If the work during execution displays copyright notices, you must include the copyright notice for the Library among them, as well as a reference directing the user to the copy of this License. Also, you must do one of these things:
+
+     a) Accompany the work with the complete corresponding machine-readable source code for the Library including whatever changes were used in the work (which must be distributed under Sections 1 and 2 above); and, if the work is an executable linked with the Library, with the complete machine-readable "work that uses the Library", as object code and/or source code, so that the user can modify the Library and then relink to produce a modified executable containing the modified Library. (It is understood that the user who changes the contents of definitions files in the Library will not necessarily be able to recompile the application to use the modified definitions.)
+
+     b) Use a suitable shared library mechanism for linking with the Library. A suitable mechanism is one that (1) uses at run time a copy of the library already present on the user's computer system, rather than copying library functions into the executable, and (2) will operate properly with a modified version of the library, if the user installs one, as long as the modified version is interface-compatible with the version that the work was made with.
+
+     c) Accompany the work with a written offer, valid for at least three years, to give the same user the materials specified in Subsection 6a, above, for a charge no more than the cost of performing this distribution.
+
+     d) If distribution of the work is made by offering access to copy from a designated place, offer equivalent access to copy the above specified materials from the same place.
+
+     e) Verify that the user has already received a copy of these materials or that you have already sent this user a copy.
+
+For an executable, the required form of the "work that uses the Library" must include any data and utility programs needed for reproducing the executable from it. However, as a special exception, the materials to be distributed need not include anything that is normally distributed (in either source or binary form) with the major components (compiler, kernel, and so on) of the operating system on which the executable runs, unless that component itself accompanies the executable.
+
+It may happen that this requirement contradicts the license restrictions of other proprietary libraries that do not normally accompany the operating system. Such a contradiction means you cannot use both them and the Library together in an executable that you distribute.
+
+7. You may place library facilities that are a work based on the Library side-by-side in a single library together with other library facilities not covered by this License, and distribute such a combined library, provided that the separate distribution of the work based on the Library and of the other library facilities is otherwise permitted, and provided that you do these two things:
+
+     a) Accompany the combined library with a copy of the same work based on the Library, uncombined with any other library facilities. This must be distributed under the terms of the Sections above.
+
+     b) Give prominent notice with the combined library of the fact that part of it is a work based on the Library, and explaining where to find the accompanying uncombined form of the same work.
+
+8. You may not copy, modify, sublicense, link with, or distribute the Library except as expressly provided under this License. Any attempt otherwise to copy, modify, sublicense, link with, or distribute the Library is void, and will automatically terminate your rights under this License. However, parties who have received copies, or rights, from you under this License will not have their licenses terminated so long as such parties remain in full compliance.
+
+9. You are not required to accept this License, since you have not signed it. However, nothing else grants you permission to modify or distribute the Library or its derivative works. These actions are prohibited by law if you do not accept this License. Therefore, by modifying or distributing the Library (or any work based on the Library), you indicate your acceptance of this License to do so, and all its terms and conditions for copying, distributing or modifying the Library or works based on it.
+
+10. Each time you redistribute the Library (or any work based on the Library), the recipient automatically receives a license from the original licensor to copy, distribute, link with or modify the Library subject to these terms and conditions. You may not impose any further restrictions on the recipients' exercise of the rights granted herein. You are not responsible for enforcing compliance by third parties with this License.
+
+11. If, as a consequence of a court judgment or allegation of patent infringement or for any other reason (not limited to patent issues), conditions are imposed on you (whether by court order, agreement or otherwise) that contradict the conditions of this License, they do not excuse you from the conditions of this License. If you cannot distribute so as to satisfy simultaneously your obligations under this License and any other pertinent obligations, then as a consequence you may not distribute the Library at all. For example, if a patent license would not permit royalty-free redistribution of the Library by all those who receive copies directly or indirectly through you, then the only way you could satisfy both it and this License would be to refrain entirely from distribution of the Library.
+
+If any portion of this section is held invalid or unenforceable under any particular circumstance, the balance of the section is intended to apply, and the section as a whole is intended to apply in other circumstances.
+
+It is not the purpose of this section to induce you to infringe any patents or other property right claims or to contest validity of any such claims; this section has the sole purpose of protecting the integrity of the free software distribution system which is implemented by public license practices. Many people have made generous contributions to the wide range of software distributed through that system in reliance on consistent application of that system; it is up to the author/donor to decide if he or she is willing to distribute software through any other system and a licensee cannot impose that choice.
+
+This section is intended to make thoroughly clear what is believed to be a consequence of the rest of this License.
+
+12. If the distribution and/or use of the Library is restricted in certain countries either by patents or by copyrighted interfaces, the original copyright holder who places the Library under this License may add an explicit geographical distribution limitation excluding those countries, so that distribution is permitted only in or among countries not thus excluded. In such case, this License incorporates the limitation as if written in the body of this License.
+
+13. The Free Software Foundation may publish revised and/or new versions of the Lesser General Public License from time to time. Such new versions will be similar in spirit to the present version, but may differ in detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Library specifies a version number of this License which applies to it and "any later version", you have the option of following the terms and conditions either of that version or of any later version published by the Free Software Foundation. If the Library does not specify a license version number, you may choose any version ever published by the Free Software Foundation.
+
+14. If you wish to incorporate parts of the Library into other free programs whose distribution conditions are incompatible with these, write to the author to ask for permission. For software which is copyrighted by the Free Software Foundation, write to the Free Software Foundation; we sometimes make exceptions for this. Our decision will be guided by the two goals of preserving the free status of all derivatives of our free software and of promoting the sharing and reuse of software generally.
+
+NO WARRANTY
+
+15. BECAUSE THE LIBRARY IS LICENSED FREE OF CHARGE, THERE IS NO WARRANTY FOR THE LIBRARY, TO THE EXTENT PERMITTED BY APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT HOLDERS AND/OR OTHER PARTIES PROVIDE THE LIBRARY "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE LIBRARY IS WITH YOU. SHOULD THE LIBRARY PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+
+16. IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MAY MODIFY AND/OR REDISTRIBUTE THE LIBRARY AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR INABILITY TO USE THE LIBRARY (INCLUDING BUT NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE LIBRARY TO OPERATE WITH ANY OTHER SOFTWARE), EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+END OF TERMS AND CONDITIONS
+
+How to Apply These Terms to Your New Libraries
+
+If you develop a new library, and you want it to be of the greatest possible use to the public, we recommend making it free software that everyone can redistribute and change. You can do so by permitting redistribution under these terms (or, alternatively, under the terms of the ordinary General Public License).
+
+To apply these terms, attach the following notices to the library. It is safest to attach them to the start of each source file to most effectively convey the exclusion of warranty; and each file should have at least the "copyright" line and a pointer to where the full notice is found.
+
+     one line to give the library's name and an idea of what it does.
+     Copyright (C) year  name of author
+
+     This library is free software; you can redistribute it and/or modify it under the terms of the GNU Lesser General Public License as published by the Free Software Foundation; either version 2.1 of the License, or (at your option) any later version.
+
+     This library is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public License for more details.
+
+     You should have received a copy of the GNU Lesser General Public License along with this library; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA Also add information on how to contact you by electronic and paper mail.
+
+You should also get your employer (if you work as a programmer) or your school, if any, to sign a "copyright disclaimer" for the library, if necessary. Here is a sample; alter the names:
+
+Yoyodyne, Inc., hereby disclaims all copyright interest in
+the library `Frob' (a library for tweaking knobs) written
+by James Random Hacker.
+
+signature of Ty Coon, 1 April 1990
+Ty Coon, President of Vice
+That's all there is to it!"#,
     r#"                              Apache License
                         Version 2.0, January 2004
                      https://www.apache.org/licenses/

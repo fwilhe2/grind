@@ -8,6 +8,7 @@
 
 pub mod faces;
 pub mod fonts;
+pub mod hyphen;
 pub mod metrics;
 pub mod ops;
 pub mod pdf;

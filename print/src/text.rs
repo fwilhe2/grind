@@ -117,6 +117,30 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (align != Align::Start).then_some((view.index, (align, last, single)))
         })
         .collect();
+    // Where the paragraph style asks for hyphenation, in its language (fact 55).
+    let hyphenations: HashMap<usize, grind_core::layout::Hyphenate> = viewport
+        .iter()
+        .filter_map(|view| {
+            let props = app.paragraph(view.index)?.props;
+            if props.hyphenate.as_deref() != Some("true") {
+                return None;
+            }
+            let count = |value: &Option<String>| {
+                value
+                    .as_deref()
+                    .and_then(|v| v.trim().parse().ok())
+                    .unwrap_or(0)
+            };
+            Some((
+                view.index,
+                grind_core::layout::Hyphenate {
+                    language: props.language.clone()?,
+                    head: count(&props.hyphenation_remain),
+                    tail: count(&props.hyphenation_push),
+                },
+            ))
+        })
+        .collect();
     let labels = level_labels(
         app,
         &viewport,
@@ -145,6 +169,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             indents: &indents,
             tabs: &tabs,
             aligns: &aligns,
+            hyphenations: &hyphenations,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,
@@ -2567,6 +2592,44 @@ mod tests {
         };
         assert_eq!(lines_on(None), vec![4, 1]);
         assert_eq!(lines_on(Some("2")), vec![3, 2]);
+    }
+
+    /// `doc/odt-format.md` §5c fact 55: the measuring document's sentence on its 5 cm measure,
+    /// broken where Writer broke it — with hyphenation on, and not at all with it off.
+    #[test]
+    fn a_hyphenated_paragraph_breaks_its_words_where_writer_does() {
+        let lines = |hyphenate: &str| {
+            let bytes = format!(
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text"><office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout><style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:margin-right="12cm"/><style:text-properties fo:font-family="'Liberation Serif'" fo:font-size="12pt" fo:language="en" fo:country="US" {hyphenate}/></style:style></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"/></office:master-styles><office:body><office:text><text:p text:style-name="P1">The internationalization of representational characteristics necessitates extraordinary hyphenation considerations nevertheless, and incomprehensibilities accumulate unquestionably.</text:p></office:text></office:body></office:document>"#
+            );
+            let app = App::new();
+            app.open_bytes("h.fodt", bytes.as_bytes()).unwrap();
+            let doc = typeset(&app, &setter(), &Options::default());
+            let mut lines: Vec<(f32, String)> = Vec::new();
+            for (_, y, text) in texts(&doc.pages[0]) {
+                match lines.last_mut() {
+                    Some((at, line)) if (*at - y).abs() < 0.01 => line.push_str(&text),
+                    _ => lines.push((y, text)),
+                }
+            }
+            lines
+                .into_iter()
+                .map(|(_, line)| line.trim().to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            lines(r#"fo:hyphenate="true""#),
+            [
+                "The internationalization of",
+                "representational characteris-",
+                "tics necessitates extraordi-",
+                "nary hyphenation considera-",
+                "tions nevertheless, and in-",
+                "comprehensibilities accumu-",
+                "late unquestionably.",
+            ]
+        );
+        assert_eq!(lines("")[1], "representational");
     }
 
     /// A block whose style the document declares is set as that style says; one whose style it

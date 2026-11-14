@@ -70,6 +70,12 @@ pub struct ParagraphProps {
     /// `fo:letter-spacing` and `style:letter-kerning` (`doc/odt-format.md` §5c facts 51, 52).
     pub letter_spacing: Option<String>,
     pub letter_kerning: Option<String>,
+    /// `fo:hyphenate`, and the fewest letters a break leaves before and after it
+    /// (`fo:hyphenation-remain-char-count`, `-push-char-count`; `doc/odt-format.md` §5c
+    /// fact 55).
+    pub hyphenate: Option<String>,
+    pub hyphenation_remain: Option<String>,
+    pub hyphenation_push: Option<String>,
     /// `fo:color`: the ink of the paragraph's text where a run states none.
     pub color: Option<String>,
     /// `fo:language` and `fo:country`: the language spelling is checked against
@@ -105,7 +111,10 @@ impl ParagraphProps {
                 mine.clone_from(theirs);
             }
         }
-        let fields: [(&mut Option<String>, &Option<String>); 22] = [
+        let fields: [(&mut Option<String>, &Option<String>); 25] = [
+            (&mut self.hyphenate, &over.hyphenate),
+            (&mut self.hyphenation_remain, &over.hyphenation_remain),
+            (&mut self.hyphenation_push, &over.hyphenation_push),
             (&mut self.letter_spacing, &over.letter_spacing),
             (&mut self.letter_kerning, &over.letter_kerning),
             (&mut self.background_color, &over.background_color),

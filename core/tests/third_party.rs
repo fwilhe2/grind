@@ -131,6 +131,41 @@ const EXTRAS: &[Extra] = &[
             text
         },
     },
+    // The hyphenation patterns (doc/page-model.md PM6 item 5), held to AGPL-3.0-or-later by
+    // hand as the dictionaries below are.
+    Extra {
+        name: "English hyphenation patterns (hyph_en_US)",
+        version: "2.8.10",
+        licence: "LGPL-2.1-or-later",
+        source: "https://github.com/hunspell/hyphen",
+        kind: "Dictionary",
+        paths: &["print/hyphenation/hyph_en_US.dic"],
+        notice: |root| {
+            format!(
+                "hyph_en_US.dic, from ushyphmax.tex by Gerard D.C. Kuiken and the TUGboat \
+                 hyphenation exception log, prepared for libhyphen by László Németh.\n\n\
+                 Offered under the GNU GPL version 2, the GNU LGPL version 2.1 or later, or the \
+                 MPL 1.1; used here under the LGPL, unmodified.\n\n{}",
+                licence_text(root, "LGPL-2.1-or-later")
+            )
+        },
+    },
+    Extra {
+        name: "German hyphenation patterns (hyph_de_DE)",
+        version: "0.20060120",
+        licence: "LGPL-2.1-or-later",
+        source: "https://www.tug.org/tex-archive/language/hyphenation/dehyphn.tex",
+        kind: "Dictionary",
+        paths: &["print/hyphenation/hyph_de_DE.dic"],
+        notice: |root| {
+            format!(
+                "hyph_de_DE.dic, based on the TeX hyphenation tables dehyphn.tex (revision 31), \
+                 converted by Marco Huggenberger and revised by Daniel Naber.\n\n\
+                 Under the GNU LGPL; used here unmodified.\n\n{}",
+                licence_text(root, "LGPL-2.1-or-later")
+            )
+        },
+    },
     // The spelling dictionaries (doc/spelling.md). Not crates, so not held to ALLOWED by the
     // walk above; checked against AGPL-3.0-or-later by hand instead, which is what the comment
     // on each annotation in REUSE.toml records.
