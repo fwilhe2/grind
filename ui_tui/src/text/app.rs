@@ -135,6 +135,9 @@ enum Row {
         width: u16,
         at: usize,
     },
+    /// Where page `number` (from 1) of the printed document begins: above the line holding its
+    /// first character, which a column of cells breaks elsewhere than paper.
+    Page { number: usize },
 }
 
 /// Which of a table's three rules this is — they differ only in the corner and junction glyphs.
@@ -169,7 +172,7 @@ impl Row {
                 .iter()
                 .flatten()
                 .any(|(at, which, _)| *at == block && *which == line),
-            Row::Rule { .. } => false,
+            Row::Rule { .. } | Row::Page { .. } => false,
         }
     }
 
@@ -183,7 +186,7 @@ impl Row {
                 .flatten()
                 .map(|(block, line, _)| (*block, *line))
                 .min(),
-            Row::Rule { .. } => None,
+            Row::Rule { .. } | Row::Page { .. } => None,
         }
     }
 
@@ -193,6 +196,7 @@ impl Row {
             Row::Line { block, .. } => vec![*block],
             Row::Cells { pieces, .. } => pieces.iter().flatten().map(|(at, _, _)| *at).collect(),
             Row::Rule { at, .. } => vec![*at],
+            Row::Page { .. } => Vec::new(),
         }
     }
 }
@@ -320,6 +324,21 @@ pub struct App {
     /// writes it — on for a pane opened on a file, off in a test.
     grammar: grind_grammar::setting::Setting,
     remember_grammar: bool,
+    /// Each printed page after the first that has text, by its number from 1 and where it
+    /// begins, and how many pages there are, as of [`App::paged`]'s last setting: none when the
+    /// pane does not show pages.
+    pages: Vec<(usize, Caret)>,
+    page_count: usize,
+    #[cfg(feature = "pdf")]
+    paged: Option<Paged>,
+}
+
+/// The printed document's pages, kept for a pane that rules them into its column.
+#[cfg(feature = "pdf")]
+struct Paged {
+    session: grind_print::session::Session,
+    /// [`RedrawFlag::edits`] as of the last setting.
+    seen: Option<u64>,
 }
 
 impl App {
@@ -371,7 +390,75 @@ impl App {
                 ..Default::default()
             },
             remember_grammar: false,
+            pages: Vec::new(),
+            page_count: 0,
+            #[cfg(feature = "pdf")]
+            paged: None,
         }
+    }
+
+    /// Rule where each printed page begins, set in the machine's fonts as `:pdf` prints them.
+    #[cfg(feature = "pdf")]
+    pub fn paged(self) -> Self {
+        self.paged_in(false)
+    }
+
+    /// Rule the pages, set in the bundled faces when `bundled` — what a test wants.
+    #[cfg(feature = "pdf")]
+    fn paged_in(mut self, bundled: bool) -> Self {
+        self.paged = Some(Paged {
+            session: grind_print::session::Session::new(bundled),
+            seen: None,
+        });
+        self
+    }
+
+    /// Set the pages again if the document changed since they were.
+    fn repaginate(&mut self) {
+        #[cfg(feature = "pdf")]
+        if let Some(paged) = &mut self.paged {
+            let edits = self.redraw.edits();
+            if paged.seen != Some(edits) {
+                paged.session.changed();
+                paged.seen = Some(edits);
+                let set = paged.session.document(&self.core);
+                self.page_count = set.pages.len();
+                self.pages = set
+                    .pages
+                    .iter()
+                    .enumerate()
+                    .skip(1)
+                    .filter_map(|(at, page)| Some((at + 1, page.start?)))
+                    .collect();
+            }
+        }
+    }
+
+    /// The printed page the caret is on, from 1, and how many there are; `None` when the pane
+    /// does not show pages.
+    fn page_here(&self) -> Option<(usize, usize)> {
+        (self.page_count > 0).then(|| {
+            let on = self
+                .pages
+                .iter()
+                .rfind(|(_, start)| *start <= self.caret)
+                .map_or(1, |(number, _)| *number);
+            (on, self.page_count)
+        })
+    }
+
+    /// The pages that begin on line `line` of block `block`, laid out as `layout`.
+    fn pages_on(
+        &self,
+        block: usize,
+        line: usize,
+        layout: &grind_core::layout::Layout,
+    ) -> Vec<usize> {
+        self.pages
+            .iter()
+            .filter(|(_, start)| start.block == block && layout.line_at(start.offset) == line)
+            .map(|(number, _)| *number)
+            .collect()
     }
 
     /// Check grammar as the person last said — the remembered setting — and remember what
@@ -1022,6 +1109,8 @@ impl App {
             #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
             #[cfg(feature = "pdf")]
+            _ if let Some(rest) = cmd.strip_prefix("page ") => self.cmd_page(rest.trim()),
+            #[cfg(feature = "pdf")]
             "print" => self.cmd_print(),
             _ if let Some(rest) = cmd.strip_prefix("md-in ") => self.cmd_md_in(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("md-out ") => self.cmd_md_out(rest.trim()),
@@ -1150,6 +1239,43 @@ impl App {
         self.outline
             .open(&format!("Pages ({count})"), rows, here.as_deref());
         self.status.clear();
+    }
+
+    /// `:page <n>` — the caret to where printed page `n` begins, with its rule at the top.
+    #[cfg(feature = "pdf")]
+    fn cmd_page(&mut self, number: &str) {
+        self.repaginate();
+        let Some(number) = number.parse::<usize>().ok().filter(|&n| n > 0) else {
+            "usage: :page <n>".clone_into(&mut self.status);
+            return;
+        };
+        let start = if number == 1 {
+            Some(Caret {
+                block: 0,
+                offset: 0,
+            })
+        } else {
+            self.pages
+                .iter()
+                .find(|(at, _)| *at == number)
+                .map(|(_, start)| *start)
+        };
+        match start {
+            Some(start) if number <= self.page_count => {
+                self.caret = start;
+                self.anchor = None;
+                self.goal_x = None;
+                let line = self
+                    .core
+                    .layout_block(start.block, self.measure(start.block), &Cells)
+                    .map_or(0, |layout| layout.line_at(start.offset));
+                self.top = (start.block, line);
+                self.status.clear();
+            }
+            _ => {
+                self.status = format!("no page {number}: {} pages", self.page_count);
+            }
+        }
     }
 
     /// `:md-out <file>` — the selection's blocks, or the whole document, as CommonMark.
@@ -2130,6 +2256,11 @@ impl App {
             let measure = self.measures.measure(block, &kind);
             if let Ok(layout) = self.core.layout_block(block, measure, &Cells) {
                 for (n, line) in layout.lines().iter().enumerate().skip(skip) {
+                    for number in self.pages_on(block, n, &layout) {
+                        if out.len() < height {
+                            out.push(Row::Page { number });
+                        }
+                    }
                     if out.len() == height {
                         break;
                     }
@@ -2273,11 +2404,12 @@ impl App {
             .iter()
             .any(|row| row.holds(here.0, here.1))
         {
+            let top = self.top;
             let Some(next) = self
                 .visible(height)
                 .iter()
-                .skip(1)
-                .find_map(Row::first_line)
+                .filter_map(Row::first_line)
+                .find(|&line| line > top)
             else {
                 return;
             };
@@ -2497,6 +2629,7 @@ impl App {
         let width = f32::from(body.width.saturating_sub(GUTTER)).max(1.0);
         self.height = usize::from(body.height).max(1);
         self.clamp_caret();
+        self.repaginate();
         // Twice, either side of following the caret: once for the window the view is on, once for
         // where it moved, or a `G` into a table draws one frame at full width.
         self.measures = self.measures_for(width, self.height);
@@ -2672,6 +2805,15 @@ impl App {
                         Span::styled(drawn, RULE),
                     ])
                 }
+                Row::Page { number } => {
+                    let label = format!("\u{2500}\u{2500} page {number} ");
+                    let rest = usize::from(body.width)
+                        .saturating_sub(usize::from(GUTTER) + label.chars().count());
+                    Line::from(vec![
+                        Span::raw(" ".repeat(usize::from(GUTTER))),
+                        Span::styled(label + &"\u{2500}".repeat(rest), RULE),
+                    ])
+                }
             });
         }
         frame.render_widget(Paragraph::new(lines), body);
@@ -2702,6 +2844,10 @@ impl App {
         let at = match self.selection() {
             Some((from, to)) => format!("{} selected \u{00b7} {where_}", span_len(from, to)),
             None => where_,
+        };
+        let at = match self.page_here() {
+            Some((page, count)) => format!("page {page} of {count} \u{00b7} {at}"),
+            None => at,
         };
         // The spelling language in letters, as the spreadsheet's bar has it (`ALL`, `DE`, `Off`):
         // a terminal cannot be trusted with a flag's width, and `:spell` is the picker.
@@ -3185,6 +3331,30 @@ mod tests {
         assert_eq!(rows[0].address, "p1+0");
         assert_eq!(rows[0].label, "Page 1");
         assert!(rows[1].address.starts_with('p') && rows[1].address.contains('+'));
+    }
+
+    /// A paged pane rules where each printed page begins, says which page the caret is on, and
+    /// `:page n` goes to one with its rule at the top.
+    #[cfg(feature = "pdf")]
+    #[test]
+    fn pages_are_ruled_into_the_column_and_page_n_goes_to_one() {
+        let long = "The quick brown fox jumps over the lazy dog. ".repeat(60);
+        let mut app = app(&[&long, &long, &long, &long]).paged_in(true);
+        let first = render(&mut app, 140, 12);
+        assert!(first.last().unwrap().contains("page 1 of "), "{first:?}");
+        app.run_command("page 2");
+        let second = render(&mut app, 140, 12);
+        assert!(second[1].contains("\u{2500} page 2 \u{2500}"), "{second:?}");
+        assert!(second.last().unwrap().contains("page 2 of "), "{second:?}");
+        app.run_command("page 99");
+        assert!(app.status.starts_with("no page 99"), "{}", app.status);
+        // Typing moves the text, and the pages are set again.
+        let before = app.pages.clone();
+        app.core
+            .insert(0, BlockKind::Paragraph, "A short one.")
+            .expect("a paragraph");
+        render(&mut app, 140, 12);
+        assert_ne!(app.pages, before);
     }
 
     /// A list item is indented and wears a bullet, and the bullet is **drawn** rather than typed

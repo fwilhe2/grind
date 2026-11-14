@@ -202,12 +202,13 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
         if let Some((name, bytes)) = &file {
             core.open_bytes(name, bytes).map_err(|e| fail(name, &e))?;
         }
-        Ok(Pane::Text(Box::new(
-            text::app::App::new(core, redraw, path)
-                .spelling()
-                .grammar()
-                .noticed(imported),
-        )))
+        let pane = text::app::App::new(core, redraw, path)
+            .spelling()
+            .grammar()
+            .noticed(imported);
+        #[cfg(feature = "pdf")]
+        let pane = pane.paged();
+        Ok(Pane::Text(Box::new(pane)))
     } else {
         let core = Arc::new(grind_sheet::App::new());
         if let Some((name, bytes)) = &file {

@@ -44,6 +44,7 @@ Word processor:
                                       description; bare, edit what it says now; :alt! removes both
   :pdf <file>    :pages             — the document as a PDF, ready to print; where each of its
                                       pages begins, Enter goes to one
+  :page <n>                         — the top of printed page n; each page's start is ruled in
   :print                            — that PDF, sent to the printer through lp
   :move <address>                   — this block, put before that one
   :mark <name>   :mark!             — anchor a bookmark here, or drop the one that is
