@@ -100,30 +100,36 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
             color,
             ..
         } => {
-            let Some(font) = font(fonts, *face, faces) else {
-                return;
-            };
-            // krilla takes advances in ems and scales them by the size itself.
-            let em = size.max(f32::MIN_POSITIVE);
-            let glyphs: Vec<KrillaGlyph> = glyphs
-                .iter()
-                .map(|glyph| {
-                    KrillaGlyph::new(
-                        GlyphId::new(glyph.id),
-                        glyph.x_advance / em,
-                        glyph.x_offset / em,
-                        -glyph.y_offset / em,
-                        0.0,
-                        glyph.text.clone(),
-                        None,
-                    )
-                })
-                .collect();
             surface.set_fill(Some(Fill {
                 paint: paint(*color),
                 ..Fill::default()
             }));
-            surface.draw_glyphs(Point::from_xy(*x, *y), &glyphs, font, text, *size, false);
+            // krilla takes advances in ems and scales them by the size itself.
+            let em = size.max(f32::MIN_POSITIVE);
+            // One run per face: a glyph drawn from a fallback face is its own.
+            let mut pen = *x;
+            for run in glyphs.chunk_by(|a, b| a.face == b.face) {
+                let advance: f32 = run.iter().map(|glyph| glyph.x_advance).sum();
+                let id = run[0].face.unwrap_or(*face);
+                if let Some(font) = font(fonts, id, faces) {
+                    let run: Vec<KrillaGlyph> = run
+                        .iter()
+                        .map(|glyph| {
+                            KrillaGlyph::new(
+                                GlyphId::new(glyph.id),
+                                glyph.x_advance / em,
+                                glyph.x_offset / em,
+                                -glyph.y_offset / em,
+                                0.0,
+                                glyph.text.clone(),
+                                None,
+                            )
+                        })
+                        .collect();
+                    surface.draw_glyphs(Point::from_xy(pen, *y), &run, font, text, *size, false);
+                }
+                pen += advance;
+            }
         }
         Op::Rect {
             x,

@@ -32,6 +32,9 @@ pub struct Glyph {
     /// The bytes of the shaped text this glyph came from — its cluster — which is what a PDF's
     /// `ToUnicode` needs to make the glyph copy as the text it stands for.
     pub text: Range<usize>,
+    /// The face it is drawn from when that is not its run's: a character the run's face has no
+    /// glyph for, set in a face that has one ([`Fonts::fallback_for`]).
+    pub face: Option<FaceId>,
 }
 
 /// A piece of text set in one face at one size.
@@ -70,6 +73,8 @@ pub struct Typesetter {
     /// What [`Typesetter::shape`] returned, by face, size and text: a page drawn again after
     /// an edit is all but one paragraph the glyphs it was.
     shaped: RefCell<Shapes>,
+    /// The face each character a run's face lacks is drawn from, by weight and slant.
+    fallbacks: RefCell<HashMap<(char, bool, bool), Option<FaceId>>>,
     /// Which typesetter this is, of all the process has made ([`Typesetter::id`]).
     id: u64,
 }
@@ -145,6 +150,7 @@ impl Typesetter {
             resolved: RefCell::new(BTreeMap::new()),
             measured: RefCell::default(),
             shaped: RefCell::default(),
+            fallbacks: RefCell::default(),
             id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
@@ -204,7 +210,16 @@ impl Typesetter {
         shaped
     }
 
-    fn shape_in(&self, face: FaceId, size: f32, text: &str) -> Shaped {
+    fn fallback_for(&self, c: char, bold: bool, italic: bool) -> Option<FaceId> {
+        *self
+            .fallbacks
+            .borrow_mut()
+            .entry((c, bold, italic))
+            .or_insert_with(|| self.fonts.fallback_for(c, bold, italic))
+    }
+
+    /// Shape `text` in `face` alone, `.notdef` where it has no glyph.
+    fn shape_once(&self, face: FaceId, size: f32, text: &str) -> Shaped {
         let mut glyphs = Vec::new();
         let mut shapers = self.shapers.borrow_mut();
         let font = shapers.entry(face).or_insert_with(|| {
@@ -244,10 +259,71 @@ impl Typesetter {
                     x_offset: position.x_offset as f32 * scale,
                     y_offset: position.y_offset as f32 * scale,
                     text: start..end,
+                    face: None,
                 });
             }
         }
         Shaped { face, size, glyphs }
+    }
+
+    /// [`Typesetter::shape_once`], with each run of characters its face has no glyph for set
+    /// again in a face that has one — per cluster, so what is measured is what is drawn.
+    fn shape_in(&self, face: FaceId, size: f32, text: &str) -> Shaped {
+        let mut shaped = self.shape_once(face, size, text);
+        if !shaped.glyphs.iter().any(|glyph| glyph.id == 0) {
+            return shaped;
+        }
+        let (bold, italic) = {
+            let face = self.fonts.face(face);
+            (face.bold, face.italic)
+        };
+        let mut out = Vec::with_capacity(shaped.glyphs.len());
+        let mut glyphs = std::mem::take(&mut shaped.glyphs).into_iter().peekable();
+        while let Some(glyph) = glyphs.next() {
+            if glyph.id != 0 {
+                out.push(glyph);
+                continue;
+            }
+            // The run of `.notdef` clusters this one starts, as one stretch of the text.
+            let mut stretch = glyph.text.clone();
+            while let Some(next) = glyphs.next_if(|next| next.id == 0) {
+                stretch.start = stretch.start.min(next.text.start);
+                stretch.end = stretch.end.max(next.text.end);
+            }
+            let Some(missing) = text.get(stretch.clone()) else {
+                continue;
+            };
+            // Split where the face that has the character changes; a character none has stays
+            // the run face's empty box.
+            let mut from = 0;
+            let mut chars = missing.char_indices().peekable();
+            while let Some((_, c)) = chars.next() {
+                let here = self.fallback_for(c, bold, italic);
+                let end = chars.peek().map_or(missing.len(), |&(next, _)| next);
+                let same = chars
+                    .peek()
+                    .is_some_and(|&(_, next)| self.fallback_for(next, bold, italic) == here);
+                if same {
+                    continue;
+                }
+                let piece = &missing[from..end];
+                let offset = stretch.start + from;
+                let (drawn, set) = match here {
+                    Some(other) if other != face => {
+                        (Some(other), self.shape_once(other, size, piece).glyphs)
+                    }
+                    _ => (None, self.shape_once(face, size, piece).glyphs),
+                };
+                out.extend(set.into_iter().map(|mut glyph| {
+                    glyph.text = glyph.text.start + offset..glyph.text.end + offset;
+                    glyph.face = drawn;
+                    glyph
+                }));
+                from = end;
+            }
+        }
+        shaped.glyphs = out;
+        shaped
     }
 
     /// Every family set in another face than the one it named, in name order.
@@ -391,6 +467,29 @@ mod tests {
 
     fn serif() -> TextStyle {
         style("Liberation Serif", "12pt", false)
+    }
+
+    /// Liberation Serif has no ☿ and the bundled Mono or Sans has: it is drawn from that face,
+    /// measured as drawn, and the letters round it stay the run's.
+    #[test]
+    fn a_character_the_face_lacks_is_drawn_from_one_that_has_it() {
+        let t = setter();
+        let fonts = t.fonts();
+        let serif_face = t.face_of(&serif()).0;
+        assert!(!fonts.covers(serif_face, '☿'), "the fixture needs a gap");
+        let shaped = t.shape("a☿b", &serif());
+        assert_eq!(shaped.glyphs.len(), 3);
+        assert!(
+            shaped.glyphs.iter().all(|glyph| glyph.id != 0),
+            "no empty box"
+        );
+        let mercury = &shaped.glyphs[1];
+        let other = mercury.face.expect("drawn from another face");
+        assert!(fonts.covers(other, '☿'));
+        assert_eq!(mercury.text, 1..4, "its cluster is its own bytes");
+        assert_eq!((shaped.glyphs[0].face, shaped.glyphs[2].face), (None, None));
+        let drawn: f32 = shaped.glyphs.iter().map(|glyph| glyph.x_advance).sum();
+        assert!((width(&t, "a☿b", &serif()) - drawn).abs() < 1e-3);
     }
 
     #[test]

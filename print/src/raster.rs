@@ -246,8 +246,9 @@ impl Rasteriser {
                 for glyph in run {
                     let (across, x_phase) = quarters((pen + glyph.x_offset) * scaled.sx);
                     let (down, y_phase) = quarters((*y - glyph.y_offset) * scaled.sy);
+                    let face = glyph.face.unwrap_or(*face);
                     if let Some(coverage) =
-                        self.coverage(fonts, (*face, glyph.id), ppem, (x_phase, y_phase))
+                        self.coverage(fonts, (face, glyph.id), ppem, (x_phase, y_phase))
                     {
                         blend(pixmap, coverage, (across, down), *color);
                     }
@@ -568,7 +569,8 @@ mod tests {
         app.insert(
             1,
             BlockKind::Paragraph,
-            &"Office affine fjord — ÄÖÜ. ".repeat(30),
+            // ☿ is in none of the run's face, drawn from a fallback in both.
+            &"Office affine fjord — ÄÖÜ ☿. ".repeat(30),
         )
         .unwrap();
         app.insert(2, BlockKind::ListItem { depth: 1 }, "an item")

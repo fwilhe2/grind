@@ -52,6 +52,8 @@ pub struct Face {
     pub family: String,
     pub bold: bool,
     pub italic: bool,
+    /// Its weight class, 100 to 900: which of a family's upright faces is its regular.
+    pub weight: f32,
     pub data: Data,
     /// Which font of a collection; 0 for a plain `.ttf`/`.otf`.
     pub index: u32,
@@ -147,6 +149,30 @@ const GENERIC: [(&str, &str); 3] = [
 ];
 const DEFAULT: &str = "Liberation Serif";
 
+/// Where a character no face of the document's has is looked for, in this order: broad text
+/// faces, then symbols and mathematics, a monochrome emoji face, then other scripts. A colour
+/// emoji face is never one: its glyphs are pictures, not outlines this pipeline can draw.
+///
+/// ponytail: a variable face is drawn at its default instance, which for Noto Sans CJK's is
+/// Thin. Upgrade: set the `wght` axis to the run's weight when shaping, rasterising and
+/// embedding (`doc/page-model.md` PM6 item 1).
+pub const FALLBACK: [&str; 14] = [
+    "DejaVu Sans",
+    "Noto Sans",
+    "Noto Sans Symbols",
+    "Noto Sans Symbols 2",
+    "Noto Sans Math",
+    "Noto Emoji",
+    "Symbola",
+    "OpenSymbol",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK JP",
+    "Noto Sans Arabic",
+    "Noto Sans Hebrew",
+    "Noto Sans Devanagari",
+    "Noto Sans Thai",
+];
+
 impl Fonts {
     /// Only the bundled faces — what a test and a reproducible build use. **Empty** in a build
     /// without `bundled-fonts`, whose caller fetches [`BUNDLED_NAMES`] and adds them itself.
@@ -196,6 +222,7 @@ impl Fonts {
                 family,
                 bold: attributes.weight.value() >= 600.0,
                 italic: attributes.style != skrifa::attribute::Style::Normal,
+                weight: attributes.weight.value(),
                 data: data.clone(),
                 index: index as u32,
             });
@@ -214,9 +241,34 @@ impl Fonts {
             .enumerate()
             .filter(|(_, face)| face.family.eq_ignore_ascii_case(family))
             .min_by_key(|(_, face)| {
-                2 * u8::from(face.italic != italic) + u8::from(face.bold != bold)
+                let wanted = if bold { 700.0 } else { 400.0 };
+                (
+                    2 * u8::from(face.italic != italic) + u8::from(face.bold != bold),
+                    (face.weight - wanted).abs() as u32,
+                )
             })
             .map(|(at, _)| FaceId(at))
+    }
+
+    /// Whether `face` has a glyph for `c`.
+    #[must_use]
+    pub fn covers(&self, face: FaceId, c: char) -> bool {
+        use skrifa::MetadataProvider;
+        let face = self.face(face);
+        skrifa::FontRef::from_index(face.bytes(), face.index)
+            .is_ok_and(|font| font.charmap().map(c).is_some())
+    }
+
+    /// The face to draw `c` from when the face it is set in has no glyph for it: the first of
+    /// [`FALLBACK`]'s families here that has one, nearest this weight and slant, else any face
+    /// here that has one.
+    #[must_use]
+    pub fn fallback_for(&self, c: char, bold: bool, italic: bool) -> Option<FaceId> {
+        FALLBACK
+            .iter()
+            .filter_map(|family| self.nearest(family, bold, italic))
+            .chain((0..self.faces.len()).map(FaceId))
+            .find(|&face| self.covers(face, c))
     }
 
     /// Every face, in order.
@@ -368,6 +420,42 @@ impl Fonts {
                 at += 1;
             } else {
                 self.faces.remove(at);
+            }
+        }
+        self.faces.len() - before
+    }
+
+    /// Add the [`FALLBACK`] families `db` has that hold a glyph for one of `wanted` no face here
+    /// has, each only if it does. Answers how many faces were added.
+    pub fn add_fallbacks(&mut self, db: &fontdb::Database, wanted: &[char]) -> usize {
+        let covered = |fonts: &Fonts, c: char| {
+            (0..fonts.faces.len()).any(|face| fonts.covers(FaceId(face), c))
+        };
+        let mut missing: Vec<char> = wanted
+            .iter()
+            .copied()
+            .filter(|&c| !c.is_whitespace() && !c.is_control() && !covered(self, c))
+            .collect();
+        missing.sort_unstable();
+        missing.dedup();
+        let before = self.faces.len();
+        for family in FALLBACK {
+            if missing.is_empty() {
+                break;
+            }
+            let start = self.faces.len();
+            if self.add_families(db, &[family.to_owned()]) == 0 {
+                continue;
+            }
+            let found: Vec<char> = missing
+                .iter()
+                .copied()
+                .filter(|&c| (start..self.faces.len()).any(|face| self.covers(FaceId(face), c)))
+                .collect();
+            if found.is_empty() {
+                self.faces.truncate(start);
+            } else {
+                missing.retain(|c| !found.contains(c));
             }
         }
         self.faces.len() - before

@@ -112,14 +112,37 @@ pub fn fonts_for(app: &App) -> Fonts {
         let mut fonts = fonts;
         let named = families(app);
         let wanted = fonts::wanted(named.iter().map(String::as_str));
+        let db = std::cell::OnceCell::new();
+        let db = || db.get_or_init(Fonts::system_database);
         if !wanted.is_empty() {
-            fonts.add_families(&Fonts::system_database(), &wanted);
+            fonts.add_families(db(), &wanted);
+        }
+        // Then a face for each character none of those has, when the machine has one.
+        let used = characters(app);
+        if used
+            .iter()
+            .any(|&c| !(0..fonts.len()).any(|face| fonts.covers(fonts::FaceId(face), c)))
+        {
+            fonts.add_fallbacks(db(), &used);
         }
         fonts
     };
     #[cfg(not(feature = "system-fonts"))]
     let _ = app;
     fonts
+}
+
+/// Every character the document's text and list labels use, once each, in order.
+#[cfg(feature = "system-fonts")]
+fn characters(app: &App) -> Vec<char> {
+    let mut used = std::collections::BTreeSet::new();
+    for view in app.get_viewport(0..app.block_count()).iter() {
+        used.extend(view.text.chars());
+        used.extend(view.mark().into_iter().flat_map(str::chars));
+    }
+    used.into_iter()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect()
 }
 
 /// Where each page begins and ends: the first character on it and one past the last, `None` for a
@@ -266,6 +289,20 @@ mod tests {
             "1 page, A5. \u{201c}Arial\u{201d} set in Liberation Sans (same metrics). \
              2 characters had no glyph in any font."
         );
+    }
+
+    #[test]
+    fn a_character_a_fallback_face_has_is_not_missing() {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "Mercury ☿ rising")
+            .unwrap();
+        let (bytes, report) = export(&app, Fonts::bundled(), &Options::default()).unwrap();
+        assert_eq!(report.missing_glyphs, 0);
+        let fonts = hayro_syntax::Pdf::new(bytes).unwrap().pages()[0]
+            .resources()
+            .fonts
+            .len();
+        assert_eq!(fonts, 2, "the run's face and the one ☿ is drawn from");
     }
 
     #[test]
