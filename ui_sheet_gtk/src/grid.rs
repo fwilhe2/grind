@@ -33,8 +33,8 @@ use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 use crate::geom::{GridGeom, MAX_COLS, MAX_ROWS, Sizes};
 use crate::keymap::{Dir, Selection};
 
-/// Pixels to an ODF millimetre: 96 dpi, the toolkit's notional density. GTK scales the widget for
-/// HiDPI on top, so a 2.5cm column is 2.5cm on a correctly configured screen.
+/// Pixels to an ODF millimetre at 96 dpi, the toolkit's notional density, for a widget whose
+/// font is the document's ten points. `imp::Metrics::px_per_mm` is the one lengths are drawn at.
 const PX_PER_MM: f64 = 96.0 / 25.4;
 
 /// The gap between a new chart and the block it was made from, in millimetres — about a
@@ -750,6 +750,10 @@ mod imp {
         pub col_width: f64,
         pub header_w: f64,
         pub header_h: f64,
+        /// Pixels to a millimetre of the document. Its default text is drawn in the widget's
+        /// font size rather than its own ten points, and its lengths grow by as much: a column
+        /// fitted to its numbers elsewhere still holds them here.
+        pub px_per_mm: f64,
     }
 
     impl Default for Metrics {
@@ -759,6 +763,7 @@ mod imp {
                 col_width: 96.0,
                 header_w: 56.0,
                 header_h: 24.0,
+                px_per_mm: PX_PER_MM,
             }
         }
     }
@@ -1720,7 +1725,9 @@ mod imp {
                 .unwrap_or_default();
             sizes
                 .iter()
-                .filter_map(|(i, len)| Some((*i, style::length_mm(len)? * PX_PER_MM)))
+                .filter_map(|(i, len)| {
+                    Some((*i, style::length_mm(len)? * self.metrics.get().px_per_mm))
+                })
                 .collect()
         }
 
@@ -1979,7 +1986,25 @@ mod imp {
             let line = f64::from(metrics.ascent() + metrics.descent()) / scale;
             let digit = (f64::from(metrics.approximate_digit_width()) / scale).max(1.0);
             let row_height = (line + ROW_PAD).ceil();
+            let points = self.obj().pango_context().font_description().map_or(
+                look::DEFAULT_FONT_PT,
+                |font| {
+                    let size = f64::from(font.size()) / scale;
+                    // An absolute size is in pixels, 96 to the inch.
+                    if font.is_size_absolute() {
+                        size * 0.75
+                    } else {
+                        size
+                    }
+                },
+            );
+            let grown = if points > 0.0 {
+                points / look::DEFAULT_FONT_PT
+            } else {
+                1.0
+            };
             self.metrics.set(Metrics {
+                px_per_mm: PX_PER_MM * grown,
                 row_height,
                 col_width: (digit * 11.0).ceil(),
                 // Wide enough for the last row number, 1048576.
@@ -2741,7 +2766,9 @@ mod imp {
             let sheet = self.sheet.get();
             // The drag happened on screen, so the zoom comes back out before the pixels
             // become a physical length.
-            let length = Some(style::mm_length(resize.size / self.zoom.get() / PX_PER_MM));
+            let length = Some(style::mm_length(
+                resize.size / self.zoom.get() / self.metrics.get().px_per_mm,
+            ));
             let result = match resize.track {
                 Hit::ColEdge(col) => app.set_col_width(sheet, col..col + 1, length),
                 Hit::RowEdge(row) => app.set_row_height(sheet, row..row + 1, length),
@@ -2757,7 +2784,9 @@ mod imp {
         /// — `None` for a length that will not parse, a chart simply not drawn.
         fn chart_widget_rect(&self, geom: &GridGeom, chart: &grind_sheet::Chart) -> Option<Rect> {
             let zoom = self.zoom.get();
-            let px = |length: &str| Some(style::length_mm(length)? * PX_PER_MM * zoom);
+            let px = |length: &str| {
+                Some(style::length_mm(length)? * self.metrics.get().px_per_mm * zoom)
+            };
             Some(geom.chart_rect(
                 px(&chart.x)?,
                 px(&chart.y)?,
@@ -2956,7 +2985,7 @@ mod imp {
             };
             let geom = self.geom();
             let zoom = self.zoom.get();
-            let to_mm = |px: f64| px / zoom / PX_PER_MM;
+            let to_mm = |px: f64| px / zoom / self.metrics.get().px_per_mm;
             let on_sheet = chart_frame::kept_on_sheet(chart_frame::Frame::new(
                 to_mm(rect.x - geom.header_w + geom.scroll_x),
                 to_mm(rect.y - geom.header_h + geom.scroll_y),
@@ -3117,7 +3146,11 @@ mod imp {
                 }
             }
             layout.set_attributes(None);
-            grind_sheet::fit::width(width, 2.0 * PAD + FIT_SLACK, 1.0 / PX_PER_MM)
+            grind_sheet::fit::width(
+                width,
+                2.0 * PAD + FIT_SLACK,
+                1.0 / self.metrics.get().px_per_mm,
+            )
         }
 
         /// Each of `cols` fitted to its widest text and every row of `rows` given back to
@@ -3712,7 +3745,7 @@ mod imp {
         pub fn anchor_beside(&self, start: Pos, end: Pos) -> (String, String) {
             let geom = self.geom();
             let zoom = self.zoom.get();
-            let to_mm = |px: f64| px / zoom / PX_PER_MM;
+            let to_mm = |px: f64| px / zoom / self.metrics.get().px_per_mm;
             let x = to_mm(geom.cols.offset_of(end.col + 1)) + CHART_MARGIN_MM;
             let y = to_mm(geom.rows.offset_of(start.row));
             (style::mm_length(x), style::mm_length(y))
@@ -4272,7 +4305,9 @@ mod imp {
                     // An indent (`fo:margin-left`) moves the text in from the leading edge.
                     let indent = style
                         .and_then(grind_sheet::style::CellStyle::indent_mm)
-                        .map_or(0.0, |mm| mm * PX_PER_MM * self.zoom.get());
+                        .map_or(0.0, |mm| {
+                            mm * self.metrics.get().px_per_mm * self.zoom.get()
+                        });
 
                     let mut cell = geom.cell_rect(row, col);
                     let mut capped = false;
@@ -4964,7 +4999,7 @@ mod imp {
             };
             // The same conversion `commit_resize` stores, shown in centimetres because
             // that is the unit the rest of the document's lengths speak.
-            let mm = resize.size / self.zoom.get() / PX_PER_MM;
+            let mm = resize.size / self.zoom.get() / self.metrics.get().px_per_mm;
             let text = format!("{:.2} cm", mm / 10.0);
             let layout = self.layout();
             layout.set_attributes(self.chrome(None, 1.0).as_ref());
