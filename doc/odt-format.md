@@ -958,6 +958,17 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `fo:margin-left` when that is past it (a 0.25 cm stop: 3 cm, 1.5 cm, 1 cm); else at the next
    default stop counted from the margin (a `start` label ending at 1.63 cm past a 1.5 cm margin:
    2.75 cm). The Calc Guide's numbered lists end their labels at the indent so.
+49. **Where a line in a header is measured from** — `MEASURED` (2026-11-14, 26.8.2.2, three
+   `draw:line`s with `text:anchor-type="page"` in the third paragraph of a header, `svg:x1`
+   0.4 cm and `svg:y1` 10.5, 14.85 and 21 cm; page margins 2.5 cm left and 1 cm top, the body
+   starting 4.5 cm down, the third paragraph's top 2.7 cm down). A line is placed by its graphic
+   style as fact 27's picture is, its `svg:` coordinates counted from the box the style names.
+   With `style:horizontal-rel` and `style:vertical-rel` `page` they count from the paper's corner
+   (0.4 cm across; 10.5, 14.85 and 21 cm down, DIN 5008's marks). With `page-content`, from the
+   text area's left edge and the body's top (2.9 cm across; 15, 19.35 and 25.5 cm down). **A
+   style that states neither is `paragraph`**, whatever the anchor type says: from the anchoring
+   paragraph's left and top (2.9 cm across; 13.2, 17.55 and 23.7 cm down), the same places a
+   style stating `paragraph` gave.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

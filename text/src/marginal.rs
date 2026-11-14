@@ -44,6 +44,8 @@ pub struct Paragraph {
     pub looks: Vec<Look>,
     /// The pictures anchored to it, which take no room.
     pub pictures: Vec<Picture>,
+    /// The lines anchored to it: fold marks, a rule.
+    pub lines: Vec<Line>,
 }
 
 /// A picture anchored to a header or footer paragraph, placed by its graphic style
@@ -224,14 +226,17 @@ mod tests {
     }
 }
 
-/// A straight line drawn on every page set on a master page — a `draw:line` in its header or
-/// footer: a DIN 5008 letter's fold and punch marks, a rule under a letterhead. Read for printing.
-/// Coordinates are millimetres from the page's top-left corner (`svg:x1…y2`); the stroke is the
-/// graphic style's, or half a point of black.
+/// A straight line in a header or footer — a `draw:line`: a DIN 5008 letter's fold and punch
+/// marks, a rule under a letterhead. Read for printing. Its ends are millimetres (`svg:x1…y2`)
+/// from the corner of the box its graphic style names (`doc/odt-format.md` §5c fact 49); the
+/// stroke is that style's, or half a point of black.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Line {
     pub from: (f64, f64),
     pub to: (f64, f64),
+    /// `style:horizontal-rel` and `style:vertical-rel`: `page`, `page-content` or `paragraph`,
+    /// which is what a style stating neither means.
+    pub rel: (String, String),
     /// In millimetres.
     pub width: f64,
     /// `#rrggbb`.

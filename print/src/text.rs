@@ -304,15 +304,6 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     &boxes,
                 );
             }
-            // Lines the master draws on the page itself, from its top-left corner.
-            for line in &sheet.lines {
-                ops.push(Op::Line {
-                    from: (pt(line.from.0) as f32, pt(line.from.1) as f32),
-                    to: (pt(line.to.0) as f32, pt(line.to.1) as f32),
-                    width: pt(line.width) as f32,
-                    color: Rgb::parse(&line.color).unwrap_or(Rgb::BLACK),
-                });
-            }
             Page {
                 width: pt(geometry.width) as f32,
                 height: pt(geometry.height) as f32,
@@ -406,8 +397,6 @@ struct Kind {
 /// A kind of page, laid out: its geometry, its header and footer, and what is left for the body.
 struct Sheet<'a> {
     geometry: PageGeometry,
-    /// What the master draws on every page: fold marks, a rule (`draw:line` in its header).
-    lines: Vec<grind_text::marginal::Line>,
     background: Option<grind_text::model::PageBackground>,
     header: Option<Marginal<'a>>,
     footer: Option<Marginal<'a>>,
@@ -453,7 +442,6 @@ impl<'a> Sheet<'a> {
         let height = (pt(geometry.text_height()) - room(&header) - room(&footer)).max(1.0);
         Sheet {
             geometry,
-            lines: master.as_ref().map_or_default(|m| m.lines.clone()),
             background: master.as_ref().and_then(|m| m.background.clone()),
             header,
             footer,
@@ -1674,6 +1662,25 @@ impl<'a> Marginal<'a> {
                     mime: picture.mime.clone(),
                     data: picture.data.clone(),
                     mark: Mark::Decoration,
+                });
+            }
+            // Its lines, each from the corner of the box its style names (§5c fact 49).
+            for line in &paragraph.paragraph.lines {
+                let corner = |rel: &str, paper, content, own| match rel {
+                    "page" => paper,
+                    "page-content" => content,
+                    _ => own,
+                };
+                let x = corner(&line.rel.0, 0.0, left, left);
+                let down = corner(&line.rel.1, 0.0, boxes.body.0, f64::from(y));
+                let at = |(across, along): (f64, f64)| {
+                    ((x + pt(across)) as f32, (down + pt(along)) as f32)
+                };
+                ops.push(Op::Line {
+                    from: at(line.from),
+                    to: at(line.to),
+                    width: pt(line.width) as f32,
+                    color: Rgb::parse(&line.color).unwrap_or(Rgb::BLACK),
                 });
             }
             // Each character with the piece it belongs to.
@@ -3017,36 +3024,63 @@ mod tests {
         assert!((padded_x - (x + 0.3 * cm)).abs() < 0.01, "{padded_x}");
     }
 
-    /// A line a master draws — a fold mark — is on every page set on it, from the page's own
-    /// corner, in the stroke its graphic style names.
+    /// A line in a header — a fold mark — is drawn on every page set on its master, in the stroke
+    /// its graphic style names and counted from the box that style names (§5c fact 49).
     #[test]
-    fn a_master_pages_lines_are_drawn_on_its_pages() {
-        let bytes = r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+    fn a_headers_line_is_counted_from_the_box_its_style_names() {
+        let drawn = |place: &str| {
+            let bytes = format!(
+                r##"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
             <office:automatic-styles>
-              <style:style style:name="Mark" style:family="graphic"><style:graphic-properties svg:stroke-width="0.1cm" svg:stroke-color="#ff0000"/></style:style>
+              <style:style style:name="Mark" style:family="graphic"><style:graphic-properties svg:stroke-width="0.1cm" svg:stroke-color="#ff0000"{place}/></style:style>
               <style:page-layout style:name="pl"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout>
             </office:automatic-styles>
             <office:master-styles>
-              <style:master-page style:name="Standard" style:page-layout-name="pl"><style:header><text:p>Head<draw:line draw:style-name="Mark" text:anchor-type="page" svg:x1="1cm" svg:y1="10.5cm" svg:x2="1.5cm" svg:y2="10.5cm"/></text:p></style:header></style:master-page>
+              <style:master-page style:name="Standard" style:page-layout-name="pl"><style:header><text:p>First</text:p><text:p>Head<draw:line draw:style-name="Mark" text:anchor-type="page" svg:x1="1cm" svg:y1="10.5cm" svg:x2="1.5cm" svg:y2="10.5cm"/></text:p></style:header></style:master-page>
             </office:master-styles>
-            <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"##;
-        let app = App::new();
-        app.open_bytes("marks.fodt", bytes.as_bytes()).unwrap();
-        let doc = typeset(&app, &setter(), &Options::default());
-        let lines: Vec<_> = doc.pages[0]
-            .ops
-            .iter()
-            .filter_map(|op| match op {
-                crate::ops::Op::Line {
-                    from, to, width, ..
-                } if (from.1 - 297.64).abs() < 1.0 => Some((*from, *to, *width)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        // 10.5 cm is 297.6 pt down, 1 cm is 28.35 pt across, 1 mm is 2.83 pt thick.
-        assert!((lines[0].0.0 - 28.35).abs() < 0.1 && (lines[0].1.0 - 42.52).abs() < 0.1);
-        assert!((lines[0].2 - 2.83).abs() < 0.05);
+            <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"##
+            );
+            let app = App::new();
+            app.open_bytes("marks.fodt", bytes.as_bytes()).unwrap();
+            let doc = typeset(&app, &setter(), &Options::default());
+            let lines: Vec<_> = doc.pages[0]
+                .ops
+                .iter()
+                .filter_map(|op| match op {
+                    crate::ops::Op::Line {
+                        from, to, width, ..
+                    } if (to.0 - from.0 - 14.17).abs() < 0.1 => Some((*from, *width)),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(lines.len(), 1, "{place}: {lines:?}");
+            lines[0]
+        };
+        let cm = 72.0 / 2.54;
+        let near = |got: f32, want: f32| (got - want).abs() < 0.1;
+
+        // The paper's corner: 1 cm across, 10.5 cm down, 1 mm thick.
+        let ((x, y), width) = drawn(r#" style:horizontal-rel="page" style:vertical-rel="page""#);
+        assert!(near(x, cm) && near(y, 10.5 * cm), "{x} {y}");
+        assert!((width - 2.83).abs() < 0.05);
+
+        // Nothing stated is the anchoring paragraph: the text area's left edge, and the top of
+        // the header's second paragraph, one 12 pt line below the 2 cm margin.
+        let ((x, y), _) = drawn("");
+        let line = y - 12.5 * cm;
+        assert!(near(x, 3.0 * cm) && line > 10.0 && line < 18.0, "{x} {y}");
+        assert_eq!(
+            drawn(r#" style:horizontal-rel="paragraph" style:vertical-rel="paragraph""#).0,
+            (x, y)
+        );
+
+        // The text area's left edge, and the body's top below the whole header.
+        let ((content_x, content_y), _) =
+            drawn(r#" style:horizontal-rel="page-content" style:vertical-rel="page-content""#);
+        assert!(
+            near(content_x, 3.0 * cm) && content_y > y + 10.0,
+            "{content_y}"
+        );
     }
 
     /// A picture that states no size — one imported from Markdown — is drawn at its own pixels,

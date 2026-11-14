@@ -103,7 +103,7 @@ Everything on it is made up.
  <office:automatic-styles>
   <!-- The stroke of the fold and punch marks. -->
   <style:style style:name="Marke" style:family="graphic">
-   <style:graphic-properties draw:stroke="solid" svg:stroke-width="0.05cm" svg:stroke-color="#555555"/>
+   <style:graphic-properties draw:stroke="solid" svg:stroke-width="0.05cm" svg:stroke-color="#555555" style:horizontal-pos="from-left" style:horizontal-rel="page" style:vertical-pos="from-top" style:vertical-rel="page"/>
   </style:style>
   <!-- First page: 10 mm of margin, then a 35 mm letterhead, so the body begins at 45 mm. -->
   <style:page-layout style:name="PL_Erste">

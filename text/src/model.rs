@@ -511,8 +511,6 @@ pub struct Master {
     pub usage: PageUsage,
     /// The picture its page layout prints behind the page.
     pub background: Option<PageBackground>,
-    /// Lines drawn on every page set on it (`draw:line` in its header or footer).
-    pub lines: Vec<crate::marginal::Line>,
     /// `style:next-style-name`; `None` is the master itself.
     pub next: Option<String>,
 }

@@ -1540,11 +1540,11 @@ fn every_master_page_keeps_its_own_page_layout() {
     assert_eq!(app.rest_master().as_deref(), Some("Standard"));
 }
 
-/// A `draw:line` in a master page's header is a line the *page* carries — a DIN 5008 letter's
-/// fold and punch marks — with the stroke its graphic style gives it, in millimetres from the
-/// page's corner (`Master::lines`).
+/// A `draw:line` in a master page's header — a DIN 5008 letter's fold and punch marks — is read
+/// with the paragraph it is anchored in: its stroke from its graphic style, its ends in
+/// millimetres, and the box they count from, the paragraph when the style names none.
 #[test]
-fn a_line_in_a_header_belongs_to_the_master_page() {
+fn a_line_in_a_header_is_read_with_its_paragraph() {
     let template = r##"<?xml version="1.0" encoding="UTF-8"?>
 <office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
  <office:automatic-styles>
@@ -1559,8 +1559,13 @@ fn a_line_in_a_header_belongs_to_the_master_page() {
     let app = grind_text::App::new();
     app.open_bytes("t.fodt", template.as_bytes())
         .expect("opens");
-    let lines = app.master("Standard").expect("a master").lines;
+    let header = app.master("Standard").expect("a master").header;
+    let lines = &header.expect("a header").paragraphs[0].lines;
     assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(
+        lines[0].rel,
+        ("paragraph".to_owned(), "paragraph".to_owned())
+    );
     assert_eq!(lines[0].from, (4.0, 105.0));
     assert_eq!(lines[0].to, (9.0, 105.0));
     assert_eq!(lines[0].width, 1.0);

@@ -105,9 +105,7 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
-    /// The lines found in the header or footer being read, taken by the master when it closes.
-    marginal_lines: Vec<crate::marginal::Line>,
-    /// Each graphic style's stroke — `(width in mm, #rrggbb)` — for the lines a master draws.
+    /// Each graphic style's stroke — `(width in mm, #rrggbb)` — for the lines a header draws.
     graphic_strokes: HashMap<String, (f64, String)>,
     /// Each graphic style's placement of a frame, and the style it inherits from.
     graphic_places: HashMap<String, GraphicPlace>,
@@ -173,8 +171,6 @@ struct Marginals {
     /// `style:header-left` and `style:footer-left`.
     header_left: Option<Vec<crate::marginal::Paragraph>>,
     footer_left: Option<Vec<crate::marginal::Paragraph>>,
-    /// The `draw:line`s in either, which belong to the page rather than to a paragraph.
-    lines: Vec<crate::marginal::Line>,
 }
 
 /// One `table:table` being read: its name, and the row number the next row in it takes.
@@ -266,7 +262,6 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
-            marginal_lines: Vec::new(),
             graphic_strokes: HashMap::new(),
             graphic_places: HashMap::new(),
             marginal_picture: None,
@@ -460,10 +455,6 @@ impl Builder {
                         left,
                         usage: self.page_usage.get(&master.1).copied().unwrap_or_default(),
                         background: self.page_backgrounds.get(&master.1).cloned(),
-                        lines: self
-                            .master_marginals
-                            .get(&master.0)
-                            .map_or_default(|m| m.lines.clone()),
                         next: self.master_next.get(&master.0).cloned(),
                     },
                 )
@@ -1058,9 +1049,7 @@ impl Context<Builder> for MarginalText {
             return;
         }
         let paragraphs = std::mem::take(&mut b.marginal_done);
-        let lines = std::mem::take(&mut b.marginal_lines);
         let marginals = b.master_marginals.entry(self.master.clone()).or_default();
-        marginals.lines.extend(lines);
         let slot = match self.place {
             Place::Header => &mut marginals.header,
             Place::Footer => &mut marginals.footer,
@@ -1151,8 +1140,8 @@ impl Context<Builder> for MarginalInline {
                 paragraph.push(Part::Chapter(level), &self.look);
                 return None;
             }
-            // A line on the page — a fold mark, a rule — is the master's, its ends `svg:` lengths
-            // from the corner.
+            // A fold mark, a rule: its ends are `svg:` lengths from the box its style names, the
+            // anchoring paragraph when it names none (`doc/odt-format.md` §5c fact 49).
             (Ns::Draw, "line") => {
                 let at = |local: &str| {
                     attrs
@@ -1161,15 +1150,20 @@ impl Context<Builder> for MarginalInline {
                 };
                 if let (Some(x1), Some(y1), Some(x2), Some(y2)) =
                     (at("x1"), at("y1"), at("x2"), at("y2"))
-                    && b.marginal_lines.len() < MAX_STYLES
+                    && paragraph.lines.len() < MAX_STYLES
                 {
-                    let (width, color) = attrs
-                        .get(Ns::Draw, "style-name")
+                    let style = attrs.get(Ns::Draw, "style-name");
+                    let (width, color) = style
                         .and_then(|name| b.graphic_strokes.get(name).cloned())
                         .unwrap_or((0.18, "#000000".to_owned()));
-                    b.marginal_lines.push(crate::marginal::Line {
+                    let rel = |at| {
+                        placed(&b.graphic_places, style, at)
+                            .unwrap_or_else(|| "paragraph".to_owned())
+                    };
+                    paragraph.lines.push(crate::marginal::Line {
                         from: (x1, y1),
                         to: (x2, y2),
+                        rel: (rel(2), rel(4)),
                         width,
                         color,
                     });
@@ -1292,16 +1286,25 @@ struct GraphicPlace {
 impl Builder {
     /// Field `at` of [`GraphicPlace`] for the graphic style `name`, down its parents.
     fn graphic_place(&self, name: Option<&str>, at: usize) -> Option<String> {
-        let mut name = name;
-        for _ in 0..crate::paragraph::MAX_DEPTH {
-            let place = self.graphic_places.get(name?)?;
-            if let Some(value) = &place.fields[at] {
-                return Some(value.clone());
-            }
-            name = place.parent.as_deref();
-        }
-        None
+        placed(&self.graphic_places, name, at)
     }
+}
+
+/// [`Builder::graphic_place`] over the styles alone, for a caller holding another part of the
+/// builder.
+fn placed<'a>(
+    places: &'a HashMap<String, GraphicPlace>,
+    mut name: Option<&'a str>,
+    at: usize,
+) -> Option<String> {
+    for _ in 0..crate::paragraph::MAX_DEPTH {
+        let place = places.get(name?)?;
+        if let Some(value) = &place.fields[at] {
+            return Some(value.clone());
+        }
+        name = place.parent.as_deref();
+    }
+    None
 }
 
 impl Context<Builder> for GraphicStyleDef {
