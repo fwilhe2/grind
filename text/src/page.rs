@@ -502,13 +502,7 @@ fn units(
             return whole;
         }
         let (width, metrics) = faces.of(slot.index, &view.kind, view.style.as_deref());
-        match app.layout_block_tabbed(
-            slot.index,
-            width,
-            metrics,
-            faces.first_indent(slot.index),
-            &faces.tabs(slot.index),
-        ) {
+        match app.layout_block_set(slot.index, width, metrics, &faces.setting(slot.index)) {
             Ok(layout) if !layout.lines().is_empty() => layout
                 .lines()
                 .iter()

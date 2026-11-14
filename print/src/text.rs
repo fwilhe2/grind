@@ -19,10 +19,10 @@ use grind_text::flow::{self, CellBox};
 use grind_text::page::{Piece, Rules, paginate_slots};
 use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
-use crate::align::{self, Align};
 use crate::faces::{Column, RoleFace, SPACING, role_faces};
 use crate::metrics::Typesetter;
 use crate::ops::{Document, Element, Heading, Mark, Op, Page, Rgb};
+use grind_core::layout::Align;
 
 /// The gap between a picture and its caption, in points.
 const CAPTION_GAP: f64 = 4.0;
@@ -105,6 +105,13 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (!tabs.is_empty()).then_some((view.index, tabs))
         })
         .collect();
+    let aligns: HashMap<usize, Align> = viewport
+        .iter()
+        .filter_map(|view| {
+            let align = Align::parse(app.paragraph(view.index)?.props.text_align.as_deref());
+            (align != Align::Start).then_some((view.index, align))
+        })
+        .collect();
     let labels = level_labels(
         app,
         &viewport,
@@ -129,6 +136,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             insets: &insets,
             indents: &indents,
             tabs: &tabs,
+            aligns: &aligns,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,
@@ -246,19 +254,10 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     });
                 }
                 let face = column.face(view.index, &view.kind, view.style.as_deref());
-                let first = grind_text::Faces::first_indent(column, view.index);
-                let tabs = grind_text::Faces::tabs(column, view.index);
+                let setting = grind_text::Faces::setting(column, view.index);
                 let label = labels.get(&view.index);
                 let under = ops.len();
-                let drawn = lines(
-                    &mut ops,
-                    app,
-                    view,
-                    piece,
-                    face,
-                    (first, &tabs, label),
-                    origin,
-                );
+                let drawn = lines(&mut ops, app, view, piece, face, (&setting, label), origin);
                 if let (Some(frame), Some(drawn)) = (frames.get(&view.index), &drawn) {
                     let room = spacing.get(&view.index).copied().unwrap_or_default();
                     let body = (top, top + sheet.height);
@@ -1204,23 +1203,18 @@ fn lines(
     view: &BlockView,
     piece: &Piece,
     face: &RoleFace<'_>,
-    (first, tabs, label): (f32, &grind_core::layout::Tabs, Option<&Label>),
+    (setting, label): (&grind_core::layout::Setting, Option<&Label>),
     (left, top): (f64, f64),
 ) -> Option<Drawn> {
     let layout = app
-        .layout_block_tabbed(view.index, piece.width as f32, face, first, tabs)
+        .layout_block_set(view.index, piece.width as f32, face, setting)
         .ok()?;
-    let first_indent = first;
+    let (first_indent, tabs) = (setting.first, &setting.tabs);
     let first = layout.lines().get(piece.lines.start)?;
     let last = layout.lines().get(piece.lines.end.checked_sub(1)?)?;
     let span = (first.start, last.end);
     let first_top = first.top;
     let setter = face.setter();
-    let align = Align::parse(
-        app.paragraph(view.index)
-            .and_then(|resolved| resolved.props.text_align)
-            .as_deref(),
-    );
     let chars: Vec<char> = view.text.chars().collect();
     let count = layout.lines().len();
     // The paragraph style's ink, under every run that states none.
@@ -1234,26 +1228,11 @@ fn lines(
         let Some(line) = layout.lines().get(at) else {
             continue;
         };
-        // The line's visible end — trailing spaces are not part of what is aligned — and the
-        // spaces between its first and last visible characters, which justification widens.
+        // The line's visible end: the spaces before it are the ones justification widened.
         let visible_end = (line.start..line.end)
             .rev()
             .find(|&i| chars.get(i).is_some_and(|c| !c.is_whitespace()))
             .map_or(line.start, |i| i + 1);
-        let content = aligned_width(&layout, line, &chars, visible_end, at + 1 == count)
-            .min(piece.width as f32);
-        let interior = |upto: usize| {
-            (line.start..upto.min(visible_end))
-                .filter(|&i| chars.get(i) == Some(&' '))
-                .count()
-        };
-        let fit = align::fit(
-            align,
-            piece.width as f32,
-            content,
-            interior(visible_end),
-            at + 1 == count,
-        );
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
         // A numbered heading's number or a list item's label, where its level puts it
@@ -1334,7 +1313,11 @@ fn lines(
         for i in (line.start..line.end).filter(|&i| chars.get(i) == Some(&'\t')) {
             let origin = if at == 0 { first_indent } else { 0.0 };
             let (from, to) = (layout.x_at(i), layout.x_at(i + 1));
-            let to = if i + 1 == line.end { line.width } else { to };
+            let to = if i + 1 == line.end {
+                line.shift + line.width
+            } else {
+                to
+            };
             let Some(leader) = tabs.next(origin + from).and_then(|stop| stop.leader) else {
                 continue;
             };
@@ -1349,7 +1332,7 @@ fn lines(
             let count = (room / step).floor() as usize;
             let dots = mark.repeat(count);
             ops.push(Op::Text {
-                x: left as f32 + fit.offset + to - step * (count as f32 + 0.5),
+                x: left as f32 + to - step * (count as f32 + 0.5),
                 y: baseline,
                 face: one.face,
                 size: one.size,
@@ -1366,16 +1349,13 @@ fn lines(
                 }
                 let style = face.style(&cut.props.metrics());
                 let mut shaped = setter.shape(text, &style);
-                let x = left as f32
-                    + fit.offset
-                    + layout.x_at(start)
-                    + fit.extra * interior(start) as f32;
-                if fit.extra > 0.0 {
+                let x = left as f32 + layout.x_at(start);
+                if line.stretch > 0.0 {
                     // Every interior space this piece holds is drawn `extra` wider.
                     for glyph in &mut shaped.glyphs {
                         let here = start + text[..glyph.text.start].chars().count();
                         if &text[glyph.text.clone()] == " " && here < visible_end {
-                            glyph.x_advance += fit.extra;
+                            glyph.x_advance += line.stretch;
                         }
                     }
                 }
@@ -1574,12 +1554,14 @@ impl<'a> Marginal<'a> {
             });
         }
         let [_, right, _, left] = paragraph.room;
-        let layout = grind_core::layout::wrap_tabbed(
+        let layout = grind_core::layout::wrap_set(
             &fragments,
             (self.width - left - right).max(1.0) as f32,
             &paragraph.face,
-            0.0,
-            &paragraph.tabs,
+            &grind_core::layout::Setting {
+                tabs: paragraph.tabs.clone(),
+                ..Default::default()
+            },
         );
         (pieces, layout)
     }
@@ -1621,8 +1603,8 @@ impl<'a> Marginal<'a> {
             // Its pictures first, behind any text (`doc/odt-format.md` §5c fact 27).
             if let Some((row, foot)) = paragraph.row() {
                 // A row of pictures set as characters, sitting on the line's foot (§5c fact 29).
-                let fit = align::fit(paragraph.align, measure, row as f32, 0, true);
-                let mut x = left + indent + f64::from(fit.offset);
+                let (offset, _) = paragraph.align.fit(measure, row as f32, 0, true);
+                let mut x = left + indent + f64::from(offset);
                 for picture in paragraph.paragraph.pictures.iter().filter(|p| p.inline) {
                     let (width, height) = (pt(picture.width), pt(picture.height));
                     ops.push(Op::Image {
@@ -1698,7 +1680,7 @@ impl<'a> Marginal<'a> {
                     .map_or(line.start, |i| i + 1);
                 let last = std::ptr::eq(line, layout.lines().last().unwrap_or(line));
                 let content = aligned_width(&layout, line, &text, visible_end, last).min(measure);
-                let fit = align::fit(paragraph.align, measure, content, 0, true);
+                let (offset, _) = paragraph.align.fit(measure, content, 0, true);
                 // Each stretch between tabs, and between pieces that look different, is drawn
                 // where the layout put it: a footer's `Seite 1 / 2` at the right-hand stop
                 // Writer's `Footer` style sets.
@@ -1722,7 +1704,7 @@ impl<'a> Marginal<'a> {
                             .unwrap_or(paragraph.ink);
                         let shaped = setter.shape(&piece, &style);
                         ops.push(Op::Text {
-                            x: (left + indent) as f32 + fit.offset + layout.x_at(from),
+                            x: (left + indent) as f32 + offset + layout.x_at(from),
                             y: y + line.top + layout.baseline(),
                             face: shaped.face,
                             size: shaped.size,
@@ -1887,9 +1869,8 @@ impl Figure {
         body: &RoleFace<'_>,
         block: usize,
     ) {
-        let offset = |width: f64| {
-            f64::from(align::fit(self.align, self.measure as f32, width as f32, 0, true).offset)
-        };
+        let offset =
+            |width: f64| f64::from(self.align.fit(self.measure as f32, width as f32, 0, true).0);
         ops.push(Op::Image {
             x: (x + offset(self.width)) as f32,
             y: y as f32,

@@ -6,7 +6,6 @@
 //! here and nowhere else: `grind-core` stays font-free (`doc/text-layout.md`, decision 2), and so
 //! does any build without this crate.
 
-pub mod align;
 pub mod faces;
 pub mod fonts;
 pub mod metrics;

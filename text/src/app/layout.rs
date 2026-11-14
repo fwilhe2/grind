@@ -20,38 +20,24 @@ impl App {
         Ok(lay_out(block, width, metrics, &state.doc.char_styles))
     }
 
-    /// [`App::layout_block`] with the first line `first` further in and breaking that much shorter
-    /// (`fo:text-indent`), for a printed page.
-    pub fn layout_block_indented(
+    /// [`App::layout_block`], set as the block's paragraph style says ([`Faces::setting`]).
+    pub fn layout_block_set(
         &self,
         index: usize,
         width: f32,
         metrics: &dyn Metrics,
-        first: f32,
-    ) -> Result<Layout> {
-        self.layout_block_tabbed(index, width, metrics, first, &layout::Tabs::default())
-    }
-
-    /// [`App::layout_block_indented`] with every tab advanced to its stop ([`Faces::tabs`]).
-    pub fn layout_block_tabbed(
-        &self,
-        index: usize,
-        width: f32,
-        metrics: &dyn Metrics,
-        first: f32,
-        tabs: &layout::Tabs,
+        setting: &layout::Setting,
     ) -> Result<Layout> {
         let state = self.state.read().unwrap();
         let block = state
             .doc
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-        Ok(lay_out_indented(
+        Ok(lay_out_set(
             block,
             width,
             metrics,
-            first,
-            tabs,
+            setting,
             &state.doc.char_styles,
         ))
     }

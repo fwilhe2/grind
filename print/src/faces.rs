@@ -323,6 +323,8 @@ pub struct Column<'a> {
     pub indents: &'a HashMap<usize, f32>,
     /// Each block's tab stops in points, where its paragraph style places any.
     pub tabs: &'a HashMap<usize, grind_core::layout::Tabs>,
+    /// Each block's alignment, where its paragraph style states one other than the start.
+    pub aligns: &'a HashMap<usize, grind_core::layout::Align>,
     /// Each table's look, by name ([`grind_text::table_look`]).
     pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
@@ -366,12 +368,12 @@ impl grind_text::Faces for Column<'_> {
         (self.insets.get(&index).copied().unwrap_or(0.0), above)
     }
 
-    fn first_indent(&self, index: usize) -> f32 {
-        self.indents.get(&index).copied().unwrap_or(0.0)
-    }
-
-    fn tabs(&self, index: usize) -> grind_core::layout::Tabs {
-        self.tabs.get(&index).cloned().unwrap_or_default()
+    fn setting(&self, index: usize) -> grind_core::layout::Setting {
+        grind_core::layout::Setting {
+            first: self.indents.get(&index).copied().unwrap_or(0.0),
+            tabs: self.tabs.get(&index).cloned().unwrap_or_default(),
+            align: self.aligns.get(&index).copied().unwrap_or_default(),
+        }
     }
 
     fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
@@ -506,12 +508,14 @@ mod tests {
         let breaks = HashMap::new();
         let indents = HashMap::new();
         let tabs = HashMap::new();
+        let aligns = HashMap::new();
         let looks = HashMap::new();
         let insets = HashMap::new();
         let column = Column {
             insets: &insets,
             indents: &indents,
             tabs: &tabs,
+            aligns: &aligns,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,

@@ -402,16 +402,12 @@ pub trait Faces {
         None
     }
 
-    /// How far the block's first line starts in from its others (`fo:text-indent`), in the face's
-    /// unit; zero on screen.
-    fn first_indent(&self, _index: usize) -> f32 {
-        0.0
-    }
-
-    /// Where the block's tab characters go (`style:tab-stops`, `doc/odt-format.md` §5c fact 13),
-    /// in the face's unit. No stops, the default, leaves a tab as wide as the metrics make it.
-    fn tabs(&self, _index: usize) -> layout::Tabs {
-        layout::Tabs::default()
+    /// How the block's paragraph style sets its lines, in the face's unit: the first line's
+    /// indent (`fo:text-indent`), where its tab characters go (`style:tab-stops`,
+    /// `doc/odt-format.md` §5c fact 13) and its alignment (`fo:text-align`). The default is a
+    /// plain screen's: no indent, a tab as wide as the metrics make it, every line at the start.
+    fn setting(&self, _index: usize) -> layout::Setting {
+        layout::Setting::default()
     }
 
     /// The table named `table`'s column widths, one per column in the face's unit, `None` for a
@@ -1376,7 +1372,7 @@ fn relinked(block: &Block, start: usize, end: usize, href: Option<&str>) -> Opti
 /// provider looked up in `faces`, so every caret operation asks the same way.
 fn set_out(block: &Block, index: usize, faces: &dyn Faces, named: &Named) -> Layout {
     let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
-    lay_out(block, width, metrics, named)
+    lay_out_set(block, width, metrics, &faces.setting(index), named)
 }
 
 /// The named character styles a layout measures runs by ([`paragraph::shown`]).
@@ -1387,15 +1383,14 @@ type Named = std::collections::HashMap<String, paragraph::NamedChar>;
 /// with what it looks like — its named character style under its direct formatting
 /// ([`paragraph::shown`]) — so a bold word is measured bold.
 fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, named: &Named) -> Layout {
-    lay_out_indented(block, width, metrics, 0.0, &layout::Tabs::default(), named)
+    lay_out_set(block, width, metrics, &layout::Setting::default(), named)
 }
 
-fn lay_out_indented(
+fn lay_out_set(
     block: &Block,
     width: f32,
     metrics: &dyn Metrics,
-    first: f32,
-    tabs: &layout::Tabs,
+    setting: &layout::Setting,
     named: &Named,
 ) -> Layout {
     let default = grind_core::style::TextStyle::default();
@@ -1427,7 +1422,7 @@ fn lay_out_indented(
             style: &default,
         });
     }
-    layout::wrap_tabbed(&fragments, width, metrics, first, tabs)
+    layout::wrap_set(&fragments, width, metrics, setting)
 }
 
 /// The formatting of every run `start..end` touches, in order. An empty range reports one: the run

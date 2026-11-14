@@ -82,6 +82,11 @@ pub struct Line {
     pub height: f32,
     /// Distance from the top of the whole layout to the top of this line.
     pub top: f32,
+    /// How far right of the measure's left edge alignment starts the line ([`Align`]).
+    pub shift: f32,
+    /// How much wider justification sets each space between the line's first and last visible
+    /// characters; [`Layout::x_at`] already counts it.
+    pub stretch: f32,
 }
 
 impl Line {
@@ -113,7 +118,7 @@ pub struct Layout {
     /// Distance from each line's top to its baseline: the largest ascent of any fragment, by
     /// the same rule that makes every line as tall as the tallest one ([`wrap`]).
     baseline: f32,
-    /// How far the first line starts in from the others ([`wrap_indented`]); negative hangs.
+    /// How far the first line starts in from the others ([`Setting::first`]); negative hangs.
     first: f32,
 }
 
@@ -179,7 +184,7 @@ impl Layout {
     pub fn x_at(&self, offset: usize) -> f32 {
         let offset = offset.min(self.len());
         let line = &self.lines[self.line_at(offset)];
-        self.xs[offset] - self.xs[line.start] + self.indent_of(line.start)
+        self.xs[offset] - self.xs[line.start] + self.indent_of(line.start) + line.shift
     }
 
     /// The first-line indent for the line starting at `start`, and nothing for any other.
@@ -198,7 +203,7 @@ impl Layout {
             return self.len();
         };
         let origin = self.xs[line.start];
-        let x = x - self.indent_of(line.start);
+        let x = x - self.indent_of(line.start) - line.shift;
         // The first of equally near offsets, which `min_by` keeps.
         (line.start..=line.end)
             .min_by(|&a, &b| {
@@ -228,18 +233,58 @@ impl Layout {
 /// Break `fragments` into lines no wider than `width`, greedily, at UAX #14 break opportunities. A
 /// `width` of zero or less means do not wrap: one line per mandatory break.
 pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> Layout {
-    wrap_indented(fragments, width, metrics, 0.0)
+    wrap_set(fragments, width, metrics, &Setting::default())
 }
 
-/// [`wrap`], with the first line starting `first` further in and breaking that much shorter
-/// (`fo:text-indent`, `doc/odt-format.md` §5c fact 11). A negative indent hangs.
-pub fn wrap_indented(
-    fragments: &[Fragment<'_>],
-    width: f32,
-    metrics: &dyn Metrics,
-    first: f32,
-) -> Layout {
-    wrap_tabbed(fragments, width, metrics, first, &Tabs::default())
+/// Where a line sits across its measure (`fo:text-align`, `doc/odt-format.md` §5c fact 8), left
+/// to right only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    #[default]
+    Start,
+    Center,
+    End,
+    Justify,
+}
+
+impl Align {
+    /// ODF's spelling: `start`/`left`, `center`, `end`/`right`, `justify`; anything else, or
+    /// nothing, is the start.
+    #[must_use]
+    pub fn parse(value: Option<&str>) -> Align {
+        match value.map(str::trim) {
+            Some("center") => Align::Center,
+            Some("end" | "right") => Align::End,
+            Some("justify") => Align::Justify,
+            _ => Align::Start,
+        }
+    }
+
+    /// How far right a line whose text is `content` wide starts in a measure `available` wide,
+    /// and how much wider each of its `spaces` interior spaces is set; `last` is the paragraph's
+    /// last line, which justification leaves alone.
+    #[must_use]
+    pub fn fit(self, available: f32, content: f32, spaces: usize, last: bool) -> (f32, f32) {
+        let slack = (available - content).max(0.0);
+        match self {
+            Align::Start => (0.0, 0.0),
+            Align::Center => (slack / 2.0, 0.0),
+            Align::End => (slack, 0.0),
+            Align::Justify if last || spaces == 0 => (0.0, 0.0),
+            Align::Justify => (0.0, slack / spaces as f32),
+        }
+    }
+}
+
+/// How a paragraph is set, beyond its text and its measure. The default is what a plain screen
+/// draws: no indent, a tab as wide as the provider says, every line at the start.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Setting {
+    /// How far the first line starts in from the others, breaking that much shorter
+    /// (`fo:text-indent`, `doc/odt-format.md` §5c fact 11). A negative indent hangs.
+    pub first: f32,
+    pub tabs: Tabs,
+    pub align: Align,
 }
 
 /// How a tab character's text lines up against its stop (`style:type`, rng:13921).
@@ -307,16 +352,16 @@ impl Tabs {
 /// §5c fact 32).
 const RIGHT_STOP_REACH: f32 = 16.8;
 
-/// [`wrap_indented`], with every tab character advanced to the stop `tabs` gives it on its own
-/// line — which depends on where the line starts, so tabs are placed *while* breaking rather than
-/// measured once beforehand.
-pub fn wrap_tabbed(
+/// [`wrap`], set as `setting` says. Every tab character is advanced to its stop on its own line —
+/// which depends on where the line starts, so tabs are placed *while* breaking rather than
+/// measured once beforehand — and each line is then aligned, so every caret x is where the ink is.
+pub fn wrap_set(
     fragments: &[Fragment<'_>],
     width: f32,
     metrics: &dyn Metrics,
-    first: f32,
-    tabs: &Tabs,
+    setting: &Setting,
 ) -> Layout {
+    let (first, tabs) = (setting.first, &setting.tabs);
     // One `advances` call per fragment, concatenated into a single cumulative array over the
     // whole text. `xs[i]` is the x of caret offset `i`, before any line breaking.
     let mut xs = Vec::with_capacity(64);
@@ -364,6 +409,8 @@ pub fn wrap_tabbed(
             width: xs[end] - xs[start],
             height,
             top: *top,
+            shift: 0.0,
+            stretch: 0.0,
         });
         *top += height;
     };
@@ -520,11 +567,71 @@ pub fn wrap_tabbed(
         xs
     };
 
-    Layout {
+    let mut layout = Layout {
         lines,
         xs,
         baseline,
         first,
+    };
+    if width > 0.0 && setting.align != Align::Start {
+        layout.align(setting.align, width, &chars);
+    }
+    layout
+}
+
+impl Layout {
+    /// Place every line across a measure `width` wide. What is aligned is the line up to its
+    /// last visible character — a space a line was broken at hangs past the measure — except on
+    /// the paragraph's last line, whose trailing spaces Writer counts (`doc/odt-format.md` §5c
+    /// fact 19). The first line's indent is part of what is aligned.
+    fn align(&mut self, align: Align, width: f32, chars: &[char]) {
+        let count = self.lines.len();
+        let natural = self.xs.clone();
+        // How much wider everything before the line in hand has been set.
+        let mut added = 0.0_f32;
+        for at in 0..count {
+            let line = self.lines[at];
+            let last = at + 1 == count;
+            let indent = self.indent_of(line.start);
+            let visible_end = (line.start..line.end)
+                .rev()
+                .find(|&i| !chars[i].is_whitespace())
+                .map_or(line.start, |i| i + 1);
+            let end = if last {
+                (visible_end..line.end)
+                    .take_while(|&i| chars[i] == ' ')
+                    .last()
+                    .map_or(visible_end, |i| i + 1)
+            } else {
+                visible_end
+            };
+            let content = (natural[end] - natural[line.start] + indent).min(width);
+            let spaces = (line.start..visible_end)
+                .filter(|&i| chars[i] == ' ')
+                .count();
+            let (shift, stretch) = align.fit(width, content, spaces, last);
+            let mut interior = 0usize;
+            for i in line.start..line.end {
+                if i < visible_end && chars[i] == ' ' {
+                    interior += 1;
+                }
+                self.xs[i + 1] += added + stretch * interior as f32;
+            }
+            let wider = stretch * interior as f32;
+            added += wider;
+            let line = &mut self.lines[at];
+            line.shift = shift;
+            line.stretch = stretch;
+            line.width += wider;
+        }
+        if let Some(rest) = self
+            .xs
+            .get_mut(self.lines.last().map_or(0, |l| l.end) + 1..)
+        {
+            for x in rest {
+                *x += added;
+            }
+        }
     }
 }
 
@@ -539,6 +646,134 @@ mod tests {
             style: &style,
         }];
         wrap(&fragments, 0.0, &Fixed)
+    }
+
+    fn indent(first: f32) -> Setting {
+        Setting {
+            first,
+            ..Setting::default()
+        }
+    }
+
+    fn aligned(text: &str, width: f32, align: Align, first: f32) -> Layout {
+        let style = TextStyle::default();
+        let fragments = [Fragment {
+            text,
+            style: &style,
+        }];
+        let setting = Setting {
+            first,
+            tabs: Tabs::default(),
+            align,
+        };
+        wrap_set(&fragments, width, &Fixed, &setting)
+    }
+
+    #[test]
+    fn odfs_spellings_of_an_alignment_are_read_and_anything_else_is_the_start() {
+        assert_eq!(Align::parse(Some("center")), Align::Center);
+        assert_eq!(Align::parse(Some("end")), Align::End);
+        assert_eq!(Align::parse(Some("right")), Align::End);
+        assert_eq!(Align::parse(Some("justify")), Align::Justify);
+        assert_eq!(Align::parse(Some("left")), Align::Start);
+        assert_eq!(Align::parse(Some("start")), Align::Start);
+        assert_eq!(Align::parse(Some("sideways")), Align::Start);
+        assert_eq!(Align::parse(None), Align::Start);
+    }
+
+    #[test]
+    fn centre_and_end_shift_a_line_and_widen_nothing() {
+        assert_eq!(Align::Center.fit(100.0, 40.0, 3, false), (30.0, 0.0));
+        assert_eq!(Align::End.fit(100.0, 40.0, 3, true), (60.0, 0.0));
+        assert_eq!(Align::Start.fit(100.0, 40.0, 3, false), (0.0, 0.0));
+        // A line wider than its measure starts at the margin.
+        assert_eq!(Align::Center.fit(100.0, 140.0, 2, false), (0.0, 0.0));
+    }
+
+    #[test]
+    fn justification_shares_the_slack_between_the_spaces_except_on_the_last_line() {
+        assert_eq!(Align::Justify.fit(100.0, 70.0, 3, false), (0.0, 10.0));
+        assert_eq!(Align::Justify.fit(100.0, 70.0, 3, true), (0.0, 0.0));
+        assert_eq!(Align::Justify.fit(100.0, 70.0, 0, false), (0.0, 0.0));
+        assert_eq!(Align::Justify.fit(100.0, 140.0, 2, false), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_centred_line_puts_its_carets_and_its_clicks_where_the_ink_is() {
+        // "aaaa " / "bb": four visible on a measure of six, then two.
+        let layout = aligned("aaaa bb", 6.0, Align::Center, 0.0);
+        let lines: Vec<(usize, usize)> = layout.lines().iter().map(|l| (l.start, l.end)).collect();
+        assert_eq!(lines, vec![(0, 5), (5, 7)]);
+        assert_eq!(layout.lines()[0].shift, 1.0);
+        assert_eq!(layout.lines()[1].shift, 2.0);
+        assert_eq!(layout.x_at(0), 1.0);
+        assert_eq!(layout.x_at(2), 3.0);
+        assert_eq!(layout.x_at(5), 2.0, "the second line's first caret");
+        assert_eq!(layout.x_at(7), 4.0);
+        assert_eq!(layout.offset_at(0, 3.2), 2);
+        assert_eq!(layout.offset_at(1, 0.0), 5, "left of the line is its start");
+        assert_eq!(layout.step(1, 1, layout.x_at(1)), Some(5));
+    }
+
+    #[test]
+    fn an_end_aligned_last_line_counts_its_trailing_spaces() {
+        // `doc/odt-format.md` §5c fact 19.
+        assert_eq!(aligned("X", 10.0, Align::End, 0.0).x_at(0), 9.0);
+        assert_eq!(aligned("X ", 10.0, Align::End, 0.0).x_at(0), 8.0);
+    }
+
+    #[test]
+    fn a_justified_line_widens_its_interior_spaces_and_leaves_the_last_line() {
+        // "aa bb " is five visible on a measure of nine: the one space takes the four spare.
+        let layout = aligned("aa bb cccc", 9.0, Align::Justify, 0.0);
+        let lines: Vec<(usize, usize)> = layout.lines().iter().map(|l| (l.start, l.end)).collect();
+        assert_eq!(lines, vec![(0, 6), (6, 10)]);
+        assert_eq!(layout.lines()[0].stretch, 4.0);
+        assert_eq!(layout.x_at(2), 2.0, "before the space");
+        assert_eq!(layout.x_at(3), 7.0, "after it");
+        assert_eq!(
+            layout.x_at(5),
+            9.0,
+            "the last visible character ends at the measure"
+        );
+        assert_eq!(layout.offset_at(0, 6.9), 3);
+        assert_eq!(layout.offset_at(0, 3.0), 2);
+        // The last line is set as it would be unjustified.
+        assert_eq!(layout.lines()[1].stretch, 0.0);
+        assert_eq!(layout.x_at(6), 0.0);
+        assert_eq!(layout.x_at(10), 4.0);
+    }
+
+    #[test]
+    fn every_justified_line_reaches_the_measure_not_only_the_first() {
+        let layout = aligned("aa bb cc dd ee", 7.0, Align::Justify, 0.0);
+        let lines: Vec<(usize, usize)> = layout.lines().iter().map(|l| (l.start, l.end)).collect();
+        assert_eq!(lines, vec![(0, 6), (6, 12), (12, 14)]);
+        assert_eq!(layout.lines()[0].stretch, 2.0);
+        assert_eq!(layout.lines()[1].stretch, 2.0);
+        assert_eq!(layout.x_at(5), 7.0);
+        assert_eq!(layout.x_at(11), 7.0);
+        assert_eq!(layout.x_at(6), 0.0);
+        assert_eq!(layout.x_at(14), 2.0);
+    }
+
+    #[test]
+    fn a_first_line_indent_is_part_of_what_is_aligned() {
+        let layout = aligned("aaaa", 10.0, Align::End, 2.0);
+        assert_eq!(layout.x_at(4), 10.0, "the text ends at the measure");
+        assert_eq!(layout.x_at(0), 6.0);
+    }
+
+    #[test]
+    fn no_alignment_and_no_measure_leave_a_layout_as_it_was() {
+        assert_eq!(
+            aligned("aaaa bb", 10.0, Align::Start, 0.0),
+            at("aaaa bb", 10.0)
+        );
+        assert_eq!(
+            aligned("aaaa bb", 0.0, Align::Center, 0.0),
+            plain("aaaa bb")
+        );
     }
 
     fn at(text: &str, width: f32) -> Layout {
@@ -635,7 +870,7 @@ mod tests {
             text,
             style: &style,
         }];
-        let indented = wrap_indented(&fragments, 10.0, &Fixed, 3.0);
+        let indented = wrap_set(&fragments, 10.0, &Fixed, &indent(3.0));
         let lines: Vec<(usize, usize)> =
             indented.lines().iter().map(|l| (l.start, l.end)).collect();
         // "aaaa " fits the seven left on the first line; "aaaa bbbb" would not.
@@ -653,10 +888,10 @@ mod tests {
             "a click at the indent is the first character"
         );
         assert_eq!(indented.offset_at(0, 5.0), 2);
-        let hanging = wrap_indented(&fragments, 10.0, &Fixed, -2.0);
+        let hanging = wrap_set(&fragments, 10.0, &Fixed, &indent(-2.0));
         assert_eq!(hanging.lines()[0].end, 10, "twelve wide: \"aaaa bbbb \"");
         assert_eq!(
-            wrap_indented(&fragments, 10.0, &Fixed, 0.0),
+            wrap_set(&fragments, 10.0, &Fixed, &indent(0.0)),
             wrap(&fragments, 10.0, &Fixed)
         );
     }
@@ -673,7 +908,9 @@ mod tests {
                 end: 22,
                 width: 22.0,
                 height: 1.0,
-                top: 0.0
+                top: 0.0,
+                shift: 0.0,
+                stretch: 0.0,
             }
         );
     }
@@ -859,7 +1096,12 @@ mod tests {
             text,
             style: &style,
         }];
-        wrap_tabbed(&fragments, width, &Fixed, first, tabs)
+        let setting = Setting {
+            first,
+            tabs: tabs.clone(),
+            align: Align::Start,
+        };
+        wrap_set(&fragments, width, &Fixed, &setting)
     }
 
     fn stop(position: f32, align: TabAlign) -> TabStop {

@@ -471,13 +471,7 @@ pub fn lay_out(
         let height = match picture(view, f64::from(width)) {
             Some(height) => height,
             None => app
-                .layout_block_tabbed(
-                    index,
-                    width,
-                    metrics,
-                    faces.first_indent(index),
-                    &faces.tabs(index),
-                )
+                .layout_block_set(index, width, metrics, &faces.setting(index))
                 .map_or(0.0, |layout| f64::from(layout.height())),
         };
         (height, f64::from(width))
