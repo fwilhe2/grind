@@ -794,6 +794,7 @@ fn cases() -> Vec<(String, Document)> {
                             // Read for measuring and carried by their style, never written.
                             letter_spacing: None,
                             letter_kerning: None,
+                            text_position: None,
                             origin: grind_text::style::Origin::default(),
                         },
                     ),

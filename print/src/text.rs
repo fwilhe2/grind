@@ -663,6 +663,7 @@ fn block_faces<'a>(
                     font_style: props.font_style,
                     letter_spacing: props.letter_spacing,
                     letter_kerning: props.letter_kerning,
+                    text_position: None,
                 }
             } else {
                 TextStyle {
@@ -1472,6 +1473,8 @@ fn lines(
                     });
                 }
                 let size = shaped.size;
+                // A raised or lowered run sits off the line's baseline (fact 56).
+                let baseline = baseline - setter.rise(&style);
                 ops.push(Op::Text {
                     x,
                     y: baseline,
@@ -1583,6 +1586,7 @@ impl<'a> Marginal<'a> {
                     font_style: props.font_style,
                     letter_spacing: props.letter_spacing,
                     letter_kerning: props.letter_kerning,
+                    text_position: None,
                 };
                 let line = crate::faces::LineRule::parse(props.line_height.as_deref());
                 let face =

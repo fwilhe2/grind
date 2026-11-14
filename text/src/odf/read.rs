@@ -2001,6 +2001,7 @@ impl Context<Builder> for TextStyleDef {
             background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
             letter_spacing: attrs.get(Ns::Fo, "letter-spacing").map(str::to_owned),
             letter_kerning: attrs.get(Ns::Style, "letter-kerning").map(str::to_owned),
+            text_position: attrs.get(Ns::Style, "text-position").map(str::to_owned),
             origin: crate::style::Origin::default(),
         };
         // Anything else on the element (superscript, a language, letter spacing) is unread, and

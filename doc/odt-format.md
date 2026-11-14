@@ -1014,6 +1014,19 @@ oracle turned out to be unable to answer the font questions (fact 4).
    13781) it may not — `incomprehensibilities` went whole to the next line — and `accu-mulate`
    kept four on either side. The points are libhyphen's patterns for the language
    (`print/hyphenation/`), with their own minimums (two and three letters for English).
+56. **Superscript and subscript** — `MEASURED` (2026-11-14, 26.8.2.2, Liberation Serif at 12 and
+   at 10 pt, `bB` in a span between `aA` and `c`, sizes and baselines read from the PDF's text
+   operators). `style:text-position` (rng:13379) is a position and a size. The **size** is the
+   second percentage, and **58 %** where there is none — after `super`, `sub` or a lone
+   percentage alike (5.8 pt at 10 pt). A **percentage position** moves the baseline by that share
+   of the line's natural height at the paragraph's size, up for a positive one: `33%` raised it
+   4.55 pt at 12 pt (13.8 × 0.33) and 3.8 at 10, `-33%` lowered it as far. **`super`** raises it
+   by the face's ascent plus line gap at the full size less the same at the small one — so the
+   tops line up — 4.70 pt at 12 and 3.9 at 10 for Liberation Serif ((1825 + 87) / 2048 of the
+   difference in size); **`sub`** lowers it by the face's descent at the full size less at the
+   small one (1.09 and 0.9 pt, 443 / 2048). The paragraph's lines stayed 13.8 pt apart.
+   `fo:font-variant="small-caps"` (rng:13316) sets each lowercase letter as its capital at
+   **80 %** of the size, and capitals and spaces at the full size.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

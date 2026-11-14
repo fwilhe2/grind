@@ -187,4 +187,7 @@ pub struct TextStyle {
     /// `style:letter-kerning` — `false` sets the text without the face's kerning, which is on
     /// otherwise.
     pub letter_kerning: Option<String>,
+    /// `style:text-position` — `super`, `sub` or a percentage, and the size as a second one:
+    /// a raised or lowered run set smaller.
+    pub text_position: Option<String>,
 }

@@ -153,6 +153,7 @@ impl<'a> RoleFace<'a> {
                 .letter_kerning
                 .clone()
                 .or_else(|| stated.letter_kerning.clone()),
+            text_position: run.text_position.clone(),
         }
     }
 }

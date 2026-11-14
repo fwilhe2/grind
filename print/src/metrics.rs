@@ -402,6 +402,12 @@ impl Typesetter {
     /// How far below the top of a line set in `style` its baseline is, and how tall the line:
     /// the face's own ascent, and ascent plus descent plus its line gap.
     fn vertical(&self, style: &TextStyle) -> (f32, f32) {
+        let (ascent, descent, gap) = self.extents(style);
+        (ascent, ascent + descent + gap)
+    }
+
+    /// The face's ascent, descent and line gap at `style`'s size, each a positive distance.
+    fn extents(&self, style: &TextStyle) -> (f32, f32, f32) {
         use skrifa::MetadataProvider;
         let (face, size) = self.face_of(style);
         let face = self.fonts.face(face);
@@ -411,9 +417,29 @@ impl Typesetter {
                     skrifa::instance::Size::new(size),
                     skrifa::instance::LocationRef::default(),
                 );
-                (m.ascent, m.ascent - m.descent + m.leading)
+                (m.ascent, -m.descent, m.leading)
             }
-            Err(_) => (size * 0.8, size * 1.15),
+            Err(_) => (size * 0.8, size * 0.2, size * 0.15),
+        }
+    }
+
+    /// How far above the line's baseline text set in `style` sits: its `style:text-position`
+    /// (`doc/odt-format.md` §5c fact 56), zero for none. Negative is below.
+    #[must_use]
+    pub fn rise(&self, style: &TextStyle) -> f32 {
+        let Some((rise, _)) = position(style) else {
+            return 0.0;
+        };
+        let full = TextStyle {
+            text_position: None,
+            ..style.clone()
+        };
+        let ((ascent, descent, gap), (small_ascent, small_descent, small_gap)) =
+            (self.extents(&full), self.extents(style));
+        match rise {
+            Rise::Share(share) => share * (ascent + descent + gap),
+            Rise::Super => ascent + gap - small_ascent - small_gap,
+            Rise::Sub => small_descent - descent,
         }
     }
 }
@@ -423,16 +449,48 @@ fn is_bold(weight: &str) -> bool {
     weight == "bold" || weight.parse::<f32>().is_ok_and(|w| w >= 600.0)
 }
 
-/// `fo:font-size` in points, when it is an absolute length. A percentage is relative to a parent
-/// style that is not read, so it counts as no size.
+/// `fo:font-size` in points, when it is an absolute length, times a raised or lowered run's
+/// share of it. A percentage is relative to a parent style that is not read, so it counts as no
+/// size.
 fn size_of(style: &TextStyle) -> f32 {
-    style
+    let size = style
         .font_size
         .as_deref()
         .and_then(length_mm)
         .map(|mm| grind_core::page::pt(mm) as f32)
         .filter(|pt| *pt > 0.0)
-        .unwrap_or(DEFAULT_SIZE)
+        .unwrap_or(DEFAULT_SIZE);
+    size * position(style).map_or(1.0, |(_, share)| share)
+}
+
+/// Where `style:text-position` moves the baseline.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Rise {
+    /// A share of the line's natural height, up for a positive one.
+    Share(f32),
+    /// The face's top at the full size and the small one lined up.
+    Super,
+    /// Its bottom, the same way.
+    Sub,
+}
+
+/// `style:text-position` read (rng:13379): where the baseline goes, and the share of the size
+/// the text is set at — the second percentage, 58 % without one (`doc/odt-format.md` §5c
+/// fact 56). `None` for none, or a value that is not one.
+fn position(style: &TextStyle) -> Option<(Rise, f32)> {
+    let percent = |word: &str| {
+        word.strip_suffix('%')
+            .and_then(|n| n.trim().parse::<f32>().ok())
+            .map(|n| n / 100.0)
+    };
+    let mut words = style.text_position.as_deref()?.split_whitespace();
+    let rise = match words.next()? {
+        "super" => Rise::Super,
+        "sub" => Rise::Sub,
+        word => Rise::Share(percent(word)?),
+    };
+    let share = words.next().and_then(percent).unwrap_or(0.58);
+    Some((rise, share))
 }
 
 impl Metrics for Typesetter {
@@ -547,6 +605,28 @@ mod tests {
         let shaped = t.shape("AVATAR", &at(None, Some("0.1cm")));
         let drawn: f32 = shaped.glyphs.iter().map(|glyph| glyph.x_advance).sum();
         assert!((drawn - spaced).abs() < 1e-3);
+    }
+
+    /// `doc/odt-format.md` §5c fact 56, at 12 pt Liberation Serif: 58 % of the size unless a
+    /// second percentage says otherwise, a percentage's share of the 13.8 pt line, and `super`
+    /// and `sub` lining up the tops and the bottoms.
+    #[test]
+    fn a_raised_or_lowered_run_is_set_smaller_where_writer_sets_it() {
+        let t = setter();
+        let at = |position: &str| TextStyle {
+            text_position: Some(position.to_owned()),
+            ..serif()
+        };
+        assert!((t.face_of(&at("super")).1 - 6.96).abs() < 1e-3);
+        assert!((t.face_of(&at("33%")).1 - 6.96).abs() < 1e-3);
+        assert!((t.face_of(&at("-33% 100%")).1 - 12.0).abs() < 1e-3);
+        let near = |got: f32, want: f32| assert!((got - want).abs() < 0.02, "{got}, not {want}");
+        near(t.rise(&at("super 58%")), 4.70);
+        near(t.rise(&at("sub 58%")), -1.09);
+        near(t.rise(&at("33% 58%")), 4.55);
+        near(t.rise(&at("-33% 100%")), -4.55);
+        assert_eq!(t.rise(&serif()), 0.0);
+        assert_eq!(t.rise(&at("nowhere")), 0.0);
     }
 
     /// Liberation Serif has no ☿ and the bundled Mono or Sans has: it is drawn from that face,
