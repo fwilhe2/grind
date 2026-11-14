@@ -291,6 +291,14 @@ selection, and does not virtualise 16384 columns.
   ellipsize; a too-narrow number draws one shared cached `"##########"` layout clipped to
   the cell. Numbers right, text left, bool/error centred, unless `CellStyle` says
   otherwise.
+- **Hashes are the last resort.** Two things kept a number whole that LibreOffice showed
+  whole. A document's lengths are drawn at the scale its text is: ten-point text is drawn in
+  the widget's font size, so a millimetre is `96/25.4 × size/10` pixels
+  (`Metrics::px_per_mm`), and a column fitted to its numbers elsewhere is not a tenth short
+  here. And a number gives up its padding before it gives up being read
+  (`look::number_pad`): six pixels either side normally, down to one when that is what makes
+  it fit. The macOS and browser grids scale and squeeze the same way; `grind build` and
+  `grind sheet fit` measure in Liberation Sans and add a quarter, for the faces wider than it.
 
 ### Selection and keys (`keymap.rs`)
 
