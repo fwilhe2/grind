@@ -121,6 +121,14 @@ boxes. Both read the same `Layout`, which is why alignment has to move into the 
 
 ## 3. Milestones
 
+### Where it stands (2026-11-14)
+
+| | State |
+|---|---|
+| PM0 | **Done**: §6 |
+| PM1 | **Done**: `grind_core::layout::wrap_set` aligns and justifies (`Setting`, `Align`, `Line::shift` and `stretch`), `grind-print` draws from it, and a caret motion through `Faces` sees the paragraph's indent, tabs and alignment. Item 3 turned out to hold already: measured over the Calc Guide's 564 pages, no drawn piece ends more than 0.005 pt from where the layout put its last caret — a piece is cut at run and line boundaries, where shaping it alone and shaping its run whole agree. Its test waits for PM2's line boxes, which carry the offsets it needs. Item 4 stays as `doc/text-layout.md` cost 1 names it |
+| PM2–PM9 | Open |
+
 Each ends green on its own. A capability gets its line in `examples/sample-text.sh`, its row in
 `doc/cli-parity-text.md` and `doc/feature-matrix.md`.
 
