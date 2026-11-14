@@ -224,6 +224,39 @@
         "xlsx": 12633
       },
       "docs": 18973
+    },
+    {
+      "commit": "b3e02b8",
+      "date": "2026-11-14",
+      "time": "2026-11-14T10:03:40+01:00",
+      "tag": "",
+      "files": 490,
+      "tests": 33937,
+      "crates": {
+        "build": 4734,
+        "cli": 13109,
+        "core": 8991,
+        "docx": 7833,
+        "grammar": 1474,
+        "lsp": 1425,
+        "ooxml": 1337,
+        "open": 304,
+        "print": 7171,
+        "server": 1440,
+        "sheet": 49524,
+        "spell": 1327,
+        "suite": 6,
+        "text": 25248,
+        "ui_mac": 22653,
+        "ui_sheet_gtk": 16185,
+        "ui_text_gtk": 7824,
+        "ui_tui": 13552,
+        "ui_web": 13704,
+        "ui_web_print": 175,
+        "ui_win32": 26552,
+        "xlsx": 12747
+      },
+      "docs": 19216
     }
   ]
 }
