@@ -349,6 +349,13 @@ if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
     run set "$out/hyphen.fodt" p1 "$(printf 'The Donau\302\255dampf\302\255schiffahrts\302\255gesellschaft runs a steamer.')"
     text export-pdf "$out/hyphen.fodt" "$out/hyphen.pdf" --paper a7
     text preview "$out/hyphen.fodt" "$out/hyphen.png" --paper a7
+    # A style can only come from a template (`doc/generator-spec.md` §3.5), so this one is built:
+    # `examples/typesetting/satz.fodt` declares a justified, hyphenated German paragraph style and
+    # a display size, and the script sets a paragraph and the kerning pairs in them.
+    say "typesetting: justified and hyphenated by German patterns, and kerning at display size"
+    "$GRIND" build "$here/typesetting/satz.rhai" -o "$out/satz.fodt" >/dev/null
+    text export-pdf "$out/satz.fodt" "$out/satz.pdf"
+    text preview "$out/satz.fodt" "$out/satz.png"
 fi
 
 # --- import: a Word document becomes an ODF document -----------------------------------------
