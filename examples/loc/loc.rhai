@@ -158,9 +158,6 @@ by_crate.style(span(by_crate, 1, crate_total, n, crate_total), style().bold());
 by_crate.style(span(by_crate, 1, 0, n, crate_total), middle);
 by_crate.style(span(by_crate, 1, 0, n, 1), centred);
 by_crate.height(`2:${n + 40}`, `${row_h}cm`);
-by_crate.width("A:A", "3.2cm");
-by_crate.width("B:B", "2.2cm");
-by_crate.width(span(by_crate, 0, 2, 0, crate_total), "2.5cm");
 
 by_crate.chart(chart("bar")
     .title(`Lines per crate at ${latest.commit}`)
@@ -266,9 +263,6 @@ growth.height(`${first + 1}:${last + 1}`, `${row_h}cm`);
 // And the rows under it, down past the charts: a shell's own default row is its font's, not
 // this, and a grid that changes pitch below the table looks broken.
 growth.height(`${last + 2}:${last + 40}`, `${row_h}cm`);
-growth.width("A:A", "3.2cm");
-growth.width("B:C", "2.2cm");
-growth.width(span(growth, 0, a0, 0, delta), "2.6cm");
 
 // Under the table: how it grew, and what it is made of now.
 let below = `${title_h + (top - 1) * row_h + header_h + n * row_h + 0.6}cm`;
