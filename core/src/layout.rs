@@ -430,6 +430,37 @@ impl std::hash::Hash for Setting {
 /// U+00AD: where a word may break, shown as a hyphen only when it does.
 pub const SOFT_HYPHEN: char = '\u{AD}';
 
+/// Where a line may end, by byte: UAX #14 as Writer tailors it (`doc/odt-format.md` §5c fact
+/// 57). An en dash is read as an em dash, the same length in UTF-8; nothing breaks right after
+/// a solidus, and something does between a space and one; a hyphen-minus between digits is a
+/// break.
+fn breaks(text: &str) -> Vec<(usize, BreakOpportunity)> {
+    let tailored = text.replace('\u{2013}', "\u{2014}");
+    let bytes = text.as_bytes();
+    let mut out: Vec<(usize, BreakOpportunity)> = linebreaks(&tailored)
+        .filter(|&(at, opportunity)| {
+            opportunity == BreakOpportunity::Mandatory || at == 0 || bytes[at - 1] != b'/'
+        })
+        .collect();
+    let mut added = false;
+    for (at, _) in text.match_indices('-') {
+        let digit = |i: Option<usize>| i.and_then(|i| bytes.get(i)).is_some_and(u8::is_ascii_digit);
+        if digit(at.checked_sub(1)) && digit(Some(at + 1)) {
+            out.push((at + 1, BreakOpportunity::Allowed));
+            added = true;
+        }
+    }
+    for (at, _) in text.match_indices(" /") {
+        out.push((at + 1, BreakOpportunity::Allowed));
+        added = true;
+    }
+    if added {
+        out.sort_by_key(|&(at, _)| at);
+        out.dedup_by_key(|&mut (at, _)| at);
+    }
+    out
+}
+
 /// [`wrap`], set as `setting` says. Every tab character is advanced to its stop on its own line —
 /// which depends on where the line starts, so tabs are placed *while* breaking rather than
 /// measured once beforehand — and each line is then aligned, so every caret x is where the ink is.
@@ -496,7 +527,8 @@ pub fn wrap_set(
 
     // Every place a line may end, in characters: UAX #14's, and inside a word where the
     // paragraph is hyphenated and the language's patterns allow.
-    let mut opportunities: Vec<(usize, BreakOpportunity)> = linebreaks(&text)
+    let mut opportunities: Vec<(usize, BreakOpportunity)> = breaks(&text)
+        .into_iter()
         .map(|(byte, opportunity)| (char_of_byte[byte], opportunity))
         .collect();
     if let Some(hyphenate) = &setting.hyphenate {
@@ -660,10 +692,42 @@ pub fn wrap_set(
         width <= 0.0 || span(from, visible, first_line) + hyphen_at(to) <= room
     };
 
-    for (at, opportunity) in opportunities {
+    // After a run of spaces where UAX #14 has no opportunity: a break there only when one of the
+    // spaces is the first thing past the measure, as Writer breaks.
+    let mut spaced: Vec<(usize, Option<BreakOpportunity>)> = Vec::new();
+    for at in 1..len {
+        if chars[at - 1] == ' '
+            && chars[at] != ' '
+            && opportunities
+                .binary_search_by_key(&at, |&(at, _)| at)
+                .is_err()
+        {
+            spaced.push((at, None));
+        }
+    }
+    let mut points: Vec<(usize, Option<BreakOpportunity>)> = opportunities
+        .into_iter()
+        .map(|(at, opportunity)| (at, Some(opportunity)))
+        .collect();
+    if !spaced.is_empty() {
+        points.extend(spaced);
+        points.sort_by_key(|&(at, _)| at);
+    }
+
+    for (at, opportunity) in points {
         if at <= start {
             continue;
         }
+        let Some(opportunity) = opportunity else {
+            let first_line = lines.is_empty();
+            let room = width - if first_line { first } else { 0.0 };
+            if width > 0.0 && fits(start, at, first_line) && span(start, at, first_line) > room {
+                push(start, at, &mut top, &mut lines);
+                start = at;
+                last_fit = None;
+            }
+            continue;
+        };
         // Overflowed the line in hand. Close it at the last opportunity that fitted — and if
         // none did, this run is wider than the whole line, so it gets a line of its own further
         // down. A mandatory break is checked here too: the end of a paragraph is still allowed
@@ -675,12 +739,21 @@ pub fn wrap_set(
             start = end;
         }
 
+        // Writer does not break before a solidus that is itself the first thing past the measure.
+        let overflowing_solidus = || {
+            let first_line = lines.is_empty();
+            let room = width - if first_line { first } else { 0.0 };
+            chars.get(at) == Some(&'/')
+                && span(start, at, first_line) <= room
+                && span(start, at + 1, first_line) > room
+        };
         if opportunity == BreakOpportunity::Mandatory {
             if at > start {
                 push(start, at, &mut top, &mut lines);
             }
             start = at;
             last_fit = None;
+        } else if width > 0.0 && overflowing_solidus() {
         } else if fits(start, at, lines.is_empty()) {
             last_fit = Some(at);
         } else {
@@ -1134,6 +1207,38 @@ mod tests {
         );
         // Trailing spaces stay on the line they ended, so End puts the caret after them.
         assert_eq!(layout.lines()[0].end, 8);
+    }
+
+    /// Writer's tailoring of UAX #14, `doc/odt-format.md` §5c fact 57.
+    #[test]
+    fn a_line_breaks_where_writer_breaks_it() {
+        let ends = |text: &str| -> Vec<usize> {
+            breaks(text)
+                .into_iter()
+                .filter(|&(at, _)| at < text.len())
+                .map(|(at, _)| at)
+                .collect()
+        };
+        assert_eq!(ends("and/or x"), [7], "no break after a solidus");
+        assert_eq!(ends("a / b"), [2, 4], "but between a space and one");
+        assert_eq!(ends("2019–2020"), [4, 7], "before and after an en dash");
+        assert_eq!(
+            ends("10-12 A-1 x -5"),
+            [3, 6, 10, 12],
+            "after a hyphen between digits"
+        );
+    }
+
+    /// A space past the measure breaks the line after it even where UAX #14 has no break, and a
+    /// solidus past it takes the word before down with it.
+    #[test]
+    fn a_space_past_the_measure_is_a_break_whatever_follows() {
+        let text = "cc aa ! b";
+        assert_eq!(rendered(text, &at(text, 5.5)), ["cc aa ", "! b"]);
+        assert_eq!(rendered(text, &at(text, 6.5)), ["cc ", "aa ! b"]);
+        let text = "cc aa /bin";
+        assert_eq!(rendered(text, &at(text, 6.5)), ["cc ", "aa /bin"]);
+        assert_eq!(rendered(text, &at(text, 7.5)), ["cc aa ", "/bin"]);
     }
 
     #[test]

@@ -1030,6 +1030,24 @@ oracle turned out to be unable to answer the font questions (fact 4).
    small capitals starts about 0.35 pt sooner than the capitals' own advances end (`MALL` at
    9.6 pt: 27.14 pt of advances, the space after it 26.8 pt from its start) — not explained by
    the operators' pair adjustments, and not followed here.
+57. **Where Writer breaks a line, beside UAX #14** — `MEASURED` (2026-11-14, 26.8.2.2, Liberation
+   Serif 12 pt, `fo:language="en"`; 64 paragraphs per construct, each the same lead and the
+   construct, their right margins 0.5 mm apart, the first line's last word read from the PDF).
+   Of 64 constructs, Writer agrees with UAX #14 on all but three. There is **no break after a
+   solidus** (`and/or`, `x/y`, `€1,234/month`, `https://example.org/a`, `/usr/local/bin` stay
+   whole). There is one **between a space and a solidus**, which UAX #14 forbids (× SY), but
+   Writer does not take it when the solidus is the first character past the measure: then the
+   line ends at the opportunity before (`tempor /usr/local/bin` broke after `tempor` at 38
+   measures, after `eiusmod` at the 7 where the solidus overflowed). An **en dash** (U+2013) breaks before as
+   well as after, as an em dash does (`2019` | `–2020`, `a` | `–b`). A **hyphen-minus between
+   digits** breaks after it (`10-` | `12`, `3-` | `4`), which UAX #14 forbids (HY × NU); after a
+   letter or a space it does not (`A-1`, `x -5` stay whole), as UAX #14 says.
+   And **a line whose first character past the measure is a space breaks after the spaces**,
+   whatever follows them: `tempor a ! b` broke as `tempor a` | `! b` at the two measures where
+   the space after `a` was the first thing not to fit, and as `tempor` | `a ! b` at the two
+   wider ones, where the `!` was, though UAX #14 has no break before `!`. The same with `?`, `)`,
+   `]`, `;`, `:` and `,` after a space. So Writer's line ends are not monotonic in the measure
+   there.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
