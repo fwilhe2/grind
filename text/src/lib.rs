@@ -462,6 +462,12 @@ pub trait Faces {
     fn row_kept(&self, _table: &str, _row: u32) -> bool {
         false
     }
+
+    /// The text area's width for the block at `index` when it is not the flow's: a block in a
+    /// run of pages set wider or narrower. `None`, the default, is the flow's own.
+    fn measure(&self, _index: usize) -> Option<f64> {
+        None
+    }
 }
 
 /// Every block set alike: one width, one provider — what the CLI (`Fixed` at `--width`) and a

@@ -487,6 +487,7 @@ pub fn lay_out(
         if view.cell.is_some()
             && let Some(table) = app.table(index)
         {
+            let column = faces.measure(index).unwrap_or(column);
             lay_out_table(
                 &mut flow, &viewport, &table, column, spacing, faces, &height_of,
             );

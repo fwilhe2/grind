@@ -21,10 +21,11 @@
 //! (`doc/odt-format.md` §5c fact 25) — unless it keeps together or is a heading row, which move
 //! whole and overflow a page they are taller than.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::flow::{self, CellBox, Spacing};
-use crate::{App, BlockView, Faces};
+use crate::{App, BlockView, Faces, Metrics};
 
 /// How hard the cut tries to keep a paragraph together.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -205,33 +206,17 @@ pub fn paginate_slots(
         ..*spacing
     };
     let viewport = app.get_viewport(0..app.block_count());
-    // The flow laid out at every measure; each unit is taken from the one its run of pages is set
-    // at. A run opens on a page of its own, so no page mixes two.
-    let laid: Vec<Vec<Unit>> = measures
-        .iter()
-        .map(|&(faces, column)| {
-            let laid = flow::lay_out(app, faces, column, &spacing, picture);
-            units(app, faces, &laid, &viewport, picture, spacing.cell_pad)
-        })
-        .collect();
-    let measure_of = |slot: usize| slots.get(slot).map_or(0, |s| s.measure).min(laid.len() - 1);
-    let mut measure = measure_of(start);
-    // Each unit, and where its run's flow sits against the run before it — what an empty page's
-    // origin moves by when a run starts on it.
-    let units: Vec<(&Unit, f64)> = (0..laid[0].len())
-        .map(|at| {
-            let before = measure;
-            if let Unit::Block { slot, .. } = &laid[0][at]
-                && let Some(&(slot_of, _)) = starts.get(&slot.index)
-            {
-                measure = measure_of(slot_of);
-            }
-            (
-                &laid[measure][at],
-                laid[measure][at].top() - laid[before][at].top(),
-            )
-        })
-        .collect();
+    // One flow, each block set at the measure of its run of pages. A run opens on a page of its
+    // own, so no page mixes two.
+    let mixed = Mixed::new(
+        measures,
+        &viewport,
+        |slot| slots.get(slot).map_or(0, |s| s.measure),
+        (start, starts),
+    );
+    let column = measures.first().map_or(0.0, |&(_, column)| column);
+    let laid = flow::lay_out(app, &mixed, column, &spacing, picture);
+    let units = units(app, &mixed, &laid, &viewport, picture, spacing.cell_pad);
     let mut cut = Cut {
         pages: vec![Page {
             slot: start,
@@ -246,10 +231,9 @@ pub fn paginate_slots(
     let mut break_pending = false;
     let mut heading: Vec<(&str, usize)> = Vec::new();
     let mut heading_closed = false;
-    for (at, &(unit, shift)) in units.iter().enumerate() {
-        // At the previous run's measure: a run opening on this page shifts it below.
+    for (at, unit) in units.iter().enumerate() {
         if std::mem::take(&mut break_pending) && !cut.fresh() {
-            cut.turn(unit.broken_top() - shift);
+            cut.turn(unit.broken_top());
         }
         match unit {
             Unit::Block {
@@ -263,9 +247,7 @@ pub fn paginate_slots(
                 // A block opening a page on its own master: a new page unless this one is empty,
                 // set on that master.
                 if let Some(&(slot_of, restart)) = starts.get(&slot.index) {
-                    if cut.fresh() {
-                        cut.origin += shift;
-                    } else {
+                    if !cut.fresh() {
                         cut.turn(unit.broken_top());
                     }
                     cut.set_slot(slot_of, restart);
@@ -277,7 +259,7 @@ pub fn paginate_slots(
                 if *keep
                     && !cut.fresh()
                     && let (Some(last), Some(next)) = (lines.last(), units.get(at + 1))
-                    && next.0.lead(rules.orphans).max(last.bottom()) - cut.origin
+                    && next.lead(rules.orphans).max(last.bottom()) - cut.origin
                         > cut.page_height() + EPS
                 {
                     cut.turn(lines[0].top - kept.0);
@@ -310,7 +292,7 @@ pub fn paginate_slots(
                 let turn = |cut: &mut Cut<'_>, at: f64| {
                     cut.turn(at);
                     if repeats {
-                        let first = heading.first().map_or(at, |&(_, i)| units[i].0.top());
+                        let first = heading.first().map_or(at, |&(_, i)| units[i].top());
                         let mut tall = 0.0;
                         for &(_, i) in &heading {
                             if let Unit::Row {
@@ -318,7 +300,7 @@ pub fn paginate_slots(
                                 cells,
                                 bottom,
                                 ..
-                            } = units[i].0
+                            } = &units[i]
                             {
                                 let from = vec![0; slots.len()];
                                 cut.place_row(slots, &from, None, cells, (first, None), true);
@@ -396,6 +378,104 @@ pub fn paginate_slots(
         }
     }
     cut.pages
+}
+
+/// Several measures' faces as one: each block answered by the measure its run of pages is set
+/// at, and each table by its first block's.
+struct Mixed<'a> {
+    measures: &'a [(&'a dyn Faces, f64)],
+    /// Each block's measure, by index.
+    of: Vec<usize>,
+    tables: HashMap<&'a str, usize>,
+}
+
+impl<'a> Mixed<'a> {
+    fn new(
+        measures: &'a [(&'a dyn Faces, f64)],
+        viewport: &'a crate::Viewport,
+        measure_of: impl Fn(usize) -> usize,
+        (start, starts): (usize, &Starts),
+    ) -> Self {
+        let last = measures.len().saturating_sub(1);
+        let mut measure = measure_of(start).min(last);
+        let mut of = Vec::new();
+        let mut tables = HashMap::new();
+        for view in viewport.iter() {
+            if view.cell.is_none()
+                && let Some(&(slot, _)) = starts.get(&view.index)
+            {
+                measure = measure_of(slot).min(last);
+            }
+            if let Some(cell) = &view.cell {
+                tables.entry(cell.table.as_str()).or_insert(measure);
+            }
+            of.resize(view.index + 1, measure);
+            of[view.index] = measure;
+        }
+        Mixed {
+            measures,
+            of,
+            tables,
+        }
+    }
+
+    fn at(&self, index: usize) -> &(&'a dyn Faces, f64) {
+        &self.measures[self.of.get(index).copied().unwrap_or(0)]
+    }
+
+    fn table(&self, table: &str) -> &'a dyn Faces {
+        self.measures[self.tables.get(table).copied().unwrap_or(0)].0
+    }
+}
+
+impl Faces for Mixed<'_> {
+    fn of(
+        &self,
+        index: usize,
+        kind: &crate::BlockKind,
+        style: Option<&str>,
+    ) -> (f32, &dyn Metrics) {
+        self.at(index).0.of(index, kind, style)
+    }
+    fn spacing(&self, index: usize) -> Option<flow::Space> {
+        self.at(index).0.spacing(index)
+    }
+    fn breaks(&self, index: usize) -> Option<Breaks> {
+        self.at(index).0.breaks(index)
+    }
+    fn setting(&self, index: usize) -> crate::layout::Setting {
+        self.at(index).0.setting(index)
+    }
+    fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
+        self.table(table).columns(table)
+    }
+    fn table_span(&self, table: &str, column: f64) -> Option<(f64, f64)> {
+        self.table(table).table_span(table, column)
+    }
+    fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {
+        self.table(table).cell_pad(table, row, column)
+    }
+    fn cell_drop(&self, table: &str, row: u32, column: u32) -> f64 {
+        self.table(table).cell_drop(table, row, column)
+    }
+    fn kept_above(&self, index: usize) -> (f64, f64) {
+        self.at(index).0.kept_above(index)
+    }
+    fn footnote_room(&self, index: usize) -> f64 {
+        self.at(index).0.footnote_room(index)
+    }
+    fn header_row(&self, table: &str, row: u32) -> bool {
+        self.table(table).header_row(table, row)
+    }
+    fn row_height(&self, table: &str, row: u32) -> Option<f64> {
+        self.table(table).row_height(table, row)
+    }
+    fn row_kept(&self, table: &str, row: u32) -> bool {
+        self.table(table).row_kept(table, row)
+    }
+    fn measure(&self, index: usize) -> Option<f64> {
+        Some(self.at(index).1)
+    }
 }
 
 /// Slack for comparing positions that are sums of floats.
