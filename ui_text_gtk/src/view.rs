@@ -824,6 +824,21 @@ mod imp {
             ));
             widget.add_controller(pinch);
 
+            // The pointer's shape says what a click there does: an I-beam over a page, the hand
+            // over a link, the plain arrow over the desk.
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_motion(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_, x, y| {
+                    let shape = doc.imp().pointer_over(x, y);
+                    if doc.cursor().and_then(|c| c.name()).as_deref() != Some(shape) {
+                        doc.set_cursor_from_name(Some(shape));
+                    }
+                }
+            ));
+            widget.add_controller(motion);
+
             // A link says where it goes when the pointer rests on it, and how to get there —
             // the target is otherwise invisible, since the text is what is drawn.
             widget.set_has_tooltip(true);
@@ -1876,6 +1891,24 @@ mod imp {
             }
         }
 
+        /// The pointer's shape at a point in the widget, by its CSS name.
+        pub(super) fn pointer_over(&self, x: f64, y: f64) -> &'static str {
+            let Some(shown) = self.shown() else {
+                return "default";
+            };
+            let (left, top) = self.scrolled();
+            let on_paper = shown.strip.page_at(y + top).and_then(|page| {
+                let sheet = shown.strip.sheet(page)?;
+                let (x, y) = (x + left - sheet.x, y + top - sheet.y);
+                ((0.0..sheet.width).contains(&x) && (0.0..sheet.height).contains(&y)).then_some(())
+            });
+            match on_paper {
+                None => "default",
+                Some(()) if self.link_under(x, y).is_some() => "pointer",
+                Some(()) => "text",
+            }
+        }
+
         /// Find the needle again, in the document as it is now.
         pub fn refind(&self) {
             let found = match (self.needle.borrow().as_deref(), self.app()) {
@@ -2420,6 +2453,10 @@ mod tests {
         let (x, y) = point_of(&doc, 1);
         assert!(!imp.follow(x, y));
         assert_eq!(*followed.borrow(), ["https://x.org"]);
+        assert_eq!(imp.pointer_over(x, y), "text");
+        let (x, y) = point_of(&doc, 10);
+        assert_eq!(imp.pointer_over(x, y), "pointer", "a hand over the link");
+        assert_eq!(imp.pointer_over(2.0, 2.0), "default", "the desk");
 
         let editor = crate::link::Editor::new(&app, &doc);
         // A selection is what gets linked.
