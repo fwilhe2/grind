@@ -28,7 +28,7 @@ pub enum Part {
 }
 
 /// How a piece looks, as a body run does: its named character styles, space-separated, under its
-/// direct formatting ([`crate::paragraph::shown`]).
+/// direct formatting (`crate::paragraph::shown`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Look {
     pub names: Option<String>,

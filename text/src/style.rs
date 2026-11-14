@@ -15,7 +15,7 @@
 //!   expressible.
 //! * **Named styles** (`Emphasis`, `Source_20_Text`) are the document's vocabulary and keep their
 //!   name: resolving `Emphasis` into italic would throw the structure away. They are read for
-//!   showing ([`crate::paragraph::shown`]) and never written.
+//!   showing (`crate::paragraph::shown`) and never written.
 //!
 //! A [`crate::model::Run`] carries both. `crate::odf::read` draws the line on the way in,
 //! `crate::odf::write`'s pool puts the names back.
