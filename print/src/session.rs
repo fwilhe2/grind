@@ -22,6 +22,9 @@ pub struct Session {
     /// The typesetter, and the families the document named when its fonts were looked up.
     setter: RefCell<Option<(Vec<String>, Rc<Typesetter>)>>,
     set: RefCell<Option<Rc<Document>>>,
+    /// Every character fonts were looked up again for, having had no glyph: typed after the
+    /// document opened, say. Each is looked for once.
+    sought: RefCell<std::collections::BTreeSet<char>>,
 }
 
 impl Session {
@@ -31,6 +34,7 @@ impl Session {
             bundled,
             setter: RefCell::new(None),
             set: RefCell::new(None),
+            sought: RefCell::default(),
         }
     }
 
@@ -58,6 +62,8 @@ impl Session {
         let fonts = if self.bundled {
             Fonts::bundled()
         } else {
+            #[cfg(feature = "system-fonts")]
+            self.sought.borrow_mut().extend(crate::characters(app));
             crate::fonts_for(app)
         };
         let setter = Rc::new(Typesetter::new(fonts));
@@ -72,16 +78,63 @@ impl Session {
         if let Some(set) = self.set.borrow().as_ref() {
             return set.clone();
         }
-        let set = Rc::new(text::typeset(app, &setter, &text::Options::default()));
+        let mut set = text::typeset(app, &setter, &text::Options::default());
+        // A character no face had, not looked for since the fonts were: look again, once.
+        let new: Vec<char> = missing(&set)
+            .into_iter()
+            .filter(|&c| self.sought.borrow_mut().insert(c))
+            .collect();
+        if !self.bundled && !new.is_empty() {
+            #[cfg(feature = "system-fonts")]
+            self.sought.borrow_mut().extend(crate::characters(app));
+            let setter = Rc::new(Typesetter::new(crate::fonts_for(app)));
+            self.setter
+                .replace(Some((crate::families(app), setter.clone())));
+            set = text::typeset(app, &setter, &text::Options::default());
+        }
+        let set = Rc::new(set);
         self.set.replace(Some(set.clone()));
         set
     }
+}
+
+/// The characters drawn as a face's empty box, `.notdef`.
+fn missing(set: &Document) -> Vec<char> {
+    set.pages
+        .iter()
+        .flat_map(|page| &page.ops)
+        .filter_map(|op| match op {
+            crate::ops::Op::Text { glyphs, text, .. } => Some(
+                glyphs
+                    .iter()
+                    .filter(|glyph| glyph.id == 0)
+                    .filter_map(|glyph| text.get(glyph.text.clone()))
+                    .flat_map(str::chars)
+                    .collect::<Vec<_>>(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use grind_text::{BlockKind, Caret};
+
+    #[test]
+    fn a_character_no_face_has_is_found_where_it_is_drawn_as_a_box() {
+        let app = App::new();
+        app.insert(0, BlockKind::Paragraph, "a\u{E000}b ☿").unwrap();
+        let session = Session::new(true);
+        assert_eq!(
+            missing(&session.document(&app)),
+            ['\u{E000}'],
+            "☿ has a fallback"
+        );
+    }
 
     #[test]
     fn the_pages_are_held_until_the_document_changes() {

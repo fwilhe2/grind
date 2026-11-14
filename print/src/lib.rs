@@ -134,7 +134,7 @@ pub fn fonts_for(app: &App) -> Fonts {
 
 /// Every character the document's text and list labels use, once each, in order.
 #[cfg(feature = "system-fonts")]
-fn characters(app: &App) -> Vec<char> {
+pub(crate) fn characters(app: &App) -> Vec<char> {
     let mut used = std::collections::BTreeSet::new();
     for view in app.get_viewport(0..app.block_count()).iter() {
         used.extend(view.text.chars());
