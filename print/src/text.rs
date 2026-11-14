@@ -664,6 +664,7 @@ fn block_faces<'a>(
                     letter_spacing: props.letter_spacing,
                     letter_kerning: props.letter_kerning,
                     text_position: None,
+                    font_variant: props.font_variant,
                 }
             } else {
                 TextStyle {
@@ -1587,6 +1588,7 @@ impl<'a> Marginal<'a> {
                     letter_spacing: props.letter_spacing,
                     letter_kerning: props.letter_kerning,
                     text_position: None,
+                    font_variant: props.font_variant,
                 };
                 let line = crate::faces::LineRule::parse(props.line_height.as_deref());
                 let face =

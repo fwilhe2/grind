@@ -154,6 +154,10 @@ impl<'a> RoleFace<'a> {
                 .clone()
                 .or_else(|| stated.letter_kerning.clone()),
             text_position: run.text_position.clone(),
+            font_variant: run
+                .font_variant
+                .clone()
+                .or_else(|| stated.font_variant.clone()),
         }
     }
 }

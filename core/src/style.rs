@@ -190,4 +190,6 @@ pub struct TextStyle {
     /// `style:text-position` — `super`, `sub` or a percentage, and the size as a second one:
     /// a raised or lowered run set smaller.
     pub text_position: Option<String>,
+    /// `fo:font-variant` — `small-caps` sets lowercase letters as smaller capitals.
+    pub font_variant: Option<String>,
 }

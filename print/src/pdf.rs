@@ -104,13 +104,15 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
                 paint: paint(*color),
                 ..Fill::default()
             }));
-            // krilla takes advances in ems and scales them by the size itself.
-            let em = size.max(f32::MIN_POSITIVE);
-            // One run per face: a glyph drawn from a fallback face is its own.
+            // One run per face and size: a glyph drawn from a fallback face, or a small
+            // capital, is its own.
             let mut pen = *x;
-            for run in glyphs.chunk_by(|a, b| a.face == b.face) {
+            for run in glyphs.chunk_by(|a, b| a.face == b.face && a.size == b.size) {
                 let advance: f32 = run.iter().map(|glyph| glyph.x_advance).sum();
                 let id = run[0].face.unwrap_or(*face);
+                let size = run[0].size.unwrap_or(*size);
+                // krilla takes advances in ems and scales them by the size itself.
+                let em = size.max(f32::MIN_POSITIVE);
                 if let Some(font) = font(fonts, id, faces) {
                     let run: Vec<KrillaGlyph> = run
                         .iter()
@@ -126,7 +128,7 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
                             )
                         })
                         .collect();
-                    surface.draw_glyphs(Point::from_xy(pen, *y), &run, font, text, *size, false);
+                    surface.draw_glyphs(Point::from_xy(pen, *y), &run, font, text, size, false);
                 }
                 pen += advance;
             }

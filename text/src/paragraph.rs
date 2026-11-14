@@ -70,6 +70,8 @@ pub struct ParagraphProps {
     /// `fo:letter-spacing` and `style:letter-kerning` (`doc/odt-format.md` §5c facts 51, 52).
     pub letter_spacing: Option<String>,
     pub letter_kerning: Option<String>,
+    /// `fo:font-variant`: `small-caps` (`doc/odt-format.md` §5c fact 56).
+    pub font_variant: Option<String>,
     /// `fo:hyphenate`, and the fewest letters a break leaves before and after it
     /// (`fo:hyphenation-remain-char-count`, `-push-char-count`; `doc/odt-format.md` §5c
     /// fact 55).
@@ -111,7 +113,8 @@ impl ParagraphProps {
                 mine.clone_from(theirs);
             }
         }
-        let fields: [(&mut Option<String>, &Option<String>); 25] = [
+        let fields: [(&mut Option<String>, &Option<String>); 26] = [
+            (&mut self.font_variant, &over.font_variant),
             (&mut self.hyphenate, &over.hyphenate),
             (&mut self.hyphenation_remain, &over.hyphenation_remain),
             (&mut self.hyphenation_push, &over.hyphenation_push),

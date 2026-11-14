@@ -1026,7 +1026,10 @@ oracle turned out to be unable to answer the font questions (fact 4).
    difference in size); **`sub`** lowers it by the face's descent at the full size less at the
    small one (1.09 and 0.9 pt, 443 / 2048). The paragraph's lines stayed 13.8 pt apart.
    `fo:font-variant="small-caps"` (rng:13316) sets each lowercase letter as its capital at
-   **80 %** of the size, and capitals and spaces at the full size.
+   **80 %** of the size, and capitals and spaces at the full size. The text after a stretch of
+   small capitals starts about 0.35 pt sooner than the capitals' own advances end (`MALL` at
+   9.6 pt: 27.14 pt of advances, the space after it 26.8 pt from its start) — not explained by
+   the operators' pair adjustments, and not followed here.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

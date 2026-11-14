@@ -47,8 +47,9 @@ pub struct CharStyle {
     /// here: a run carrying them keeps its [`Origin`], which a save builds on.
     pub letter_spacing: Option<String>,
     pub letter_kerning: Option<String>,
-    /// `style:text-position`, read and carried the same way.
+    /// `style:text-position` and `fo:font-variant`, read and carried the same way.
     pub text_position: Option<String>,
+    pub font_variant: Option<String>,
     /// The automatic style this formatting was read from, when it says what the fields do not —
     /// superscript, a language, letter spacing. Not formatting, and equal to every other
     /// [`Origin`]; a save builds a restyled run's new style from it, so what the model never read
@@ -141,13 +142,15 @@ impl CharStyle {
             letter_spacing: self.letter_spacing.clone(),
             letter_kerning: self.letter_kerning.clone(),
             text_position: self.text_position.clone(),
+            font_variant: self.font_variant.clone(),
         }
     }
 
     /// Layer `other` over `self`: what `other` sets wins. What nested spans mean, inner winning,
     /// which is why reading can flatten them (`doc/text-core.md`).
     pub fn layer(&mut self, other: &CharStyle) {
-        let fields: [(&mut Option<String>, &Option<String>); 11] = [
+        let fields: [(&mut Option<String>, &Option<String>); 12] = [
+            (&mut self.font_variant, &other.font_variant),
             (&mut self.text_position, &other.text_position),
             (&mut self.letter_spacing, &other.letter_spacing),
             (&mut self.letter_kerning, &other.letter_kerning),
@@ -186,6 +189,7 @@ impl CharStyle {
             letter_spacing: agreed(self.letter_spacing.as_ref(), other.letter_spacing.as_ref()),
             letter_kerning: agreed(self.letter_kerning.as_ref(), other.letter_kerning.as_ref()),
             text_position: agreed(self.text_position.as_ref(), other.text_position.as_ref()),
+            font_variant: agreed(self.font_variant.as_ref(), other.font_variant.as_ref()),
             // A reading for a toolbar, not a run: it came from nowhere.
             origin: Origin::default(),
         }

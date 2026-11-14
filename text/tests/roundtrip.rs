@@ -795,6 +795,7 @@ fn cases() -> Vec<(String, Document)> {
                             letter_spacing: None,
                             letter_kerning: None,
                             text_position: None,
+                            font_variant: None,
                             origin: grind_text::style::Origin::default(),
                         },
                     ),

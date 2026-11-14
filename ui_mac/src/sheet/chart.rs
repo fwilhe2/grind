@@ -278,7 +278,7 @@ pub fn draw(
                 x,
                 top,
                 text,
-                style,
+                style: *style,
                 color,
                 clip: rect(clip),
             },
@@ -305,7 +305,7 @@ pub fn draw(
                     w,
                     h,
                     text,
-                    style,
+                    style: *style,
                     color,
                     clip: rect(clip),
                 }

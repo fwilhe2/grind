@@ -241,9 +241,9 @@ impl Rasteriser {
             } => {
                 // Each glyph lands on a whole pixel plus a quarter-pixel phase, at which its
                 // coverage is kept; a quarter is the most a position moves, an eighth of a pixel.
-                let ppem = *size * scaled.sx;
                 let mut pen = *x;
                 for glyph in run {
+                    let ppem = glyph.size.unwrap_or(*size) * scaled.sx;
                     let (across, x_phase) = quarters((pen + glyph.x_offset) * scaled.sx);
                     let (down, y_phase) = quarters((*y - glyph.y_offset) * scaled.sy);
                     let face = glyph.face.unwrap_or(*face);

@@ -35,6 +35,8 @@ pub struct Glyph {
     /// The face it is drawn from when that is not its run's: a character the run's face has no
     /// glyph for, set in a face that has one ([`Fonts::fallback_for`]).
     pub face: Option<FaceId>,
+    /// Its size when that is not its run's: a small capital (`fo:font-variant`).
+    pub size: Option<f32>,
 }
 
 /// A piece of text set in one face at one size.
@@ -231,7 +233,17 @@ impl Typesetter {
                 glyphs: glyphs.to_vec(),
             };
         }
-        let mut shaped = self.shape_in(face, size, letters.kern, text);
+        let small_caps = style.font_variant.as_deref() == Some("small-caps")
+            && text.chars().any(|c| small_capital(c).is_some());
+        let mut shaped = if small_caps {
+            Shaped {
+                face,
+                size,
+                glyphs: self.small_caps(face, size, letters.kern, text),
+            }
+        } else {
+            self.shape_in(face, size, letters.kern, text)
+        };
         // The spacing follows every character, so a cluster of several takes it once for each.
         if letters.spacing != 0.0 {
             let glyphs = &mut shaped.glyphs;
@@ -306,6 +318,7 @@ impl Typesetter {
                     y_offset: position.y_offset as f32 * scale,
                     text: start..end,
                     face: None,
+                    size: None,
                 });
             }
         }
@@ -371,6 +384,49 @@ impl Typesetter {
         }
         shaped.glyphs = out;
         shaped
+    }
+
+    /// `text` in small capitals (`doc/odt-format.md` §5c fact 56): each stretch of lowercase
+    /// letters set as their capitals at 80 % of `size`, the rest as it is; each glyph's cluster
+    /// still the bytes of `text` it stands for.
+    fn small_caps(&self, face: FaceId, size: f32, kern: bool, text: &str) -> Vec<Glyph> {
+        let small = size * 0.8;
+        let mut out = Vec::new();
+        let chars: Vec<(usize, char)> = text.char_indices().collect();
+        let mut at = 0;
+        while at < chars.len() {
+            let lower = small_capital(chars[at].1).is_some();
+            let end = (at..chars.len())
+                .find(|&i| small_capital(chars[i].1).is_some() != lower)
+                .unwrap_or(chars.len());
+            let from = chars[at].0;
+            let to = chars.get(end).map_or(text.len(), |&(byte, _)| byte);
+            if lower {
+                let upper: String = chars[at..end]
+                    .iter()
+                    .filter_map(|&(_, c)| small_capital(c))
+                    .collect();
+                // One capital a letter: a cluster's offset in `upper` is the same letter's in
+                // `text`.
+                let starts: Vec<usize> = upper.char_indices().map(|(byte, _)| byte).collect();
+                let back = |byte: usize| {
+                    let index = starts.partition_point(|&start| start < byte);
+                    chars.get(at + index).map_or(to, |&(original, _)| original)
+                };
+                for mut glyph in self.shape_in(face, small, kern, &upper).glyphs {
+                    glyph.text = back(glyph.text.start)..back(glyph.text.end);
+                    glyph.size = Some(small);
+                    out.push(glyph);
+                }
+            } else {
+                for mut glyph in self.shape_in(face, size, kern, &text[from..to]).glyphs {
+                    glyph.text = glyph.text.start + from..glyph.text.end + from;
+                    out.push(glyph);
+                }
+            }
+            at = end;
+        }
+        out
     }
 
     /// Every family set in another face than the one it named, in name order.
@@ -461,6 +517,18 @@ fn size_of(style: &TextStyle) -> f32 {
         .filter(|pt| *pt > 0.0)
         .unwrap_or(DEFAULT_SIZE);
     size * position(style).map_or(1.0, |(_, share)| share)
+}
+
+/// The capital a lowercase letter is set as in small capitals, when it is one letter.
+fn small_capital(c: char) -> Option<char> {
+    if !c.is_lowercase() {
+        return None;
+    }
+    let mut upper = c.to_uppercase();
+    match (upper.next(), upper.next()) {
+        (Some(capital), None) => Some(capital),
+        _ => None,
+    }
 }
 
 /// Where `style:text-position` moves the baseline.
@@ -627,6 +695,30 @@ mod tests {
         near(t.rise(&at("-33% 100%")), -4.55);
         assert_eq!(t.rise(&serif()), 0.0);
         assert_eq!(t.rise(&at("nowhere")), 0.0);
+    }
+
+    /// `doc/odt-format.md` §5c fact 56: in small capitals a lowercase letter is its capital at
+    /// 80 % of the size, a capital and a space keep the size, and each glyph still stands for
+    /// the letter it was.
+    #[test]
+    fn small_capitals_are_capitals_at_four_fifths_of_the_size() {
+        let t = setter();
+        let caps = TextStyle {
+            font_variant: Some("small-caps".to_owned()),
+            ..serif()
+        };
+        let shaped = t.shape("Sm C", &caps);
+        assert_eq!(shaped.glyphs.len(), 4);
+        let sizes: Vec<Option<f32>> = shaped.glyphs.iter().map(|g| g.size).collect();
+        assert_eq!(sizes, [None, Some(9.6), None, None]);
+        assert_eq!(shaped.glyphs[1].text, 1..2, "`m`, drawn as `M`");
+        let small = TextStyle {
+            font_size: Some("9.6pt".to_owned()),
+            ..serif()
+        };
+        assert_eq!(shaped.glyphs[1].id, t.shape("M", &small).glyphs[0].id);
+        let m = width(&t, "M", &small);
+        assert!((width(&t, "Sm C", &caps) - width(&t, "S C", &serif()) - m).abs() < 1e-3);
     }
 
     /// Liberation Serif has no ☿ and the bundled Mono or Sans has: it is drawn from that face,
