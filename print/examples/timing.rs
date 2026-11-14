@@ -64,6 +64,12 @@ fn main() {
             frame.height
         );
     }
+    // What a window pays to draw a page again after an edit: its glyphs are kept from the last.
+    let mut kept = raster::Rasteriser::default();
+    let _ = kept.render(shown, setter.fonts(), 96.0 / 72.0);
+    let started = Instant::now();
+    let _ = kept.render(shown, setter.fonts(), 96.0 / 72.0);
+    println!("again     {:>9.1} ms  page {page} at 96 dpi", ms(started));
 }
 
 fn ms(since: Instant) -> f64 {

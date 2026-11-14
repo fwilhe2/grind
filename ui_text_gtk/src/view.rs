@@ -468,6 +468,10 @@ mod imp {
         pub shown: RefCell<Option<Rc<Shown>>>,
         /// Each page's pixels, kept until the page or the scale changes.
         pub tiles: RefCell<HashMap<usize, Tile>>,
+        /// What drawing the pages has learnt — glyphs and pictures — for the typesetter whose
+        /// fonts it was learnt in.
+        pub rasteriser:
+            RefCell<Option<(Rc<grind_print::Typesetter>, grind_print::raster::Rasteriser)>>,
         /// 1.0 is a page at its printed size on the screen.
         pub zoom: Cell<f64>,
         pub palette: Cell<Option<Palette>>,
@@ -530,6 +534,7 @@ mod imp {
                 session: grind_print::session::Session::new(false),
                 shown: RefCell::new(None),
                 tiles: RefCell::new(HashMap::new()),
+                rasteriser: RefCell::new(None),
                 zoom: Cell::new(1.0),
                 palette: Cell::new(None),
                 names: Cell::new(false),
@@ -1006,6 +1011,16 @@ mod imp {
             // The screen's own pixels, so a HiDPI screen gets its extra ones as sharpness.
             let scale = crate::print::pixels_per_point(self.zoom.get(), screen);
             let setter = self.session.typesetter(app);
+            let mut rasteriser = self.rasteriser.borrow_mut();
+            if !rasteriser
+                .as_ref()
+                .is_some_and(|(kept, _)| Rc::ptr_eq(kept, &setter))
+            {
+                *rasteriser = Some((setter.clone(), grind_print::raster::Rasteriser::default()));
+            }
+            let Some((_, rasteriser)) = rasteriser.as_mut() else {
+                return;
+            };
             let mut tiles = self.tiles.borrow_mut();
             // The pages in view and one either side, which a scroll reaches first.
             let keep = pages.start.saturating_sub(1)..pages.end + 1;
@@ -1029,7 +1044,7 @@ mod imp {
                     .get(&number)
                     .is_some_and(|tile| tile.scale == scale.to_bits() && tile.page == *page);
                 if !kept {
-                    let raster = grind_print::raster::render(page, setter.fonts(), scale);
+                    let raster = rasteriser.render(page, setter.fonts(), scale);
                     let texture = gdk::MemoryTexture::new(
                         raster.width as i32,
                         raster.height as i32,

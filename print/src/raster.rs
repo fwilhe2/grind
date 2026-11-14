@@ -13,7 +13,7 @@ use skrifa::MetadataProvider;
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::raw::TableProvider;
-use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
+use tiny_skia::{FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
 
 use crate::fonts::{FaceId, Fonts};
 use crate::ops::{Op, Page, Rgb};
@@ -54,26 +54,169 @@ impl Raster {
 /// Rasterise `page` at `scale` pixels per point (1.0 is 72 dpi; a screen at 100% wants 96/72).
 #[must_use]
 pub fn render(page: &Page, fonts: &Fonts, scale: f32) -> Raster {
-    // Whole pixels, rounding down, as a PDF renderer sizes the same page.
-    let width = ((page.width * scale) as u32).max(1);
-    let height = ((page.height * scale) as u32).max(1);
-    let Some(mut pixmap) = Pixmap::new(width, height) else {
-        return Raster {
+    Rasteriser::default().render(page, fonts, scale)
+}
+
+/// What rasterising keeps from one page to the next: each glyph's outline, its coverage at each
+/// size and quarter-pixel phase it was drawn at, and each picture as drawn — so what was drawn
+/// before is a blend rather than a path filled or an image decoded again (`doc/page-model.md`
+/// PM4). For one [`Fonts`]: a face is its index.
+#[derive(Default)]
+pub struct Rasteriser {
+    glyphs: Glyphs,
+    masks: HashMap<MaskKey, Option<Coverage>>,
+    /// Each picture as drawn, by its bytes' hash and its size in pixels.
+    pictures: HashMap<(u64, u32, u32), Option<Pixmap>>,
+    /// Bytes of coverage held, which past [`Rasteriser::CEILING`] are dropped.
+    held: usize,
+}
+
+/// A glyph of a face, at a size in pixels per em (as bits), at a quarter-pixel phase across and
+/// down.
+type MaskKey = (FaceId, u32, u32, u8, u8);
+
+/// A glyph's coverage: one alpha byte a pixel, its top-left corner from the glyph's origin.
+struct Coverage {
+    left: i32,
+    top: i32,
+    width: usize,
+    alpha: Vec<u8>,
+}
+
+impl Rasteriser {
+    const CEILING: usize = 32 << 20;
+
+    /// [`render`], keeping what it learns for the next page.
+    #[must_use]
+    pub fn render(&mut self, page: &Page, fonts: &Fonts, scale: f32) -> Raster {
+        // Whole pixels, rounding down, as a PDF renderer sizes the same page.
+        let width = ((page.width * scale) as u32).max(1);
+        let height = ((page.height * scale) as u32).max(1);
+        let Some(mut pixmap) = Pixmap::new(width, height) else {
+            return Raster {
+                width,
+                height,
+                rgba: vec![255; (width * height * 4) as usize],
+            };
+        };
+        pixmap.fill(tiny_skia::Color::WHITE);
+        let scaled = Transform::from_scale(scale, scale);
+        for op in &page.ops {
+            self.draw(&mut pixmap, op, fonts, scaled);
+        }
+        Raster {
             width,
             height,
-            rgba: vec![255; (width * height * 4) as usize],
-        };
-    };
-    pixmap.fill(tiny_skia::Color::WHITE);
-    let scaled = Transform::from_scale(scale, scale);
-    let mut glyphs = Glyphs::default();
-    for op in &page.ops {
-        draw(&mut pixmap, op, fonts, scaled, &mut glyphs);
+            rgba: pixmap.take(),
+        }
     }
-    Raster {
-        width,
-        height,
-        rgba: pixmap.take(),
+
+    /// A picture drawn `size` pixels wide and tall, made the first time it is asked for.
+    fn picture(
+        &mut self,
+        data: &[u8],
+        mime: &str,
+        (width, height): (u32, u32),
+        fonts: &Fonts,
+    ) -> Option<&Pixmap> {
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            data.hash(&mut hasher);
+            (hasher.finish(), width, height)
+        };
+        if !self.pictures.contains_key(&key) {
+            let made = Pixmap::new(width, height).map(|mut out| {
+                let (w, h) = (width as f32, height as f32);
+                match mime {
+                    "image/svg+xml" => {
+                        if let Some(tree) = crate::svg::tree(data, fonts) {
+                            let size = tree.size();
+                            let at = Transform::from_scale(w / size.width(), h / size.height());
+                            resvg::render(&tree, at, &mut out.as_mut());
+                        }
+                    }
+                    "image/png" => {
+                        if let Ok(image) = Pixmap::decode_png(data) {
+                            let at = Transform::from_scale(
+                                w / image.width() as f32,
+                                h / image.height() as f32,
+                            );
+                            out.draw_pixmap(
+                                0,
+                                0,
+                                image.as_ref(),
+                                &PixmapPaint::default(),
+                                at,
+                                None,
+                            );
+                        }
+                    }
+                    // ponytail: a JPEG previews as its box, in the grey a viewer uses for a
+                    // picture still loading; the PDF itself carries it. A decoder is
+                    // `zune-jpeg`, already in the tree under krilla, when somebody previews one.
+                    _ => out.fill(tiny_skia::Color::from_rgba8(0xdd, 0xdd, 0xdd, 0xff)),
+                }
+                out
+            });
+            self.keep(made.as_ref().map_or(0, |made| made.data().len()));
+            self.pictures.insert(key, made);
+        }
+        self.pictures.get(&key)?.as_ref()
+    }
+
+    /// Count `bytes` more held, dropping everything kept first when that is past the ceiling.
+    fn keep(&mut self, bytes: usize) {
+        if self.held > Self::CEILING {
+            self.masks.clear();
+            self.pictures.clear();
+            self.held = 0;
+        }
+        self.held += bytes + 32;
+    }
+
+    /// The coverage of `glyph` at `ppem` pixels per em with its origin a phase of quarters
+    /// of a pixel into one, made the first time it is asked for.
+    fn coverage(
+        &mut self,
+        fonts: &Fonts,
+        (face, glyph): (FaceId, u32),
+        ppem: f32,
+        (across, down): (u8, u8),
+    ) -> Option<&Coverage> {
+        let key = (face, glyph, ppem.to_bits(), across, down);
+        if !self.masks.contains_key(&key) {
+            let k = ppem / self.glyphs.units_per_em(fonts, face);
+            let at = Transform::from_row(
+                k,
+                0.0,
+                0.0,
+                -k,
+                f32::from(across) / 4.0,
+                f32::from(down) / 4.0,
+            );
+            let made = self.glyphs.outline(fonts, face, glyph).and_then(|path| {
+                let bounds = path.clone().transform(at)?.bounds();
+                let (left, top) = (
+                    bounds.left().floor() as i32 - 1,
+                    bounds.top().floor() as i32 - 1,
+                );
+                let width = u32::try_from(bounds.right().ceil() as i32 + 1 - left).ok()?;
+                let height = u32::try_from(bounds.bottom().ceil() as i32 + 1 - top).ok()?;
+                let mut mask = Mask::new(width, height)?;
+                let shift = at.post_translate(-left as f32, -top as f32);
+                mask.fill_path(path, FillRule::Winding, true, shift);
+                Some(Coverage {
+                    left,
+                    top,
+                    width: width as usize,
+                    alpha: mask.data().to_vec(),
+                })
+            });
+            self.keep(made.as_ref().map_or(0, |made| made.alpha.len()));
+            self.masks.insert(key, made);
+        }
+        self.masks.get(&key)?.as_ref()
     }
 }
 
@@ -84,127 +227,134 @@ fn paint(color: Rgb) -> Paint<'static> {
     paint
 }
 
-fn draw(pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform, glyphs: &mut Glyphs) {
-    match op {
-        Op::Text {
-            x,
-            y,
-            face,
-            size,
-            glyphs: run,
-            color,
-            ..
-        } => {
-            let paint = paint(*color);
-            let mut pen = *x;
-            // Outlines are in font units, y up; the page is in points, y down.
-            let em = *size / glyphs.units_per_em(fonts, *face);
-            for glyph in run {
-                if let Some(path) = glyphs.outline(fonts, *face, glyph.id) {
-                    let at = Transform::from_row(
-                        em,
-                        0.0,
-                        0.0,
-                        -em,
-                        pen + glyph.x_offset,
-                        *y - glyph.y_offset,
-                    );
-                    pixmap.fill_path(
-                        path,
-                        &paint,
-                        FillRule::Winding,
-                        at.post_concat(scaled),
+impl Rasteriser {
+    fn draw(&mut self, pixmap: &mut Pixmap, op: &Op, fonts: &Fonts, scaled: Transform) {
+        match op {
+            Op::Text {
+                x,
+                y,
+                face,
+                size,
+                glyphs: run,
+                color,
+                ..
+            } => {
+                // Each glyph lands on a whole pixel plus a quarter-pixel phase, at which its
+                // coverage is kept; a quarter is the most a position moves, an eighth of a pixel.
+                let ppem = *size * scaled.sx;
+                let mut pen = *x;
+                for glyph in run {
+                    let (across, x_phase) = quarters((pen + glyph.x_offset) * scaled.sx);
+                    let (down, y_phase) = quarters((*y - glyph.y_offset) * scaled.sy);
+                    if let Some(coverage) =
+                        self.coverage(fonts, (*face, glyph.id), ppem, (x_phase, y_phase))
+                    {
+                        blend(pixmap, coverage, (across, down), *color);
+                    }
+                    pen += glyph.x_advance;
+                }
+            }
+            Op::Rect {
+                x,
+                y,
+                width,
+                height,
+                color,
+            } => {
+                if let Some(rect) = tiny_skia::Rect::from_xywh(*x, *y, *width, *height) {
+                    pixmap.fill_rect(rect, &paint(*color), scaled, None);
+                }
+            }
+            Op::Line {
+                from,
+                to,
+                width,
+                color,
+            } => {
+                let mut path = PathBuilder::new();
+                path.move_to(from.0, from.1);
+                path.line_to(to.0, to.1);
+                if let Some(path) = path.finish() {
+                    // A line thinner than a pixel is drawn one pixel wide — tiny-skia's hairline,
+                    // width zero — as PDF viewers draw one, rather than as a faint grey: a Writer
+                    // `double` border's lines are 0.06 pt each.
+                    let stroke = Stroke {
+                        width: if *width * scaled.sx < 1.0 {
+                            0.0
+                        } else {
+                            *width
+                        },
+                        ..Stroke::default()
+                    };
+                    pixmap.stroke_path(&path, &paint(*color), &stroke, scaled, None);
+                }
+            }
+            Op::Image {
+                x,
+                y,
+                width,
+                height,
+                mime,
+                data,
+                ..
+            } => {
+                // On whole pixels, at the size it is drawn: a picture is kept drawn, and placed
+                // again rather than decoded and scaled again.
+                let left = (*x * scaled.sx).round() as i32;
+                let top = (*y * scaled.sy).round() as i32;
+                let size = (
+                    (*width * scaled.sx).round().max(1.0) as u32,
+                    (*height * scaled.sy).round().max(1.0) as u32,
+                );
+                if let Some(drawn) = self.picture(data, mime, size, fonts) {
+                    pixmap.draw_pixmap(
+                        left,
+                        top,
+                        drawn.as_ref(),
+                        &PixmapPaint::default(),
+                        Transform::identity(),
                         None,
                     );
-                }
-                pen += glyph.x_advance;
-            }
-        }
-        Op::Rect {
-            x,
-            y,
-            width,
-            height,
-            color,
-        } => {
-            if let Some(rect) = tiny_skia::Rect::from_xywh(*x, *y, *width, *height) {
-                pixmap.fill_rect(rect, &paint(*color), scaled, None);
-            }
-        }
-        Op::Line {
-            from,
-            to,
-            width,
-            color,
-        } => {
-            let mut path = PathBuilder::new();
-            path.move_to(from.0, from.1);
-            path.line_to(to.0, to.1);
-            if let Some(path) = path.finish() {
-                // A line thinner than a pixel is drawn one pixel wide — tiny-skia's hairline,
-                // width zero — as PDF viewers draw one, rather than as a faint grey: a Writer
-                // `double` border's lines are 0.06 pt each.
-                let stroke = Stroke {
-                    width: if *width * scaled.sx < 1.0 {
-                        0.0
-                    } else {
-                        *width
-                    },
-                    ..Stroke::default()
-                };
-                pixmap.stroke_path(&path, &paint(*color), &stroke, scaled, None);
-            }
-        }
-        Op::Image {
-            x,
-            y,
-            width,
-            height,
-            mime,
-            data,
-            ..
-        } => {
-            if mime == "image/svg+xml"
-                && let Some(tree) = crate::svg::tree(data, fonts)
-            {
-                let size = tree.size();
-                let at = Transform::from_row(
-                    *width / size.width(),
-                    0.0,
-                    0.0,
-                    *height / size.height(),
-                    *x,
-                    *y,
-                )
-                .post_concat(scaled);
-                resvg::render(&tree, at, &mut pixmap.as_mut());
-                return;
-            }
-            let decoded = match mime.as_str() {
-                "image/png" => Pixmap::decode_png(data).ok(),
-                _ => None,
-            };
-            match decoded {
-                Some(image) => {
-                    let sx = *width / image.width() as f32;
-                    let sy = *height / image.height() as f32;
-                    let at = Transform::from_row(sx, 0.0, 0.0, sy, *x, *y).post_concat(scaled);
-                    pixmap.draw_pixmap(0, 0, image.as_ref(), &PixmapPaint::default(), at, None);
-                }
-                // ponytail: a JPEG previews as its box, in the grey a viewer uses for a picture
-                // still loading; the PDF itself carries it. A decoder is `zune-jpeg`, already in
-                // the tree under krilla, when somebody previews one.
-                None => {
-                    if let Some(rect) = tiny_skia::Rect::from_xywh(*x, *y, *width, *height) {
-                        pixmap.fill_rect(rect, &paint(Rgb(0xdd, 0xdd, 0xdd)), scaled, None);
-                    }
                 }
             }
         }
     }
 }
 
-/// Glyph outlines, each built once per page rather than once per occurrence.
+/// A position in pixels as a whole pixel and the nearest quarter past it.
+fn quarters(at: f32) -> (i32, u8) {
+    let quarters = (at * 4.0).round() as i64;
+    (
+        (quarters.div_euclid(4)) as i32,
+        quarters.rem_euclid(4) as u8,
+    )
+}
+
+/// Lay `coverage` in `ink` over the pixmap with the glyph's origin at the pixel `at`.
+fn blend(pixmap: &mut Pixmap, coverage: &Coverage, at: (i32, i32), ink: Rgb) {
+    let (columns, rows) = (pixmap.width() as i32, pixmap.height() as i32);
+    let ink = [u32::from(ink.0), u32::from(ink.1), u32::from(ink.2), 255];
+    let data = pixmap.data_mut();
+    for (row, alphas) in coverage.alpha.chunks(coverage.width.max(1)).enumerate() {
+        let y = at.1 + coverage.top + row as i32;
+        if !(0..rows).contains(&y) {
+            continue;
+        }
+        for (column, &alpha) in alphas.iter().enumerate() {
+            let x = at.0 + coverage.left + column as i32;
+            if alpha == 0 || !(0..columns).contains(&x) {
+                continue;
+            }
+            let (alpha, keep) = (u32::from(alpha), u32::from(255 - alpha));
+            let pixel = (y * columns + x) as usize * 4;
+            for (channel, ink) in data[pixel..pixel + 4].iter_mut().zip(ink) {
+                *channel = ((ink * alpha + u32::from(*channel) * keep + 127) / 255) as u8;
+            }
+        }
+    }
+}
+
+/// Glyph outlines, each built once rather than once per occurrence.
 #[derive(Default)]
 struct Glyphs {
     paths: HashMap<(FaceId, u32), Option<tiny_skia::Path>>,
