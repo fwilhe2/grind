@@ -215,7 +215,7 @@ pub fn paginate_slots(
         (start, starts),
     );
     let column = measures.first().map_or(0.0, |&(_, column)| column);
-    let laid = flow::lay_out(app, &mixed, column, &spacing, picture);
+    let laid = flow::lay_out_over(app, &viewport, &mixed, column, &spacing, picture);
     let units = units(app, &mixed, &laid, &viewport, picture, spacing.cell_pad);
     let mut cut = Cut {
         pages: vec![Page {

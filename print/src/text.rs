@@ -129,7 +129,10 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .collect();
     let across: Vec<_> = widths
         .iter()
-        .map(|&width| flow::across_with(app, width, &SPACING, &crate::faces::TableLooks(&looks)))
+        .map(|&width| {
+            let looks = crate::faces::TableLooks(&looks);
+            flow::across_with(app, &viewport, width, &SPACING, &looks)
+        })
         .collect();
     let columns: Vec<Column<'_>> = widths
         .iter()

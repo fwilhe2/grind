@@ -408,19 +408,20 @@ impl Faces for Plain {
 /// blocks use [`Spacing::measure`]. Built before the shell's `Faces`, since `Faces::of` runs under
 /// `App`'s read lock and cannot ask which cell a block is in.
 pub fn across(app: &App, column: f64, spacing: &Spacing) -> HashMap<usize, Across> {
-    across_with(app, column, spacing, &Plain)
+    let viewport = app.get_viewport(0..app.block_count());
+    across_with(app, &viewport, column, spacing, &Plain)
 }
 
 /// [`across`] with a table's own column widths and cell padding ([`Faces::columns`],
-/// [`Faces::cell_pad`]), for a printed page.
+/// [`Faces::cell_pad`]), for a printed page, over the whole document's `viewport`.
 pub fn across_with(
     app: &App,
+    viewport: &Viewport,
     column: f64,
     spacing: &Spacing,
     looks: &dyn Faces,
 ) -> HashMap<usize, Across> {
     let count = app.block_count();
-    let viewport = app.get_viewport(0..count);
     let mut out = HashMap::new();
     let mut index = 0;
     while index < count {
@@ -463,8 +464,20 @@ pub fn lay_out(
     spacing: &Spacing,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Flow {
+    let viewport = app.get_viewport(0..app.block_count());
+    lay_out_over(app, &viewport, faces, column, spacing, picture)
+}
+
+/// [`lay_out`] over the whole document's `viewport`, already read.
+pub(crate) fn lay_out_over(
+    app: &App,
+    viewport: &Viewport,
+    faces: &dyn Faces,
+    column: f64,
+    spacing: &Spacing,
+    picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
+) -> Flow {
     let count = app.block_count();
-    let viewport = app.get_viewport(0..count);
     let mut flow = Flow::new(spacing.top, column);
     let height_of = |index: usize, view: &BlockView| -> (f64, f64) {
         let (width, metrics) = faces.of(index, &view.kind, view.style.as_deref());
@@ -489,7 +502,7 @@ pub fn lay_out(
         {
             let column = faces.measure(index).unwrap_or(column);
             lay_out_table(
-                &mut flow, &viewport, &table, column, spacing, faces, &height_of,
+                &mut flow, viewport, &table, column, spacing, faces, &height_of,
             );
             index = table.blocks.end.max(index + 1);
             continue;
@@ -902,7 +915,8 @@ mod tests {
             indent: 0.0,
             cell_pad: 1.0,
         };
-        let across = across_with(&app, 300.0, &tight, &Widths);
+        let viewport = app.get_viewport(0..app.block_count());
+        let across = across_with(&app, &viewport, 300.0, &tight, &Widths);
         // 60 and 90 stated, the rest of 300 for the one that states nothing.
         assert_eq!(
             (across[&0].width, across[&1].width, across[&2].width),
