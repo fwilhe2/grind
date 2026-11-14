@@ -30,6 +30,10 @@ pub struct ParagraphProps {
     pub text_indent: Option<String>,
     pub line_height: Option<String>,
     pub text_align: Option<String>,
+    /// `fo:text-align-last` and `style:justify-single-word`: how a justified paragraph sets its
+    /// last line, and a line with one word (`doc/odt-format.md` §5c fact 53).
+    pub text_align_last: Option<String>,
+    pub justify_single_word: Option<String>,
     pub break_before: Option<String>,
     pub break_after: Option<String>,
     pub keep_with_next: Option<String>,
@@ -101,7 +105,7 @@ impl ParagraphProps {
                 mine.clone_from(theirs);
             }
         }
-        let fields: [(&mut Option<String>, &Option<String>); 20] = [
+        let fields: [(&mut Option<String>, &Option<String>); 22] = [
             (&mut self.letter_spacing, &over.letter_spacing),
             (&mut self.letter_kerning, &over.letter_kerning),
             (&mut self.background_color, &over.background_color),
@@ -114,6 +118,8 @@ impl ParagraphProps {
             (&mut self.text_indent, &over.text_indent),
             (&mut self.line_height, &over.line_height),
             (&mut self.text_align, &over.text_align),
+            (&mut self.text_align_last, &over.text_align_last),
+            (&mut self.justify_single_word, &over.justify_single_word),
             (&mut self.break_before, &over.break_before),
             (&mut self.break_after, &over.break_after),
             (&mut self.keep_with_next, &over.keep_with_next),
@@ -199,7 +205,8 @@ pub struct TabStop {
 
 impl ParagraphProps {
     /// Where this paragraph's tabs go, in points (`doc/odt-format.md` §5c fact 13): its own stops,
-    /// then the default interval; unreadable ones are left out.
+    /// then the default interval, 1.25 cm where no style states one (fact 54); unreadable ones
+    /// are left out.
     #[must_use]
     pub fn tabs(&self) -> grind_core::layout::Tabs {
         use grind_core::layout::{TabAlign, Tabs};
@@ -235,7 +242,7 @@ impl ParagraphProps {
                 .as_deref()
                 .and_then(points)
                 .filter(|p| *p > 0.0)
-                .unwrap_or(0.0),
+                .unwrap_or(1.25 / 2.54 * 72.0),
         }
     }
 }

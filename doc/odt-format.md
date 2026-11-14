@@ -992,6 +992,18 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `AVATAR ` starts 19.85 pt (7 × 2.835) right of where it starts in the kerned paragraph, and
    the pair adjustments are those of the kerned paragraph plus the spacing (`A`–`V`: −130/1000 em
    of kerning and +118 of spacing, −12 in all). With `style:letter-kerning="true"` as well, the PDF is the same.
+53. **Justification, measured again** — `MEASURED` (2026-11-14, 26.8.2.2, Liberation Serif 12 pt,
+   A4 with 2 cm margins stated, `pdftotext -bbox`). A **no-break space** in a stretched line is
+   not stretched: its gap stays 3.0 pt while the line's ordinary spaces grow to 3.7.
+   `fo:text-align-last` (rng:12490) sets a justified paragraph's **last line**: `center` centres
+   `one two three` between the margins, `justify` puts `one` on the left margin and `three`
+   against the right with `two` between. A last line of **one word** under `justify` stays at the
+   start, unless `style:justify-single-word="true"` (rng:12499): then its letters are spread
+   from margin to margin, an equal gap after every one but the last.
+54. **The default tab interval is 1.25 cm** — `MEASURED` (2026-11-14, the same document and
+   build). In a document stating `style:tab-stop-distance` nowhere — no default paragraph style
+   at all — a tab after `Lorem` sends the next word to 1.25 cm from the paragraph's left margin
+   (35.45 pt), justified or not.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

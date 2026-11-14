@@ -93,6 +93,9 @@ pub struct Line {
     /// How much wider justification sets each space between the line's first and last visible
     /// characters; [`Layout::x_at`] already counts it.
     pub stretch: f32,
+    /// How much wider justification sets each of its letters but the last, where it spreads a
+    /// word that has no space to widen (`style:justify-single-word`); [`Layout::x_at`] counts it.
+    pub letters: f32,
     /// The width of the hyphen drawn at its end when it breaks at a soft hyphen (U+00AD), which
     /// is otherwise invisible; zero for any other line. Past `width`, and no caret's.
     pub hyphen: f32,
@@ -305,6 +308,12 @@ pub struct Setting {
     pub first: f32,
     pub tabs: Tabs,
     pub align: Align,
+    /// How a justified paragraph's last line is set (`fo:text-align-last`): at the start, centred
+    /// or justified too (`doc/odt-format.md` §5c fact 53). Any other alignment ignores it.
+    pub last: Align,
+    /// Whether a justified line with no space to widen spreads its letters instead
+    /// (`style:justify-single-word`).
+    pub single_word: bool,
 }
 
 /// How a tab character's text lines up against its stop (`style:type`, rng:13921).
@@ -376,9 +385,17 @@ const RIGHT_STOP_REACH: f32 = 16.8;
 impl std::hash::Hash for Setting {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         // Destructured, so a field added to `Setting` does not compile until it is fed.
-        let Setting { first, tabs, align } = self;
+        let Setting {
+            first,
+            tabs,
+            align,
+            last,
+            single_word,
+        } = self;
         first.to_bits().hash(state);
         align.hash(state);
+        last.hash(state);
+        single_word.hash(state);
         tabs.interval.to_bits().hash(state);
         for stop in &tabs.stops {
             stop.position.to_bits().hash(state);
@@ -475,6 +492,7 @@ pub fn wrap_set(
             top: *top,
             shift: 0.0,
             stretch: 0.0,
+            letters: 0.0,
             hyphen: hyphen_at(end),
         });
         *top += height;
@@ -639,7 +657,7 @@ pub fn wrap_set(
         first,
     };
     if width > 0.0 && setting.align != Align::Start {
-        layout.align(setting.align, width, &chars);
+        layout.align(setting, width, &chars);
     }
     layout
 }
@@ -649,7 +667,7 @@ impl Layout {
     /// last visible character — a space a line was broken at hangs past the measure — except on
     /// the paragraph's last line, whose trailing spaces Writer counts (`doc/odt-format.md` §5c
     /// fact 19). The first line's indent is part of what is aligned.
-    fn align(&mut self, align: Align, width: f32, chars: &[char]) {
+    fn align(&mut self, setting: &Setting, width: f32, chars: &[char]) {
         let count = self.lines.len();
         let natural = self.xs.clone();
         // How much wider everything before the line in hand has been set.
@@ -674,19 +692,43 @@ impl Layout {
             let spaces = (line.start..visible_end)
                 .filter(|&i| chars[i] == ' ')
                 .count();
+            // A justified paragraph's last line is set as `fo:text-align-last` says.
+            let (align, last) = match (setting.align, last, setting.last) {
+                (Align::Justify, true, Align::Justify) => (Align::Justify, false),
+                (Align::Justify, true, Align::Center) => (Align::Center, true),
+                (align, last, _) => (align, last),
+            };
             let (shift, stretch) = align.fit(width, content, spaces, last);
+            // A line with no space to widen spreads its letters, when its style says so: an
+            // equal gap after every one but the last.
+            let letters = match visible_end.saturating_sub(line.start) {
+                n if setting.single_word
+                    && align == Align::Justify
+                    && !last
+                    && spaces == 0
+                    && n > 1 =>
+                {
+                    (width - content).max(0.0) / (n - 1) as f32
+                }
+                _ => 0.0,
+            };
             let mut interior = 0usize;
             for i in line.start..line.end {
                 if i < visible_end && chars[i] == ' ' {
                     interior += 1;
                 }
-                self.xs[i + 1] += added + stretch * interior as f32;
+                let spread = (i + 1)
+                    .min(visible_end.saturating_sub(1))
+                    .saturating_sub(line.start);
+                self.xs[i + 1] += added + stretch * interior as f32 + letters * spread as f32;
             }
-            let wider = stretch * interior as f32;
+            let spread = visible_end.saturating_sub(line.start + 1);
+            let wider = stretch * interior as f32 + letters * spread as f32;
             added += wider;
             let line = &mut self.lines[at];
             line.shift = shift;
             line.stretch = stretch;
+            line.letters = letters;
             line.width += wider;
         }
         if let Some(rest) = self
@@ -730,6 +772,7 @@ mod tests {
             first,
             tabs: Tabs::default(),
             align,
+            ..Setting::default()
         };
         wrap_set(&fragments, width, &Fixed, &setting)
     }
@@ -989,6 +1032,7 @@ mod tests {
                 top: 0.0,
                 shift: 0.0,
                 stretch: 0.0,
+                letters: 0.0,
                 hyphen: 0.0,
             }
         );
@@ -1178,7 +1222,7 @@ mod tests {
         let setting = Setting {
             first,
             tabs: tabs.clone(),
-            align: Align::Start,
+            ..Setting::default()
         };
         wrap_set(&fragments, width, &Fixed, &setting)
     }
@@ -1316,5 +1360,45 @@ mod tests {
         // Unbroken, it shows nothing; and the paragraph's end is never hyphenated.
         assert_eq!(set("abc\u{AD}def", 100.0), [(0, 7, 0.0)]);
         assert_eq!(set("abc\u{AD}", 3.0).last().map(|l| l.2), Some(0.0));
+    }
+
+    /// `doc/odt-format.md` §5c fact 53: a justified paragraph's last line set as
+    /// `fo:text-align-last` says, and a line of one word spread only when its style says so.
+    #[test]
+    fn a_justified_last_line_is_set_as_its_style_says() {
+        let style = TextStyle::default();
+        let set = |text: &str, last: Align, single_word: bool| {
+            let setting = Setting {
+                align: Align::Justify,
+                last,
+                single_word,
+                ..Setting::default()
+            };
+            wrap_set(
+                &[Fragment {
+                    text,
+                    style: &style,
+                }],
+                20.0,
+                &Fixed,
+                &setting,
+            )
+        };
+        // `aa bb cc`, eight wide, in twenty: twelve to spread over two spaces, or six each side.
+        let start = set("aa bb cc", Align::Start, false);
+        assert_eq!((start.lines()[0].shift, start.x_at(8)), (0.0, 8.0));
+        let centred = set("aa bb cc", Align::Center, false);
+        assert_eq!(centred.lines()[0].shift, 6.0);
+        let justified = set("aa bb cc", Align::Justify, false);
+        assert_eq!((justified.x_at(3), justified.x_at(8)), (9.0, 20.0));
+        // One word: left alone, or its letters spread with a gap after each but the last.
+        let word = set("abcde", Align::Justify, false);
+        assert_eq!(word.x_at(5), 5.0);
+        let spread = set("abcde", Align::Justify, true);
+        assert_eq!(spread.lines()[0].letters, 15.0 / 4.0);
+        assert_eq!(
+            (spread.x_at(1), spread.x_at(4), spread.x_at(5)),
+            (4.75, 19.0, 20.0)
+        );
     }
 }

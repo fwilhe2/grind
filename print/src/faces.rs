@@ -337,6 +337,10 @@ pub(crate) fn face_for<'a>(
     &faces[slot]
 }
 
+/// A paragraph's alignment, how a justified one sets its last line, and whether it spreads
+/// a line of one word (`grind_core::layout::Setting`).
+pub type Aligned = (grind_core::layout::Align, grind_core::layout::Align, bool);
+
 /// The page's [`grind_text::Faces`]. The cell map is built before this is, because
 /// `Faces::of` is called while `App` holds its read lock ([`grind_text::flow::across`]).
 pub struct Column<'a> {
@@ -358,7 +362,7 @@ pub struct Column<'a> {
     /// Each block's tab stops in points, where its paragraph style places any.
     pub tabs: &'a HashMap<usize, grind_core::layout::Tabs>,
     /// Each block's alignment, where its paragraph style states one other than the start.
-    pub aligns: &'a HashMap<usize, grind_core::layout::Align>,
+    pub aligns: &'a HashMap<usize, Aligned>,
     /// Each table's look, by name ([`grind_text::table_look`]).
     pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
@@ -406,7 +410,9 @@ impl grind_text::Faces for Column<'_> {
         grind_core::layout::Setting {
             first: self.indents.get(&index).copied().unwrap_or(0.0),
             tabs: self.tabs.get(&index).cloned().unwrap_or_default(),
-            align: self.aligns.get(&index).copied().unwrap_or_default(),
+            align: self.aligns.get(&index).map_or_default(|a| a.0),
+            last: self.aligns.get(&index).map_or_default(|a| a.1),
+            single_word: self.aligns.get(&index).is_some_and(|a| a.2),
         }
     }
 

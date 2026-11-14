@@ -107,11 +107,14 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             (!tabs.is_empty()).then_some((view.index, tabs))
         })
         .collect();
-    let aligns: HashMap<usize, Align> = viewport
+    let aligns: HashMap<usize, crate::faces::Aligned> = viewport
         .iter()
         .filter_map(|view| {
-            let align = Align::parse(app.paragraph(view.index)?.props.text_align.as_deref());
-            (align != Align::Start).then_some((view.index, align))
+            let props = app.paragraph(view.index)?.props;
+            let align = Align::parse(props.text_align.as_deref());
+            let last = Align::parse(props.text_align_last.as_deref());
+            let single = props.justify_single_word.as_deref() == Some("true");
+            (align != Align::Start).then_some((view.index, (align, last, single)))
         })
         .collect();
     let labels = level_labels(
@@ -1391,6 +1394,18 @@ fn lines(
                         let here = start + text[..glyph.text.start].chars().count();
                         if &text[glyph.text.clone()] == " " && here < visible_end {
                             glyph.x_advance += line.stretch;
+                        }
+                    }
+                }
+                if line.letters > 0.0 {
+                    // A word spread over the line: every letter but the last is drawn wider.
+                    let glyphs = &mut shaped.glyphs;
+                    for at in 0..glyphs.len() {
+                        let cluster = glyphs[at].text.clone();
+                        let closes = glyphs.get(at + 1).is_none_or(|next| next.text != cluster);
+                        let here = start + text[..cluster.start].chars().count();
+                        if closes && here + 1 < visible_end {
+                            glyphs[at].x_advance += line.letters;
                         }
                     }
                 }

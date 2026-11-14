@@ -1477,6 +1477,10 @@ impl Context<Builder> for ParagraphStyleDef {
             props.text_indent = get("text-indent");
             props.line_height = get("line-height");
             props.text_align = get("text-align");
+            props.text_align_last = get("text-align-last");
+            props.justify_single_word = attrs
+                .get(Ns::Style, "justify-single-word")
+                .map(str::to_owned);
             props.break_before = get("break-before");
             props.break_after = get("break-after");
             props.keep_with_next = get("keep-with-next");
