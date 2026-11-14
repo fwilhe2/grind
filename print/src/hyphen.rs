@@ -8,7 +8,6 @@
 //! digit any pattern puts there, and an odd one is a place to break.
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 /// One language's patterns.
 #[derive(Debug)]
@@ -117,9 +116,19 @@ impl Patterns {
 }
 
 /// The bundled patterns for a language, by its ODF code (`fo:language`, `en`), whatever the
+/// country; `None` for a language there are none for, and always in a build without them.
+#[cfg(not(feature = "bundled-hyphenation"))]
+#[must_use]
+pub fn bundled(_language: &str) -> Option<&'static Patterns> {
+    None
+}
+
+/// The bundled patterns for a language, by its ODF code (`fo:language`, `en`), whatever the
 /// country; `None` for a language there are none for.
+#[cfg(feature = "bundled-hyphenation")]
 #[must_use]
 pub fn bundled(language: &str) -> Option<&'static Patterns> {
+    use std::sync::OnceLock;
     static EN: OnceLock<Patterns> = OnceLock::new();
     static DE: OnceLock<Patterns> = OnceLock::new();
     let language = language.split(['-', '_']).next()?.to_ascii_lowercase();
@@ -134,7 +143,7 @@ pub fn bundled(language: &str) -> Option<&'static Patterns> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bundled-hyphenation"))]
 mod tests {
     use super::*;
 

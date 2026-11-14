@@ -2597,6 +2597,7 @@ mod tests {
     /// `doc/odt-format.md` §5c fact 55: the measuring document's sentence on its 5 cm measure,
     /// broken where Writer broke it — with hyphenation on, and not at all with it off.
     #[test]
+    #[cfg(feature = "bundled-hyphenation")]
     fn a_hyphenated_paragraph_breaks_its_words_where_writer_does() {
         let lines = |hyphenate: &str| {
             let bytes = format!(
