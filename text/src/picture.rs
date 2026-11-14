@@ -45,6 +45,61 @@ fn svg(bytes: &[u8]) -> bool {
     rest.starts_with("<svg")
 }
 
+/// A PNG's, a JPEG's or a GIF's own width and height in pixels, read from its header — `None`
+/// for anything else, which is then not drawn rather than drawn at a guessed size.
+#[must_use]
+pub fn pixels(data: &[u8]) -> Option<(u32, u32)> {
+    let be32 = |at: usize| Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?));
+    let be16 = |at: usize| {
+        Some(u32::from(u16::from_be_bytes(
+            data.get(at..at + 2)?.try_into().ok()?,
+        )))
+    };
+    let le16 = |at: usize| {
+        Some(u32::from(u16::from_le_bytes(
+            data.get(at..at + 2)?.try_into().ok()?,
+        )))
+    };
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Some((be32(16)?, be32(20)?));
+    }
+    if data.starts_with(b"GIF8") {
+        return Some((le16(6)?, le16(8)?));
+    }
+    if data.starts_with(&[0xFF, 0xD8]) {
+        // Walk the segments to the first start-of-frame, which carries the size.
+        let mut at = 2;
+        while at + 9 < data.len() {
+            if data[at] != 0xFF {
+                return None;
+            }
+            let marker = data[at + 1];
+            let length = be16(at + 2)? as usize;
+            if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
+                return Some((be16(at + 7)?, be16(at + 5)?));
+            }
+            at += 2 + length;
+        }
+    }
+    None
+}
+
+/// The size a picture of `data` is given when it is inserted without one: its own pixels at 96
+/// to the inch, made to fit `measure` millimetres across with its shape kept. A frame stating no
+/// size is a 16 pt square to LibreOffice (`doc/odt-format.md` §5c fact 50).
+#[must_use]
+pub fn own_size(data: &[u8], measure: f64) -> Option<(String, String)> {
+    const MM_PER_PIXEL: f64 = 25.4 / 96.0;
+    let (width, height) = pixels(data)?;
+    let (width, height) = (f64::from(width.max(1)), f64::from(height.max(1)));
+    let across = (width * MM_PER_PIXEL).min(measure.max(1.0));
+    let down = height * across / width;
+    Some((
+        grind_core::style::mm_length(across),
+        grind_core::style::mm_length(down),
+    ))
+}
+
 /// Insert `data` (of type `mime`) below the caret's block, or in it when it is empty, returning
 /// the block it landed in. The caret belongs at offset 1 afterwards, so the next thing typed is a
 /// caption.

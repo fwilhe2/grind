@@ -1826,7 +1826,7 @@ fn figure(
     let (w, h) = if let (Some(w), Some(h)) = (length(&image.width), length(&image.height)) {
         (w, h)
     } else {
-        let (w, h) = intrinsic_pixels(&image.data)?;
+        let (w, h) = grind_text::picture::pixels(&image.data)?;
         (f64::from(w) * 0.75, f64::from(h) * 0.75)
     };
     let (w, h) = (w.max(1.0), h.max(1.0));
@@ -1864,44 +1864,6 @@ fn figure_look(app: &App, view: &BlockView) -> (Align, f64) {
         Align::parse(props.text_align.as_deref()),
         points(&props.margin_bottom) + points(&props.margin_top),
     )
-}
-
-/// A PNG's, a JPEG's or a GIF's own width and height in pixels, read from its header — `None`
-/// for anything else, which is then not drawn rather than drawn at a guessed size.
-fn intrinsic_pixels(data: &[u8]) -> Option<(u32, u32)> {
-    let be32 = |at: usize| Some(u32::from_be_bytes(data.get(at..at + 4)?.try_into().ok()?));
-    let be16 = |at: usize| {
-        Some(u32::from(u16::from_be_bytes(
-            data.get(at..at + 2)?.try_into().ok()?,
-        )))
-    };
-    let le16 = |at: usize| {
-        Some(u32::from(u16::from_le_bytes(
-            data.get(at..at + 2)?.try_into().ok()?,
-        )))
-    };
-    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Some((be32(16)?, be32(20)?));
-    }
-    if data.starts_with(b"GIF8") {
-        return Some((le16(6)?, le16(8)?));
-    }
-    if data.starts_with(&[0xFF, 0xD8]) {
-        // Walk the segments to the first start-of-frame, which carries the size.
-        let mut at = 2;
-        while at + 9 < data.len() {
-            if data[at] != 0xFF {
-                return None;
-            }
-            let marker = data[at + 1];
-            let length = be16(at + 2)? as usize;
-            if matches!(marker, 0xC0..=0xC3 | 0xC5..=0xC7 | 0xC9..=0xCB | 0xCD..=0xCF) {
-                return Some((be16(at + 7)?, be16(at + 5)?));
-            }
-            at += 2 + length;
-        }
-    }
-    None
 }
 
 fn caption_layout(text: &str, measure: f64, body: &RoleFace<'_>) -> grind_core::layout::Layout {
@@ -3090,10 +3052,10 @@ mod tests {
         let mut png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
         png.extend_from_slice(&200u32.to_be_bytes());
         png.extend_from_slice(&100u32.to_be_bytes());
-        assert_eq!(intrinsic_pixels(&png), Some((200, 100)));
+        assert_eq!(grind_text::picture::pixels(&png), Some((200, 100)));
         let gif = b"GIF89a\x40\x01\xf0\x00";
-        assert_eq!(intrinsic_pixels(gif), Some((320, 240)));
-        assert_eq!(intrinsic_pixels(b"not a picture"), None);
+        assert_eq!(grind_text::picture::pixels(gif), Some((320, 240)));
+        assert_eq!(grind_text::picture::pixels(b"not a picture"), None);
     }
 
     /// A style's `fo:break-before="page"` starts its paragraph on a page of its own.

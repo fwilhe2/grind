@@ -11,7 +11,7 @@ impl App {
     /// Insert an image at a caret (`doc/text-core.md`'s `draw:frame` row): one [`Run::Image`]
     /// occupying one caret position, like a tab, so erasing, splitting and Backspace treat it as a
     /// whole. `mime` is a MIME type; `width` and `height` are optional ODF lengths (`"5cm"`),
-    /// verbatim.
+    /// verbatim. With neither, the picture gets its own size ([`picture::own_size`]).
     pub fn insert_image(
         &self,
         at: Caret,
@@ -21,6 +21,13 @@ impl App {
         height: Option<String>,
     ) -> Result<()> {
         self.mutate(|state| {
+            let (width, height) = match (width, height) {
+                (None, None) => {
+                    let page = state.doc.page.unwrap_or_default();
+                    picture::own_size(&data, page.width - page.left - page.right).unzip()
+                }
+                stated => stated,
+            };
             let mut block = block_at(state, at.block)?;
             let offset = at.offset.min(block.len());
             let (mut runs, tail) = model::split_runs(&block.runs, offset);

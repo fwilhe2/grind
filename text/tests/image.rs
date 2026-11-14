@@ -409,3 +409,55 @@ fn a_linked_picture_in_a_captioned_frame_is_still_the_picture() {
         .collect();
     assert_eq!(caption, "Figure 1: A linked picture");
 }
+
+/// A PNG header saying `width` × `height` pixels, which is all a size is read from.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut data = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    data.extend_from_slice(&width.to_be_bytes());
+    data.extend_from_slice(&height.to_be_bytes());
+    data
+}
+
+/// A picture inserted without a size is given its own, 96 pixels to the inch, since a frame
+/// that states none is a 16 pt square to LibreOffice (`doc/odt-format.md` §5c fact 50) — and
+/// no wider than the page's text, keeping its shape.
+#[test]
+fn an_inserted_picture_states_its_own_size() {
+    let size = |data: Vec<u8>, stated: Option<&str>| {
+        let app = grind_text::App::new();
+        let at = grind_text::Caret {
+            block: 0,
+            offset: 0,
+        };
+        app.insert_image(
+            at,
+            "image/png".into(),
+            data,
+            stated.map(str::to_owned),
+            None,
+        )
+        .unwrap();
+        let saved = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+        let frame = saved.split("<draw:frame").nth(1).expect("a frame");
+        frame.split('>').next().unwrap().to_owned()
+    };
+    assert_eq!(
+        size(png(200, 100), None),
+        r#" text:anchor-type="paragraph" svg:width="52.917mm" svg:height="26.458mm""#
+    );
+    // A4 with 2 cm margins leaves 17 cm.
+    assert_eq!(
+        size(png(4000, 1000), None),
+        r#" text:anchor-type="paragraph" svg:width="170.000mm" svg:height="42.500mm""#
+    );
+    assert_eq!(
+        size(png(200, 100), Some("3cm")),
+        r#" text:anchor-type="paragraph" svg:width="3cm""#,
+        "what the caller states is kept"
+    );
+    assert_eq!(
+        size(PIXELS.to_vec(), None),
+        r#" text:anchor-type="paragraph""#,
+        "bytes that say no size get none"
+    );
+}

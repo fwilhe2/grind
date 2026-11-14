@@ -969,6 +969,16 @@ oracle turned out to be unable to answer the font questions (fact 4).
    style that states neither is `paragraph`**, whatever the anchor type says: from the anchoring
    paragraph's left and top (2.9 cm across; 13.2, 17.55 and 23.7 cm down), the same places a
    style stating `paragraph` gave.
+50. **A picture's frame that states no size** — `MEASURED` (2026-11-14, 26.8.2.2, a 200 × 100
+   pixel PNG in a `draw:frame` anchored `paragraph` with no graphic style, between two
+   paragraphs, on the default page). Without `svg:width` and `svg:height` the picture is drawn
+   as a **16 pt square** (0.57 cm), whatever its pixels. With `svg:width="5.292cm"
+   svg:height="2.646cm"` — its pixels at 96 to the inch — it is drawn that size. So
+   `App::insert_image` states the size of a picture given none.
+   Either way the frame **takes no room and is centred** across the text area: the paragraph
+   after it started where it did with no picture, beside it. That is the default of a frame
+   with no graphic style, and is not what this suite draws for the frame it writes (the picture
+   at the left, the text below it); writing a style that says so is not built.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
