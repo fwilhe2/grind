@@ -512,6 +512,9 @@ pub struct App {
     checker: RwLock<Option<Arc<dyn grammar::Checker>>>,
     /// Layouts already made ([`Layouts`]).
     layouts: std::sync::Mutex<Layouts>,
+    /// Each paragraph style name resolved ([`App::paragraph`]), until the next change. Filled
+    /// under the state's read lock and emptied under its write lock, so never stale.
+    paragraphs: std::sync::Mutex<std::collections::HashMap<Option<String>, paragraph::Resolved>>,
 }
 
 /// Paragraphs already broken into lines, by everything that decides the result: the text and
@@ -558,6 +561,7 @@ impl App {
     ) -> std::result::Result<T, E> {
         let result = {
             let mut state = self.state.write().unwrap();
+            self.paragraphs.lock().unwrap().clear();
             f(&mut state)
         };
         if result.is_ok() {

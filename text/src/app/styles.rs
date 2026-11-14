@@ -167,8 +167,12 @@ impl App {
     pub fn paragraph(&self, index: usize) -> Option<paragraph::Resolved> {
         let state = self.state.read().unwrap();
         let block = state.doc.block(index)?;
+        let mut kept = self.paragraphs.lock().unwrap();
+        if let Some(resolved) = kept.get(&block.style) {
+            return Some(resolved.clone());
+        }
         let style = block.style.as_deref();
-        Some(paragraph::Resolved {
+        let resolved = paragraph::Resolved {
             props: paragraph::resolve(
                 &state.doc.paragraph_styles,
                 &state.doc.default_paragraph,
@@ -176,7 +180,9 @@ impl App {
             ),
             declared: style.is_some_and(|name| state.doc.paragraph_styles.contains_key(name)),
             named: paragraph::named(&state.doc.paragraph_styles, style),
-        })
+        };
+        kept.insert(block.style.clone(), resolved.clone());
+        Some(resolved)
     }
 }
 

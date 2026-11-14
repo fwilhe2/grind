@@ -300,3 +300,24 @@ fn space_above_and_below_and_contextual_spacing_are_inherited_together() {
     assert!(!plain.props.contextual());
     assert_eq!(plain.named.as_deref(), Some("N"));
 }
+
+#[test]
+fn a_style_read_again_is_resolved_again() {
+    let centred = r#"<office:automatic-styles><style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style></office:automatic-styles>"#;
+    let body = r#"<text:p text:style-name="P1">x</text:p>"#;
+    let app = app(centred, body);
+    assert_eq!(
+        app.paragraph(0).unwrap().props.text_align.as_deref(),
+        Some("center")
+    );
+    let bytes = format!(
+        "<office:document {NS}>{}<office:body><office:text>{body}</office:text></office:body></office:document>",
+        centred.replace("center", "end")
+    );
+    app.open_bytes("y.fodt", bytes.as_bytes()).unwrap();
+    assert_eq!(
+        app.paragraph(0).unwrap().props.text_align.as_deref(),
+        Some("end"),
+        "what was resolved for the first document is not the second's"
+    );
+}
