@@ -170,6 +170,57 @@ fn pages_lists_where_each_page_begins_and_ends() {
     assert!(a6.lines().count() > rows.len(), "{a6}");
 }
 
+/// Where a caret is and what a click means, from the command line (rule 4): the two answer
+/// each other.
+#[test]
+#[cfg(feature = "pdf")]
+fn locate_says_where_a_caret_is_and_hit_takes_it_back() {
+    let dir = Sandbox::new("locate");
+    let file = dir.path("long.fodt");
+    ok(&["text", "new", &file]);
+    let paragraph = "All work and no play makes a dull document. ".repeat(80);
+    for _ in 0..4 {
+        ok(&["text", "insert", &file, "--text", &paragraph]);
+    }
+    let spot = ok(&["text", "locate", &file, "p4+1500", "--bundled-fonts"]);
+    let fields: Vec<&str> = spot.trim().split('\t').collect();
+    assert_eq!(fields.len(), 4, "{spot}");
+    let page: usize = fields[0].parse().unwrap();
+    assert!(page >= 2, "{spot}");
+    let (x, top, height): (f32, f32, f32) = (
+        fields[1].parse().unwrap(),
+        fields[2].parse().unwrap(),
+        fields[3].parse().unwrap(),
+    );
+    let middle = (top + height / 2.0).to_string();
+    let back = ok(&[
+        "text",
+        "hit",
+        &file,
+        "--page",
+        fields[0],
+        &x.to_string(),
+        &middle,
+        "--bundled-fonts",
+    ]);
+    assert_eq!(back.trim(), "p4+1500");
+    // Far below the last line of the last page is the document's end.
+    let last = ok(&["text", "pages", &file, "--bundled-fonts"])
+        .lines()
+        .count();
+    let end = ok(&[
+        "text",
+        "hit",
+        &file,
+        "--page",
+        &last.to_string(),
+        "500",
+        "830",
+        "--bundled-fonts",
+    ]);
+    assert_eq!(end.trim(), format!("p5+{}", paragraph.chars().count()));
+}
+
 /// A page as a PNG at a resolution — the preview, from the command line (rule 4).
 #[test]
 #[cfg(feature = "pdf")]

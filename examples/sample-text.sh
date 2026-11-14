@@ -339,6 +339,9 @@ if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
     text export-pdf "$doc" "$out/sample.pdf"
     text export-pdf "$doc" "$out/sample-a5.pdf" --paper a5-landscape
     text pages "$doc" --paper a6
+    say "locate and hit: where a caret is on its page, and the caret a point there means"
+    text locate "$doc" p2+8
+    text hit "$doc" --page 1 300 120
     say "preview: the first page as the PDF prints it, at screen resolution"
     text preview "$doc" "$out/sample-page1.png"
 fi

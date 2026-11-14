@@ -718,6 +718,45 @@ pub(crate) enum TextCommand {
         bundled_fonts: bool,
     },
 
+    /// Print where on its page a caret is
+    ///
+    /// The page, from 1, then the caret's x, the top of its line and the line's height, in
+    /// points from the page's top-left corner. Typeset exactly as `export-pdf` typesets.
+    #[cfg(feature = "pdf")]
+    Locate {
+        file: PathBuf,
+        /// A caret, e.g. p3+12 — or a bare address for a block's start
+        at: String,
+        /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
+        /// Use only the fonts built into grind, never the machine's: the same PDF anywhere
+        #[arg(long)]
+        bundled_fonts: bool,
+    },
+
+    /// Print the caret a point on a page means — what a click there would select
+    ///
+    /// The nearest line's nearest character, so a point in a margin or under the last line
+    /// still answers. Printed as an address `grind text get` takes.
+    #[cfg(feature = "pdf")]
+    Hit {
+        file: PathBuf,
+        /// Which page, from 1
+        #[arg(long, default_value_t = 1)]
+        page: usize,
+        /// How far right of the page's left edge, in points
+        x: f32,
+        /// How far below its top edge, in points
+        y: f32,
+        /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
+        /// Use only the fonts built into grind, never the machine's: the same PDF anywhere
+        #[arg(long)]
+        bundled_fonts: bool,
+    },
+
     /// Draw one page as a PNG — the print preview, exactly as the PDF prints it
     #[cfg(feature = "pdf")]
     Preview {

@@ -397,6 +397,59 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
         }
 
         #[cfg(feature = "pdf")]
+        TextCommand::Locate {
+            file,
+            at: address,
+            paper,
+            bundled_fonts,
+        } => {
+            let app = open_text(file)?;
+            let caret = caret_at(&app, address)?;
+            let options = grind_print::Options {
+                paper: *paper,
+                title: None,
+            };
+            let (doc, _) = grind_print::typeset(&app, fonts(&app, *bundled_fonts), &options);
+            let spot = grind_print::place::locate(&doc, caret)
+                .ok_or_else(|| format!("{address} is on no page"))?;
+            text_lines(vec![format!(
+                "{}\t{:.2}\t{:.2}\t{:.2}",
+                spot.page + 1,
+                spot.x,
+                spot.top,
+                spot.height
+            )])
+        }
+
+        #[cfg(feature = "pdf")]
+        TextCommand::Hit {
+            file,
+            page,
+            x,
+            y,
+            paper,
+            bundled_fonts,
+        } => {
+            let app = open_text(file)?;
+            let options = grind_print::Options {
+                paper: *paper,
+                title: None,
+            };
+            let (doc, _) = grind_print::typeset(&app, fonts(&app, *bundled_fonts), &options);
+            let index = page.checked_sub(1).ok_or("pages are counted from 1")?;
+            let count = doc.pages.len();
+            if index >= count {
+                return Err(format!("there is no page {page}: the document has {count}").into());
+            }
+            let caret = grind_print::place::hit(&doc, index, *x, *y)
+                .ok_or_else(|| format!("page {page} has no text"))?;
+            text_lines(vec![grind_text::loc::format_offset(
+                caret.block,
+                caret.offset,
+            )])
+        }
+
+        #[cfg(feature = "pdf")]
         TextCommand::Preview {
             file,
             out,
