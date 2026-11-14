@@ -26,8 +26,11 @@ pub const ROW_H: f64 = 18.0;
 pub const HEADER_W: f64 = 44.0;
 pub const HEADER_H: f64 = 22.0;
 
-/// A millimetre in points, which is what [`Sizes::from_lengths`] is handed.
-pub const PT_PER_MM: f64 = 72.0 / 25.4;
+/// A millimetre of the document in points, which is what [`Sizes::from_lengths`] is handed.
+/// Its ten-point text is drawn at [`BASE_PT`](crate::metrics::BASE_PT) and its lengths grow by
+/// as much, so a column fitted to its numbers elsewhere still holds them.
+pub const PT_PER_MM: f64 =
+    72.0 / 25.4 * crate::metrics::BASE_PT / grind_sheet::look::DEFAULT_FONT_PT;
 
 /// How much sheet lies beyond the last used cell before the grid stops: room to see the sheet end
 /// and scroll a little past it, without a view 18 million points tall that every overlay, ruler
@@ -272,8 +275,8 @@ mod tests {
         app.set_col_hidden(0, 2..3, true).unwrap();
         let grid = Grid::of(&app, 0);
         assert!(
-            (grid.cell(0, 1).w - 72.0).abs() < 1e-9,
-            "an inch is 72 points"
+            (grid.cell(0, 1).w - (25.4 * PT_PER_MM).round()).abs() < 1e-9,
+            "an inch, grown as the text is"
         );
         assert_eq!(grid.cell(0, 2).w, 0.0, "hidden");
         assert_eq!(

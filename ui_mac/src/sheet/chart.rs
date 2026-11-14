@@ -378,7 +378,11 @@ mod tests {
             "2in".into(),
             "1in".into(),
         );
-        assert_eq!(frame_of(&chart), Some(Rect::new(72.0, 0.0, 144.0, 72.0)));
+        let inch = 25.4 * PT_PER_MM;
+        assert_eq!(
+            frame_of(&chart),
+            Some(Rect::new(inch, 0.0, 50.8 * PT_PER_MM, inch))
+        );
         let broken = Chart {
             width: "wide".into(),
             ..chart
@@ -514,7 +518,7 @@ mod tests {
         };
         assert_eq!(ground(held), frame.offset(30.0, 40.0));
         let mut far = grab.now;
-        far.x = 72.0;
+        far.x = 25.4 * PT_PER_MM;
         far.y = -1000.0;
         let [x, y, ..] = lengths(far);
         assert!((grind_sheet::style::length_mm(&x).unwrap() - 25.4).abs() < 0.01);

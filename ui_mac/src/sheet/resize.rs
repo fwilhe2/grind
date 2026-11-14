@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn a_length_is_what_the_document_stores() {
-        let length = length(72.0);
+        let length = length(25.4 * PT_PER_MM);
         let mm = grind_sheet::style::length_mm(&length).unwrap();
         assert!((mm - 25.4).abs() < 0.01, "{length}");
     }

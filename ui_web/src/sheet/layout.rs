@@ -13,9 +13,10 @@ use std::collections::{BTreeSet, HashMap};
 use grind_sheet::Pos;
 use grind_sheet::style::length_mm;
 
-/// How many CSS pixels one millimetre is drawn as: 96 per inch, which the CSS specification itself
-/// fixes.
-pub const PX_PER_MM: f64 = 96.0 / 25.4;
+/// How many CSS pixels one millimetre of the document is drawn as: 96 per inch, grown by what
+/// the page's 14px text is larger than the document's ten points, so a column fitted to its
+/// numbers elsewhere still holds them.
+pub const PX_PER_MM: f64 = 96.0 / 25.4 * 14.0 / (grind_sheet::look::DEFAULT_FONT_PT * 96.0 / 72.0);
 
 /// The size of one cell, in CSS pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -261,8 +262,9 @@ mod tests {
     fn an_unsized_track_is_the_default_and_a_sized_one_is_itself() {
         let tracks = Tracks::new(96.0, [(2, "2.54cm".to_owned()), (4, "nonsense".to_owned())]);
         assert_eq!(tracks.size(0), 96.0);
-        // One inch, in the pixels the CSS specification fixes an inch at.
-        assert!((tracks.size(2) - 96.0).abs() < 0.5, "{}", tracks.size(2));
+        // One inch, grown as the text is.
+        let inch = 25.4 * PX_PER_MM;
+        assert!((tracks.size(2) - inch).abs() < 0.5, "{}", tracks.size(2));
         assert!(tracks.is_sized(2));
         // A length that will not parse leaves the column ordinary rather than gone.
         assert_eq!(tracks.size(4), 96.0);
@@ -290,7 +292,7 @@ mod tests {
         assert_eq!(tracks.span(0, 1), 10.0);
         // One default and one inch.
         assert!(
-            (tracks.span(0, 2) - 106.0).abs() < 0.5,
+            (tracks.span(0, 2) - 10.0 - 25.4 * PX_PER_MM).abs() < 0.5,
             "{}",
             tracks.span(0, 2)
         );
