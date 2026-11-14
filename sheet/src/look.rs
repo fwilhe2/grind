@@ -275,7 +275,11 @@ mod tests {
         use super::number_pad;
         assert_eq!(number_pad(60.0, 80.0, 6.0, 1.0), 6.0, "room to spare");
         assert_eq!(number_pad(74.0, 80.0, 6.0, 1.0), 3.0, "squeezed");
-        assert_eq!(number_pad(90.0, 80.0, 6.0, 1.0), 1.0, "never under the least");
+        assert_eq!(
+            number_pad(90.0, 80.0, 6.0, 1.0),
+            1.0,
+            "never under the least"
+        );
     }
 
     use super::*;

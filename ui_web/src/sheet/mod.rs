@@ -3627,7 +3627,8 @@ fn wire_filter_menu(ui: &Rc<Ui>) -> Result<(), JsValue> {
 /// (`Viewport::narrower`), else becomes **`###`** (`numfmt::overflow`) — the stylesheet clips, so
 /// `3,710.00 €` in a narrow column would read `3,710.0`. Measured after the rows are laid out: a
 /// cell whose content is wider than its box (`scrollWidth > clientWidth`) is measured once more
-/// with ten hashes in its font and given as many as fit, padding taken off both. jsdom reports
+/// with ten hashes in its font and given as many as fit, padding taken off both. One that fits
+/// with `td.tight`'s one pixel of padding is drawn so instead. jsdom reports
 /// widths of zero, so the smoke test sees numbers unchanged.
 fn hash_overflowing(cells: &[(web_sys::Element, Vec<String>)]) -> Result<(), JsValue> {
     /// `.grid td`'s `padding: 0 4px`, both sides.
@@ -3637,6 +3638,12 @@ fn hash_overflowing(cells: &[(web_sys::Element, Vec<String>)]) -> Result<(), JsV
         if client <= 0 || scroll <= client {
             continue;
         }
+        // Tight first: a number gives up its padding before it gives up being read.
+        cell.class_list().add_1("tight")?;
+        if cell.scroll_width() <= client {
+            continue;
+        }
+        cell.class_list().remove_1("tight")?;
         if narrower.iter().any(|shorter| {
             cell.set_text_content(Some(shorter));
             cell.scroll_width() <= client

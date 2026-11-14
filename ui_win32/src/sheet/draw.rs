@@ -563,7 +563,7 @@ mod windows_impl {
                     // `3,710.00 €` into `3,710.0…`, a magnitude short a digit. Measured in the
                     // cell's own font against exactly the room `draw_text` leaves, and drawn as
                     // `numfmt::overflow`'s hashes.
-                    let pad = crate::sheet::geom::scale(PAD, g.dpi);
+                    let pad = number_pad(dc, text, value, text_right - text_left, g.dpi);
                     let room = f64::from(text_right - text_left) - 2.0 * pad.round() - 1.0;
                     let hashes;
                     let text = if grind_sheet::numfmt::is_number(value)
@@ -718,7 +718,7 @@ mod windows_impl {
                     );
                     continue;
                 }
-                let pad = crate::sheet::geom::scale(PAD, g.dpi);
+                let pad = number_pad(dc, text, &m.value, right - left, g.dpi);
                 let room = f64::from(right - left) - 2.0 * pad.round() - 1.0;
                 let hashes;
                 let text = if grind_sheet::numfmt::is_number(&m.value)
@@ -1705,6 +1705,17 @@ mod windows_impl {
             };
             draw_line(dc, &self.text, rect, self.look.align, self.ink, false);
         }
+    }
+
+    /// The padding `text` is drawn with in a cell `width` pixels wide: [`PAD`] at this DPI, and
+    /// for a number as much less as keeps it whole (`look::number_pad`), in whole pixels.
+    fn number_pad(dc: HDC, text: &str, value: &CellValue, width: i32, dpi: u32) -> f64 {
+        let pad = crate::sheet::geom::scale(PAD, dpi);
+        if !grind_sheet::numfmt::is_number(value) {
+            return pad;
+        }
+        let text_w = f64::from(gdi::text_width(dc, text));
+        look::number_pad(text_w, f64::from(width) - 1.0, pad.round(), 1.0).floor()
     }
 
     /// One string, clipped to a rectangle, vertically centred and elided if it does not fit.

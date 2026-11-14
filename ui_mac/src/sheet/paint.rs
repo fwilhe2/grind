@@ -24,6 +24,8 @@ use crate::text::paint::SPELL_DOT;
 
 /// How far a cell's text stands off its edges, across and down.
 pub const PAD_X: f64 = 4.0;
+/// The least a number keeps either side when its column is tight (`look::number_pad`).
+const MIN_PAD_X: f64 = 1.0;
 pub const PAD_Y: f64 = 2.0;
 
 /// How thick the selection's outline is.
@@ -712,16 +714,20 @@ fn cell_text(
     metrics: &dyn Metrics,
 ) -> Op {
     let text_style = look::text_style(style);
-    let room = (cell.w - 2.0 * PAD_X).max(0.0);
     let mut text = text;
     let mut text_w = width(metrics, &text, &text_style);
-    if numfmt::is_number(value) && text_w > room {
-        text = narrower
-            .iter()
-            .find(|shorter| width(metrics, shorter, &text_style) <= room)
-            .cloned()
-            .unwrap_or_else(|| numfmt::overflow(room, width(metrics, "#", &text_style)));
-        text_w = width(metrics, &text, &text_style);
+    let mut pad = PAD_X;
+    if numfmt::is_number(value) {
+        let least = (cell.w - 2.0 * MIN_PAD_X).max(0.0);
+        if text_w > least {
+            text = narrower
+                .iter()
+                .find(|shorter| width(metrics, shorter, &text_style) <= least)
+                .cloned()
+                .unwrap_or_else(|| numfmt::overflow(least, width(metrics, "#", &text_style)));
+            text_w = width(metrics, &text, &text_style);
+        }
+        pad = look::number_pad(text_w, cell.w, PAD_X, MIN_PAD_X);
     }
     let line_h = f64::from(metrics.line_height(&text_style));
     // An indent (`fo:margin-left`), in points, from the leading edge of text not set against
@@ -730,9 +736,9 @@ fn cell_text(
         .and_then(grind_sheet::style::CellStyle::indent_mm)
         .map_or(0.0, |mm| mm * 72.0 / 25.4);
     let x = match look::align(value, style) {
-        look::Align::Left => cell.x + PAD_X + indent,
+        look::Align::Left => cell.x + pad + indent,
         look::Align::Center => cell.x + indent + (cell.w - indent - text_w) / 2.0,
-        look::Align::Right => cell.right() - PAD_X - text_w,
+        look::Align::Right => cell.right() - pad - text_w,
     };
     let top = match look::valign(style) {
         look::VAlign::Top => cell.y + PAD_Y,
@@ -1301,11 +1307,12 @@ mod tests {
     #[test]
     fn a_number_too_wide_for_its_column_is_hashes() {
         let app = sheet();
-        app.set_col_width(0, 1..2, Some("0.1in".into())).unwrap();
-        app.set_col_width(0, 0..1, Some("0.1in".into())).unwrap();
+        app.set_col_width(0, 1..2, Some("0.05in".into())).unwrap();
+        app.set_col_width(0, 0..1, Some("0.05in".into())).unwrap();
         let ops = drawn(&app);
         let texts = texts(&ops);
-        let room = (7.2 - 2.0 * PAD_X).max(0.0);
+        // 0.05in is 3.6pt, snapped to a whole point.
+        let room = 4.0 - 2.0 * MIN_PAD_X;
         assert!(
             texts
                 .iter()
