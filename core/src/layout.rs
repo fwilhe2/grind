@@ -93,6 +93,9 @@ pub struct Line {
     /// How much wider justification sets each space between the line's first and last visible
     /// characters; [`Layout::x_at`] already counts it.
     pub stretch: f32,
+    /// The width of the hyphen drawn at its end when it breaks at a soft hyphen (U+00AD), which
+    /// is otherwise invisible; zero for any other line. Past `width`, and no caret's.
+    pub hyphen: f32,
 }
 
 impl Line {
@@ -385,6 +388,9 @@ impl std::hash::Hash for Setting {
     }
 }
 
+/// U+00AD: where a word may break, shown as a hyphen only when it does.
+pub const SOFT_HYPHEN: char = '\u{AD}';
+
 /// [`wrap`], set as `setting` says. Every tab character is advanced to its stop on its own line —
 /// which depends on where the line starts, so tabs are placed *while* breaking rather than
 /// measured once beforehand — and each line is then aligned, so every caret x is where the ink is.
@@ -403,12 +409,26 @@ pub fn wrap_set(
     let mut heights: Vec<f32> = Vec::new();
     let mut ascents: Vec<f32> = Vec::new();
     let mut fragment_advances = Vec::new();
+    // Each soft hyphen, by character offset, with the width of the hyphen it shows as when a
+    // line breaks after it.
+    let mut hyphens: Vec<(usize, f32)> = Vec::new();
     for fragment in fragments {
         let origin = *xs.last().expect("xs starts with one element");
         fragment_advances.clear();
         metrics.advances(fragment.text, fragment.style, &mut fragment_advances);
         for advance in &fragment_advances {
             xs.push(origin + advance);
+        }
+        if fragment.text.contains(SOFT_HYPHEN) {
+            let mut hyphen = Vec::new();
+            metrics.advances("-", fragment.style, &mut hyphen);
+            let width = hyphen.last().copied().unwrap_or(0.0);
+            let base = xs.len() - 1 - fragment_advances.len();
+            for (at, c) in fragment.text.chars().enumerate() {
+                if c == SOFT_HYPHEN {
+                    hyphens.push((base + at, width));
+                }
+            }
         }
         text.push_str(fragment.text);
         heights.push(metrics.line_height(fragment.style));
@@ -431,6 +451,17 @@ pub fn wrap_set(
     }
     char_of_byte[text.len()] = len;
 
+    // The hyphen a line ending at `end` shows: a soft hyphen's, when the line breaks right after
+    // one, and never on the paragraph's last line.
+    let hyphen_at = |end: usize| -> f32 {
+        if end >= len {
+            return 0.0;
+        }
+        hyphens
+            .iter()
+            .find(|&&(at, _)| at + 1 == end)
+            .map_or(0.0, |&(_, width)| width)
+    };
     let mut lines = Vec::new();
     let mut start = 0usize;
     let mut last_fit: Option<usize> = None;
@@ -444,6 +475,7 @@ pub fn wrap_set(
             top: *top,
             shift: 0.0,
             stretch: 0.0,
+            hyphen: hyphen_at(end),
         });
         *top += height;
     };
@@ -539,7 +571,7 @@ pub fn wrap_set(
             .rev()
             .find(|&i| !text_chars[i].is_whitespace())
             .map_or(from, |i| i + 1);
-        width <= 0.0 || span(from, visible, first_line) <= room
+        width <= 0.0 || span(from, visible, first_line) + hyphen_at(to) <= room
     };
 
     for (byte, opportunity) in linebreaks(&text) {
@@ -638,7 +670,7 @@ impl Layout {
             } else {
                 visible_end
             };
-            let content = (natural[end] - natural[line.start] + indent).min(width);
+            let content = (natural[end] - natural[line.start] + indent + line.hyphen).min(width);
             let spaces = (line.start..visible_end)
                 .filter(|&i| chars[i] == ' ')
                 .count();
@@ -957,6 +989,7 @@ mod tests {
                 top: 0.0,
                 shift: 0.0,
                 stretch: 0.0,
+                hyphen: 0.0,
             }
         );
     }
@@ -1250,5 +1283,38 @@ mod tests {
                 &Fixed
             )
         );
+    }
+
+    /// A soft hyphen is a place a word may break: a line broken there shows a hyphen, which
+    /// must fit on it, and a line not broken there shows nothing.
+    #[test]
+    fn a_line_broken_at_a_soft_hyphen_makes_room_for_its_hyphen() {
+        let style = TextStyle::default();
+        let set = |text: &str, width: f32| {
+            wrap(
+                &[Fragment {
+                    text,
+                    style: &style,
+                }],
+                width,
+                &Fixed,
+            )
+            .lines()
+            .iter()
+            .map(|line| (line.start, line.end, line.hyphen))
+            .collect::<Vec<_>>()
+        };
+        // `xy abc` and a hyphen are seven, one more than the six there are room for, so the line
+        // breaks at the space; `abc` and its hyphen then fit on the next.
+        assert_eq!(
+            set("xy abc\u{AD}def", 6.0),
+            [(0, 3, 0.0), (3, 7, 1.0), (7, 10, 0.0)]
+        );
+        // Without the hyphen's width `xy abc` and the soft hyphen would have fitted in seven.
+        assert_eq!(set("xy abc\u{AD}def", 7.0)[0], (0, 3, 0.0));
+        assert_eq!(set("xy abc\u{AD}def", 8.0)[0], (0, 7, 1.0));
+        // Unbroken, it shows nothing; and the paragraph's end is never hyphenated.
+        assert_eq!(set("abc\u{AD}def", 100.0), [(0, 7, 0.0)]);
+        assert_eq!(set("abc\u{AD}", 3.0).last().map(|l| l.2), Some(0.0));
     }
 }

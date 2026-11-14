@@ -344,6 +344,11 @@ if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
     text hit "$doc" --page 1 300 120
     say "preview: the first page as the PDF prints it, at screen resolution"
     text preview "$doc" "$out/sample-page1.png"
+    say "a soft hyphen (U+00AD) is where a word may break: a hyphen shows only where it does"
+    run new "$out/hyphen.fodt" --force
+    run set "$out/hyphen.fodt" p1 "$(printf 'The Donau\302\255dampf\302\255schiffahrts\302\255gesellschaft runs a steamer.')"
+    text export-pdf "$out/hyphen.fodt" "$out/hyphen.pdf" --paper a7
+    text preview "$out/hyphen.fodt" "$out/hyphen.png" --paper a7
 fi
 
 # --- import: a Word document becomes an ODF document -----------------------------------------

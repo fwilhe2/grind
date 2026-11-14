@@ -1462,6 +1462,29 @@ fn lines(
                 }
             }
         }
+        // A line broken at a soft hyphen shows it, in its run's face and colour; not text a
+        // reader copies, which is the word whole.
+        if line.hyphen > 0.0
+            && let Some(cut) = paint::pieces(&view.runs, line.end - 1, line.end).first()
+        {
+            let style = face.style(&cut.props.metrics());
+            let shaped = setter.shape("-", &style);
+            ops.push(Op::Text {
+                x: left as f32 + layout.x_on(at, line.end),
+                y: baseline,
+                face: shaped.face,
+                size: shaped.size,
+                glyphs: shaped.glyphs,
+                text: "-".to_owned(),
+                color: cut
+                    .props
+                    .color
+                    .as_deref()
+                    .and_then(Rgb::parse)
+                    .unwrap_or(ink),
+                mark: Mark::Decoration,
+            });
+        }
     }
     Some(Drawn {
         from: span.0,
@@ -2005,6 +2028,42 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn a_word_broken_at_its_soft_hyphen_shows_a_hyphen_inside_the_margin() {
+        let words = "Donau\u{AD}dampf\u{AD}schiffahrts\u{AD}gesellschafts\u{AD}kapitän ".repeat(20);
+        let app = doc(&[(BlockKind::Paragraph, words.trim_end())]);
+        let t = setter();
+        let typeset = typeset(&app, &t, &Options::default());
+        let page = &typeset.pages[0];
+        let right = page.width - 56.6929;
+        let hyphens: Vec<f32> = page
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Text {
+                    x,
+                    text,
+                    glyphs,
+                    mark: crate::ops::Mark::Decoration,
+                    ..
+                } if text == "-" => Some(x + glyphs.iter().map(|g| g.x_advance).sum::<f32>()),
+                _ => None,
+            })
+            .collect();
+        assert!(!hyphens.is_empty(), "some line breaks inside a word");
+        for end in hyphens {
+            assert!(end <= right + 0.01, "a hyphen ends at {end}, past {right}");
+        }
+        // Mid-line a soft hyphen is nothing: no line shows more hyphens than it breaks at.
+        let lines = page.lines.len();
+        let shown = page
+            .ops
+            .iter()
+            .filter(|op| matches!(op, Op::Text { text, .. } if text == "-"))
+            .count();
+        assert!(shown < lines);
     }
 
     #[test]
