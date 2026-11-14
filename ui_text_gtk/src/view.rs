@@ -469,6 +469,8 @@ mod imp {
         pub grammar_spot: RefCell<Option<grind_text::grammar::Flag>>,
         /// The grammar rules the person ignores, which are not drawn.
         pub grammar_ignored: RefCell<Vec<String>>,
+        /// What the input method is composing and has not committed, with its own attributes.
+        pub preedit: RefCell<Option<(String, gtk::pango::AttrList)>>,
     }
 
     // Spelled out rather than derived: neither `Caret` nor `ScrollablePolicy` has a
@@ -507,6 +509,7 @@ mod imp {
                 spot: RefCell::new(None),
                 grammar_spot: RefCell::new(None),
                 grammar_ignored: RefCell::new(Vec::new()),
+                preedit: RefCell::new(None),
             }
         }
     }
@@ -595,6 +598,27 @@ mod imp {
                 #[weak(rename_to = doc)]
                 widget,
                 move |_, text| doc.imp().type_text(text)
+            ));
+            self.im.connect_preedit_changed(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |im| {
+                    let (text, attrs, _) = im.preedit_string();
+                    attrs.insert(gtk::pango::AttrInt::new_underline(
+                        gtk::pango::Underline::Single,
+                    ));
+                    let composing = (!text.is_empty()).then(|| (text.to_string(), attrs));
+                    doc.imp().preedit.replace(composing);
+                    doc.queue_draw();
+                }
+            ));
+            self.im.connect_preedit_end(glib::clone!(
+                #[weak(rename_to = doc)]
+                widget,
+                move |_| {
+                    doc.imp().preedit.replace(None);
+                    doc.queue_draw();
+                }
             ));
 
             let keys = gtk::EventControllerKey::new();
@@ -1082,10 +1106,39 @@ mod imp {
                 }
             }
 
-            if selection.is_none()
-                && self.obj().is_focus()
-                && let Some((x, y, h)) = spot_of(shown, caret)
-            {
+            let Some((x, y, h)) = spot_of(shown, caret) else {
+                return;
+            };
+            // The input method's candidate window goes under the caret wherever a scroll or a
+            // zoom put it, and this paint is where both have been settled.
+            let (left, top) = self.scrolled();
+            self.im.set_cursor_location(&gdk::Rectangle::new(
+                (x - left) as i32,
+                (y - top) as i32,
+                1,
+                h as i32,
+            ));
+            // ponytail: the text being composed is drawn over the page at the caret rather than
+            // set in it, so it covers what follows until it is committed. Upgrade: the session
+            // sets it as a pending fragment (`App::layout_composing`), `doc/page-model.md` PM5
+            // item 5.
+            if let Some((text, attrs)) = self.preedit.borrow().as_ref() {
+                let layout = self.obj().create_pango_layout(Some(text));
+                layout.set_attributes(Some(attrs));
+                let mut font = gtk::pango::FontDescription::new();
+                font.set_absolute_size(h * 0.7 * f64::from(gtk::pango::SCALE));
+                layout.set_font_description(Some(&font));
+                let (width, height) = layout.pixel_size();
+                let below = y + (h - f64::from(height)) / 2.0;
+                snapshot.append_color(&gdk::RGBA::WHITE, &rect(x, y, f64::from(width) + CARET, h));
+                snapshot.save();
+                snapshot.translate(&graphene::Point::new(x as f32, below as f32));
+                snapshot.append_layout(&layout, &gdk::RGBA::BLACK);
+                snapshot.restore();
+                snapshot.append_color(&palette.accent, &rect(x + f64::from(width), y, CARET, h));
+                return;
+            }
+            if selection.is_none() && self.obj().is_focus() {
                 snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
             }
         }
@@ -2725,6 +2778,14 @@ mod tests {
         gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
         assert!(snapshot.to_node().is_some(), "something was drawn");
         assert!(!imp.tiles.borrow().is_empty(), "and the page kept");
+
+        // Text an input method is composing is drawn at the caret, uncommitted.
+        imp.preedit
+            .replace(Some(("かな".to_owned(), gtk::pango::AttrList::new())));
+        let snapshot = gtk::Snapshot::new();
+        gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
+        assert!(snapshot.to_node().is_some());
+        assert_eq!(app.input_text(0).unwrap(), paragraph, "and not written");
     }
 
     /// Zooming in about a point leaves the same spot of the same page under it, and the
