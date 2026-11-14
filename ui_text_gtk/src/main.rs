@@ -68,6 +68,8 @@ fn main() -> ExitCode {
     // `--preview` opens Print Preview over the document; with `--render-to` the preview window is
     // what is drawn.
     let mut preview = false;
+    // `--page n` scrolls page n, from 1, to the top of that frame.
+    let mut page: Option<usize> = None;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         match arg {
@@ -77,6 +79,15 @@ fn main() -> ExitCode {
                 ));
             }
             arg if arg == "--preview" => preview = true,
+            arg if arg == "--page" => {
+                match args.next().and_then(|a| a.to_str()?.parse::<usize>().ok()) {
+                    Some(n) if n > 0 => page = Some(n - 1),
+                    _ => {
+                        eprintln!("grind-text-gtk: --page takes a page number, from 1");
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
             arg if arg == "--overlay" => match args.next().as_deref().and_then(|a| a.to_str()) {
                 Some("names") => names = true,
                 other => {
@@ -134,6 +145,9 @@ fn main() -> ExitCode {
         }
         if names {
             ui.doc.set_names(true);
+        }
+        if let Some(page) = page {
+            ui.doc.show_page(page);
         }
         ui.window.present();
         let previewed = preview.then(|| print::preview(&ui));
@@ -1649,6 +1663,7 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             ui.doc.zoom_step(false);
         }),
         ("zoom-fit", &[][..], |ui| ui.doc.fit_width()),
+        ("zoom-page", &[][..], |ui| ui.doc.fit_page()),
         ("zoom-reset", &[][..], |ui| ui.doc.set_zoom(1.0, None)),
         ("select-all", &["<Control>a"][..], |ui| ui.doc.select_all()),
         // The three keys every word processor has, over the same call the bar's toggles make —
@@ -1789,6 +1804,7 @@ fn zoom_menu() -> gio::Menu {
     menu.append_section(None, &steps);
     let sizes = gio::Menu::new();
     sizes.append(Some("Fit Width"), Some("win.zoom-fit"));
+    sizes.append(Some("Fit Page"), Some("win.zoom-page"));
     sizes.append(Some("Actual Size"), Some("win.zoom-reset"));
     menu.append_section(None, &sizes);
     menu

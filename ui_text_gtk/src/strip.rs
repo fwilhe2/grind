@@ -152,6 +152,13 @@ pub fn fit_width(width: f64, window: f64, scale: f64) -> f64 {
     ((window - 2.0 * PAD) / (width * scale).max(1.0)).clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1])
 }
 
+/// The zoom at which a whole page `width` × `height` points, with the desk round it, fits a
+/// window `window` pixels across and down.
+pub fn fit_page(page: (f64, f64), window: (f64, f64), scale: f64) -> f64 {
+    let down = (window.1 - 2.0 * PAD) / (page.1 * scale).max(1.0);
+    fit_width(page.0, window.0, scale).min(down.clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1]))
+}
+
 /// Where a scroll must be for a stretch `from..from + length` to be in a view `view` long over
 /// content `content` long, moving as little as possible.
 pub fn follow(scroll: f64, view: f64, content: f64, from: f64, length: f64) -> f64 {
@@ -259,6 +266,20 @@ mod tests {
             fit_width(595.0, 99_999.0, 1.0),
             4.0,
             "nor larger than the most"
+        );
+    }
+
+    #[test]
+    fn fitting_the_page_is_the_tighter_of_its_two_sides() {
+        let window = (2000.0, 842.0 / 2.0 + 2.0 * PAD);
+        assert!(
+            (fit_page((595.0, 842.0), window, 1.0) - 0.5).abs() < 1e-9,
+            "the height"
+        );
+        let window = (595.0 / 2.0 + 2.0 * PAD, 5000.0);
+        assert!(
+            (fit_page((595.0, 842.0), window, 1.0) - 0.5).abs() < 1e-9,
+            "the width"
         );
     }
 

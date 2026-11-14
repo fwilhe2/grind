@@ -250,6 +250,41 @@ impl Doc {
         self.set_zoom(zoom, None);
     }
 
+    /// The zoom at which the caret's page, or the first, fits the window whole.
+    pub fn fit_page(&self) {
+        let Some(shown) = self.imp().shown() else {
+            return;
+        };
+        let at = self.page_of_caret().map_or(0, |(page, _)| page - 1);
+        let Some(page) = shown.set.pages.get(at) else {
+            return;
+        };
+        let scale = f64::from(crate::print::pixels_per_point(1.0, 1.0));
+        let zoom = crate::strip::fit_page(
+            (f64::from(page.width), f64::from(page.height)),
+            (f64::from(self.width()), f64::from(self.height())),
+            scale,
+        );
+        self.set_zoom(zoom, None);
+        self.show_page(at);
+    }
+
+    /// Scroll page `page`, from 0, to the top of the view — now, or once the view has a size.
+    pub fn show_page(&self, page: usize) {
+        let imp = self.imp();
+        if self.width() == 0 {
+            imp.pending_page.set(Some(page));
+            return;
+        }
+        let (Some(shown), Some(adjustment)) = (imp.shown(), imp.vadjustment.borrow().clone())
+        else {
+            return;
+        };
+        if let Some(sheet) = shown.strip.sheet(page) {
+            adjustment.set_value(sheet.y - crate::strip::PAD);
+        }
+    }
+
     /// Told the zoom whenever it changes — the status bar's readout.
     pub fn connect_zoomed(&self, f: impl Fn(f64) + 'static) {
         self.imp().on_zoomed.borrow_mut().push(Box::new(f));
@@ -451,6 +486,8 @@ mod imp {
         pub on_zoomed: RefCell<Vec<ZoomedHook>>,
         /// The zoom a pinch started from, while one is under way.
         pub pinched: Cell<Option<f64>>,
+        /// A page asked for before the view had a size to scroll it into.
+        pub pending_page: Cell<Option<usize>>,
         /// The last press — its time, where, and how many in a row — so a second press on the same
         /// spot is a double-click. Counted here rather than by a second gesture, since the drag
         /// planting the caret and a click gesture would both answer one press in an order GTK does
@@ -503,6 +540,7 @@ mod imp {
                 on_moved: RefCell::new(Vec::new()),
                 on_zoomed: RefCell::new(Vec::new()),
                 pinched: Cell::new(None),
+                pending_page: Cell::new(None),
                 presses: Cell::new(None),
                 menu: std::cell::OnceCell::new(),
                 speller: RefCell::new(None),
@@ -846,6 +884,9 @@ mod imp {
 
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
             self.size_scrollbars(width, height);
+            if let Some(page) = self.pending_page.take() {
+                self.obj().show_page(page);
+            }
         }
 
         fn realize(&self) {
@@ -2826,6 +2867,19 @@ mod tests {
         assert!(doc.zoom() < 2.0);
         doc.set_zoom(99.0, None);
         assert_eq!(doc.zoom(), 4.0, "held inside the levels");
+
+        // A whole page fits a 400-pixel-tall view, and the next is scrolled to the top.
+        doc.fit_page();
+        let sheet = imp.shown().expect("set").strip.sheet(0).expect("a page");
+        assert!(sheet.height + 2.0 * crate::strip::PAD <= 400.5, "{sheet:?}");
+        doc.show_page(1);
+        let second = imp
+            .shown()
+            .expect("set")
+            .strip
+            .sheet(1)
+            .expect("a second page");
+        assert_eq!(down.value(), second.y - crate::strip::PAD);
     }
 
     /// Authoring a list, which this window could not do at all: Tab at the front of a
