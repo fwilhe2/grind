@@ -126,23 +126,18 @@ Each ends green on its own. A capability gets its line in `examples/sample-text.
 
 ### PM0 — Decisions and measurements *(small)*
 
-1. Measure, and write the numbers into §6: `typeset` of the sample, of a 50-page document and
-   of the Calc Guide (564 pages); `raster::render` of one page at 1× and 2×; one paragraph
-   re-set alone.
-3. A side-by-side frame: a body paragraph at 96 dpi through `raster.rs` and through Pango, at
+1. Measure, and write the numbers into §6: `typeset` of a long document, `raster::render` of
+   one page at 1× and 2× (`print/examples/timing.rs`).
+2. A side-by-side frame: a body paragraph at 96 dpi through `raster.rs` and through Pango, at
    10, 11 and 12 pt. This is the evidence for decision 1.
-4. wasm: the size of the page with `grind-web-print` loaded when a text document opens, and the
-   time to first page.
-5. Clean-room notes, each `MEASURED` on the pinned image or `SPEC` with an rng line, in
-   `doc/odt-format.md` §5c: what Writer writes for `style:letter-kerning` (rng:13705) and
-   `fo:letter-spacing` (rng:13532) by default; `fo:hyphenate` and its counts (rng:13773–13783,
-   rng:12533, rng:12541); how a justified line treats a no-break space, a tab and a line ending
-   in a manual break; `fo:text-align-last` and `style:justify-single-word` (rng:12490, 12499);
-   what a manual page break is written as (`fo:break-before`, rng:1297, on which style).
-6. Amend `doc/not-doing.md`, `doc/pdf-export.md` §1/§5, `doc/text-layout.md`,
+3. wasm: the size of `grind-web-print` and the fonts a text document would now wait for.
+4. Amend `doc/not-doing.md`, `doc/pdf-export.md` §1/§5, `doc/text-layout.md`,
    `doc/text-shell.md` per the table at the top.
 
-*Exit:* the numbers and the notes, cited.
+The clean-room notes are measured where they are first used, PM6 and PM8, and each milestone
+names its own.
+
+*Exit:* §6.
 
 ### PM1 — One layout *(medium)*
 
@@ -238,6 +233,11 @@ scale, overlays off, byte for byte.
 1. **Glyph fallback**: a character the face lacks is drawn from another that has it, chosen
    by coverage from the system's fonts. Per cluster, in the shaper, so measure and draw agree.
    The browser counts and reports, as today. Typing an emoji must not show `.notdef`.
+0. Notes first, each `MEASURED` on the pinned image or `SPEC` with an rng line, in
+   `doc/odt-format.md` §5c: what Writer writes for `style:letter-kerning` (rng:13705) and
+   `fo:letter-spacing` (rng:13532) by default; `fo:hyphenate` and its counts (rng:13773–13783,
+   rng:12533, rng:12541); how a justified line treats a no-break space, a tab and a line ending
+   in a manual break; `fo:text-align-last` and `style:justify-single-word` (rng:12490, 12499).
 2. **Kerning as the document says**: `style:letter-kerning`, on unless a style turns it off.
 3. **Letter spacing**: `fo:letter-spacing`, added after shaping, ligatures off when non-zero.
 4. **Soft hyphen** (U+00AD): a break point that draws a hyphen only where the line breaks.
@@ -248,7 +248,7 @@ scale, overlays off, byte for byte.
    `grind-print` (or `grind-spell`) answers it.
 6. **Justification**: the last line and a line ending in a manual break stay ragged; a
    single-word line is not stretched (`style:justify-single-word`); `fo:text-align-last`;
-   spaces after the last tab only. Each from PM0's notes.
+   spaces after the last tab only. Each from item 0's notes.
 7. **Line breaking** (decision 4): greedy, as Writer breaks, so a document has the page count
    Writer gives it.
 8. `style:text-position` (super- and subscript) and `fo:font-variant="small-caps"` drawn if
@@ -276,7 +276,8 @@ doc's gap list and feature-matrix rows updated.
 
 ### PM8 — Authoring pages *(medium)*
 
-1. **Page break**: Ctrl+Enter writes what PM0 measured Writer writes; `grind text break`.
+1. **Page break**: Ctrl+Enter writes what Writer is measured to write (`fo:break-before`,
+   rng:1297, and on which style; a note in `doc/odt-format.md` §5c first); `grind text break`.
    Removing one is Backspace at the top of the page it opened.
 2. **Page setup**: paper (ISO 216 names, `doc/pdf-export.md` decision 7), orientation, four
    margins, for the document's default master page. Written to `style:page-layout`, changing
@@ -316,12 +317,36 @@ at, and the point to stop and judge before three more shells follow.
    equivalence fuzz in PM3 is the guard, and it must exist before any shell uses the session.
 3. **Speed on long documents.** Measured before designed (PM0).
 4. **Hyphenation dictionaries' licences.** Checked before code; soft hyphens work regardless.
-5. **Browser weight**: about 0.7 MB gzipped of module plus the fonts, for text documents only.
+5. **Browser weight**: 2.6 MB gzipped of module plus the fonts (§6), for text documents only.
 6. **Every text `--render-to` baseline changes** in PM5 and PM7. One commit per shell, saying so.
 
 ## 6. Measurements
 
-*(filled in by PM0)*
+2026-11-14, a release build on the development machine (`print/examples/timing.rs`), over
+LibreOffice's Calc Guide: 564 pages as we set it, about 9400 blocks.
+
+| | |
+|---|---|
+| Open | 0.4 s |
+| Typeset, the whole document | 5.6 s — **10 ms a page** |
+| Raster, one page of body text, 96 dpi (793 × 1122) | 22 ms |
+| The same at 192 dpi (1587 × 2245) | 39 ms |
+
+What they decide:
+
+* **Setting the whole document per keystroke is out by a factor of several hundred**, so PM3 is
+  not optional, and a long document's first layout wants to show its first pages before the
+  last are set.
+* **A page drawn from scratch misses a 16 ms frame**, at either scale. PM4's glyph cache has to
+  bring a whole page under it, or a keystroke repaints only the band of lines that changed.
+* **The raster reads well at 96 dpi.** The same sentence in Liberation Serif at 10, 11 and
+  12 pt, through `raster.rs` and through `pango-view`: ours is a little lighter and evenly
+  spaced; Pango's hinted advances open and close gaps between letters ("over the", "fi fl").
+  Decision 1 stands on that frame, and stem darkening (PM4 item 3) is optional.
+* **The browser's cost is larger than first written**: `grind_web_print_bg.wasm` is 8.9 MB,
+  2.6 MB gzipped (it carries its own copy of the text core), and the twelve Liberation faces
+  are 2.4 MB gzipped together. PM7 loads the faces a document names, not all twelve, and looks
+  at folding the two modules into one.
 
 ## 7. The decisions
 
