@@ -2266,6 +2266,10 @@ mod tests {
             a_zoom_keeps_the_point_under_the_pointer,
         ),
         (
+            "a page in the window is the preview's pixels",
+            a_page_in_the_window_is_the_previews_pixels,
+        ),
+        (
             "Tab nests a list item and Shift+Tab ends the list",
             tab_nests_a_list_item_and_shift_tab_ends_the_list,
         ),
@@ -3046,6 +3050,58 @@ mod tests {
             .sheet(1)
             .expect("a second page");
         assert_eq!(down.value(), second.y - crate::strip::PAD);
+    }
+
+    /// `doc/page-model.md` PM5's exit: with nothing drawn over it, a page as the window shows it
+    /// is, pixel for pixel, the preview of that page at the same scale.
+    fn a_page_in_the_window_is_the_previews_pixels() {
+        let (doc, app) = shell(&[
+            "A heading of sorts",
+            "And a paragraph under it, long enough to wrap \
+            onto a second line at the width of a page, which it does.",
+        ]);
+        app.set_kind(0, BlockKind::Heading { level: 1 }).unwrap();
+        doc.invalidate();
+        let imp = doc.imp();
+        let shown = imp.shown().expect("set");
+        let sheet = shown.strip.sheet(0).expect("a page");
+
+        let snapshot = gtk::Snapshot::new();
+        gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
+        let node = snapshot.to_node().expect("drawn");
+        let renderer = gtk::gsk::CairoRenderer::new();
+        renderer
+            .realize(None::<&gtk::gdk::Surface>)
+            .expect("an offscreen renderer");
+        let area = gtk::graphene::Rect::new(
+            sheet.x as f32,
+            sheet.y as f32,
+            sheet.width as f32,
+            sheet.height.min(f64::from(doc.height()) - sheet.y) as f32,
+        );
+        let texture = renderer.render_texture(&node, Some(&area));
+        renderer.unrealize();
+        let mut downloader = gtk::gdk::TextureDownloader::new(&texture);
+        downloader.set_format(gtk::gdk::MemoryFormat::R8g8b8a8Premultiplied);
+        let (window, stride) = downloader.download_bytes();
+
+        let scale = crate::print::pixels_per_point(1.0, 1.0);
+        let setter = imp.session.typesetter(&app);
+        let preview = grind_print::raster::render(&shown.set.pages[0], setter.fonts(), scale);
+        let (width, height) = (texture.width() as usize, texture.height() as usize);
+        let apart = (0..height)
+            .flat_map(|y| (0..width).map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let ours = &window[y * stride + x * 4..y * stride + x * 4 + 4];
+                let theirs = preview.pixel(x as u32, y as u32);
+                ours != theirs
+            })
+            .count();
+        assert!(
+            preview.rgba.chunks(4).any(|p| p[0] < 128),
+            "there is ink to compare"
+        );
+        assert_eq!(apart, 0, "{apart} of {} pixels differ", width * height);
     }
 
     /// Authoring a list, which this window could not do at all: Tab at the front of a
