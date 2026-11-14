@@ -84,15 +84,24 @@ impl Report {
     }
 }
 
-/// Every font family the document's runs name, once each, in the order they first appear. The
-/// markdown marker for code (`monospace`) is a generic, not a family to look for.
+/// Every font family the document's runs and paragraph styles name, once each, in the order they
+/// first appear. The markdown marker for code (`monospace`) is a generic, not a family to look for.
 pub fn families(app: &App) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let viewport = app.get_viewport(0..app.block_count());
-    for run in viewport.iter().flat_map(|block| &block.runs) {
-        let Some(family) = run.props.font_family.as_deref().map(str::trim) else {
-            continue;
-        };
+    let styled = std::iter::once(app.resolve_style(None).props.font_family)
+        .chain(viewport.iter().map(|view| {
+            app.paragraph(view.index)
+                .and_then(|resolved| resolved.props.font_family)
+        }))
+        .flatten()
+        .collect::<Vec<_>>();
+    let runs = viewport
+        .iter()
+        .flat_map(|block| &block.runs)
+        .filter_map(|run| run.props.font_family.as_deref());
+    for family in runs.chain(styled.iter().map(String::as_str)) {
+        let family = family.trim();
         if family.is_empty()
             || family == grind_text::markdown::MONOSPACE
             || out.iter().any(|seen| seen.eq_ignore_ascii_case(family))
@@ -325,6 +334,23 @@ mod tests {
         app.set_char_style(at(14), at(18), &family("Georgia"))
             .unwrap();
         assert_eq!(families(&app), vec!["Georgia", "Calibri"]);
+    }
+
+    /// A family no run names but a style does is still looked for, so a document in Calibri by
+    /// its default style is set in an installed Carlito.
+    #[test]
+    fn the_families_a_documents_styles_name_are_listed_too() {
+        let app = App::new();
+        app.open_bytes(
+            "a.fodt",
+            br#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:font-face-decls><style:font-face style:name="Calibri" svg:font-family="Calibri"/><style:font-face style:name="Cambria" svg:font-family="Cambria"/></office:font-face-decls>
+            <office:styles><style:default-style style:family="paragraph"><style:text-properties style:font-name="Calibri"/></style:default-style>
+            <style:style style:name="H" style:family="paragraph"><style:text-properties style:font-name="Cambria"/></style:style></office:styles>
+            <office:body><office:text><text:p>one</text:p><text:p text:style-name="H">two</text:p></office:text></office:body></office:document>"#,
+        )
+        .unwrap();
+        assert_eq!(families(&app), vec!["Calibri", "Cambria"]);
     }
 
     #[test]
