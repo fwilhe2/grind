@@ -356,7 +356,10 @@ consequence, and it is the point: S8 was going to discover this.
 
 ### What stays gated, unchanged
 
-Pagination *as an editing view*. `doc/not-doing.md` §2. **Pagination as an output** (PDF and
+Pagination *as an editing view* — **until 2026-11-14, when `doc/page-model.md` opened it**: a
+text document in a graphical shell is measured by `grind-print`'s `Typesetter` behind this same
+trait, and the shell's own metrics stay for the terminal, the CLI and the spreadsheet.
+`doc/not-doing.md` §2. **Pagination as an output** (PDF and
 its preview) is being built by `doc/pdf-export.md`, which amends this section: pages are derived
 when asked for, never stored, and the differential once called loop D here is loop G there,
 since the xlsx filter has used D since phase 11. Otherwise Path C is line layout and nothing

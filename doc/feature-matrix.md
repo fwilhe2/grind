@@ -665,7 +665,7 @@ other client does (`doc/not-doing.md` §3, *Autosave*).
 
 **Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
 *definitions* (a named character style is kept and never interpreted) · a paginated *editing*
-view (pages are an output now, §7's Paper rows, never a place to type) · an
+view (pages are an output, §7's Paper rows, until `doc/page-model.md` is built) · an
 image anchored mid-sentence, which draws as the placeholder character everywhere · a table's own
 style (column widths, borders), merging cells from any client, and `table:formula` in a cell —
 the last of which is gated on `doc/odt-format.md` §5's unanswered question about whether a

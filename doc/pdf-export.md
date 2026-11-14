@@ -54,6 +54,9 @@ Because both are derived, a later **print-layout view** in a shell needs no furt
 change. It is the same paginator's output, drawn live. That is the natural follow-on to the
 preview, and it stays gated as stated above.
 
+> **Amended 2026-11-14 by `doc/page-model.md`**: the paragraph below was the cost accepted
+> then. The editor is moving onto this engine, so that the screen and the paper are one layout.
+
 **The accepted cost**: the screen and the paper can break lines differently, because each
 shell measures with its own font engine and the PDF measures with the font file it embeds. On a
 desktop where both find the same font files, the breaks will usually agree, but nothing
@@ -283,7 +286,7 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 
 | | Why out | Gate |
 |---|---|---|
-| A paginated **editing** view | §1. Continuous editing is the product, and the preview covers "what will print" | unchanged from today: a real week of use proving the continuous view insufficient |
+| A paginated **editing** view | §1. Continuous editing was the product, and the preview covered "what will print" | **opened 2026-11-14**: `doc/page-model.md` |
 | Footnotes and endnotes | Placement is the hard half of pagination (space reserved at the bottom of each page, splitting across pages). Content models fine | after loop G is green on documents without notes |
 | Hyphenation | Needs dictionaries per language. `fo:hyphenate` is read and ignored | a request; `hyphenation` crate + TeX patterns, both licence-checked |
 | RTL, vertical writing | inherited exclusion, `doc/text-layout.md` decision 1 | that document's gate |
