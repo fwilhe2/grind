@@ -187,6 +187,17 @@ impl Layout {
         self.xs[offset] - self.xs[line.start] + self.indent_of(line.start) + line.shift
     }
 
+    /// The x of a caret offset on `line`, which must hold it. Unlike [`Layout::x_at`] this can
+    /// say where a soft-broken line *ends*: the offset it shares with the next line's start.
+    #[must_use]
+    pub fn x_on(&self, line: usize, offset: usize) -> f32 {
+        let Some(line) = self.lines.get(line) else {
+            return 0.0;
+        };
+        let offset = offset.clamp(line.start, line.end);
+        self.xs[offset] - self.xs[line.start] + self.indent_of(line.start) + line.shift
+    }
+
     /// The first-line indent for the line starting at `start`, and nothing for any other.
     fn indent_of(&self, start: usize) -> f32 {
         match start {
@@ -713,6 +724,19 @@ mod tests {
         assert_eq!(layout.offset_at(0, 3.2), 2);
         assert_eq!(layout.offset_at(1, 0.0), 5, "left of the line is its start");
         assert_eq!(layout.step(1, 1, layout.x_at(1)), Some(5));
+    }
+
+    #[test]
+    fn a_soft_broken_lines_end_has_an_x_of_its_own() {
+        let layout = at("aaaa bb", 6.0);
+        assert_eq!(
+            layout.x_at(5),
+            0.0,
+            "the shared offset reads as the next line's start"
+        );
+        assert_eq!(layout.x_on(0, 5), 5.0);
+        assert_eq!(layout.x_on(1, 5), 0.0);
+        assert_eq!(layout.x_on(1, 7), 2.0);
     }
 
     #[test]

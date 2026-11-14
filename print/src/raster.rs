@@ -278,6 +278,7 @@ mod tests {
             width: 100.0,
             height: 50.0,
             ops: Vec::new(),
+            lines: Vec::new(),
             start: None,
             end: None,
         }

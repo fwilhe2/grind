@@ -24,6 +24,8 @@ use crate::metrics::Typesetter;
 use crate::ops::{Document, Element, Heading, Mark, Op, Page, Rgb};
 use grind_core::layout::Align;
 
+use crate::place::LineBox;
+
 /// The gap between a picture and its caption, in points.
 const CAPTION_GAP: f64 = 4.0;
 /// The ink of a link that states no colour: Writer's own for an unstyled hyperlink.
@@ -193,6 +195,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
             let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
             let mut ops = Vec::new();
+            let mut placed: Vec<LineBox> = Vec::new();
             ops.extend(
                 sheet
                     .background
@@ -238,8 +241,9 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                     caption_face(view),
                     figure_look(app, view),
                 ) {
-                    figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
                     let length = view.runs.last().map_or(0, grind_text::RunView::end);
+                    placed.push(figure.line_box(origin, piece.index, length));
+                    figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
                     cover(caret(piece.index, 0), caret(piece.index, length));
                     continue;
                 }
@@ -257,7 +261,15 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 let setting = grind_text::Faces::setting(column, view.index);
                 let label = labels.get(&view.index);
                 let under = ops.len();
-                let drawn = lines(&mut ops, app, view, piece, face, (&setting, label), origin);
+                let drawn = lines(
+                    (&mut ops, &mut placed),
+                    app,
+                    view,
+                    piece,
+                    face,
+                    (&setting, label),
+                    origin,
+                );
                 if let (Some(frame), Some(drawn)) = (frames.get(&view.index), &drawn) {
                     let room = spacing.get(&view.index).copied().unwrap_or_default();
                     let body = (top, top + sheet.height);
@@ -307,6 +319,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
                 width: pt(geometry.width) as f32,
                 height: pt(geometry.height) as f32,
                 ops,
+                lines: placed,
                 start: span.map(|(start, _)| start),
                 end: span.map(|(_, end)| end),
             }
@@ -1198,7 +1211,7 @@ struct Drawn {
 /// One piece of a block: its lines, each cut where its formatting changes, and the bullet in
 /// front of a list item's first line.
 fn lines(
-    ops: &mut Vec<Op>,
+    (ops, boxes): (&mut Vec<Op>, &mut Vec<LineBox>),
     app: &App,
     view: &BlockView,
     piece: &Piece,
@@ -1235,6 +1248,21 @@ fn lines(
             .map_or(line.start, |i| i + 1);
         let line_top = top as f32 + (line.top - first_top);
         let baseline = line_top + layout.baseline();
+        // A heading row drawn again on a later page is not somewhere a caret can be.
+        if !piece.repeat {
+            boxes.push(LineBox {
+                block: view.index,
+                start: line.start,
+                end: line.end,
+                top: line_top,
+                height: line.height,
+                baseline,
+                xs: (line.start..=line.end)
+                    .map(|offset| left as f32 + layout.x_on(at, offset))
+                    .collect(),
+                last: at + 1 == count,
+            });
+        }
         // A numbered heading's number or a list item's label, where its level puts it
         // ([`level_labels`]).
         if at == 0
@@ -1360,6 +1388,20 @@ fn lines(
                     }
                 }
                 let run: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
+                // What is drawn ends where the layout put the caret after it: shaping a piece
+                // alone and measuring its run whole must agree (`doc/page-model.md` PM1).
+                #[cfg(test)]
+                {
+                    let end = start + text.chars().count();
+                    if end < visible_end {
+                        let caret = left as f32 + layout.x_on(at, end);
+                        assert!(
+                            (x + run - caret).abs() < 0.01,
+                            "{text:?} drawn to {} with its caret at {caret}",
+                            x + run
+                        );
+                    }
+                }
                 // A link with no colour of its own is drawn as Writer draws an unstyled one,
                 // navy and underlined (`doc/odt-format.md` §5c, fact 12) — but not an index's
                 // entry, whose link Writer styles `Index Link`, plain (fact 16).
@@ -1861,6 +1903,29 @@ fn caption_layout(text: &str, measure: f64, body: &RoleFace<'_>) -> grind_core::
 }
 
 impl Figure {
+    /// The picture as somewhere a caret can be: before it at its left edge, after it — and
+    /// anywhere in its caption — at its right.
+    // ponytail: a caption's characters have no places of their own, so a click in one lands
+    // after the picture. Place its lines like a paragraph's when a caption is edited in a page.
+    fn line_box(&self, (x, y): (f64, f64), block: usize, length: usize) -> LineBox {
+        let (offset, _) = self
+            .align
+            .fit(self.measure as f32, self.width as f32, 0, true);
+        let left = x as f32 + offset;
+        let mut xs = vec![left + self.width as f32; length + 1];
+        xs[0] = left;
+        LineBox {
+            block,
+            start: 0,
+            end: length,
+            top: y as f32,
+            height: self.picture as f32,
+            baseline: (y + self.picture) as f32,
+            xs,
+            last: true,
+        }
+    }
+
     fn draw(
         &self,
         ops: &mut Vec<Op>,
