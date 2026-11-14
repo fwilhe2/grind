@@ -7,8 +7,9 @@
 //! theme. Rebuilt on every style change.
 //!
 //! `lookup_color` is deprecated in GTK 4.10 with no replacement, and is the only way to read a
-//! named theme colour; it is called here alone, with fallbacks. A page has fewer parts than a
-//! grid: paper, ink, a dimmed ink for furniture, the caret's accent and a table's rules.
+//! named theme colour; it is called here alone, with fallbacks. The one exception is the paper:
+//! a page is white in either theme (`doc/page-model.md` decision 5), so what is drawn on it
+//! is read against white.
 
 use libadwaita::gtk;
 use libadwaita::prelude::*;
@@ -20,8 +21,14 @@ const WHITE: gdk::RGBA = gdk::RGBA::WHITE;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Palette {
-    /// The page behind the text.
+    /// The view's own ground, which the desk is drawn over.
     pub background: gdk::RGBA,
+    /// The desk the pages lie on, laid over `background`.
+    pub desk: gdk::RGBA,
+    /// A page's shadow on the desk.
+    pub shadow: gdk::RGBA,
+    /// Marks on the paper that the document does not contain — a bookmark's name.
+    pub on_paper: gdk::RGBA,
     /// The text itself.
     pub foreground: gdk::RGBA,
     /// Anything the shell draws that the document does not contain — a list's bullet.
@@ -30,9 +37,6 @@ pub struct Palette {
     pub accent: gdk::RGBA,
     /// The band behind selected text.
     pub selection: gdk::RGBA,
-    /// A table's rules: quieter than the text, stronger than the furniture, derived from the
-    /// theme's ink.
-    pub rule: gdk::RGBA,
     /// A misspelt word's wavy underline — the theme's own error colour, the red libadwaita
     /// uses for a field that will not take what was typed.
     pub misspelt: gdk::RGBA,
@@ -42,18 +46,6 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// The page and the ink a document's own colours are read against
-    /// ([`crate::metrics::Paper`]).
-    pub fn paper(&self) -> crate::metrics::Paper {
-        let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        let rgb = |c: gdk::RGBA| (byte(c.red()), byte(c.green()), byte(c.blue()));
-        crate::metrics::Paper {
-            ink: rgb(self.foreground),
-            page: rgb(self.background),
-            link: rgb(self.accent),
-        }
-    }
-
     /// Read the palette out of `widget`'s current style.
     pub fn of(widget: &impl IsA<gtk::Widget>) -> Self {
         let widget = widget.as_ref();
@@ -67,11 +59,13 @@ impl Palette {
             background: named(widget, "view_bg_color")
                 .or_else(|| named(widget, "theme_base_color"))
                 .unwrap_or(WHITE),
+            desk: with_alpha(foreground, 0.08),
+            shadow: with_alpha(BLACK, 0.3),
+            on_paper: with_alpha(BLACK, 0.55),
             foreground,
             dim: with_alpha(foreground, 0.55),
             accent,
             selection: with_alpha(accent, 0.35),
-            rule: with_alpha(foreground, 0.28),
             misspelt: named(widget, "error_color").unwrap_or(gdk::RGBA::new(0.88, 0.11, 0.14, 1.0)),
             grammar: accent,
         }

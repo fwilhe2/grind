@@ -2,19 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document view: a custom widget that draws blocks and a caret, and owns neither. Every paint
-//! asks [`App::get_viewport`] for the blocks on screen and [`App::layout_block`] for their lines,
-//! draws them and throws both away; the only state is presentation — the caret, and the column it
-//! keeps while moving by lines.
+//! The document view: the pages as they will print, on a desk, with a caret, and owning
+//! neither. The pages are [`grind_print`]'s, set by a [`grind_print::session::Session`] and
+//! drawn from the very raster Print Preview shows; what is drawn over them — caret, selection,
+//! underlines — and every question about a point or a line is [`grind_print::place`]'s, over the
+//! line boxes the pages were set with (`doc/page-model.md` PM5).
 //!
 //! **Not `GtkTextView`**, whose `GtkTextBuffer` would be a second copy of the document with its
 //! own undo stack and no notion of a `text:h`.
 //!
-//! Every motion is the core's: Down-arrow is [`App::caret_line`], Home and End
-//! [`App::caret_line_bounds`], a click [`grind_core::layout::Layout::offset_at`], typing
-//! [`App::insert_text`], Enter [`App::split_block`], Backspace at a block's front [`App::erase`]
-//! across the boundary. This file decides which question to ask and where to draw the answer
-//! (`doc/text-layout.md`).
+//! Every edit is the core's: typing [`App::insert_text`], Enter [`App::split_block`],
+//! Backspace at a block's front [`App::erase`] across the boundary.
 //!
 //! Typing goes through `GtkIMMulticontext`, so dead keys, compose sequences and input methods
 //! work; [`crate::keymap`] never sees a printable character.
@@ -29,8 +27,6 @@ use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 
 use grind_text::{App, Caret};
 use gtk::glib;
-
-use crate::geom::Flow;
 
 glib::wrapper! {
     pub struct Doc(ObjectSubclass<imp::Doc>)
@@ -62,7 +58,7 @@ impl Doc {
     /// The document changed: forget everything measured from it and repaint. Called from the
     /// observer, so it covers this widget's own edits too (rule 3).
     pub fn invalidate(&self) {
-        self.imp().flow.replace(None);
+        self.imp().session.changed();
         self.imp().clamp_caret();
         // The observer runs *after* the edit's own caret move, which followed the caret
         // through the layout as it was before the edit — so Enter on the last line left the
@@ -288,7 +284,7 @@ pub fn grammar_menu_model(finding: &grind_text::grammar::Finding) -> gtk::gio::M
 /// A picture's bytes decoded for painting — what the page draws, and what the Alt Text dialog
 /// shows.
 pub fn texture(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
-    imp::texture_of(image)
+    gtk::gdk::Texture::from_bytes(&glib::Bytes::from(&image.data)).ok()
 }
 
 /// The right-click menu on the page: the clipboard, and nothing about the document as a whole,
@@ -322,24 +318,22 @@ mod imp {
     use super::*;
 
     use std::collections::HashMap;
+    use std::ops::Range;
 
-    use grind_core::layout::Layout;
+    use grind_print::place;
     use grind_text::{BlockKind, loc};
-    use gtk::graphene;
-    use gtk::pango;
     use gtk::subclass::prelude::*;
+    use gtk::{gdk, graphene, gsk};
 
-    use crate::geom::{self, Across};
     use crate::keymap::{self, Action, Key, Mods, Motion};
-    use crate::metrics::{Face, Faces, run_attributes};
+    use crate::strip::{self, Strip};
     use crate::theme::Palette;
 
     type NoticeHook = Box<dyn Fn(String)>;
     type MovedHook = Box<dyn Fn(Caret)>;
 
-    /// How thick the caret is, and how far a list bullet sits left of its text.
+    /// How thick the caret is, in pixels.
     const CARET: f64 = 1.5;
-    const BULLET_GAP: f64 = 14.0;
 
     pub struct Doc {
         pub app: RefCell<Option<Arc<App>>>,
@@ -348,21 +342,21 @@ mod imp {
         /// not "a selection at the caret" — see [`Doc::selection`], the one place that turns
         /// this and the caret into a range.
         pub anchor: Cell<Option<Caret>>,
-        /// The column the caret is trying to keep while moving by lines — see
-        /// [`App::caret_line`]. Cleared by any horizontal move, which is what makes walking
-        /// down through a short line and out the other side come back where it started.
+        /// The page x the caret is trying to keep while moving by lines ([`place::step`]).
+        /// Cleared by any horizontal move, which is what makes walking down through a short
+        /// line and out the other side come back where it started.
         pub goal_x: Cell<Option<f32>>,
         /// What `App::type_markdown` said the next character must be set in, so a notation
         /// ends where its closing marker does. Handed straight back and never read here.
         pub resume: RefCell<Option<grind_text::CharStyle>>,
-        /// Every block's box, cached against the width it was measured at.
-        ///
-        /// ponytail: rebuilt whole whenever the document or the width changes, laying out every
-        /// block rather than the changed ones — bounded by the document, not the screen. The
-        /// upgrade is a per-`BlockId` cache, which needs an invalidation rule the core does not
-        /// hand out.
-        pub flow: RefCell<Option<Placed>>,
-        pub faces: RefCell<Option<Rc<Faces>>>,
+        /// The document's pages, kept set between paints and told of every change.
+        pub session: grind_print::session::Session,
+        /// The pages and where each sits, at the zoom and width they were last asked for.
+        pub shown: RefCell<Option<Rc<Shown>>>,
+        /// Each page's pixels, kept until the page or the scale changes.
+        pub tiles: RefCell<HashMap<usize, Tile>>,
+        /// 1.0 is a page at its printed size on the screen.
+        pub zoom: Cell<f64>,
         pub palette: Cell<Option<Palette>>,
         /// Whether bookmark anchors are drawn (`doc/view-modes.md` §3.6) — a reading of the
         /// document, so turning it off puts the page back with nothing to save or undo.
@@ -410,8 +404,10 @@ mod imp {
                 anchor: Cell::new(None),
                 goal_x: Cell::new(None),
                 resume: RefCell::new(None),
-                flow: RefCell::new(None),
-                faces: RefCell::new(None),
+                session: grind_print::session::Session::new(false),
+                shown: RefCell::new(None),
+                tiles: RefCell::new(HashMap::new()),
+                zoom: Cell::new(1.0),
                 palette: Cell::new(None),
                 names: Cell::new(false),
                 hadjustment: RefCell::new(None),
@@ -465,10 +461,7 @@ mod imp {
 
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &glib::ParamSpec) {
             match pspec.name() {
-                "hadjustment" => {
-                    self.hadjustment.replace(value.get().ok());
-                }
-                "vadjustment" => {
+                name @ ("hadjustment" | "vadjustment") => {
                     let adjustment: Option<gtk::Adjustment> = value.get().ok();
                     // A scroll changes nothing in the document, so nothing else would ask
                     // for the repaint that draws the page it moved to.
@@ -479,7 +472,10 @@ mod imp {
                             move |_| doc.queue_draw()
                         ));
                     }
-                    self.vadjustment.replace(adjustment);
+                    match name {
+                        "hadjustment" => self.hadjustment.replace(adjustment),
+                        _ => self.vadjustment.replace(adjustment),
+                    };
                 }
                 "hscroll-policy" => self.hscroll_policy.set(value.get().unwrap()),
                 "vscroll-policy" => self.vscroll_policy.set(value.get().unwrap()),
@@ -686,9 +682,7 @@ mod imp {
         }
 
         fn size_allocate(&self, width: i32, height: i32, _baseline: i32) {
-            // A resize re-wraps every paragraph, so the height the scrollbar is sized against
-            // is only knowable here.
-            self.size_scrollbar(width, height);
+            self.size_scrollbars(width, height);
         }
 
         fn realize(&self) {
@@ -696,8 +690,7 @@ mod imp {
             self.restyle();
         }
 
-        /// A theme switch or a font change: everything derived from the style goes, including
-        /// every line break measured with the old font.
+        /// A theme switch: every colour drawn round and over the pages is read again.
         fn system_setting_changed(&self, setting: &gtk::SystemSetting) {
             self.parent_system_setting_changed(setting);
             self.restyle();
@@ -705,259 +698,25 @@ mod imp {
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
-            let width = f64::from(widget.width());
-            let height = f64::from(widget.height());
-            let Some(app) = self.app() else { return };
+            let (width, height) = (f64::from(widget.width()), f64::from(widget.height()));
             let palette = self.palette();
-            let faces = self.faces();
-            let flow = self.flow(width);
-            let (left, _) = geom::column(width);
-            let scroll = self.scroll();
-
-            snapshot.append_color(&palette.background, &rect(0.0, 0.0, width, height));
-
-            // A table's rules, under everything: one rectangle per cell, drawn as four thin
-            // bands rather than an outlined box, because a `gtk::Snapshot` has no stroke and
-            // two neighbouring cells sharing an edge must not draw it twice at different
-            // widths.
-            for cell in flow.cells() {
-                if cell.bottom() < scroll || cell.top > scroll + height {
-                    continue;
-                }
-                let (x, y) = (left + cell.left, cell.top - scroll);
-                for band in [
-                    rect(x, y, cell.width, geom::RULE),
-                    rect(x, y + cell.height - geom::RULE, cell.width, geom::RULE),
-                    rect(x, y, geom::RULE, cell.height),
-                    rect(x + cell.width - geom::RULE, y, geom::RULE, cell.height),
-                ] {
-                    snapshot.append_color(&palette.rule, &band);
-                }
-            }
-
-            let slots = flow.visible(scroll, scroll + height);
-            let Some((first, last)) = slots.first().zip(slots.last()) else {
+            let all = rect(0.0, 0.0, width, height);
+            snapshot.append_color(&palette.background, &all);
+            snapshot.append_color(&palette.desk, &all);
+            let (Some(app), Some(shown)) = (self.app(), self.shown()) else {
                 return;
             };
-            // One read for the whole paint, exactly as wide as the screen (rule 1).
-            let viewport = app.get_viewport(first.index..last.index + 1);
-            let caret = self.caret.get();
-            let selection = self.selection();
-            // The word still being typed is not underlined: the caret at its end with nothing
-            // selected is somebody halfway through it, and every word processor waits.
-            let misspelt: Vec<grind_text::Misspelling> = if self.speller.borrow().is_some() {
-                app.misspellings(first.index..last.index + 1)
-                    .into_iter()
-                    .filter(|m| selection.is_some() || !m.being_typed(caret))
-                    .collect()
-            } else {
-                Vec::new()
-            };
-            let misspelt_ink = palette.misspelt;
-            // Grammar findings, but not one ending at the caret: that is still being typed.
-            let flagged: Vec<grind_text::grammar::Flag> = self
-                .grammar_flags(first.index..last.index + 1)
-                .into_iter()
-                .filter(|f| {
-                    selection.is_some()
-                        || !(f.block == caret.block && f.finding.range.end == caret.offset)
-                })
-                .collect();
-
-            for slot in slots {
-                let Some(block) = viewport.get(slot.index) else {
-                    continue;
-                };
-                let x = left + slot.indent;
-                let y = slot.top - scroll;
-
-                // A picture block, optionally with its caption's text, is drawn as one rather than
-                // as the placeholder character `Run::Image::text()` returns elsewhere.
-                if let Some((image, caption)) = picture_of(block) {
-                    let Some(texture) = texture_of(image) else {
-                        continue;
-                    };
-                    let (w, h) = image_size(&texture, slot.width);
-                    snapshot.append_texture(&texture, &rect(x, y, w, h));
-                    if selection.is_none() && slot.index == caret.block && widget.is_focus() {
-                        snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
-                    }
-                    if let Some(caption) = caption {
-                        let caption_y = y + h + CAPTION_GAP;
-                        draw_at(
-                            snapshot,
-                            faces.body().draw_wrapped(caption, slot.width),
-                            x,
-                            caption_y,
-                            palette.dim,
-                        );
-                    }
-                    continue;
-                }
-
-                let style = block.style.as_deref();
-                let face = faces.of(&block.kind, style);
-                let Ok(layout) = app.layout_block(slot.index, slot.width as f32, face) else {
-                    continue;
-                };
-                let text: Vec<char> = block.text.chars().collect();
-                let ink = match style {
-                    Some("Subtitle") => palette.dim,
-                    _ => palette.foreground,
-                };
-
-                if let Some(mark) = block.mark() {
-                    // A list's mark is drawn, not inserted: a character in the document would be
-                    // one the caret could sit inside. Its number or its style's bullet
-                    // (`BlockView::mark`); a label wider than a bullet ends where the bullet's
-                    // room does.
-                    let layout = face.draw(mark);
-                    let wide = f64::from(layout.pixel_size().0);
-                    draw_at(
-                        snapshot,
-                        layout,
-                        x - BULLET_GAP.max(wide + BULLET_GAP / 3.0),
-                        y,
-                        palette.dim,
-                    );
-                }
-
-                // The selection's band, one rectangle per line it crosses, drawn under the
-                // text so a run painted over it stays legible.
-                if let Some((start, end)) = selection
-                    .and_then(|(from, to)| grind_text::paint::covered(slot.index, from, to))
-                {
-                    for line in layout.lines() {
-                        if let Some((left, right)) =
-                            grind_text::paint::band(&layout, line, start, end)
-                        {
-                            snapshot.append_color(
-                                &palette.selection,
-                                &rect(
-                                    x + f64::from(left),
-                                    y + f64::from(line.top),
-                                    f64::from(right - left),
-                                    f64::from(line.height),
-                                ),
-                            );
-                        }
-                    }
-                }
-
-                for line in layout.lines() {
-                    let piece: String = text[line.start.min(text.len())..line.end.min(text.len())]
-                        .iter()
-                        .collect();
-                    // A line's `end` includes the break that ended it, and a newline handed
-                    // to Pango would start a second line inside this one.
-                    let piece = piece.trim_end_matches('\n');
-                    let attrs = run_attributes(
-                        &block.runs,
-                        line.start,
-                        line.end,
-                        piece,
-                        face.size(),
-                        palette.paper(),
-                    );
-                    draw_at(
-                        snapshot,
-                        face.draw_styled(piece, &attrs),
-                        x,
-                        y + f64::from(line.top),
-                        ink,
-                    );
-                }
-
-                // A misspelt word's wavy underline, under each line it crosses — `paint::band` is
-                // the selection's own arithmetic, so a word that wraps is underlined on both
-                // lines exactly where its characters are.
-                for wrong in misspelt.iter().filter(|m| m.block == slot.index) {
-                    for line in layout.lines() {
-                        if let Some((left, right)) = grind_text::paint::band(
-                            &layout,
-                            line,
-                            wrong.offset,
-                            wrong.offset + wrong.len,
-                        ) {
-                            squiggle(
-                                snapshot,
-                                x + f64::from(left),
-                                x + f64::from(right),
-                                y + f64::from(line.top + line.height) - 2.0,
-                                misspelt_ink,
-                            );
-                        }
-                    }
-                }
-
-                // A grammar finding: a wavy line in the accent for grammar and punctuation, a
-                // dotted one in the dimmed ink for typography and style (`doc/grammar.md`
-                // decision 2). An empty one (a missing comma) is marked across its neighbours.
-                for flag in flagged.iter().filter(|f| f.block == slot.index) {
-                    let range = &flag.finding.range;
-                    let (from, to) = if range.is_empty() {
-                        (range.start.saturating_sub(1), range.end + 1)
-                    } else {
-                        (range.start, range.end)
-                    };
-                    let quiet = matches!(
-                        flag.finding.kind,
-                        grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
-                    );
-                    for line in layout.lines() {
-                        if let Some((left, right)) =
-                            grind_text::paint::band(&layout, line, from, to)
-                        {
-                            let (left, right) = (x + f64::from(left), x + f64::from(right));
-                            let under = y + f64::from(line.top + line.height) - 1.0;
-                            if quiet {
-                                dotted(snapshot, left, right, under, palette.dim);
-                            } else {
-                                squiggle(snapshot, left, right, under - 1.0, palette.grammar);
-                            }
-                        }
-                    }
-                }
-
-                // A bookmark contributes no characters, so it is the one part of a text document a
-                // reader cannot see (`doc/view-modes.md` §3.6). The anchor gets a tick at its own
-                // offset (`x_at`), and the name is written at the end of its line, where it cannot
-                // push the text along.
-                if self.names.get() {
-                    for (at, name) in &block.marks {
-                        let line = layout.lines()[layout.line_at(*at)];
-                        snapshot.append_color(
-                            &palette.dim,
-                            &rect(
-                                x + f64::from(layout.x_at(*at)) - 1.0,
-                                y + f64::from(line.top),
-                                2.0,
-                                f64::from(line.height),
-                            ),
-                        );
-                        draw_at(
-                            snapshot,
-                            faces.body().draw(&format!("  \u{2039}{name}\u{203a}")),
-                            x + f64::from(line.width),
-                            y + f64::from(line.top),
-                            palette.dim,
-                        );
-                    }
-                }
-
-                if selection.is_none() && slot.index == caret.block && widget.is_focus() {
-                    let line = layout.lines()[layout.line_at(caret.offset)];
-                    snapshot.append_color(
-                        &palette.accent,
-                        &rect(
-                            x + f64::from(layout.x_at(caret.offset)),
-                            y + f64::from(line.top),
-                            CARET,
-                            f64::from(line.height),
-                        ),
-                    );
-                }
-            }
+            let (left, top) = self.scrolled();
+            snapshot.save();
+            // Whole pixels, or every page would be resampled between two.
+            snapshot.translate(&graphene::Point::new(
+                -left.round() as f32,
+                -top.round() as f32,
+            ));
+            let pages = shown.strip.visible(top, top + height);
+            self.draw_pages(snapshot, &app, &shown, pages.clone());
+            self.draw_marks(snapshot, &app, &shown, pages);
+            snapshot.restore();
         }
     }
 
@@ -968,11 +727,15 @@ mod imp {
             self.app.borrow().clone()
         }
 
-        fn scroll(&self) -> f64 {
-            self.vadjustment
-                .borrow()
-                .as_ref()
-                .map_or(0.0, gtk::prelude::AdjustmentExt::value)
+        /// How far the view is scrolled, across and down, in pixels.
+        fn scrolled(&self) -> (f64, f64) {
+            let value = |adjustment: &RefCell<Option<gtk::Adjustment>>| {
+                adjustment
+                    .borrow()
+                    .as_ref()
+                    .map_or(0.0, gtk::prelude::AdjustmentExt::value)
+            };
+            (value(&self.hadjustment), value(&self.vadjustment))
         }
 
         fn palette(&self) -> Palette {
@@ -984,119 +747,207 @@ mod imp {
             palette
         }
 
-        pub fn faces(&self) -> Rc<Faces> {
-            if let Some(faces) = self.faces.borrow().as_ref() {
-                return faces.clone();
-            }
-            let faces = Rc::new(Faces::new(&self.obj().pango_context()));
-            self.faces.replace(Some(faces.clone()));
-            faces
-        }
-
         /// Drop everything derived from the style and derive it again.
         fn restyle(&self) {
             self.palette.set(None);
-            self.faces.replace(None);
-            // Line breaking is font-dependent, so a new font is a new set of lines.
-            self.flow.replace(None);
             self.obj().queue_allocate();
             self.obj().queue_draw();
         }
 
-        /// Every block's box, measured at this width — cached, because a scroll must not
-        /// re-lay-out the document.
-        pub fn flow(&self, width: f64) -> Rc<Flow> {
-            self.placed(width).flow
-        }
-
-        /// The flow and the table-cell measures it was built with, for a widget `width` wide —
-        /// cached against the column they were measured at.
-        fn placed(&self, width: f64) -> Placed {
-            let (_, column) = geom::column(width);
-            if let Some(placed) = self.flow.borrow().as_ref()
-                && placed.column == column
-            {
-                return placed.clone();
-            }
-            let placed = self.place(column);
-            self.flow.replace(Some(placed.clone()));
-            placed
-        }
-
-        /// Stack every block at `column` — `grind_text::flow`, the one stacking every shell that
-        /// draws a page shares, handed this window's numbers, its Pango faces and a way to size a
-        /// picture.
-        fn place(&self, column: f64) -> Placed {
-            let Some(app) = self.app() else {
-                return Placed {
-                    column,
-                    flow: Rc::new(Flow::new(geom::MARGIN, column)),
-                    across: Rc::default(),
-                };
-            };
-            // Before the faces, which read it: a cell's measure is a fact about the table's
-            // shape and the column, and nothing about how tall anything is.
-            let across = Rc::new(grind_text::flow::across(&app, column, &geom::SPACING));
-            let faces = Column {
-                faces: self.faces(),
-                column,
-                across: across.clone(),
-            };
-            let picture = |block: &grind_text::BlockView, width: f64| {
-                picture_height(block, width, &faces.faces)
-            };
-            let flow = grind_text::flow::lay_out(&app, &faces, column, &geom::SPACING, &picture);
-            Placed {
-                column,
-                flow: Rc::new(flow),
-                across,
-            }
-        }
-
-        /// One block's lines, measured in its own face — what a caret operation is asked in.
-        ///
-        /// Every caller needs the same three things and getting one of them from a different
-        /// block's face would put the caret in the wrong place, so they are fetched together.
-        pub fn measured(&self, index: usize) -> Option<(Layout, Rc<Faces>, BlockKind)> {
+        /// The document's pages as they are now and where each sits in this window — rebuilt
+        /// when the pages, the zoom or the width changed, and otherwise the same pair, so that
+        /// a click and the paint before it read one layout.
+        pub fn shown(&self) -> Option<Rc<Shown>> {
             let app = self.app()?;
-            let viewport = app.get_viewport(index..index + 1);
-            let block = viewport.get(index)?;
-            let kind = block.kind.clone();
-            let style = block.style.clone();
-            let faces = self.faces();
-            // The width this block was actually laid out at, which is its *cell's* inside a
-            // table and the column less its indent everywhere else. Taken from the flow rather
-            // than recomputed, so that a caret operation and the paint cannot disagree.
-            let width = self.width_of(index, &kind) as f32;
-            let layout = app
-                .layout_block(index, width, faces.of(&kind, style.as_deref()))
-                .ok()?;
-            Some((layout, faces, kind))
+            let set = self.session.document(&app);
+            let window = f64::from(self.obj().width());
+            let scale = f64::from(crate::print::pixels_per_point(self.zoom.get(), 1.0));
+            let key = (window.to_bits(), scale.to_bits());
+            if let Some(shown) = self.shown.borrow().as_ref()
+                && Rc::ptr_eq(&shown.set, &set)
+                && shown.key == key
+            {
+                return Some(shown.clone());
+            }
+            let sizes = set.pages.iter().map(|page| (page.width, page.height));
+            let strip = Strip::new(sizes, scale, window);
+            let shown = Rc::new(Shown { set, strip, key });
+            self.shown.replace(Some(shown.clone()));
+            Some(shown)
         }
 
-        /// The measure one block is laid out at: what [`Flow`] placed it with, and the column
-        /// less its own indent when there is no flow yet (before the first allocation).
-        fn width_of(&self, index: usize, kind: &BlockKind) -> f64 {
-            let (_, column) = geom::column(f64::from(self.obj().width()));
-            self.flow
-                .borrow()
-                .as_ref()
-                .and_then(|placed| placed.flow.slot(index).map(|slot| slot.width))
-                .unwrap_or_else(|| geom::SPACING.measure(kind, column))
+        /// Each page in `pages` on its shadow, from its kept raster or a new one.
+        fn draw_pages(
+            &self,
+            snapshot: &gtk::Snapshot,
+            app: &App,
+            shown: &Shown,
+            pages: Range<usize>,
+        ) {
+            let palette = self.palette();
+            let screen = f64::from(self.obj().scale_factor().max(1));
+            // The screen's own pixels, so a HiDPI screen gets its extra ones as sharpness.
+            let scale = crate::print::pixels_per_point(self.zoom.get(), screen);
+            let setter = self.session.typesetter(app);
+            let mut tiles = self.tiles.borrow_mut();
+            // The pages in view and one either side, which a scroll reaches first.
+            let keep = pages.start.saturating_sub(1)..pages.end + 1;
+            tiles.retain(|number, _| keep.contains(number));
+            for number in pages {
+                let (Some(page), Some(sheet)) =
+                    (shown.set.pages.get(number), shown.strip.sheet(number))
+                else {
+                    continue;
+                };
+                let area = rect(sheet.x, sheet.y, sheet.width, sheet.height);
+                snapshot.append_outset_shadow(
+                    &gsk::RoundedRect::from_rect(area, 0.0),
+                    &palette.shadow,
+                    0.0,
+                    1.0,
+                    0.0,
+                    4.0,
+                );
+                let kept = tiles
+                    .get(&number)
+                    .is_some_and(|tile| tile.scale == scale.to_bits() && tile.page == *page);
+                if !kept {
+                    let raster = grind_print::raster::render(page, setter.fonts(), scale);
+                    let texture = gdk::MemoryTexture::new(
+                        raster.width as i32,
+                        raster.height as i32,
+                        gdk::MemoryFormat::R8g8b8a8Premultiplied,
+                        &glib::Bytes::from_owned(raster.rgba),
+                        raster.width as usize * 4,
+                    );
+                    tiles.insert(
+                        number,
+                        Tile {
+                            page: page.clone(),
+                            scale: scale.to_bits(),
+                            texture: texture.upcast(),
+                        },
+                    );
+                }
+                if let Some(tile) = tiles.get(&number) {
+                    snapshot.append_texture(&tile.texture, &area);
+                }
+            }
         }
 
-        /// How each block is set — this window's [`grind_text::Faces`], which every motion by line
-        /// asks through. Rebuilt per question: the faces change with the theme, the column with a
-        /// resize.
-        fn column(&self) -> Column {
-            // The cached measures give a table cell's width, which no rule about a block's kind
-            // can. Cloned rather than rebuilt, or the document would be laid out once per
-            // keystroke.
-            let placed = self.placed(f64::from(self.obj().width()));
-            Column {
-                faces: self.faces(),
-                column: placed.column,
-                across: placed.across,
+        /// What is drawn over the pages and is not on them: the selection, spelling and grammar
+        /// underlines, bookmark names and the caret.
+        fn draw_marks(
+            &self,
+            snapshot: &gtk::Snapshot,
+            app: &App,
+            shown: &Shown,
+            pages: Range<usize>,
+        ) {
+            let palette = self.palette();
+            let (set, strip) = (&shown.set, &shown.strip);
+            let caret = self.caret.get();
+            let selection = self.selection();
+            // A run of text as rectangles in the strip, one per line it crosses.
+            let bands = |from: Caret, to: Caret| {
+                place::selection_on(set, pages.clone(), from, to)
+                    .into_iter()
+                    .filter_map(|(number, band)| {
+                        let (x, y) = strip.in_strip(number, band.x, band.y)?;
+                        let scale = strip.scale();
+                        Some((
+                            x,
+                            y,
+                            f64::from(band.width) * scale,
+                            f64::from(band.height) * scale,
+                        ))
+                    })
+            };
+            if let Some((from, to)) = selection {
+                for (x, y, w, h) in bands(from, to) {
+                    snapshot.append_color(&palette.selection, &rect(x, y, w, h));
+                }
+            }
+            let Some(blocks) = blocks_on(set, pages.clone()) else {
+                return;
+            };
+            let at = |block: usize, offset: usize| Caret { block, offset };
+
+            // The word still being typed is not underlined: the caret at its end with nothing
+            // selected is somebody halfway through it, and every word processor waits.
+            if self.speller.borrow().is_some() {
+                for wrong in app.misspellings(blocks.clone()) {
+                    if selection.is_none() && wrong.being_typed(caret) {
+                        continue;
+                    }
+                    let (from, to) = (wrong.offset, wrong.offset + wrong.len);
+                    for (x, y, w, h) in bands(at(wrong.block, from), at(wrong.block, to)) {
+                        squiggle(snapshot, x, x + w, y + h - 2.0, palette.misspelt);
+                    }
+                }
+            }
+
+            // A grammar finding: a wavy line in the accent for grammar and punctuation, a
+            // dotted one in the dimmed ink for typography and style (`doc/grammar.md`
+            // decision 2). An empty one (a missing comma) is marked across its neighbours. Not
+            // one ending at the caret: that is still being typed.
+            for flag in self.grammar_flags(blocks.clone()) {
+                let range = &flag.finding.range;
+                if selection.is_none() && flag.block == caret.block && range.end == caret.offset {
+                    continue;
+                }
+                let (from, to) = if range.is_empty() {
+                    (range.start.saturating_sub(1), range.end + 1)
+                } else {
+                    (range.start, range.end)
+                };
+                let quiet = matches!(
+                    flag.finding.kind,
+                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                );
+                for (x, y, w, h) in bands(at(flag.block, from), at(flag.block, to)) {
+                    if quiet {
+                        dotted(snapshot, x, x + w, y + h - 1.0, palette.on_paper);
+                    } else {
+                        squiggle(snapshot, x, x + w, y + h - 2.0, palette.grammar);
+                    }
+                }
+            }
+
+            // A bookmark contributes no characters, so it is the one part of a text document a
+            // reader cannot see (`doc/view-modes.md` §3.6): a tick at its offset, and its name
+            // past the end of its line, where it cannot cover the text.
+            if self.names.get() {
+                let viewport = app.get_viewport(blocks.clone());
+                for index in blocks {
+                    let Some(block) = viewport.get(index) else {
+                        continue;
+                    };
+                    for (offset, name) in &block.marks {
+                        let anchor = at(index, *offset);
+                        let Some((x, y, h)) = spot_of(shown, anchor) else {
+                            continue;
+                        };
+                        snapshot.append_color(&palette.on_paper, &rect(x - 1.0, y, 2.0, h));
+                        let end = place::line_bounds(set, anchor)
+                            .and_then(|(_, end)| spot_of(shown, end))
+                            .map_or(x, |(x, ..)| x);
+                        let label = self
+                            .obj()
+                            .create_pango_layout(Some(&format!("  \u{2039}{name}\u{203a}")));
+                        snapshot.save();
+                        snapshot.translate(&graphene::Point::new(end as f32, y as f32));
+                        snapshot.append_layout(&label, &palette.on_paper);
+                        snapshot.restore();
+                    }
+                }
+            }
+
+            if selection.is_none()
+                && self.obj().is_focus()
+                && let Some((x, y, h)) = spot_of(shown, caret)
+            {
+                snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
             }
         }
 
@@ -1168,7 +1019,6 @@ mod imp {
                 false => self.anchor.set(None),
                 true => {}
             }
-            let faces = self.column();
             match motion {
                 Motion::Char(delta) => {
                     self.goal_x.set(None);
@@ -1179,29 +1029,29 @@ mod imp {
                     self.move_caret(self.word_stepped(&app, delta), true);
                 }
                 Motion::Line(steps) | Motion::Page(steps) => {
-                    // A page is however many body lines fit, less one so that the line you
-                    // were reading is still on screen after the jump.
-                    let lines = match motion {
-                        Motion::Page(_) => {
-                            let fit = f64::from(self.obj().height()) / self.faces().body().height();
-                            (fit as isize - 1).max(1)
+                    let Some(shown) = self.shown() else { return };
+                    let spot = place::locate(&shown.set, caret);
+                    // A page is however many of the caret's lines fit, less one so that the line
+                    // you were reading is still on screen after the jump.
+                    let lines = match (motion, spot) {
+                        (Motion::Page(_), Some(spot)) => {
+                            let line = f64::from(spot.height) * shown.strip.scale();
+                            ((f64::from(self.obj().height()) / line.max(1.0)) as isize - 1).max(1)
                         }
                         _ => 1,
                     };
-                    let delta = steps as isize * lines;
                     // Remembered across a run of Down presses, which is what `goal_x` is for.
-                    let goal = match self.goal_x.get() {
-                        Some(x) => x,
-                        None => app.caret_x(caret, &faces).unwrap_or(0.0),
-                    };
+                    let goal = self.goal_x.get().or(spot.map(|spot| spot.x)).unwrap_or(0.0);
                     self.goal_x.set(Some(goal));
-                    if let Ok(moved) = app.caret_line(caret, delta, goal, &faces) {
-                        self.move_caret(moved, false);
-                    }
+                    let delta = steps as isize * lines;
+                    self.move_caret(place::step(&shown.set, caret, delta, goal), false);
                 }
                 Motion::LineStart | Motion::LineEnd => {
                     self.goal_x.set(None);
-                    if let Ok((start, end)) = app.caret_line_bounds(caret, &faces) {
+                    let bounds = self
+                        .shown()
+                        .and_then(|shown| place::line_bounds(&shown.set, caret));
+                    if let Some((start, end)) = bounds {
                         self.move_caret(
                             match motion {
                                 Motion::LineStart => start,
@@ -1232,20 +1082,15 @@ mod imp {
             grind_text::caret::block_len(app, index)
         }
 
-        /// The block and offset a point in the widget lands on: which block the pointer is
-        /// over, then which line, then where on it — the same two questions in the same
-        /// order the core answers them, so a click and a Down-arrow land on the same offset.
-        fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
-            let width = f64::from(self.obj().width());
-            let flow = self.flow(width);
-            let (left, _) = geom::column(width);
-            let scroll = self.scroll();
-            // Both coordinates, measured from the column's left edge: inside a table the cells
-            // of one row share a band of the page, so "which block" is a horizontal question
-            // as well as a vertical one.
-            grind_text::caret::hit(&flow, x - left, y + scroll, |index| {
-                self.measured(index).map(|(layout, _, _)| layout)
-            })
+        /// The caret a point in the widget means: the page under it, or the nearer of two, and
+        /// on that page [`place::hit`] — a click in a margin is the text beside it.
+        pub(super) fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
+            let shown = self.shown()?;
+            let (left, top) = self.scrolled();
+            let (x, y) = (x + left, y + top);
+            let page = shown.strip.page_at(y)?;
+            let (x, y) = shown.strip.on_page(page, x, y)?;
+            place::hit(&shown.set, page, x, y)
         }
 
         /// The press that starts a click or a drag — no telling which yet, so both are seeded
@@ -1502,24 +1347,24 @@ mod imp {
         }
 
         pub fn caret_rect(&self) -> Option<gtk::gdk::Rectangle> {
-            let widget = self.obj();
-            if widget.width() == 0 {
-                return None;
-            }
-            let flow = self.flow(f64::from(widget.width()));
-            let caret = self.caret.get();
-            let slot = flow.slot(caret.block)?;
-            let (layout, _, _) = self.measured(caret.block)?;
-            let line = layout.lines()[layout.line_at(caret.offset)];
-            let (left, _) = geom::column(f64::from(widget.width()));
-            let x = left + slot.indent + f64::from(layout.x_at(caret.offset));
-            let y = slot.top - self.scroll() + f64::from(line.top);
+            let (x, y, height) = self.point_of(self.caret.get())?;
             Some(gtk::gdk::Rectangle::new(
                 x as i32,
                 y as i32,
                 1,
-                f64::from(line.height) as i32,
+                height as i32,
             ))
+        }
+
+        /// Where a caret is drawn in the widget: its x, its top and its height, in pixels.
+        /// `None` before the first allocation, or for a caret in text on no page.
+        pub fn point_of(&self, caret: Caret) -> Option<(f64, f64, f64)> {
+            if self.obj().width() == 0 {
+                return None;
+            }
+            let (x, y, height) = spot_of(&*self.shown()?, caret)?;
+            let (left, top) = self.scrolled();
+            Some((x - left, y - top, height))
         }
 
         /// Dragging with the button down: the anchor [`Doc::click`] planted stays put and
@@ -1759,35 +1604,45 @@ mod imp {
             if widget.width() == 0 || widget.height() == 0 {
                 return;
             }
-            let flow = self.flow(f64::from(widget.width()));
-            let caret = self.caret.get();
-            let Some(slot) = flow.slot(caret.block) else {
-                return;
-            };
-            let Some((layout, _, _)) = self.measured(caret.block) else {
-                return;
-            };
-            let line = layout.lines()[layout.line_at(caret.offset)];
-            let target = (slot.top + f64::from(line.top), f64::from(line.height));
             // An edit that grew the document (Enter on the last line) is followed before the
             // next allocation sizes the scrollbar for it, and an adjustment clamps a value past
             // its old end — so the caret stopped a line short of the view. Size it now.
-            self.size_scrollbar(widget.width(), widget.height());
-            let Some(adjustment) = self.vadjustment.borrow().clone() else {
+            self.size_scrollbars(widget.width(), widget.height());
+            let Some(shown) = self.shown() else { return };
+            let Some((x, y, height)) = spot_of(&shown, self.caret.get()) else {
                 return;
             };
-            let page = f64::from(widget.height());
-            adjustment.set_value(flow.follow(adjustment.value(), page, target));
+            let (across, down) = shown.strip.size();
+            if let Some(adjustment) = self.vadjustment.borrow().as_ref() {
+                let view = f64::from(widget.height());
+                adjustment.set_value(strip::follow(adjustment.value(), view, down, y, height));
+            }
+            // A little room either side, so the caret is not on the window's very edge.
+            if let Some(adjustment) = self.hadjustment.borrow().as_ref() {
+                let view = f64::from(widget.width());
+                let room = strip::GAP;
+                let to = strip::follow(adjustment.value(), view, across, x - room, 2.0 * room);
+                adjustment.set_value(to);
+            }
         }
 
-        /// Size the scrollbar to the document as it is now laid out at `width`.
-        fn size_scrollbar(&self, width: i32, height: i32) {
-            let flow = self.flow(f64::from(width));
+        /// Size both scrollbars to the strip of pages in a window this big.
+        fn size_scrollbars(&self, width: i32, height: i32) {
+            let Some(shown) = self.shown() else { return };
+            let (across, down) = shown.strip.size();
+            // A line of twelve-point text, which is what a wheel notch is counted in.
+            let line = 16.0 * shown.strip.scale();
+            configure(
+                self.hadjustment.borrow().as_ref(),
+                f64::from(width).max(1.0),
+                across,
+                line,
+            );
             configure(
                 self.vadjustment.borrow().as_ref(),
                 f64::from(height).max(1.0),
-                flow.height() + geom::MARGIN,
-                self.faces().body().height(),
+                down,
+                line,
             );
         }
 
@@ -1815,95 +1670,43 @@ mod imp {
         }
     }
 
-    /// Whether a block is a picture, optionally followed by its caption's plain text
-    /// (`grind_text::picture_of`).
-    pub(super) fn picture_of(
-        block: &grind_text::BlockView,
-    ) -> Option<(&grind_text::ImageView, Option<&str>)> {
-        grind_text::picture_of(block)
+    /// The pages as set, and where each sits at one zoom in one window.
+    pub struct Shown {
+        pub set: Rc<grind_print::ops::Document>,
+        pub strip: Strip,
+        /// The window's width and the scale, as bits: what the strip was built for.
+        key: (u64, u64),
     }
 
-    /// Decode an embedded image's bytes into something [`gtk::Snapshot`] paints. `None` for
-    /// anything gdk-pixbuf has no loader for, which is no reason to refuse the rest of the
-    /// document.
-    ///
-    /// ponytail: decoded on every repaint, so a large image costs on every caret blink. Worth a
-    /// cache keyed by `BlockId`, invalidated as `Doc::flow` is, once a document with real images
-    /// makes the cost visible.
-    pub(super) fn texture_of(image: &grind_text::ImageView) -> Option<gtk::gdk::Texture> {
-        gtk::gdk::Texture::from_bytes(&glib::Bytes::from(&image.data)).ok()
+    /// One page's pixels, and the page and scale they were drawn from.
+    pub struct Tile {
+        page: grind_print::ops::Page,
+        scale: u32,
+        texture: gdk::Texture,
     }
 
-    /// How big to draw a texture: fit the column, keep the aspect ratio, never larger than its
-    /// pixels. ODF's `svg:width`/`svg:height` are not used: a length needs a resolution this shell
-    /// does not track.
-    pub(super) fn image_size(texture: &gtk::gdk::Texture, column: f64) -> (f64, f64) {
-        let (w, h) = (
-            f64::from(texture.width()).max(1.0),
-            f64::from(texture.height()).max(1.0),
-        );
-        let width = w.min(column.max(1.0));
-        (width, h * (width / w))
+    /// Where a caret is drawn in the strip: its x, its top and its height, in pixels.
+    fn spot_of(shown: &Shown, caret: Caret) -> Option<(f64, f64, f64)> {
+        let spot = place::locate(&shown.set, caret)?;
+        let (x, y) = shown.strip.in_strip(spot.page, spot.x, spot.top)?;
+        Some((x, y, f64::from(spot.height) * shown.strip.scale()))
     }
 
-    /// The gap between a picture and its caption — small, since the two read as one figure.
-    const CAPTION_GAP: f64 = 4.0;
-
-    /// How tall a caption's text comes out, wrapped to the column — measured with the same
-    /// layout it will later be drawn with (`Face::draw_wrapped`), so the flow's reserved space
-    /// and the paint always agree.
-    pub(super) fn caption_height(face: &Face, text: &str, width: f64) -> f64 {
-        f64::from(face.draw_wrapped(text, width).pixel_size().1)
-    }
-
-    /// The measure and face of every block — this shell's [`grind_text::Faces`]. Neither is
-    /// uniform: a heading is set larger than the paragraph under it, and a list item's indent
-    /// narrows it, which is why the core asks per block.
-    pub(super) struct Column {
-        faces: Rc<Faces>,
-        /// The text column's width in pixels, before any indent comes out of it.
-        column: f64,
-        /// Where every block in a table cell sits across the column (`grind_text::flow::across`) —
-        /// what knows a block is in a cell and measured narrower. The flow was built through this
-        /// same `Faces`, so a motion and the paint agree on a cell's width.
-        across: Rc<HashMap<usize, Across>>,
-    }
-
-    impl grind_text::Faces for Column {
-        fn of(
-            &self,
-            index: usize,
-            kind: &BlockKind,
-            style: Option<&str>,
-        ) -> (f32, &dyn grind_text::Metrics) {
-            let width = match self.across.get(&index) {
-                Some(across) => across.width,
-                None => geom::SPACING.measure(kind, self.column),
-            };
-            (width as f32, self.faces.of(kind, style))
-        }
-    }
-
-    /// The flow at one column width, and the table-cell measures it was built with — cached
-    /// together, because a caret motion reads the one and a paint the other and both have to be
-    /// the same build.
-    #[derive(Clone)]
-    pub struct Placed {
-        column: f64,
-        flow: Rc<Flow>,
-        across: Rc<HashMap<usize, Across>>,
-    }
-
-    /// How tall a picture block comes out at `width` — the picture fitted to it and its
-    /// caption's lines under it — or `None` when the block is not a picture or its bytes will not
-    /// decode, in which case `grind_text::flow` measures it as text.
-    fn picture_height(block: &grind_text::BlockView, width: f64, faces: &Faces) -> Option<f64> {
-        let (image, caption) = picture_of(block)?;
-        let picture = image_size(&texture_of(image)?, width).1;
-        Some(match caption {
-            Some(caption) => picture + CAPTION_GAP + caption_height(faces.body(), caption, width),
-            None => picture,
-        })
+    /// The blocks with a line on `pages` — what a paint asks the core about. Table cells can
+    /// put blocks out of order on a page, so it is the lowest to the highest.
+    fn blocks_on(set: &grind_print::ops::Document, pages: Range<usize>) -> Option<Range<usize>> {
+        let blocks = set
+            .pages
+            .get(pages)?
+            .iter()
+            .flat_map(|page| &page.lines)
+            .map(|line| line.block);
+        let (low, high) = blocks.fold(None, |range: Option<(usize, usize)>, block| {
+            Some(range.map_or((block, block), |(low, high)| {
+                (low.min(block), high.max(block))
+            }))
+        })?;
+        Some(low..high + 1)
     }
 
     /// A wavy underline from `left` to `right` with its troughs on `y` — a misspelt word's mark,
@@ -1936,25 +1739,12 @@ mod imp {
         }
     }
 
-    fn draw_at(
-        snapshot: &gtk::Snapshot,
-        layout: &pango::Layout,
-        x: f64,
-        y: f64,
-        color: gtk::gdk::RGBA,
-    ) {
-        snapshot.save();
-        snapshot.translate(&graphene::Point::new(x as f32, y as f32));
-        snapshot.append_layout(layout, &color);
-        snapshot.restore();
-    }
-
     fn rect(x: f64, y: f64, w: f64, h: f64) -> graphene::Rect {
         graphene::Rect::new(x as f32, y as f32, w as f32, h as f32)
     }
 
-    /// Size the scrollbar. Unlike a spreadsheet's, a document has an end, so `upper` is
-    /// simply how tall it is.
+    /// Size a scrollbar. Unlike a spreadsheet's, a document has an end, so `upper` is
+    /// simply how big it is.
     fn configure(adjustment: Option<&gtk::Adjustment>, page: f64, height: f64, step: f64) {
         let Some(adjustment) = adjustment else { return };
         let upper = height.max(page);
@@ -2004,9 +1794,8 @@ pub fn caret_of(app: &App, address: &str) -> Result<Caret, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::geom;
+    use grind_print::place;
     use grind_text::BlockKind;
-    use imp::{caption_height, image_size, picture_of, texture_of};
 
     /// **Every case that needs a widget, in one test, on one thread — on purpose.** GTK may be
     /// initialised once and used only from that thread, and the test harness gives every `#[test]`
@@ -2014,7 +1803,7 @@ mod tests {
     /// one entry point, each naming itself as it starts.
     ///
     /// **With no display it skips**, as in CI (`gtk.yml` installs GTK but no compositor).
-    /// Everything decidable without one is in `geom.rs`, `keymap.rs` and `imp`'s own tests.
+    /// Everything decidable without one is in `strip.rs`, `keymap.rs` and `grind_print::place`.
     #[test]
     fn the_widget() {
         if gtk::init().is_err() {
@@ -2067,20 +1856,16 @@ mod tests {
             the_find_bar_replaces_every_exact_occurrence,
         ),
         (
-            "a Title style is drawn in a larger face than the body",
-            a_title_style_is_drawn_in_a_larger_face_than_the_body,
+            "a Title style is set on a taller line than the body",
+            a_title_style_is_set_on_a_taller_line_than_the_body,
         ),
         (
             "a grammar finding is offered in the menu and corrected",
             a_grammar_finding_is_offered_in_the_menu_and_corrected,
         ),
         (
-            "a picture with a caption reserves room for both",
-            a_picture_with_a_caption_reserves_room_for_both,
-        ),
-        (
-            "a block that is only an image is sized from the picture",
-            a_block_that_is_only_an_image_is_sized_from_the_picture_not_a_line_of_text,
+            "the paragraph after a picture starts below it",
+            the_paragraph_after_a_picture_starts_below_it,
         ),
         (
             "Down moves by a wrapped line, not by a block",
@@ -2091,12 +1876,8 @@ mod tests {
             typing_markdown_formats_the_span,
         ),
         (
-            "code is measured and drawn in a monospace face",
-            code_is_measured_and_drawn_in_a_monospace_face,
-        ),
-        (
-            "a run's colour, highlight and size are drawn",
-            a_runs_colour_highlight_and_size_are_drawn,
+            "the pages are drawn on the desk, one under the other",
+            the_pages_are_drawn_on_the_desk,
         ),
         (
             "Tab nests a list item and Shift+Tab ends the list",
@@ -2115,8 +1896,8 @@ mod tests {
             enter_on_the_last_line_scrolls_the_new_one_into_view,
         ),
         (
-            "a link is drawn as one, followed, and edited from Ctrl+K",
-            a_link_is_drawn_followed_and_edited,
+            "a link is followed, and edited from Ctrl+K",
+            a_link_is_followed_and_edited,
         ),
         (
             "the problems dialog builds from a document's findings",
@@ -2264,67 +2045,26 @@ mod tests {
         assert_eq!(text(&app), "hello world");
     }
 
-    /// Links, all four halves: drawn underlined in the accent, a Ctrl+click on one hands its
-    /// target over (and a click beside it does not), and Ctrl+K links a selection, edits the
-    /// link at a bare caret, inserts a target as its own text when there is neither, and
-    /// removes one.
-    fn a_link_is_drawn_followed_and_edited() {
-        use crate::metrics::run_attributes;
-        use gtk::pango;
-
+    /// Links: a Ctrl+click on one hands its target over (and a click beside it does not), and
+    /// Ctrl+K links a selection, edits the link at a bare caret, inserts a target as its own text
+    /// when there is neither, and removes one. How one is drawn is the raster's.
+    fn a_link_is_followed_and_edited() {
         let (doc, app) = shell(&["read the spec today"]);
         let imp = doc.imp();
         let at = |offset| Caret { block: 0, offset };
         app.set_link(at(9), at(13), Some("https://x.org")).unwrap();
-
-        let view = app.get_viewport(0..1);
-        let block = view.get(0).unwrap();
-        let (layout, faces, _) = imp.measured(0).unwrap();
-        let face = faces.of(&BlockKind::Paragraph, None);
-        let drawn = |from: usize, to: usize| {
-            let attrs = run_attributes(
-                &block.runs,
-                from,
-                to,
-                &block
-                    .text
-                    .chars()
-                    .skip(from)
-                    .take(to - from)
-                    .collect::<String>(),
-                face.size(),
-                crate::metrics::Paper::LIGHT,
-            );
-            attrs
-                .attributes()
-                .iter()
-                .map(gtk::pango::Attribute::type_)
-                .collect::<Vec<_>>()
-        };
-        let link = drawn(9, 13);
-        assert!(link.contains(&pango::AttrType::Underline), "{link:?}");
-        assert!(link.contains(&pango::AttrType::Foreground), "{link:?}");
-        assert!(drawn(0, 9).is_empty(), "plain text is not");
+        doc.invalidate();
 
         // A point on "spec" is on the link; one on "read" is not.
-        let flow = imp.flow(600.0);
-        let slot = flow.slot(0).unwrap();
-        let (left, _) = crate::geom::column(600.0);
-        let point = |offset: usize| {
-            (
-                left + slot.indent + f64::from(layout.x_at(offset)) + 2.0,
-                slot.top + 2.0,
-            )
-        };
         let followed = Rc::new(RefCell::new(Vec::new()));
         doc.connect_link(glib::clone!(
             #[strong]
             followed,
             move |href| followed.borrow_mut().push(href)
         ));
-        let (x, y) = point(10);
+        let (x, y) = point_of(&doc, 10);
         assert!(imp.follow(x, y));
-        let (x, y) = point(1);
+        let (x, y) = point_of(&doc, 1);
         assert!(!imp.follow(x, y));
         assert_eq!(*followed.borrow(), ["https://x.org"]);
 
@@ -2382,14 +2122,12 @@ mod tests {
         }
         assert_eq!(app.block_count(), 61);
         assert!(adjustment.value() > 0.0, "the view scrolled at all");
-        let bottom = adjustment.value() + adjustment.page_size();
-        let flow = imp.flow(600.0);
-        let slot = flow.slot(60).expect("the last block is laid out");
+        let (_, top, height) = imp.point_of(doc.caret()).expect("the caret is on a page");
         assert!(
-            slot.top + slot.height <= bottom + 0.5,
-            "the caret's line ({}..{}) is inside the view (..{bottom})",
-            slot.top,
-            slot.top + slot.height,
+            top >= 0.0 && top + height <= adjustment.page_size() + 0.5,
+            "the caret's line ({top}..{}) is inside the view (..{})",
+            top + height,
+            adjustment.page_size()
         );
     }
 
@@ -2455,12 +2193,8 @@ mod tests {
     fn dragging_the_mouse_selects_text() {
         let (doc, _app) = shell(&["hello world"]);
         let imp = doc.imp();
-        let (layout, _, _) = imp.measured(0).expect("the block lays out");
-        let flow = imp.flow(f64::from(doc.width()));
-        let slot = flow.slot(0).expect("one block");
-        let (left, _) = crate::geom::column(f64::from(doc.width()));
-        let x_of = |offset: usize| left + f64::from(layout.x_at(offset));
-        let y = slot.top + 1.0;
+        let y = point_of(&doc, 0).1;
+        let x_of = |offset: usize| point_of(&doc, offset).0;
 
         imp.click(x_of(0), y, false);
         assert_eq!(
@@ -2497,12 +2231,11 @@ mod tests {
 
     /// Where `offset` in block 0 of a [`shell`] is on screen — the point a click there lands on.
     fn point_of(doc: &Doc, offset: usize) -> (f64, f64) {
-        let imp = doc.imp();
-        let (layout, _, _) = imp.measured(0).expect("the block lays out");
-        let flow = imp.flow(f64::from(doc.width()));
-        let slot = flow.slot(0).expect("one block");
-        let (left, _) = crate::geom::column(f64::from(doc.width()));
-        (left + f64::from(layout.x_at(offset)), slot.top + 1.0)
+        let (x, top, _) = doc
+            .imp()
+            .point_of(Caret { block: 0, offset })
+            .expect("the block is on a page");
+        (x, top + 1.0)
     }
 
     /// A click plants the selection's anchor at the caret for a drag to grow from; typing must
@@ -2653,19 +2386,21 @@ mod tests {
         assert_eq!(text(&app), "VAT and VAT\nno match\nTax");
     }
 
-    /// A `Title`-styled paragraph gets its own, larger face — the same mechanism that makes
-    /// a heading bigger than the body, keyed off the block's *name* instead of its kind
+    /// A `Title`-styled paragraph is set larger than the body — keyed off the block's *name*,
     /// because `Title` is `BlockKind::Paragraph` with nothing else to tell it apart.
-    fn a_title_style_is_drawn_in_a_larger_face_than_the_body() {
+    fn a_title_style_is_set_on_a_taller_line_than_the_body() {
         let (doc, app) = shell(&["Report", "body text"]);
         app.set_style(0..1, Some("Title".to_owned()))
             .expect("sets the style");
+        doc.invalidate();
         let imp = doc.imp();
-        let (_, faces, _) = imp.measured(0).expect("the title lays out");
-        let (_, _, _) = imp.measured(1).expect("the body lays out");
+        let height = |block| {
+            imp.point_of(Caret { block, offset: 0 })
+                .expect("on a page")
+                .2
+        };
         assert!(
-            faces.of(&BlockKind::Paragraph, Some("Title")).height()
-                > faces.of(&BlockKind::Paragraph, None).height(),
+            height(0) > height(1),
             "a title reads larger than a plain paragraph"
         );
     }
@@ -2731,112 +2466,48 @@ mod tests {
         96, 130,
     ];
 
-    /// A picture followed by its caption's text is drawn as a picture, with the flow reserving
-    /// room under it for the caption wrapped to the column — the shape `doc/odt-format.md`'s "An
-    /// inserted image is a frame inside a frame" reads. The caption must not vanish.
-    fn a_picture_with_a_caption_reserves_room_for_both() {
-        let (doc, app) = shell(&[""]);
-        app.insert_image(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            "image/png".to_owned(),
-            DOT_PNG.to_vec(),
-            None,
-            None,
-        )
-        .expect("inserts");
-        app.insert_text(
-            Caret {
-                block: 0,
-                offset: 1,
-            },
-            "Figure 1: a photograph.",
-        )
-        .expect("inserts the caption");
+    /// A picture is one line as tall as itself, and the paragraph after it starts below it
+    /// rather than over it.
+    fn the_paragraph_after_a_picture_starts_below_it() {
+        let (doc, app) = shell(&["", "after"]);
+        let start = Caret {
+            block: 0,
+            offset: 0,
+        };
+        app.insert_image(start, "image/png".to_owned(), DOT_PNG.to_vec(), None, None)
+            .expect("inserts");
+        // No observer is wired up in this harness, so nothing tells the view on its own the
+        // way a real window's bridge would.
         doc.invalidate();
-
         let imp = doc.imp();
-        let width = f64::from(doc.width());
-        let (_, column) = geom::column(width);
-        let viewport = app.get_viewport(0..1);
-        let block = viewport.get(0).expect("the block");
-        let (image, caption) = picture_of(block).expect("still reads as a picture");
-        assert_eq!(caption, Some("Figure 1: a photograph."));
-
-        let texture = texture_of(image).expect("decodes");
-        let (_, picture_height) = image_size(&texture, column);
-        let text_height = caption_height(imp.faces().body(), caption.unwrap(), column);
-
-        let flow = imp.flow(width);
-        let slot = flow.slot(0).expect("one block");
-        assert!(
-            slot.height >= picture_height + text_height,
-            "the flow leaves room for the picture and its caption, not just one of them"
-        );
+        let (_, top, height) = imp.point_of(start).expect("the picture is placed");
+        let (_, after, _) = imp
+            .point_of(Caret {
+                block: 1,
+                offset: 0,
+            })
+            .expect("the paragraph is placed");
+        assert!(height > 0.0);
+        assert!(after >= top + height, "{after} is below {top} + {height}");
     }
 
-    /// A block that is only an image is drawn as one — decoded, scaled to fit the column, and
-    /// tall enough in the flow that nothing after it overlaps.
-    fn a_block_that_is_only_an_image_is_sized_from_the_picture_not_a_line_of_text() {
-        let (doc, app) = shell(&[""]);
-        app.insert_image(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            "image/png".to_owned(),
-            DOT_PNG.to_vec(),
-            None,
-            None,
-        )
-        .expect("inserts");
-        // No observer is wired up in this harness, so nothing calls this on its own the way a
-        // real window's bridge would — `Doc::flow`'s cache otherwise still holds the empty
-        // paragraph's height from `shell`'s own `allocate`.
-        doc.invalidate();
-
-        let imp = doc.imp();
-        let width = f64::from(doc.width());
-        let (_, column) = geom::column(width);
-        let viewport = app.get_viewport(0..1);
-        let block = viewport.get(0).expect("the block");
-        assert!(picture_of(block).is_some(), "the whole block is the image");
-
-        let texture = texture_of(picture_of(block).unwrap().0).expect("decodes");
-        let (w, h) = image_size(&texture, column);
-        assert!((w - h).abs() < 0.01, "a 4x4 image stays square when scaled");
-        assert!(
-            w <= 4.0,
-            "a 4-pixel-wide image is never stretched past its own size"
-        );
-
-        // The flow's own height for this block has to come from the same arithmetic, not from
-        // laying out the empty paragraph the image replaced — which would give one line of the
-        // body face (`imp.faces().body().height()`), a different number for almost any image.
-        let flow = imp.flow(width);
-        let slot = flow.slot(0).expect("one block");
-        assert!(
-            (slot.height - h).abs() < 0.01,
-            "the flow's height for this block is the picture's ({h}), not {}",
-            imp.faces().body().height()
-        );
-    }
-
-    /// Down is the next *line*, not the next block — the core's answer, measured in pixels through
-    /// Pango.
+    /// Down is the next *line*, not the next block — the line boxes the page was set with.
     fn down_moves_by_a_wrapped_line_not_by_a_block() {
         let long = "the cat sat on the mat and then it slept for a very long time indeed \
-                    while the rain kept on falling outside the window all afternoon";
+                    while the rain kept on falling outside the window all afternoon, and on \
+                    into the evening, until the lamps were lit along the whole of the street";
         let (doc, app) = shell(&[long, "after"]);
         let imp = doc.imp();
-        let (layout, faces, kind) = imp.measured(0).expect("the block lays out");
+        let shown = imp.shown().expect("the pages are set");
+        let lines = shown.set.pages[0]
+            .lines
+            .iter()
+            .filter(|line| line.block == 0)
+            .count();
         assert!(
-            layout.lines().len() > 1,
+            lines > 1,
             "the fixture has to actually wrap or this proves nothing"
         );
-        drop((faces, kind));
 
         imp.go(crate::keymap::Motion::Line(1), false);
         assert_eq!(doc.caret().block, 0, "still inside the same paragraph");
@@ -2844,11 +2515,18 @@ mod tests {
 
         // Off the end of the last line, the same key carries into the next block — a
         // document is one flow, not a list of boxes.
-        for _ in 0..layout.lines().len() {
+        for _ in 1..lines {
             imp.go(crate::keymap::Motion::Line(1), false);
         }
         assert_eq!(doc.caret().block, 1);
         assert_eq!(app.block_count(), 2, "and nothing was edited on the way");
+
+        // Home and End are the ends of the placed line.
+        imp.go(crate::keymap::Motion::LineEnd, false);
+        assert_eq!(doc.caret().offset, 5);
+        let start = place::line_bounds(&shown.set, doc.caret()).map(|(start, _)| start);
+        imp.go(crate::keymap::Motion::LineStart, false);
+        assert_eq!(Some(doc.caret()), start);
     }
 
     /// The notation is `grind_text::markdown`'s and the edit is `App::type_markdown`'s, so
@@ -2878,154 +2556,32 @@ mod tests {
         assert_eq!(bold.text, "this");
     }
 
-    /// A monospace run is **measured** in a monospace face and **drawn** with the same family.
-    /// Either alone is a bug: drawn but not measured drifts the caret through the run, measured
-    /// but not drawn is invisible.
-    fn code_is_measured_and_drawn_in_a_monospace_face() {
-        use crate::metrics::run_attributes;
-        use grind_core::style::TextStyle;
-        use grind_text::Metrics;
-        use gtk::pango;
-
-        let (doc, app) = shell(&[""]);
+    /// The view is pages on a desk: the second page starts below the first, a point in the
+    /// gap between them is the nearer page's, and a paint draws without a panic.
+    fn the_pages_are_drawn_on_the_desk() {
+        let paragraph = "All work and no play makes a dull document. ".repeat(40);
+        let paragraphs: Vec<&str> = (0..8).map(|_| paragraph.as_str()).collect();
+        let (doc, app) = shell(&paragraphs);
         let imp = doc.imp();
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
+        let shown = imp.shown().expect("the pages are set");
+        assert!(shown.set.pages.len() >= 2, "the fixture spans pages");
+        let (first, second) = (
+            shown.strip.sheet(0).expect("a first page"),
+            shown.strip.sheet(1).expect("a second page"),
         );
-        for c in "run `ls -l` now".chars() {
-            imp.type_text(&c.to_string());
-        }
-        let view = app.get_viewport(0..1);
-        let block = view.get(0).expect("the block");
+        assert!(second.y >= first.y + first.height + crate::strip::GAP);
+        // Below the first page's last line, in its bottom margin: still the first page's text.
+        let caret = imp
+            .caret_at(first.x + 100.0, first.y + first.height - 2.0)
+            .expect("a caret");
+        assert!(caret.block < app.block_count());
+        let spot = place::locate(&shown.set, caret).expect("placed");
+        assert_eq!(spot.page, 0);
 
-        // Measured. Proportional and monospace disagree about this string by construction:
-        // `i` is the narrowest letter there is and `w` the widest, and a monospace face is
-        // exactly the one that makes them equal.
-        let (_, faces, _) = imp.measured(0).expect("the paragraph lays out");
-        let face = faces.of(&BlockKind::Paragraph, None);
-        let mono = TextStyle {
-            font_family: Some(grind_text::markdown::MONOSPACE.to_owned()),
-            ..TextStyle::default()
-        };
-        let widths = |style: &TextStyle| {
-            let mut out = Vec::new();
-            face.advances("iiiiwwww", style, &mut out);
-            *out.last().expect("one advance per character")
-        };
-        assert_ne!(
-            widths(&TextStyle::default()),
-            widths(&mono),
-            "a fragment is measured in its own family, not in the block's"
-        );
-
-        // Drawn. The family reaches the Pango attribute list the line is painted with.
-        let attrs = run_attributes(
-            &block.runs,
-            0,
-            block.text.chars().count(),
-            &block.text,
-            face.size(),
-            crate::metrics::Paper::LIGHT,
-        );
-        assert!(
-            attrs
-                .attributes()
-                .iter()
-                .any(|attr| attr.type_() == pango::AttrType::Family),
-            "the `code` run carries a family attribute"
-        );
-
-        // And the block half: a fence is a paragraph style, and it has a face of its own.
-        let fenced = faces.of(
-            &BlockKind::Paragraph,
-            Some(grind_text::markdown::PREFORMATTED),
-        );
-        let mut plain_width = Vec::new();
-        let mut fenced_width = Vec::new();
-        face.advances("iiiiwwww", &TextStyle::default(), &mut plain_width);
-        fenced.advances("iiiiwwww", &TextStyle::default(), &mut fenced_width);
-        assert_ne!(
-            plain_width.last(),
-            fenced_width.last(),
-            "a fenced block is set in its own face rather than the body's"
-        );
-    }
-
-    /// A run's colour, highlight and size all reach the attribute list, and the size reaches the
-    /// line's height too.
-    fn a_runs_colour_highlight_and_size_are_drawn() {
-        use crate::metrics::run_attributes;
-        use grind_core::style::TextStyle;
-        use grind_text::Metrics;
-        use gtk::pango;
-
-        let (doc, app) = shell(&["coloured and large"]);
-        let imp = doc.imp();
-        let span = |from: usize, to: usize| {
-            (
-                Caret {
-                    block: 0,
-                    offset: from,
-                },
-                Caret {
-                    block: 0,
-                    offset: to,
-                },
-            )
-        };
-        let (from, to) = span(0, 8);
-        app.set_char_style(
-            from,
-            to,
-            &grind_text::CharStyle {
-                color: Some("#ff4136".into()),
-                background: Some("#ffdc00".into()),
-                font_size: Some("24pt".into()),
-                ..Default::default()
-            },
-        )
-        .expect("formats");
-
-        let view = app.get_viewport(0..1);
-        let block = view.get(0).expect("the block");
-        let (_, faces, _) = imp.measured(0).expect("the paragraph lays out");
-        let face = faces.of(&BlockKind::Paragraph, None);
-        let attrs = run_attributes(
-            &block.runs,
-            0,
-            block.text.chars().count(),
-            &block.text,
-            face.size(),
-            crate::metrics::Paper::LIGHT,
-        );
-        let kinds: Vec<pango::AttrType> = attrs
-            .attributes()
-            .iter()
-            .map(gtk::pango::Attribute::type_)
-            .collect();
-        for wanted in [
-            pango::AttrType::Foreground,
-            pango::AttrType::Background,
-            pango::AttrType::Size,
-        ] {
-            assert!(kinds.contains(&wanted), "{wanted:?} is drawn: {kinds:?}");
-        }
-
-        // And measured: a bigger size is a taller line, or the run would overprint the one
-        // above it — which is why this file did not honour a size at all until it honoured
-        // all three halves of one.
-        let big = TextStyle {
-            font_size: Some("24pt".into()),
-            ..TextStyle::default()
-        };
-        assert!(
-            face.line_height(&big) > face.line_height(&TextStyle::default()),
-            "a 24pt run makes room for itself"
-        );
+        let snapshot = gtk::Snapshot::new();
+        gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
+        assert!(snapshot.to_node().is_some(), "something was drawn");
+        assert!(!imp.tiles.borrow().is_empty(), "and the page kept");
     }
 
     /// Authoring a list, which this window could not do at all: Tab at the front of a

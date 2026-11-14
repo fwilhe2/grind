@@ -204,9 +204,22 @@ pub fn line_bounds(doc: &Document, at: Caret) -> Option<(Caret, Caret)> {
 /// page. What a selection, a find hit or a misspelt word's underline is drawn from.
 #[must_use]
 pub fn selection(doc: &Document, from: Caret, to: Caret) -> Vec<(usize, Rect)> {
+    selection_on(doc, 0..doc.pages.len(), from, to)
+}
+
+/// [`selection`] on `pages` alone — what a window showing a few of them draws.
+#[must_use]
+pub fn selection_on(
+    doc: &Document,
+    pages: std::ops::Range<usize>,
+    from: Caret,
+    to: Caret,
+) -> Vec<(usize, Rect)> {
     let (from, to) = (from.min(to), from.max(to));
     let mut out = Vec::new();
-    for (number, page) in doc.pages.iter().enumerate() {
+    let skip = pages.start;
+    let pages = doc.pages.get(pages).unwrap_or_default();
+    for (number, page) in pages.iter().enumerate().map(|(at, page)| (at + skip, page)) {
         for line in &page.lines {
             let caret = |offset| Caret {
                 block: line.block,
