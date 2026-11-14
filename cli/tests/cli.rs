@@ -1123,6 +1123,9 @@ fn the_lines_of_code_spreadsheet_is_current() {
     // as empty (`examples/loc/loc.rhai`'s header says why).
     assert_eq!(ok(&["chart-list", &s(&out), "Growth"]).lines().count(), 2);
     assert_eq!(ok(&["chart-list", &s(&out), "Crates"]).lines().count(), 1);
+    // The committed file is a default build's: without `pdf` the columns' widths are an
+    // estimate rather than measured in a font, and so other numbers.
+    #[cfg(feature = "pdf")]
     assert!(
         std::fs::read(&out).unwrap() == std::fs::read(example("loc/loc.fods")).unwrap(),
         "examples/loc/loc.fods is not what examples/loc/loc.rhai builds — run \
