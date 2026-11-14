@@ -143,6 +143,7 @@ fn write_series(
                 if !no_recalc {
                     app.recalc().say()?;
                 }
+                fit::widen_unsized(app).say()?;
                 if !cli.dry_run {
                     app.save_file(&path).say()?;
                 }
@@ -587,6 +588,7 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                             );
                         }
                     }
+                    fit::widen_unsized(&app).say()?;
                     finish(&app, cli, out, true)
                 }
                 grind_build::Artifact::Text(app) => finish_text(&app, cli, out, true),

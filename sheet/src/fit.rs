@@ -39,6 +39,66 @@ pub fn widest(
         })
 }
 
+/// The widest thing `col` has to hold itself, measured as [`widest`] measures: a number, which
+/// would otherwise be hashes; text with a cell in the way of where it would run on; the longest
+/// word of text that wraps. Text free to spill, a merge and turned text ask for no width.
+pub fn widest_held(
+    app: &App,
+    sheet: usize,
+    col: u32,
+    metrics: &dyn Metrics,
+    style: &dyn Fn(Option<&crate::style::CellStyle>) -> TextStyle,
+) -> f64 {
+    let rows = app.used_extent(sheet).map_or(0, |(rows, _)| rows);
+    let Ok(viewport) = app.get_viewport(sheet, 0..rows, col.saturating_sub(1)..col + 2) else {
+        return 0.0;
+    };
+    let mut advances = Vec::new();
+    let mut measure = |text: &str, face: &TextStyle| {
+        advances.clear();
+        metrics.advances(text, face, &mut advances);
+        advances.last().copied().map_or(0.0, f64::from)
+    };
+    let taken = |row: u32, at: Option<u32>| {
+        at.is_none_or(|c| {
+            viewport.get(row, c).is_some_and(|v| !v.is_empty())
+                || viewport.merge_at(row, c).is_some()
+        })
+    };
+    let mut widest: f64 = 0.0;
+    for row in 0..rows {
+        let cell_style = viewport.style(row, col);
+        let (Some(value), Some(text)) = (viewport.get(row, col), viewport.text(row, col)) else {
+            continue;
+        };
+        if text.is_empty()
+            || viewport.merge_at(row, col).is_some()
+            || cell_style.is_some_and(|s| s.rotation_degrees().is_some())
+        {
+            continue;
+        }
+        let face = style(cell_style);
+        let (before, after) = (taken(row, col.checked_sub(1)), taken(row, Some(col + 1)));
+        let held = if crate::numfmt::is_number(value) {
+            measure(text, &face)
+        } else if look::wraps(cell_style) {
+            text.split_whitespace()
+                .map(|word| measure(word, &face))
+                .fold(0.0, f64::max)
+        } else if match look::align(value, cell_style) {
+            look::Align::Left => after,
+            look::Align::Right => before,
+            look::Align::Center => before || after,
+        } {
+            measure(text, &face)
+        } else {
+            0.0
+        };
+        widest = widest.max(held);
+    }
+    widest
+}
+
 /// [`widest`] in the face [`look::text_style`] gives each cell — what every shell draws with.
 pub fn widest_drawn(app: &App, sheet: usize, col: u32, metrics: &dyn Metrics) -> f64 {
     widest(app, sheet, col, metrics, &look::text_style)
@@ -92,6 +152,23 @@ mod tests {
         assert_eq!(widest_drawn(&app, 0, 0, &Fixed), 19.0);
         assert_eq!(widest_drawn(&app, 0, 1, &Fixed), 0.0, "B holds nothing");
         assert_eq!(widest_drawn(&app, 0, 2, &Fixed), 1.0);
+    }
+
+    #[test]
+    fn a_column_holds_its_numbers_and_the_text_that_cannot_run_on() {
+        let app = App::new();
+        let enter = |row, col, text: &str| {
+            app.enter(0, Pos::new(row, col), text, RecalcMode::Document)
+                .unwrap();
+        };
+        enter(0, 0, "a title free to run across the sheet");
+        enter(1, 0, "label");
+        enter(1, 1, "1234567");
+        enter(2, 1, "text that spills");
+        let held = |col| widest_held(&app, 0, col, &Fixed, &look::text_style);
+        assert_eq!(held(0), 5.0, "the label has a number in its way");
+        assert_eq!(held(1), 7.0, "the number, not the text beside nothing");
+        assert_eq!(held(2), 0.0);
     }
 
     #[test]

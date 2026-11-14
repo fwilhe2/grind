@@ -20,6 +20,13 @@ use grind_sheet::{App, look};
 /// either side of a cell's text and its slack, so the last glyph never touches the next line.
 const PAD_PT: f64 = 2.0 * 4.0 + 4.0;
 
+/// How much wider than measured a fitted column is made. The measuring face is LibreOffice's;
+/// a window drawing the same number in its own, wider one still has room for it.
+const ROOM: f64 = 1.25;
+
+/// The width of a column that has none: LibreOffice's 2.258cm, in points.
+const DEFAULT_COL_PT: f64 = 64.0;
+
 /// What a cell's text is measured in: its own size, weight and slant, and Calc's default face
 /// and size where the style names none.
 fn style_of(style: Option<&grind_sheet::style::CellStyle>) -> TextStyle {
@@ -74,7 +81,33 @@ pub fn widths(
     let scale = app.default_font_pt() / look::DEFAULT_FONT_PT;
     cols.map(|col| {
         let widest = grind_sheet::fit::widest(app, sheet, col, metrics, &style_of) * scale;
-        (col, grind_sheet::fit::width(widest, PAD_PT, 25.4 / 72.0))
+        (
+            col,
+            grind_sheet::fit::width(widest * ROOM, PAD_PT, 25.4 / 72.0),
+        )
     })
     .collect()
+}
+
+/// Widen every column of a built document that was given no width and holds more than the
+/// default shows — a number that would be hashes, text cut by the cell beside it
+/// (`grind_sheet::fit::widest_held`). A width the script set is the script's.
+pub fn widen_unsized(app: &App) -> grind_sheet::Result<()> {
+    let metrics = measure();
+    let scale = app.default_font_pt() / look::DEFAULT_FONT_PT;
+    for sheet in 0..app.sheet_count() {
+        let sized = app.col_widths(sheet)?;
+        let widths = grind_sheet::fit::all_columns(app, sheet)
+            .filter(|col| sized.iter().all(|(sized, _)| sized != col))
+            .filter_map(|col| {
+                let held =
+                    grind_sheet::fit::widest_held(app, sheet, col, &metrics, &style_of) * scale;
+                let wanted = held * ROOM + PAD_PT;
+                (wanted > DEFAULT_COL_PT)
+                    .then(|| (col, grind_sheet::fit::width(wanted, 0.0, 25.4 / 72.0)))
+            })
+            .collect();
+        app.fit(sheet, widths, 0..0)?;
+    }
+    Ok(())
 }

@@ -320,7 +320,7 @@ not a copy.
 | `s.format(range, format)` | `Sheet` | a number format over a range |
 | `s.format(range, kind)` | `Sheet` | the same, from §3.4's word — `s.format("B17", "date")` |
 | `s.style(range, style)` | `Sheet` | styling over a range, **layered** onto whatever is already there (§6.4) |
-| `s.width(cols, length)` | `Sheet` | column widths. `"A"` and `"A:A"` mean the same run of one |
+| `s.width(cols, length)` | `Sheet` | column widths. `"A"` and `"A:A"` mean the same run of one. A column given none is widened by `grind build` when it holds more than the default shows — a number that would be `###`, text cut by the cell beside it — and otherwise left at the default |
 | `s.height(rows, length)` | `Sheet` | row heights, the same way |
 | `s.name(name, target)` | `Sheet` | a named range (`"B2:B7"`) or a named expression (`"=MAX(budgeted)"`). Document-level in ODF, said on the sheet whose cells it names, and written out qualified with that sheet (§6.6) |
 | `s.chart(chart)` | `Sheet` | put a `Chart` on this sheet. Placed after **every** sheet is filled (§6.8), so it may read any of them |

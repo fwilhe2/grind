@@ -896,6 +896,31 @@ fn a_script_builds_the_budget() {
     ok_top(&["lint", &s(&out)]);
 }
 
+/// A script that sets no widths still gets columns that hold what is in them: the one with a
+/// long number is widened, the one whose text runs on over empty cells is not, and a width the
+/// script set is kept.
+#[test]
+fn a_built_sheet_widens_the_columns_its_script_left_alone() {
+    let dir = Sandbox::new("build-widths");
+    let script = dir.path("wide.rhai");
+    std::fs::write(
+        &script,
+        r#"let s = sheet("Wide");
+s.push(["A title that runs on across the empty cells beside it"]);
+s.push(["x", 1234567890123.25, 1234567890123.25]);
+s.width("C:C", "1cm");
+s
+"#,
+    )
+    .unwrap();
+    let out = dir.path("wide.fods");
+    ok_top(&["build", &s(&script), "-o", &s(&out)]);
+    let widths = ok(&["width", &s(&out), "A:C"]);
+    assert!(!widths.contains("A\t"), "the title spills: {widths}");
+    assert!(widths.contains("B\t"), "the number is held: {widths}");
+    assert!(widths.contains("C\t1cm"), "the script's own: {widths}");
+}
+
 /// **Data and code, separated** (`doc/generator-spec.md` §3.5): the numbers live in
 /// `examples/prices/prices.json` and the script says only what the document is. The walls around that
 /// are `grind-build`'s and tested there; this is the end-to-end half — the default data
