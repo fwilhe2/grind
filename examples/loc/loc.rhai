@@ -85,6 +85,8 @@ for area in area_order {
 
 let ink = "#1f3a5f";
 let band = "#eef3f8";
+// Labels and asides: quieter than the ink, and still read on the band.
+let muted = "#5f6f82";
 let palette = [
     "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7",
     "#9c755f",
@@ -178,7 +180,7 @@ let growth = sheet("Growth");
 // cells beside them; the values sit in column D, which is wide enough for them.
 growth.push(row(["grind — lines of code"]).style(style().bold().size("20pt").color(ink)));
 growth.push(row(["Non-blank lines of Rust per crate, one snapshot per release. Rebuilt by examples/loc/update.sh from history.json — edit neither by hand."])
-    .style(style().italic().color("gray")));
+    .style(style().italic().color(muted)));
 let facts = growth.rows;
 let fact_labels = ["Lines of Rust", `Growth since ${history[0].date}`, "Of which tests", "Docs (Markdown)", "Crates"];
 for label in fact_labels {
@@ -251,9 +253,9 @@ growth.format(growth.at(facts, 3), count)
     .format(growth.at(facts + 2, 3), share)
     .format(growth.at(facts + 3, 3), count);
 growth.style(span(growth, facts, 0, facts + 4, 5), style().background(band));
-growth.style(span(growth, facts, 0, facts + 4, 2), style().color("gray"));
+growth.style(span(growth, facts, 0, facts + 4, 2), style().color(muted));
 growth.style(span(growth, facts, 3, facts + 4, 3), style().bold().color(ink).align("right"));
-growth.style(growth.at(facts, 5), style().italic().color("gray"));
+growth.style(growth.at(facts, 5), style().italic().color(muted));
 
 growth.style(span(growth, 0, 0, last, delta), middle);
 growth.style(span(growth, first, 0, last, 2), centred);
