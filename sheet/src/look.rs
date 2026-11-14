@@ -140,6 +140,14 @@ pub fn wraps(style: Option<&CellStyle>) -> bool {
     style.is_some_and(|style| style.wrap.as_deref() == Some("wrap"))
 }
 
+/// The padding either side of a number `text` wide in a cell `room` wide: `pad`, or as much less
+/// as keeps the number whole, down to `min`. A column fitted in another program's narrower face
+/// then shows its numbers tight against the gridlines rather than as hashes.
+#[must_use]
+pub fn number_pad(text: f64, room: f64, pad: f64, min: f64) -> f64 {
+    pad.min((room - text) / 2.0).max(min.min(pad))
+}
+
 /// The size a cell that names none is set in, in points — `style:default-style`'s `fo:font-size`
 /// in every document LibreOffice writes.
 pub const DEFAULT_FONT_PT: f64 = 10.0;
@@ -262,6 +270,14 @@ fn dashes(start: f64, end: f64, on: f64, off: f64) -> Vec<(f64, f64)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_number_gives_up_padding_before_it_is_hashes() {
+        use super::number_pad;
+        assert_eq!(number_pad(60.0, 80.0, 6.0, 1.0), 6.0, "room to spare");
+        assert_eq!(number_pad(74.0, 80.0, 6.0, 1.0), 3.0, "squeezed");
+        assert_eq!(number_pad(90.0, 80.0, 6.0, 1.0), 1.0, "never under the least");
+    }
+
     use super::*;
 
     fn styled(set: impl FnOnce(&mut CellStyle)) -> CellStyle {

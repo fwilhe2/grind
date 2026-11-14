@@ -713,7 +713,9 @@ mod imp {
     type OverlaysHook = Box<dyn Fn(grind_sheet::view::Overlays)>;
 
     /// Space either side of a cell's text.
-    const PAD: f64 = 4.0;
+    const PAD: f64 = 6.0;
+    /// The least a number keeps either side when its column is tight (`look::number_pad`).
+    const MIN_PAD: f64 = 1.0;
     /// A checkbox's box, unzoomed — a little under a line of the default font.
     const CHECKBOX: f64 = 14.0;
     /// The width reserved at a cell's leading edge for `doc/view-modes.md`'s role marker —
@@ -4292,6 +4294,11 @@ mod imp {
                     });
                     layout.set_text(text);
                     let (text_w, text_h) = layout.pixel_size();
+                    let pad = if !wrapping && grind_sheet::numfmt::is_number(value) {
+                        look::number_pad(f64::from(text_w), cell.w - indent, pad, MIN_PAD)
+                    } else {
+                        pad
+                    };
                     let within = f64::from(text_w) <= cell.w - 2.0 * pad - indent;
                     let fits = wrapping || within;
                     // A heading too wide for the room its button leaves keeps its *start*:
