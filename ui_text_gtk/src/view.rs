@@ -488,6 +488,9 @@ mod imp {
         pub pinched: Cell<Option<f64>>,
         /// A page asked for before the view had a size to scroll it into.
         pub pending_page: Cell<Option<usize>>,
+        /// Whether the caret is in the shown half of a blink, and the timer turning it.
+        pub lit: Cell<bool>,
+        pub blinking: RefCell<Option<glib::SourceId>>,
         /// The last press — its time, where, and how many in a row — so a second press on the same
         /// spot is a double-click. Counted here rather than by a second gesture, since the drag
         /// planting the caret and a click gesture would both answer one press in an order GTK does
@@ -541,6 +544,8 @@ mod imp {
                 on_zoomed: RefCell::new(Vec::new()),
                 pinched: Cell::new(None),
                 pending_page: Cell::new(None),
+                lit: Cell::new(true),
+                blinking: RefCell::new(None),
                 presses: Cell::new(None),
                 menu: std::cell::OnceCell::new(),
                 speller: RefCell::new(None),
@@ -624,6 +629,7 @@ mod imp {
             if let Some(menu) = self.menu.get() {
                 menu.unparent();
             }
+            self.stop_blinking();
         }
 
         fn constructed(&self) {
@@ -678,12 +684,19 @@ mod imp {
             focus.connect_enter(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
-                move |_| doc.imp().im.focus_in()
+                move |_| {
+                    doc.imp().im.focus_in();
+                    doc.imp().blink();
+                }
             ));
             focus.connect_leave(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
-                move |_| doc.imp().im.focus_out()
+                move |_| {
+                    doc.imp().im.focus_out();
+                    doc.imp().stop_blinking();
+                    doc.queue_draw();
+                }
             ));
             widget.add_controller(focus);
 
@@ -1179,7 +1192,7 @@ mod imp {
                 snapshot.append_color(&palette.accent, &rect(x + f64::from(width), y, CARET, h));
                 return;
             }
-            if selection.is_none() && self.obj().is_focus() {
+            if selection.is_none() && self.obj().is_focus() && self.lit.get() {
                 snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
             }
         }
@@ -1814,11 +1827,61 @@ mod imp {
             self.clamp_caret();
             self.scroll_into_view();
             self.announce();
+            self.blink();
             self.obj().queue_draw();
             let caret = self.caret.get();
             for hook in self.on_moved.borrow().iter() {
                 hook(caret);
             }
+        }
+
+        /// Show the caret and start it blinking again, as the desktop's settings say: a full
+        /// blink every `gtk-cursor-blink-time`, and still after `gtk-cursor-blink-timeout`
+        /// seconds of it, so an idle window stops repainting.
+        pub fn blink(&self) {
+            self.stop_blinking();
+            self.lit.set(true);
+            let Some(settings) = gtk::Settings::default() else {
+                return;
+            };
+            if !settings.is_gtk_cursor_blink() || !self.obj().is_focus() {
+                return;
+            }
+            let half = u64::try_from(settings.gtk_cursor_blink_time().max(200) / 2).unwrap_or(600);
+            let turns = u64::try_from(settings.gtk_cursor_blink_timeout().max(1))
+                .unwrap_or(10)
+                .saturating_mul(1000)
+                / half;
+            let left = Cell::new(turns);
+            let source = glib::timeout_add_local(
+                std::time::Duration::from_millis(half),
+                glib::clone!(
+                    #[weak(rename_to = doc)]
+                    self.obj(),
+                    #[upgrade_or]
+                    glib::ControlFlow::Break,
+                    move || {
+                        let imp = doc.imp();
+                        left.set(left.get().saturating_sub(1));
+                        let done = left.get() == 0 && imp.lit.get();
+                        imp.lit.set(!imp.lit.get() || done);
+                        doc.queue_draw();
+                        if done {
+                            imp.blinking.replace(None);
+                            return glib::ControlFlow::Break;
+                        }
+                        glib::ControlFlow::Continue
+                    }
+                ),
+            );
+            self.blinking.replace(Some(source));
+        }
+
+        pub fn stop_blinking(&self) {
+            if let Some(source) = self.blinking.take() {
+                source.remove();
+            }
+            self.lit.set(true);
         }
 
         /// History and edits move blocks around underneath the caret, so put it somewhere
