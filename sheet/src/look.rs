@@ -174,6 +174,7 @@ pub fn text_style(style: Option<&CellStyle>) -> grind_core::style::TextStyle {
         font_size: style.and_then(|s| s.font_size.clone()),
         font_weight: style.and_then(|s| s.font_weight.clone()),
         font_style: style.and_then(|s| s.font_style.clone()),
+        ..grind_core::style::TextStyle::default()
     }
 }
 

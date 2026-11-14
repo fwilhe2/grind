@@ -321,3 +321,26 @@ fn a_style_read_again_is_resolved_again() {
         "what was resolved for the first document is not the second's"
     );
 }
+
+#[test]
+fn letter_spacing_and_kerning_are_read_from_a_paragraph_style_and_a_run() {
+    let styles = r#"<office:automatic-styles>
+  <style:style style:name="P1" style:family="paragraph"><style:text-properties fo:letter-spacing="0.1cm"/></style:style>
+  <style:style style:name="T1" style:family="text"><style:text-properties style:letter-kerning="false"/></style:style>
+</office:automatic-styles>"#;
+    let app = app(
+        styles,
+        r#"<text:p text:style-name="P1">wide <text:span text:style-name="T1">tight</text:span></text:p>"#,
+    );
+    let props = app.paragraph(0).unwrap().props;
+    assert_eq!(props.letter_spacing.as_deref(), Some("0.1cm"));
+    let view = app.get_viewport(0..1);
+    let run = view
+        .get(0)
+        .unwrap()
+        .runs
+        .iter()
+        .find(|run| run.text == "tight")
+        .unwrap();
+    assert_eq!(run.props.letter_kerning.as_deref(), Some("false"));
+}

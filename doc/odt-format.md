@@ -979,6 +979,19 @@ oracle turned out to be unable to answer the font questions (fact 4).
    after it started where it did with no picture, beside it. That is the default of a frame
    with no graphic style, and is not what this suite draws for the frame it writes (the picture
    at the left, the text below it); writing a style that says so is not built.
+51. **Kerning is on unless a style turns it off** — `MEASURED` (2026-11-14, 26.8.2.2, Liberation
+   Serif 24 pt, `AVATAR x office x` in paragraphs whose automatic styles differ only in
+   `style:letter-kerning`, rng:13705). With the attribute absent — and no default style stating
+   it — `AVATAR` is 89.16 pt wide, the same as with `"true"`; with `"false"` it is 99.91 pt, the
+   six advances unkerned. The PDF's text operators carry the face's pair adjustments only in the
+   first two (`A`–`V` −130/1000 em). No ligature is formed in any of them: `office` is six
+   glyphs in every paragraph, so Liberation Serif's ligatures are not a question here.
+52. **Letter spacing follows every character, the last and a space too, and keeps the kerning**
+   — `MEASURED` (2026-11-14, the same document and build, `fo:letter-spacing="0.1cm"`,
+   rng:13532). Each glyph of `AVATAR x` is followed by 2.835 pt more than without: the `x` after
+   `AVATAR ` starts 19.85 pt (7 × 2.835) right of where it starts in the kerned paragraph, and
+   the pair adjustments are those of the kerned paragraph plus the spacing (`A`–`V`: −130/1000 em
+   of kerning and +118 of spacing, −12 in all). With `style:letter-kerning="true"` as well, the PDF is the same.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

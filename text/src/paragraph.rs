@@ -63,6 +63,9 @@ pub struct ParagraphProps {
     pub font_size: Option<String>,
     pub font_weight: Option<String>,
     pub font_style: Option<String>,
+    /// `fo:letter-spacing` and `style:letter-kerning` (`doc/odt-format.md` §5c facts 51, 52).
+    pub letter_spacing: Option<String>,
+    pub letter_kerning: Option<String>,
     /// `fo:color`: the ink of the paragraph's text where a run states none.
     pub color: Option<String>,
     /// `fo:language` and `fo:country`: the language spelling is checked against
@@ -98,7 +101,9 @@ impl ParagraphProps {
                 mine.clone_from(theirs);
             }
         }
-        let fields: [(&mut Option<String>, &Option<String>); 18] = [
+        let fields: [(&mut Option<String>, &Option<String>); 20] = [
+            (&mut self.letter_spacing, &over.letter_spacing),
+            (&mut self.letter_kerning, &over.letter_kerning),
             (&mut self.background_color, &over.background_color),
             (&mut self.join_border, &over.join_border),
             (&mut self.color, &over.color),

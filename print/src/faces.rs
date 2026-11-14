@@ -145,6 +145,14 @@ impl<'a> RoleFace<'a> {
                 .clone()
                 .or_else(|| stated.font_style.clone())
                 .or_else(|| self.role.italic().then(|| "italic".to_owned())),
+            letter_spacing: run
+                .letter_spacing
+                .clone()
+                .or_else(|| stated.letter_spacing.clone()),
+            letter_kerning: run
+                .letter_kerning
+                .clone()
+                .or_else(|| stated.letter_kerning.clone()),
         }
     }
 }
@@ -443,6 +451,7 @@ mod tests {
             font_size: size.map(str::to_owned),
             font_weight: bold.then(|| "bold".to_owned()),
             font_style: None,
+            ..TextStyle::default()
         }
     }
 

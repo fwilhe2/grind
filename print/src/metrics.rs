@@ -84,12 +84,42 @@ type Advances = HashMap<Box<str>, Rc<[f32]>>;
 
 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
+/// A size, as bits, and how the letters at it are set: [`Letters::set`].
+type Set = (u32, u32, bool);
+
+/// How a style sets its letters past what its face does (`doc/odt-format.md` §5c facts 51 and
+/// 52): the space after every character, in points, and whether the face's kerning applies.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Letters {
+    spacing: f32,
+    kern: bool,
+}
+
+impl Letters {
+    fn of(style: &TextStyle) -> Self {
+        let spacing = style
+            .letter_spacing
+            .as_deref()
+            .filter(|value| value.trim() != "normal")
+            .and_then(grind_core::style::length_mm)
+            .map_or(0.0, |mm| (mm * 72.0 / 25.4) as f32);
+        Letters {
+            spacing,
+            kern: style.letter_kerning.as_deref() != Some("false"),
+        }
+    }
+
+    fn set(self, size: f32) -> Set {
+        (size.to_bits(), self.spacing.to_bits(), self.kern)
+    }
+}
+
 /// The advances of text already shaped, by face and size. A document is measured several times
 /// over — to stack its blocks, to cut its pages, to draw them — and again after every edit,
 /// when all but one paragraph is the text it was.
 #[derive(Default)]
 struct Measured {
-    by_face: HashMap<(FaceId, u32), Advances>,
+    by_face: HashMap<(FaceId, Set), Advances>,
     /// How many advances are held, across every face.
     held: usize,
 }
@@ -100,21 +130,18 @@ impl Measured {
     // recently used when one is edited at that size.
     const CEILING: usize = 8_000_000;
 
-    fn get(&self, face: FaceId, size: f32, text: &str) -> Option<Rc<[f32]>> {
-        self.by_face
-            .get(&(face, size.to_bits()))?
-            .get(text)
-            .cloned()
+    fn get(&self, face: FaceId, set: Set, text: &str) -> Option<Rc<[f32]>> {
+        self.by_face.get(&(face, set))?.get(text).cloned()
     }
 
-    fn keep(&mut self, face: FaceId, size: f32, text: &str, advances: Rc<[f32]>) {
+    fn keep(&mut self, face: FaceId, set: Set, text: &str, advances: Rc<[f32]>) {
         if self.held > Self::CEILING {
             self.by_face.clear();
             self.held = 0;
         }
         self.held += advances.len();
         self.by_face
-            .entry((face, size.to_bits()))
+            .entry((face, set))
             .or_default()
             .insert(text.into(), advances);
     }
@@ -123,14 +150,14 @@ impl Measured {
 /// Shaped glyphs by face, size (as bits) and text, bounded as [`Measured`] is.
 #[derive(Default)]
 struct Shapes {
-    by_text: HashMap<(FaceId, u32, Box<str>), Rc<[Glyph]>>,
+    by_text: HashMap<(FaceId, Set, Box<str>), Rc<[Glyph]>>,
     held: usize,
 }
 
 impl Shapes {
     const CEILING: usize = 4_000_000;
 
-    fn keep(&mut self, key: (FaceId, u32, Box<str>), glyphs: Rc<[Glyph]>) {
+    fn keep(&mut self, key: (FaceId, Set, Box<str>), glyphs: Rc<[Glyph]>) {
         if self.held > Self::CEILING {
             self.by_text.clear();
             self.held = 0;
@@ -195,7 +222,8 @@ impl Typesetter {
     /// Shape `text` as `style` sets it.
     pub fn shape(&self, text: &str, style: &TextStyle) -> Shaped {
         let (face, size) = self.face_of(style);
-        let key = (face, size.to_bits(), Box::<str>::from(text));
+        let letters = Letters::of(style);
+        let key = (face, letters.set(size), Box::<str>::from(text));
         if let Some(glyphs) = self.shaped.borrow().by_text.get(&key) {
             return Shaped {
                 face,
@@ -203,7 +231,22 @@ impl Typesetter {
                 glyphs: glyphs.to_vec(),
             };
         }
-        let shaped = self.shape_in(face, size, text);
+        let mut shaped = self.shape_in(face, size, letters.kern, text);
+        // The spacing follows every character, so a cluster of several takes it once for each.
+        if letters.spacing != 0.0 {
+            let glyphs = &mut shaped.glyphs;
+            for at in 0..glyphs.len() {
+                let last = glyphs
+                    .get(at + 1)
+                    .is_none_or(|next| next.text != glyphs[at].text);
+                if last {
+                    let chars = text
+                        .get(glyphs[at].text.clone())
+                        .map_or(1, |c| c.chars().count());
+                    glyphs[at].x_advance += letters.spacing * chars as f32;
+                }
+            }
+        }
         self.shaped
             .borrow_mut()
             .keep(key, Rc::from(shaped.glyphs.as_slice()));
@@ -219,7 +262,7 @@ impl Typesetter {
     }
 
     /// Shape `text` in `face` alone, `.notdef` where it has no glyph.
-    fn shape_once(&self, face: FaceId, size: f32, text: &str) -> Shaped {
+    fn shape_once(&self, face: FaceId, size: f32, kern: bool, text: &str) -> Shaped {
         let mut glyphs = Vec::new();
         let mut shapers = self.shapers.borrow_mut();
         let font = shapers.entry(face).or_insert_with(|| {
@@ -239,7 +282,10 @@ impl Typesetter {
             out.push_str(text);
             out.guess_segment_properties();
             let shaper = harfrust::ShaperFont::new(font);
-            if harfrust::shape(&shaper, &mut out, harfrust::ShapeOptions::new()).is_err() {
+            let unkerned = [harfrust::Feature::new(harfrust::Tag::new(b"kern"), 0, ..)];
+            let features: &[harfrust::Feature] = if kern { &[] } else { &unkerned };
+            let options = harfrust::ShapeOptions::new().features(features);
+            if harfrust::shape(&shaper, &mut out, options).is_err() {
                 return Shaped { face, size, glyphs };
             }
             let scale = size / f32::from(font.units_per_em().max(1));
@@ -268,8 +314,8 @@ impl Typesetter {
 
     /// [`Typesetter::shape_once`], with each run of characters its face has no glyph for set
     /// again in a face that has one — per cluster, so what is measured is what is drawn.
-    fn shape_in(&self, face: FaceId, size: f32, text: &str) -> Shaped {
-        let mut shaped = self.shape_once(face, size, text);
+    fn shape_in(&self, face: FaceId, size: f32, kern: bool, text: &str) -> Shaped {
+        let mut shaped = self.shape_once(face, size, kern, text);
         if !shaped.glyphs.iter().any(|glyph| glyph.id == 0) {
             return shaped;
         }
@@ -309,10 +355,11 @@ impl Typesetter {
                 let piece = &missing[from..end];
                 let offset = stretch.start + from;
                 let (drawn, set) = match here {
-                    Some(other) if other != face => {
-                        (Some(other), self.shape_once(other, size, piece).glyphs)
-                    }
-                    _ => (None, self.shape_once(face, size, piece).glyphs),
+                    Some(other) if other != face => (
+                        Some(other),
+                        self.shape_once(other, size, kern, piece).glyphs,
+                    ),
+                    _ => (None, self.shape_once(face, size, kern, piece).glyphs),
                 };
                 out.extend(set.into_iter().map(|mut glyph| {
                     glyph.text = glyph.text.start + offset..glyph.text.end + offset;
@@ -397,7 +444,8 @@ impl Metrics for Typesetter {
             return;
         }
         let (face, size) = self.face_of(style);
-        if let Some(known) = self.measured.borrow().get(face, size, text) {
+        let set = Letters::of(style).set(size);
+        if let Some(known) = self.measured.borrow().get(face, set, text) {
             out.extend_from_slice(&known);
             return;
         }
@@ -430,7 +478,7 @@ impl Metrics for Typesetter {
         }
         self.measured
             .borrow_mut()
-            .keep(face, size, text, out[from..].into());
+            .keep(face, set, text, out[from..].into());
     }
 
     fn line_height(&self, style: &TextStyle) -> f32 {
@@ -456,6 +504,7 @@ mod tests {
             font_size: Some(size.to_owned()),
             font_weight: bold.then(|| "bold".to_owned()),
             font_style: None,
+            ..TextStyle::default()
         }
     }
 
@@ -467,6 +516,32 @@ mod tests {
 
     fn serif() -> TextStyle {
         style("Liberation Serif", "12pt", false)
+    }
+
+    /// `doc/odt-format.md` §5c facts 51 and 52: kerning unless a style turns it off, and letter
+    /// spacing after every character, on top of the kerning.
+    #[test]
+    fn kerning_is_on_unless_turned_off_and_spacing_follows_every_character() {
+        let t = setter();
+        let at = |kerning: Option<&str>, spacing: Option<&str>| TextStyle {
+            letter_kerning: kerning.map(str::to_owned),
+            letter_spacing: spacing.map(str::to_owned),
+            ..style("Liberation Serif", "24pt", false)
+        };
+        let kerned = width(&t, "AVATAR", &at(None, None));
+        assert_eq!(kerned, width(&t, "AVATAR", &at(Some("true"), None)));
+        let plain = width(&t, "AVATAR", &at(Some("false"), None));
+        assert!(plain - kerned > 10.0, "{plain} unkerned, {kerned} kerned");
+        let spaced = width(&t, "AVATAR", &at(None, Some("0.1cm")));
+        assert!(
+            (spaced - kerned - 6.0 * 0.1 / 2.54 * 72.0).abs() < 0.01,
+            "{spaced}"
+        );
+        assert_eq!(width(&t, "AVATAR", &at(None, Some("normal"))), kerned);
+        // Drawn as measured.
+        let shaped = t.shape("AVATAR", &at(None, Some("0.1cm")));
+        let drawn: f32 = shaped.glyphs.iter().map(|glyph| glyph.x_advance).sum();
+        assert!((drawn - spaced).abs() < 1e-3);
     }
 
     /// Liberation Serif has no ☿ and the bundled Mono or Sans has: it is drawn from that face,

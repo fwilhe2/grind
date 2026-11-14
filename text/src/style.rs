@@ -43,6 +43,10 @@ pub struct CharStyle {
     pub color: Option<String>,
     /// `fo:background-color` — `#rrggbb` or `transparent`. Text highlighting.
     pub background: Option<String>,
+    /// `fo:letter-spacing` and `style:letter-kerning`, read for measuring and never written from
+    /// here: a run carrying them keeps its [`Origin`], which a save builds on.
+    pub letter_spacing: Option<String>,
+    pub letter_kerning: Option<String>,
     /// The automatic style this formatting was read from, when it says what the fields do not —
     /// superscript, a language, letter spacing. Not formatting, and equal to every other
     /// [`Origin`]; a save builds a restyled run's new style from it, so what the model never read
@@ -132,13 +136,17 @@ impl CharStyle {
             font_size: self.font_size.clone(),
             font_weight: self.font_weight.clone(),
             font_style: self.font_style.clone(),
+            letter_spacing: self.letter_spacing.clone(),
+            letter_kerning: self.letter_kerning.clone(),
         }
     }
 
     /// Layer `other` over `self`: what `other` sets wins. What nested spans mean, inner winning,
     /// which is why reading can flatten them (`doc/text-core.md`).
     pub fn layer(&mut self, other: &CharStyle) {
-        let fields: [(&mut Option<String>, &Option<String>); 8] = [
+        let fields: [(&mut Option<String>, &Option<String>); 10] = [
+            (&mut self.letter_spacing, &other.letter_spacing),
+            (&mut self.letter_kerning, &other.letter_kerning),
             (&mut self.font_family, &other.font_family),
             (&mut self.font_size, &other.font_size),
             (&mut self.font_weight, &other.font_weight),
@@ -171,6 +179,8 @@ impl CharStyle {
             line_through: agreed(self.line_through.as_ref(), other.line_through.as_ref()),
             color: agreed(self.color.as_ref(), other.color.as_ref()),
             background: agreed(self.background.as_ref(), other.background.as_ref()),
+            letter_spacing: agreed(self.letter_spacing.as_ref(), other.letter_spacing.as_ref()),
+            letter_kerning: agreed(self.letter_kerning.as_ref(), other.letter_kerning.as_ref()),
             // A reading for a toolbar, not a run: it came from nowhere.
             origin: Origin::default(),
         }

@@ -501,6 +501,7 @@ mod tests {
             font_size: size.map(str::to_owned),
             font_weight: weight.map(str::to_owned),
             font_style: style.map(str::to_owned),
+            ..grind_core::style::TextStyle::default()
         }
     }
 

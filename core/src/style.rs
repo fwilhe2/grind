@@ -182,4 +182,9 @@ pub struct TextStyle {
     pub font_weight: Option<String>,
     /// `fo:font-style` — `normal`, `italic`, `oblique`.
     pub font_style: Option<String>,
+    /// `fo:letter-spacing` — a length added after every character, or `normal`.
+    pub letter_spacing: Option<String>,
+    /// `style:letter-kerning` — `false` sets the text without the face's kerning, which is on
+    /// otherwise.
+    pub letter_kerning: Option<String>,
 }

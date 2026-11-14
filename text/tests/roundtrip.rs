@@ -791,6 +791,9 @@ fn cases() -> Vec<(String, Document)> {
                             line_through: Some("solid".to_owned()),
                             color: Some("#001f3f".to_owned()),
                             background: Some("#ffdc00".to_owned()),
+                            // Read for measuring and carried by their style, never written.
+                            letter_spacing: None,
+                            letter_kerning: None,
                             origin: grind_text::style::Origin::default(),
                         },
                     ),

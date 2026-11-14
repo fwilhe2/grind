@@ -1506,6 +1506,8 @@ impl Context<Builder> for ParagraphStyleDef {
             props.font_size = get("font-size");
             props.font_weight = get("font-weight");
             props.font_style = get("font-style");
+            props.letter_spacing = get("letter-spacing");
+            props.letter_kerning = attrs.get(Ns::Style, "letter-kerning").map(str::to_owned);
             // The automatic colour stated replaces an inherited one, and is black on paper
             // (`doc/odt-format.md` §5c fact 45).
             props.color = get("color").or_else(|| {
@@ -1990,6 +1992,8 @@ impl Context<Builder> for TextStyleDef {
                 .map(str::to_owned),
             color: attrs.get(Ns::Fo, "color").map(str::to_owned),
             background: attrs.get(Ns::Fo, "background-color").map(str::to_owned),
+            letter_spacing: attrs.get(Ns::Fo, "letter-spacing").map(str::to_owned),
+            letter_kerning: attrs.get(Ns::Style, "letter-kerning").map(str::to_owned),
             origin: crate::style::Origin::default(),
         };
         // Anything else on the element (superscript, a language, letter spacing) is unread, and
