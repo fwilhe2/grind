@@ -10,7 +10,10 @@
 #   examples/loc/update.sh                 # count HEAD
 #   examples/loc/update.sh v0.3.0 abc1234  # count these, in any order
 #   examples/loc/update.sh --rebuild       # count nothing, just rebuild loc.fods
-#   GRIND=target/debug/grind examples/loc/update.sh   # a binary other than the one on PATH
+#   GRIND=grind examples/loc/update.sh     # a binary other than this checkout's own
+#
+# `loc.fods` has to be what *this* checkout builds — a test compares them — so the binary is
+# built from it unless `GRIND` names another. An installed `grind` may be older than the tree.
 #
 # Meant to run once per release, after the tag exists, so the snapshot carries its name.
 # Counting re-runs replace the commit's own entry rather than adding a second one, and each
@@ -35,10 +38,13 @@
 
 set -euo pipefail
 
-GRIND=${GRIND:-grind}
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 history="$here/history.json"
 cd "$(git -C "$here" rev-parse --show-toplevel)"
+if [[ -z ${GRIND:-} ]]; then
+    cargo build --quiet -p grind-cli
+    GRIND=target/debug/grind
+fi
 
 [[ -f $history ]] || echo '{"snapshots": []}' >"$history"
 

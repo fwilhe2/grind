@@ -1126,7 +1126,7 @@ fn the_lines_of_code_spreadsheet_is_current() {
     assert!(
         std::fs::read(&out).unwrap() == std::fs::read(example("loc/loc.fods")).unwrap(),
         "examples/loc/loc.fods is not what examples/loc/loc.rhai builds — run \
-         `GRIND=target/debug/grind examples/loc/update.sh --rebuild` and commit the result"
+         `examples/loc/update.sh --rebuild` and commit the result"
     );
 }
 
