@@ -67,6 +67,9 @@ pub struct Typesetter {
     shapers: RefCell<HashMap<FaceId, Option<harfrust::Font>>>,
     resolved: RefCell<BTreeMap<Asked, Resolved>>,
     measured: RefCell<Measured>,
+    /// What [`Typesetter::shape`] returned, by face, size and text: a page drawn again after
+    /// an edit is all but one paragraph the glyphs it was.
+    shaped: RefCell<Shapes>,
     /// Which typesetter this is, of all the process has made ([`Typesetter::id`]).
     id: u64,
 }
@@ -112,6 +115,26 @@ impl Measured {
     }
 }
 
+/// Shaped glyphs by face, size (as bits) and text, bounded as [`Measured`] is.
+#[derive(Default)]
+struct Shapes {
+    by_text: HashMap<(FaceId, u32, Box<str>), Rc<[Glyph]>>,
+    held: usize,
+}
+
+impl Shapes {
+    const CEILING: usize = 4_000_000;
+
+    fn keep(&mut self, key: (FaceId, u32, Box<str>), glyphs: Rc<[Glyph]>) {
+        if self.held > Self::CEILING {
+            self.by_text.clear();
+            self.held = 0;
+        }
+        self.held += glyphs.len() + 1;
+        self.by_text.insert(key, glyphs);
+    }
+}
+
 impl Typesetter {
     #[must_use]
     pub fn new(fonts: Fonts) -> Self {
@@ -121,6 +144,7 @@ impl Typesetter {
             shapers: RefCell::new(HashMap::new()),
             resolved: RefCell::new(BTreeMap::new()),
             measured: RefCell::default(),
+            shaped: RefCell::default(),
             id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
     }
@@ -165,6 +189,22 @@ impl Typesetter {
     /// Shape `text` as `style` sets it.
     pub fn shape(&self, text: &str, style: &TextStyle) -> Shaped {
         let (face, size) = self.face_of(style);
+        let key = (face, size.to_bits(), Box::<str>::from(text));
+        if let Some(glyphs) = self.shaped.borrow().by_text.get(&key) {
+            return Shaped {
+                face,
+                size,
+                glyphs: glyphs.to_vec(),
+            };
+        }
+        let shaped = self.shape_in(face, size, text);
+        self.shaped
+            .borrow_mut()
+            .keep(key, Rc::from(shaped.glyphs.as_slice()));
+        shaped
+    }
+
+    fn shape_in(&self, face: FaceId, size: f32, text: &str) -> Shaped {
         let mut glyphs = Vec::new();
         let mut shapers = self.shapers.borrow_mut();
         let font = shapers.entry(face).or_insert_with(|| {
