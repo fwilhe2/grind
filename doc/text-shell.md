@@ -22,7 +22,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | | `grind-text-gtk` (S9) | `grind-web`'s document pane (S10) |
 |---|---|---|
 | Open, save | `.odt` and `.fodt`, file dialog and recent files | bytes in through the File API, out as a download — no path anywhere (rule 5) |
-| Draw | custom widget, `snapshot()`, Pango | one `<div>` per **laid-out line**, no `contenteditable` |
+| Draw | custom widget, `snapshot()`: the pages as they print, `grind_print`'s raster, with the caret and marks over it (`doc/page-model.md` PM5) | one `<div>` per **laid-out line**, no `contenteditable` |
 | Caret motion | arrows, Home/End, Page, Ctrl+Home/End — all answered by the core | the same set |
 | Editing | type, Enter, Backspace, Delete | the same four |
 | Markdown as you type | `**bold**`, `*italic*`, `__underline__`, `~~struck~~`, `` `code` ``, `# `, ``` — `App::type_markdown` | the same, same call. The two backtick notations were reported broken in every shell and each shell turned out to have its own reason — a dropped dead key here, an undrawn family in the window, an optional SGR in the terminal. All three are addressed; what is still owed is somebody typing on the reporter's own keyboard (`TODO:` at the top of `text/src/markdown.rs`) |
@@ -67,8 +67,9 @@ windows — and there is a test in `ui_web` that says so.
 > knowing. The block-level half is unchanged and still the shell's — a heading is a *paragraph*
 > style, and the paragraph family is still gated.
 >
-> **Both shells now draw what the core measures, by two different routes.** `grind-text-gtk`
-> builds a line's Pango attribute list from the block's own `RunView`s
+> **Both shells now draw what the core measures, by two different routes.** (`grind-text-gtk`
+> has since stopped drawing with Pango at all: it shows `grind_print`'s pages, `doc/page-model.md`
+> PM5.) `grind-text-gtk` built a line's Pango attribute list from the block's own `RunView`s
 > (`ui_text_gtk/src/metrics.rs`'s `run_attributes`, one `pango::AttrInt` per
 > bold/italic/underline/strikethrough run, clipped to the line and converted from the model's
 > character offsets to the byte offsets Pango attributes are measured against) rather than one
@@ -158,8 +159,8 @@ since the UX pass, and `grind-web`'s palette is its answer. No footnotes, becaus
 the core has none — `text:page-number` and the other named fields (`text:date`, `text:title`,
 `text:file-name`) are also out, both for the same reason `doc/text-core.md` gives. Tables were
 in this sentence until the core grew them; `grind-text-gtk` draws and inserts one now and
-`grind-web` draws one and cannot insert one, which is that shell's gap rather than a shared one. No pages, no
-print, no zoom. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are measured per
+`grind-web` draws one and cannot insert one, which is that shell's gap rather than a shared one. `grind-text-gtk` shows
+the pages as they print and zooms them (`doc/page-model.md`); `grind-web` shows one column. No RTL — excluded by decision in `doc/text-layout.md`. Tab stops are measured per
 run rather than per line, so a line with several tabs drifts from where a word processor would
 put them. A named-style picker stays out: a run's *named* style (as opposed to its direct
 formatting) is a name this build keeps and does not interpret, and turning `Emphasis` into a set
