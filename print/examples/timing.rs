@@ -39,6 +39,16 @@ fn main() {
         set / pages.max(1) as f64
     );
 
+    // What an edit costs: the same document set again by the same typesetter, which has
+    // measured all of it before.
+    let started = Instant::now();
+    let again = grind_print::text::typeset(&app, &setter, &grind_print::text::Options::default());
+    println!(
+        "again     {:>9.1} ms  {} pages",
+        ms(started),
+        again.pages.len()
+    );
+
     let Some(shown) = doc.pages.get(page.saturating_sub(1)) else {
         eprintln!("there is no page {page}");
         std::process::exit(1);

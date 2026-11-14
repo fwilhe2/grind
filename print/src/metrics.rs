@@ -11,6 +11,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use grind_core::layout::Metrics;
@@ -65,6 +66,50 @@ pub struct Typesetter {
     /// Each face as harfrust reads it, with its layout tables cached; `None` when it cannot.
     shapers: RefCell<HashMap<FaceId, Option<harfrust::Font>>>,
     resolved: RefCell<BTreeMap<Asked, Resolved>>,
+    measured: RefCell<Measured>,
+    /// Which typesetter this is, of all the process has made ([`Typesetter::id`]).
+    id: u64,
+}
+
+/// Cumulative advances by the text they are of.
+type Advances = HashMap<Box<str>, Rc<[f32]>>;
+
+static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// The advances of text already shaped, by face and size. A document is measured several times
+/// over — to stack its blocks, to cut its pages, to draw them — and again after every edit,
+/// when all but one paragraph is the text it was.
+#[derive(Default)]
+struct Measured {
+    by_face: HashMap<(FaceId, u32), Advances>,
+    /// How many advances are held, across every face.
+    held: usize,
+}
+
+impl Measured {
+    // ponytail: past the ceiling everything is dropped and measured again as it is asked for,
+    // a stall of one layout on a document of several million characters. Evict the least
+    // recently used when one is edited at that size.
+    const CEILING: usize = 8_000_000;
+
+    fn get(&self, face: FaceId, size: f32, text: &str) -> Option<Rc<[f32]>> {
+        self.by_face
+            .get(&(face, size.to_bits()))?
+            .get(text)
+            .cloned()
+    }
+
+    fn keep(&mut self, face: FaceId, size: f32, text: &str, advances: Rc<[f32]>) {
+        if self.held > Self::CEILING {
+            self.by_face.clear();
+            self.held = 0;
+        }
+        self.held += advances.len();
+        self.by_face
+            .entry((face, size.to_bits()))
+            .or_default()
+            .insert(text.into(), advances);
+    }
 }
 
 impl Typesetter {
@@ -75,7 +120,16 @@ impl Typesetter {
             generics: RefCell::new(HashMap::new()),
             shapers: RefCell::new(HashMap::new()),
             resolved: RefCell::new(BTreeMap::new()),
+            measured: RefCell::default(),
+            id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         }
+    }
+
+    /// A number no other typesetter in the process has: two may hold different fonts, so what
+    /// one measured is not what the other would ([`Metrics::identity`]).
+    #[must_use]
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn fonts(&self) -> &Fonts {
@@ -226,6 +280,12 @@ impl Metrics for Typesetter {
         if text.is_empty() {
             return;
         }
+        let (face, size) = self.face_of(style);
+        if let Some(known) = self.measured.borrow().get(face, size, text) {
+            out.extend_from_slice(&known);
+            return;
+        }
+        let from = out.len();
         let shaped = self.shape(text, style);
         let mut per_byte = vec![0.0_f32; text.len() + 1];
         let mut ends: BTreeMap<usize, usize> = BTreeMap::new();
@@ -252,6 +312,9 @@ impl Metrics for Typesetter {
             sum += advance.max(0.0);
             out.push(sum);
         }
+        self.measured
+            .borrow_mut()
+            .keep(face, size, text, out[from..].into());
     }
 
     fn line_height(&self, style: &TextStyle) -> f32 {

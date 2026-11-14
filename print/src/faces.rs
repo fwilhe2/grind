@@ -163,6 +163,32 @@ impl Metrics for RoleFace<'_> {
         }
     }
 
+    fn identity(&self) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+        let mut state = std::collections::hash_map::DefaultHasher::new();
+        let RoleFace {
+            setter,
+            role,
+            stated,
+            line,
+        } = self;
+        setter.id().hash(&mut state);
+        role.hash(&mut state);
+        (
+            &stated.font_family,
+            &stated.font_size,
+            &stated.font_weight,
+            &stated.font_style,
+        )
+            .hash(&mut state);
+        match line {
+            None => 0u8.hash(&mut state),
+            Some(LineRule::Proportional(share)) => (1u8, share.to_bits()).hash(&mut state),
+            Some(LineRule::Fixed(height)) => (2u8, height.to_bits()).hash(&mut state),
+        }
+        Some(state.finish())
+    }
+
     /// A proportional line keeps its text where a natural one has it; a fixed one shares the
     /// difference above and below the baseline as the face's ascent shares its natural line —
     /// the approximation `doc/odt-format.md` §5c fact 10 measures, within half a point.

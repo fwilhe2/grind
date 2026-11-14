@@ -40,6 +40,12 @@ pub trait Metrics {
     fn ascent(&self, style: &TextStyle) -> f32 {
         self.line_height(style) * 0.8
     }
+
+    /// A number two providers share only if they measure everything alike, for a caller that
+    /// keeps layouts it has already made. `None`, the default, says nothing and nothing is kept.
+    fn identity(&self) -> Option<u64> {
+        None
+    }
 }
 
 /// One character wide per character, one unit tall: what the CLI measures with (`grind text view
@@ -249,7 +255,7 @@ pub fn wrap(fragments: &[Fragment<'_>], width: f32, metrics: &dyn Metrics) -> La
 
 /// Where a line sits across its measure (`fo:text-align`, `doc/odt-format.md` §5c fact 8), left
 /// to right only.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Align {
     #[default]
     Start,
@@ -299,7 +305,7 @@ pub struct Setting {
 }
 
 /// How a tab character's text lines up against its stop (`style:type`, rng:13921).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TabAlign {
     /// The text after the tab starts at the stop.
     Left,
@@ -362,6 +368,22 @@ impl Tabs {
 /// How far past the end of a line a right tab stop is still kept, in points (`doc/odt-format.md`
 /// §5c fact 32).
 const RIGHT_STOP_REACH: f32 = 16.8;
+
+/// Everything that decides a layout, the floats by their bits.
+impl std::hash::Hash for Setting {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Destructured, so a field added to `Setting` does not compile until it is fed.
+        let Setting { first, tabs, align } = self;
+        first.to_bits().hash(state);
+        align.hash(state);
+        tabs.interval.to_bits().hash(state);
+        for stop in &tabs.stops {
+            stop.position.to_bits().hash(state);
+            stop.align.hash(state);
+            stop.leader.hash(state);
+        }
+    }
+}
 
 /// [`wrap`], set as `setting` says. Every tab character is advanced to its stop on its own line —
 /// which depends on where the line starts, so tabs are placed *while* breaking rather than

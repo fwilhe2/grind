@@ -504,6 +504,34 @@ pub struct App {
     lexicon: RwLock<Option<Arc<dyn spell::Lexicon>>>,
     /// The grammar checker ([`App::set_checker`]), beside the lexicon.
     checker: RwLock<Option<Arc<dyn grammar::Checker>>>,
+    /// Layouts already made ([`Layouts`]).
+    layouts: std::sync::Mutex<Layouts>,
+}
+
+/// Paragraphs already broken into lines, by everything that decides the result: the text and
+/// how each run is set, the measure, the [`layout::Setting`] and who measured
+/// ([`Metrics::identity`]). A page is cut by laying the document out several times over, and
+/// after an edit all but one paragraph is what it was.
+#[derive(Default)]
+struct Layouts {
+    made: std::collections::HashMap<u64, Layout>,
+    /// How many characters the layouts kept hold between them.
+    held: usize,
+}
+
+impl Layouts {
+    // ponytail: past the ceiling everything is dropped and laid out again as it is asked for.
+    // Evict the least recently used when a document of several million characters is edited.
+    const CEILING: usize = 8_000_000;
+
+    fn keep(&mut self, key: u64, layout: &Layout) {
+        if self.held > Self::CEILING {
+            self.made.clear();
+            self.held = 0;
+        }
+        self.held += layout.len() + 1;
+        self.made.insert(key, layout.clone());
+    }
 }
 
 impl App {
@@ -1370,9 +1398,58 @@ fn relinked(block: &Block, start: usize, end: usize, href: Option<&str>) -> Opti
 
 /// Break one block into lines in the face that block is set in — [`lay_out`] with the width and
 /// provider looked up in `faces`, so every caret operation asks the same way.
-fn set_out(block: &Block, index: usize, faces: &dyn Faces, named: &Named) -> Layout {
+fn set_out(
+    block: &Block,
+    index: usize,
+    faces: &dyn Faces,
+    named: &Named,
+    layouts: &std::sync::Mutex<Layouts>,
+) -> Layout {
     let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
-    lay_out_set(block, width, metrics, &faces.setting(index), named)
+    lay_out_kept(block, width, metrics, &faces.setting(index), named, layouts)
+}
+
+/// [`lay_out_set`], or the layout the same question got before.
+fn lay_out_kept(
+    block: &Block,
+    width: f32,
+    metrics: &dyn Metrics,
+    setting: &layout::Setting,
+    named: &Named,
+    layouts: &std::sync::Mutex<Layouts>,
+) -> Layout {
+    use std::hash::{Hash, Hasher};
+    let Some(identity) = metrics.identity() else {
+        return lay_out_set(block, width, metrics, setting, named);
+    };
+    let mut key = std::collections::hash_map::DefaultHasher::new();
+    identity.hash(&mut key);
+    width.to_bits().hash(&mut key);
+    setting.hash(&mut key);
+    for run in &block.runs {
+        run.text().hash(&mut key);
+        // As `lay_out_set` measures it.
+        let shown = match run {
+            Run::Text { style, props, .. } => {
+                paragraph::shown(named, style.as_deref(), props).metrics()
+            }
+            _ => run.props().map_or_default(CharStyle::metrics),
+        };
+        (
+            shown.font_family,
+            shown.font_size,
+            shown.font_weight,
+            shown.font_style,
+        )
+            .hash(&mut key);
+    }
+    let key = key.finish();
+    if let Some(made) = layouts.lock().unwrap().made.get(&key) {
+        return made.clone();
+    }
+    let layout = lay_out_set(block, width, metrics, setting, named);
+    layouts.lock().unwrap().keep(key, &layout);
+    layout
 }
 
 /// The named character styles a layout measures runs by ([`paragraph::shown`]).

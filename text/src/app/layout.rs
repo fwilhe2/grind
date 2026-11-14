@@ -33,12 +33,13 @@ impl App {
             .doc
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-        Ok(lay_out_set(
+        Ok(lay_out_kept(
             block,
             width,
             metrics,
             setting,
             &state.doc.char_styles,
+            &self.layouts,
         ))
     }
 
@@ -87,7 +88,14 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        Ok(set_out(block, at.block, faces, &state.doc.char_styles).x_at(at.offset))
+        Ok(set_out(
+            block,
+            at.block,
+            faces,
+            &state.doc.char_styles,
+            &self.layouts,
+        )
+        .x_at(at.offset))
     }
 
     /// Move a caret `delta` lines — Down and Up, and Page Down with a bigger number. Crosses block
@@ -112,6 +120,7 @@ impl App {
             block,
             faces,
             &state.doc.char_styles,
+            &self.layouts,
         );
         let mut offset = at.offset.min(layout.len());
         let step = if delta < 0 { -1 } else { 1 };
@@ -134,6 +143,7 @@ impl App {
                 block,
                 faces,
                 &state.doc.char_styles,
+                &self.layouts,
             );
             let line = if step > 0 {
                 0
@@ -152,7 +162,13 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        let layout = set_out(block, at.block, faces, &state.doc.char_styles);
+        let layout = set_out(
+            block,
+            at.block,
+            faces,
+            &state.doc.char_styles,
+            &self.layouts,
+        );
         let line = layout.lines()[layout.line_at(at.offset)];
         Ok((
             Caret {

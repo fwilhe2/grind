@@ -127,7 +127,9 @@ boxes. Both read the same `Layout`, which is why alignment has to move into the 
 |---|---|
 | PM0 | **Done**: §6 |
 | PM1 | **Done**: `grind_core::layout::wrap_set` aligns and justifies (`Setting`, `Align`, `Line::shift` and `stretch`), `grind-print` draws from it, and a caret motion through `Faces` sees the paragraph's indent, tabs and alignment. Item 3 turned out to hold already: measured over the Calc Guide's 564 pages, no drawn piece ends more than 0.005 pt from where the layout put its last caret — a piece is cut at run and line boundaries, where shaping it alone and shaping its run whole agree. Its test waits for PM2's line boxes, which carry the offsets it needs. Item 4 stays as `doc/text-layout.md` cost 1 names it |
-| PM2–PM9 | Open |
+| PM2 | **Done**: `grind_print::place` (`LineBox`, `locate`, `hit`, `selection`) over the line boxes typesetting leaves on each page; `grind text locate` and `hit`. A motion by a screenful is `App::caret_line` with a count, as it was, and a page's first caret is `Page::start`. A picture's caption has no carets of its own yet (`ponytail:` in `print/src/text.rs`) |
+| PM3 | **Half done.** What is kept: every advance a `Typesetter` has measured, and every layout an `App` has made (keyed by the text, how its runs are set, the measure, the `Setting` and `Metrics::identity`). Setting the Calc Guide went from 5.6 s to 1.5 s, and setting it *again* — what an edit costs — takes 0.9 s, 1.6 ms a page, with byte-identical PDFs. That is a frame for a document of ten pages and not for one of five hundred. **Not yet** (items 1, 3, 4, 6): a session that holds the pages, re-cuts from the first changed block and reports damage. It follows PM5, so that what it speeds up can be felt |
+| PM4–PM9 | Open |
 
 Each ends green on its own. A capability gets its line in `examples/sample-text.sh`, its row in
 `doc/cli-parity-text.md` and `doc/feature-matrix.md`.
@@ -337,6 +339,7 @@ LibreOffice's Calc Guide: 564 pages as we set it, about 9400 blocks.
 |---|---|
 | Open | 0.4 s |
 | Typeset, the whole document | 5.6 s — **10 ms a page** |
+| Typeset, after PM3's caches | 1.5 s, and 0.9 s set a second time |
 | Raster, one page of body text, 96 dpi (793 × 1122) | 22 ms |
 | The same at 192 dpi (1587 × 2245) | 39 ms |
 
