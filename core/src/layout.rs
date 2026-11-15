@@ -849,8 +849,8 @@ impl Layout {
         let count = lines.len();
         // How much wider everything before the line in hand has been set.
         let mut added = 0.0_f32;
-        for at in 0..count {
-            let line = lines[at];
+        for (at, slot) in lines.iter_mut().enumerate() {
+            let line = *slot;
             let last = at + 1 == count;
             let indent = self.indent_of(line.start);
             let visible_end = (line.start..line.end)
@@ -902,11 +902,10 @@ impl Layout {
             let spread = visible_end.saturating_sub(line.start + 1);
             let wider = stretch * interior as f32 + letters * spread as f32;
             added += wider;
-            let line = &mut lines[at];
-            line.shift = shift;
-            line.stretch = stretch;
-            line.letters = letters;
-            line.width += wider;
+            slot.shift = shift;
+            slot.stretch = stretch;
+            slot.letters = letters;
+            slot.width += wider;
         }
         if let Some(rest) = xs.get_mut(lines.last().map_or(0, |l| l.end) + 1..) {
             for x in rest {
