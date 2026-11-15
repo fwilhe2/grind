@@ -43,6 +43,20 @@ pub struct Options {
 
 /// Typeset `app`'s document with `setter`'s fonts.
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
+    typeset_after(app, setter, options, None)
+}
+
+/// [`typeset`], drawing only the pages that differ from `previous` — the same document set
+/// before an edit, with the same `setter`. A page is the same when everything its drawing reads
+/// is: its place in the flow, its blocks and their styles, labels, boxes and spacing, its number
+/// and running heads, and the pages' masters. The rest are `previous`'s, copied
+/// (`doc/page-model.md` PM3).
+pub fn typeset_after(
+    app: &App,
+    setter: &Typesetter,
+    options: &Options,
+    previous: Option<&Document>,
+) -> Document {
     setter.hint(app.font_generics());
     let default_geometry = options.paper.or(app.page()).unwrap_or_default();
     let viewport = app.get_viewport(0..app.block_count());
@@ -220,6 +234,102 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let numbering = numbering(&pages);
     let chapters = chapters(&pages, &viewport);
 
+    // What every page's drawing reads that is not the page's own: the paper, the masters and
+    // their running heads, the widths text is set at, the tables' looks, and the document's
+    // styles, which no edit changes.
+    // What every page's drawing reads that is not the page's own: the paper, the page set, the
+    // widths text is set at — and the document's styles, masters and running heads, which only
+    // reading a document sets, so its generation names them.
+    let seed = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        app.styles_generation().hash(&mut hasher);
+        format!("{:?}|{:?}", options.paper, app.page()).hash(&mut hasher);
+        for kind in &kinds {
+            (&kind.name, kind.first, kind.left).hash(&mut hasher);
+        }
+        for width in &widths {
+            width.to_bits().hash(&mut hasher);
+        }
+        hasher.finish()
+    };
+    // Each table's look, once: a cell's drawing reads its table's.
+    let tables: HashMap<&String, u64> = looks
+        .iter()
+        .map(|(name, look)| {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            format!("{look:?}").hash(&mut hasher);
+            (name, hasher.finish())
+        })
+        .collect();
+    let key = |number: usize, page: &grind_text::page::Page| -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        seed.hash(&mut hasher);
+        (page.slot, page.restart, page.number).hash(&mut hasher);
+        numbering[number].hash(&mut hasher);
+        chapters[number].hash(&mut hasher);
+        for piece in &page.pieces {
+            (piece.index, piece.lines.clone(), piece.repeat).hash(&mut hasher);
+            for value in [piece.top, piece.left, piece.width] {
+                value.to_bits().hash(&mut hasher);
+            }
+        }
+        for cell in &page.cells {
+            cell.first.hash(&mut hasher);
+            for value in [cell.top, cell.left, cell.width, cell.height] {
+                value.to_bits().hash(&mut hasher);
+            }
+        }
+        let blocks = page
+            .pieces
+            .iter()
+            .map(|piece| piece.index)
+            .chain(page.cells.iter().map(|cell| cell.first));
+        for index in blocks {
+            let Some(view) = viewport.get(index) else {
+                continue;
+            };
+            fingerprint(view, &mut hasher);
+            if let Some(cell) = &view.cell {
+                tables.get(&cell.table).hash(&mut hasher);
+            }
+            if let Some(label) = labels.get(&index) {
+                label.x.to_bits().hash(&mut hasher);
+                if let Some(bullet) = &label.bullet {
+                    // The list style's own picture, which only reading sets: where it is names it.
+                    let picture = &bullet.picture;
+                    (&picture.mime, &picture.width, &picture.height).hash(&mut hasher);
+                    std::sync::Arc::as_ptr(&picture.data).hash(&mut hasher);
+                    (bullet.width.to_bits(), bullet.height.to_bits()).hash(&mut hasher);
+                }
+            }
+            if let Some(frame) = frames.get(&index) {
+                format!("{frame:?}").hash(&mut hasher);
+            }
+            if let Some(room) = spacing.get(&index) {
+                for value in [
+                    room.space.above,
+                    room.space.below,
+                    room.space.left,
+                    room.right,
+                ] {
+                    value.to_bits().hash(&mut hasher);
+                }
+            }
+            grind_text::Faces::setting(column, index).hash(&mut hasher);
+        }
+        hasher.finish()
+    };
+    let kept: HashMap<u64, &Page> = previous
+        .map_or_default(|previous| previous.keys.iter().copied().zip(&previous.pages).collect());
+    let keys: Vec<u64> = pages
+        .iter()
+        .enumerate()
+        .map(|(number, page)| key(number, page))
+        .collect();
+
     let mut outline = Vec::new();
     let pages = pages
         .iter()
@@ -229,6 +339,30 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
             let (geometry, top, header, footer) =
                 (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
             let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
+            if let Some(same) = kept.get(&keys[number]) {
+                // Drawn before as it is now; only the outline is the setting's own.
+                for piece in &page.pieces {
+                    if let Some(view) = viewport.get(piece.index)
+                        && let BlockKind::Heading { level } = view.kind
+                        && piece.lines.start == 0
+                        && figure(
+                            view,
+                            piece.width,
+                            caption_face(view),
+                            figure_look(app, view),
+                        )
+                        .is_none()
+                    {
+                        outline.push(Heading {
+                            level,
+                            title: view.text.clone(),
+                            page: number,
+                            y: (top + piece.top) as f32,
+                        });
+                    }
+                }
+                return (*same).clone();
+            }
             let mut ops = Vec::new();
             let mut placed: Vec<LineBox> = Vec::new();
             ops.extend(
@@ -393,6 +527,44 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         pages,
         outline,
         structure,
+        keys,
+    }
+}
+
+/// What of a block a page's drawing reads, into `hasher`. A picture by its length and a sample of
+/// its bytes: a picture is put in or taken out, never changed in place.
+fn fingerprint(view: &BlockView, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    (view.index, &view.kind, &view.style, &view.text).hash(hasher);
+    (
+        view.styled,
+        &view.marks,
+        view.generated,
+        &view.cell,
+        &view.label,
+    )
+        .hash(hasher);
+    for run in &view.runs {
+        (
+            run.start, &run.text, &run.props, &run.shown, &run.style, &run.href,
+        )
+            .hash(hasher);
+        if let Some(image) = &run.image {
+            (
+                &image.mime,
+                &image.width,
+                &image.height,
+                &image.title,
+                &image.description,
+            )
+                .hash(hasher);
+            let data = &image.data;
+            data.len().hash(hasher);
+            data.iter()
+                .step_by(data.len() / 256 + 1)
+                .for_each(|byte| byte.hash(hasher));
+            data[data.len().saturating_sub(64)..].hash(hasher);
+        }
     }
 }
 
@@ -833,6 +1005,7 @@ fn paragraph_frames(
 }
 
 /// A paragraph's box: its look, and whether it runs on into the paragraph above or below.
+#[derive(Debug)]
 struct Frame {
     look: grind_text::table_look::CellLook,
     open_above: bool,
@@ -1045,6 +1218,7 @@ fn level_labels(
 
 /// Where a block's label goes, across from its own left edge in points, and the picture drawn
 /// there instead of text when its level is a picture bullet.
+#[derive(Debug)]
 struct Label {
     x: f64,
     bullet: Option<Bullet>,
@@ -1053,6 +1227,7 @@ struct Label {
 /// A picture bullet at the size its level states, in points.
 // ponytail: the room it adds is added above and below the paragraph, which is exact for the
 // one-line paragraph it usually heads; a longer one gets the extra under its last line.
+#[derive(Debug)]
 struct Bullet {
     picture: grind_text::numbering::LevelPicture,
     width: f64,

@@ -159,6 +159,10 @@ pub struct Document {
     pub outline: Vec<Heading>,
     /// Every block that printed, in document order, as what it is.
     pub structure: Vec<Element>,
+    /// Each page's fingerprint: a hash of everything its drawing read, so a page whose
+    /// fingerprint a later setting finds again is that page and need not be drawn
+    /// (`crate::text::typeset_after`). Empty for a document not set here.
+    pub keys: Vec<u64>,
 }
 
 #[cfg(test)]

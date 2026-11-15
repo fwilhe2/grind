@@ -22,6 +22,9 @@ pub struct Session {
     /// The typesetter, and the families the document named when its fonts were looked up.
     setter: RefCell<Option<(Vec<String>, Rc<Typesetter>)>>,
     set: RefCell<Option<Rc<Document>>>,
+    /// The pages as they were before the last change, whose unchanged pages the next setting
+    /// copies rather than draws ([`crate::text::typeset_after`]).
+    previous: RefCell<Option<Rc<Document>>>,
     /// Every character fonts were looked up again for, having had no glyph: typed after the
     /// document opened, say. Each is looked for once.
     sought: RefCell<std::collections::BTreeSet<char>>,
@@ -34,16 +37,19 @@ impl Session {
             bundled,
             setter: RefCell::new(None),
             set: RefCell::new(None),
+            previous: RefCell::new(None),
             sought: RefCell::default(),
         }
     }
 
     /// The document changed: its pages are set again when next asked for.
-    // ponytail: the whole document is set again, with every measurement and every unchanged
-    // paragraph's layout kept — 1.6 ms a page. Re-cut from the first changed block when a
-    // document of hundreds of pages is typed in (`doc/page-model.md` PM3 items 3 and 4).
+    // ponytail: the whole document is paginated again, every measurement and unchanged
+    // paragraph's layout kept and only changed pages drawn. Re-cut from the first changed block
+    // when a document of hundreds of pages is typed in (`doc/page-model.md` PM3 item 3).
     pub fn changed(&self) {
-        self.set.replace(None);
+        if let Some(set) = self.set.take() {
+            self.previous.replace(Some(set));
+        }
     }
 
     /// The typesetter for `app`'s document: a new one when the document names a family its
@@ -69,6 +75,8 @@ impl Session {
         let setter = Rc::new(Typesetter::new(fonts));
         self.setter.replace(Some((named, setter.clone())));
         self.set.replace(None);
+        // Pages drawn in other faces are no pages to copy.
+        self.previous.replace(None);
         setter
     }
 
@@ -78,7 +86,9 @@ impl Session {
         if let Some(set) = self.set.borrow().as_ref() {
             return set.clone();
         }
-        let mut set = text::typeset(app, &setter, &text::Options::default());
+        let previous = self.previous.take();
+        let mut set =
+            text::typeset_after(app, &setter, &text::Options::default(), previous.as_deref());
         // A character no face had, not looked for since the fonts were: look again, once.
         let new: Vec<char> = missing(&set)
             .into_iter()

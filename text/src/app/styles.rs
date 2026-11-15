@@ -207,6 +207,12 @@ impl App {
         Some(broken(resolved))
     }
 
+    /// Which set of styles the document has: the same until another document is opened, since
+    /// no edit changes a style — what a page set before an edit may be recognised by.
+    pub fn styles_generation(&self) -> u64 {
+        self.state.read().unwrap().doc.generation
+    }
+
     /// Whether a page starts at block `index`: its style says so, or a break was made there.
     pub fn starts_page(&self, index: usize) -> bool {
         self.paragraph_shared(index).is_some_and(|resolved| {

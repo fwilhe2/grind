@@ -49,6 +49,29 @@ fn main() {
         again.pages.len()
     );
 
+    // What a keystroke costs: a word typed in the middle, the pages set again from the ones
+    // before, which copies those it finds unchanged.
+    let middle = app.block_count() / 2;
+    let _ = app.insert_text(
+        grind_text::Caret {
+            block: middle,
+            offset: 0,
+        },
+        "word ",
+    );
+    let started = Instant::now();
+    let edited = grind_print::text::typeset_after(
+        &app,
+        &setter,
+        &grind_print::text::Options::default(),
+        Some(&again),
+    );
+    println!(
+        "edit      {:>9.1} ms  {} pages",
+        ms(started),
+        edited.pages.len()
+    );
+
     let Some(shown) = doc.pages.get(page.saturating_sub(1)) else {
         eprintln!("there is no page {page}");
         std::process::exit(1);

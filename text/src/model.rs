@@ -29,7 +29,7 @@ pub struct BlockId(pub u64);
 ///
 /// ponytail: a `List` block owning its items is the alternative, at the cost of recursive
 /// addressing — worth it when list-level editing needs it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum BlockKind {
     /// `text:p`
     Paragraph,
@@ -361,7 +361,7 @@ pub fn coalesce(runs: &mut Vec<Run>) {
 /// A table read from a file keeps its own styling through a regenerate
 /// ([`crate::odf::source::TableSource`]); a new table has none. A table nested in a cell is read
 /// as paragraphs of the cell holding it: its text survives, its structure does not.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cell {
     /// `table:name` (rng:15970) — the table's identity, the only thing marking where one table
     /// ends and the next begins. Kept verbatim, as LibreOffice keeps it (`doc/odt-format.md` §5b).
@@ -561,6 +561,9 @@ pub struct Document {
     /// The name of the `style:page-layout` [`Document::page`] was read from — what a page setup
     /// writes over.
     pub page_layout: Option<String>,
+    /// A number no other document read or made in this process has: its styles are read once
+    /// and never changed, so this names them (`App::styles_generation`).
+    pub generation: u64,
     /// The default paragraph style (`style:default-style style:family="paragraph"`), the root of
     /// every paragraph style chain, read and never written ([`crate::paragraph`]). Boxed, as a
     /// large value read once per print.
@@ -644,7 +647,9 @@ impl Document {
     /// constructor because `next_id` is private.
     #[must_use]
     pub fn empty() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Document {
+            generation: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             blocks: Vec::new(),
             bookmarks: BTreeMap::new(),
             styles: std::collections::BTreeSet::new(),
