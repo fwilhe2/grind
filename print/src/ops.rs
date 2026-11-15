@@ -164,6 +164,8 @@ pub struct Document {
     /// fingerprint a later setting finds again is that page and need not be drawn
     /// (`crate::text::typeset_after`). Empty for a document not set here.
     pub keys: Vec<u64>,
+    /// How the pages were cut, for the next setting to start from.
+    pub(crate) cut: Option<std::sync::Arc<crate::text::Cut>>,
 }
 
 #[cfg(test)]

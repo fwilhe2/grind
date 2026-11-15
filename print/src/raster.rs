@@ -679,6 +679,7 @@ mod tests {
             outline: vec![],
             structure: vec![],
             keys: vec![],
+            cut: None,
         };
         let bytes = crate::pdf::write(&doc, &fonts, &crate::pdf::Metadata::default()).unwrap();
         let pdf = hayro::hayro_syntax::Pdf::new(bytes).unwrap();

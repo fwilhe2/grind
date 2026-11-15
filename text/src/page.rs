@@ -50,7 +50,7 @@ impl Default for Rules {
 /// What a document's paragraph style says about page breaks around a block (`fo:break-before`,
 /// `fo:break-after`, `fo:keep-with-next`; rng:2073, rng:2110), asked through [`Faces::breaks`]; a
 /// screen answers nothing.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Breaks {
     /// `fo:break-before="page"`: the block starts a page.
     pub page_before: bool,
@@ -183,6 +183,14 @@ pub fn paginate_first(
         rules,
         picture,
     )
+    .pages
+}
+
+/// [`paginate_slots`]'s pages, and each block's layout as the cut measured it — `None` for a
+/// picture — for a caller that would compare a block laid out again with how it was cut.
+pub struct Paginated {
+    pub pages: Vec<Page>,
+    pub layouts: Vec<Option<grind_core::layout::Layout>>,
 }
 
 /// [`paginate`] over several kinds of page: the first on `slots[start]`, each next on the previous
@@ -200,7 +208,7 @@ pub fn paginate_slots(
     spacing: &Spacing,
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
-) -> Vec<Page> {
+) -> Paginated {
     // The flow from a top of zero; the page's own top margin is the page's business.
     let spacing = Spacing {
         top: 0.0,
@@ -384,7 +392,10 @@ pub fn paginate_slots(
             }
         }
     }
-    cut.pages
+    Paginated {
+        pages: cut.pages,
+        layouts,
+    }
 }
 
 /// Several measures' faces as one: each block answered by the measure its run of pages is set

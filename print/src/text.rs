@@ -16,7 +16,7 @@ use grind_core::layout::{Fragment, wrap};
 use grind_core::page::{PageGeometry, pt};
 use grind_core::style::{TextStyle, length_mm};
 use grind_text::flow::{self, CellBox};
-use grind_text::page::{Piece, Rules, paginate_slots};
+use grind_text::page::{Paginated, Piece, Rules, paginate_slots};
 use grind_text::{App, BlockKind, BlockView, Caret, paint, picture_of};
 
 use crate::faces::{Column, RoleFace, SPACING, role_faces};
@@ -50,7 +50,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
 /// before an edit, with the same `setter`. A page is the same when everything its drawing reads
 /// is: its place in the flow, its blocks and their styles, labels, boxes and spacing, its number
 /// and running heads, and the pages' masters. The rest are `previous`'s, copied
-/// (`doc/page-model.md` PM3).
+/// (`doc/page-model.md` PM3). An edit that left every block it changed the shape it was is
+/// not even cut again: only the pages holding it are drawn.
 pub fn typeset_after(
     app: &App,
     setter: &Typesetter,
@@ -58,163 +59,22 @@ pub fn typeset_after(
     previous: Option<&Document>,
 ) -> Document {
     setter.hint(app.font_generics());
-    let default_geometry = options.paper.or(app.page()).unwrap_or_default();
+    if let Some(set) = previous.and_then(|previous| touch_up(app, setter, options, previous)) {
+        return set;
+    }
+    let revision = app.revision();
     let viewport = app.get_viewport(0..app.block_count());
     let (kinds, starts) = page_kinds(app, &viewport);
-    let sheets: Vec<Sheet<'_>> = kinds
-        .iter()
-        .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options))
-        .collect();
-    // The widths text is set at: the document's own page first, then each master's that differs.
-    let width = pt(default_geometry.text_width());
-    let mut widths = vec![width];
-    for sheet in &sheets {
-        let own = pt(sheet.geometry.text_width());
-        if !widths.iter().any(|w| (w - own).abs() < 1e-6) {
-            widths.push(own);
-        }
-    }
-    let slots: Vec<grind_text::page::Slot> = sheets
-        .iter()
-        .zip(&kinds)
-        .map(|(sheet, kind)| grind_text::page::Slot {
-            height: sheet.height,
-            next: kind.next,
-            measure: widths
-                .iter()
-                .position(|w| (w - pt(sheet.geometry.text_width())).abs() < 1e-6)
-                .unwrap_or(0),
-            master: kind.master,
-            plain: kind.plain,
-            left: kind.left_twin,
-            hand: kind.hand,
-        })
-        .collect();
-    let faces = role_faces(setter);
-
-    let looks: std::collections::HashMap<String, grind_text::table_look::TableLook> = viewport
-        .iter()
-        .filter_map(|view| view.cell.as_ref().map(|cell| cell.table.clone()))
-        .collect::<std::collections::BTreeSet<_>>()
-        .into_iter()
-        .filter_map(|table| Some((table.clone(), app.table_look(&table)?)))
-        .collect();
-    let blocks = block_faces(app, setter, &viewport);
-    let mut spacing = block_spacing(app, &viewport);
-    if !app.paragraph_spaces_add() {
-        keep_the_larger_space(&viewport, &mut spacing);
-    }
-    let breaks = block_breaks(app, &viewport);
-    let mut indents: std::collections::HashMap<usize, f32> = viewport
-        .iter()
-        .filter_map(|view| {
-            let resolved = app.paragraph_shared(view.index)?;
-            let props = &resolved.props;
-            let first = props.text_indent.as_deref().and_then(length_mm).map(pt)?;
-            (first != 0.0).then_some((view.index, first as f32))
-        })
-        .collect();
-    // Every paragraph's tab stops — its own and the default interval — in points.
-    let tabs: std::collections::HashMap<usize, grind_core::layout::Tabs> = viewport
-        .iter()
-        .filter(|view| view.text.contains('\t'))
-        .filter_map(|view| {
-            let tabs = app.paragraph_shared(view.index)?.props.tabs();
-            (!tabs.is_empty()).then_some((view.index, tabs))
-        })
-        .collect();
-    let aligns: HashMap<usize, crate::faces::Aligned> = viewport
-        .iter()
-        .filter_map(|view| {
-            let resolved = app.paragraph_shared(view.index)?;
-            let props = &resolved.props;
-            let align = Align::parse(props.text_align.as_deref());
-            let last = Align::parse(props.text_align_last.as_deref());
-            let single = props.justify_single_word.as_deref() == Some("true");
-            (align != Align::Start).then_some((view.index, (align, last, single)))
-        })
-        .collect();
-    // Where the paragraph style asks for hyphenation, in its language (fact 55).
-    let hyphenations: HashMap<usize, grind_core::layout::Hyphenate> = viewport
-        .iter()
-        .filter_map(|view| {
-            let resolved = app.paragraph_shared(view.index)?;
-            let props = &resolved.props;
-            if props.hyphenate.as_deref() != Some("true") {
-                return None;
-            }
-            let count = |value: &Option<String>| {
-                value
-                    .as_deref()
-                    .and_then(|v| v.trim().parse().ok())
-                    .unwrap_or(0)
-            };
-            Some((
-                view.index,
-                grind_core::layout::Hyphenate {
-                    language: props.language.clone()?,
-                    head: count(&props.hyphenation_remain),
-                    tail: count(&props.hyphenation_push),
-                },
-            ))
-        })
-        .collect();
-    let labels = level_labels(
-        app,
-        &viewport,
-        (&faces, &blocks),
-        &mut spacing,
-        &mut indents,
-    );
-    let frames = paragraph_frames(app, &viewport, &mut spacing);
-    let insets: HashMap<usize, f64> = frames
-        .iter()
-        .filter(|(_, frame)| !frame.open_above)
-        .map(|(&index, frame)| (index, frame.inset(grind_text::table_look::TOP)))
-        .collect();
-    let across: Vec<_> = widths
-        .iter()
-        .map(|&width| {
-            let looks = crate::faces::TableLooks(&looks);
-            flow::across_with(app, &viewport, width, &SPACING, &looks)
-        })
-        .collect();
-    let columns: Vec<Column<'_>> = widths
-        .iter()
-        .zip(&across)
-        .map(|(&width, across)| Column {
-            insets: &insets,
-            indents: &indents,
-            tabs: &tabs,
-            aligns: &aligns,
-            hyphenations: &hyphenations,
-            looks: &looks,
-            faces: &faces,
-            blocks: &blocks,
-            spacing: &spacing,
-            breaks: &breaks,
-            width,
-            across,
-        })
-        .collect();
+    let paper = Paper::new(app, setter, options, kinds);
+    let maps = Maps::over(app, setter, &viewport, &paper.widths);
+    let columns = maps.columns();
     let column = &columns[0];
     let measures: Vec<(&dyn grind_text::Faces, f64)> = columns
         .iter()
         .map(|column| (column as &dyn grind_text::Faces, column.width))
         .collect();
-    // A caption is set in its paragraph's face.
-    let caption_face = |view: &BlockView| {
-        crate::faces::face_for(
-            &faces,
-            &blocks,
-            view.index,
-            &view.kind,
-            view.style.as_deref(),
-        )
-    };
-    let picture = |view: &BlockView, measure: f64| {
-        figure(view, measure, caption_face(view), figure_look(app, view)).map(|f| f.height)
-    };
+    let picture =
+        |view: &BlockView, measure: f64| maps.figure(view, measure).map(|figure| figure.height);
     // The document's own widows and orphans, and none where it states none — what Writer does
     // (`doc/odt-format.md` §5c, fact 3).
     let stated = app.paragraph_defaults();
@@ -222,10 +82,10 @@ pub fn typeset_after(
         orphans: stated.orphans.unwrap_or(0) as usize,
         widows: stated.widows.unwrap_or(0) as usize,
     };
-    let pages = paginate_slots(
+    let Paginated { pages, layouts } = paginate_slots(
         (app, &viewport),
         &measures,
-        &slots,
+        &paper.slots,
         (0, &starts),
         &SPACING,
         breaking,
@@ -234,39 +94,474 @@ pub fn typeset_after(
     let numbering = numbering(&pages);
     let chapters = chapters(&pages, &viewport);
 
-    // What every page's drawing reads that is not the page's own: the paper, the page set, the
-    // widths text is set at — and the document's styles, masters and running heads, which only
-    // reading a document sets, so its generation names them.
-    let seed = {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = key_hasher();
-        app.styles_generation().hash(&mut hasher);
-        format!("{:?}|{:?}", options.paper, app.page()).hash(&mut hasher);
-        for kind in &kinds {
-            (&kind.name, kind.first, kind.left).hash(&mut hasher);
-        }
-        for width in &widths {
-            width.to_bits().hash(&mut hasher);
-        }
-        hasher.finish()
-    };
-    // Each table's look, once: a cell's drawing reads its table's.
-    let tables: HashMap<&String, u64> = looks
+    let kept: HashMap<u64, &Arc<Page>> = previous
+        .map_or_default(|previous| previous.keys.iter().copied().zip(&previous.pages).collect());
+    let mut outline = Vec::new();
+    let mut keys = Vec::with_capacity(pages.len());
+    let drawn = pages
         .iter()
-        .map(|(name, look)| {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = key_hasher();
-            format!("{look:?}").hash(&mut hasher);
-            (name, hasher.finish())
+        .enumerate()
+        .map(|(number, page)| {
+            let heads = (numbering[number], chapters[number].as_slice());
+            let key = maps.key(column, paper.seed, page, heads);
+            keys.push(key);
+            outline.extend(maps.headings(&paper.sheets[page.slot], page, number));
+            match kept.get(&key) {
+                // Drawn before as it is now.
+                Some(same) => Arc::clone(same),
+                None => Arc::new(maps.draw(column, &paper.sheets[page.slot], page, heads)),
+            }
         })
         .collect();
-    let key = |number: usize, page: &grind_text::page::Page| -> u64 {
+    let shapes = viewport
+        .iter()
+        .map(|view| maps.shape(view, layouts.get(view.index)?.as_ref()?))
+        .collect();
+    Document {
+        pages: drawn,
+        outline,
+        structure: structure(&viewport),
+        keys,
+        cut: Some(Arc::new(Cut {
+            revision,
+            seed: paper.seed,
+            kinds: paper.kinds,
+            pages: pages.into(),
+            numbering: numbering.into(),
+            chapters: chapters.into(),
+            shapes,
+        })),
+    }
+}
+
+/// How a setting cut its pages, kept with them for the next setting to start from.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Cut {
+    /// The document's revision when it was set ([`App::changed_since`]).
+    revision: u64,
+    /// [`Paper::seed`].
+    seed: u64,
+    kinds: Vec<Kind>,
+    pages: Arc<[grind_text::page::Page]>,
+    numbering: Arc<[(usize, usize)]>,
+    chapters: Arc<[Vec<String>]>,
+    /// Each block's [`Maps::shape`] as it was cut.
+    shapes: Arc<[Option<u64>]>,
+}
+
+/// `previous` set again after an edit that left every block it changed the shape it was: then
+/// the pages are cut as they were, and only those holding a changed block are drawn again, from
+/// what is read about their blocks and the one either side of them. `None` when the edit added
+/// or removed a block, changed one's shape, or anything else; the whole document is set then.
+fn touch_up(
+    app: &App,
+    setter: &Typesetter,
+    options: &Options,
+    previous: &Document,
+) -> Option<Document> {
+    let cut = previous.cut.as_deref()?;
+    let revision = app.revision();
+    let changed = app.changed_since(cut.revision)?;
+    if changed.blocks.len() != changed.before {
+        return None;
+    }
+    let paper = Paper::new(app, setter, options, cut.kinds.clone());
+    if paper.seed != cut.seed {
+        return None;
+    }
+    let touched: Vec<usize> = (0..cut.pages.len())
+        .filter(|&number| blocks_of(&cut.pages[number]).any(|i| changed.blocks.contains(&i)))
+        .collect();
+    let on_them = || {
+        touched
+            .iter()
+            .flat_map(|&number| blocks_of(&cut.pages[number]))
+    };
+    let (Some(first), Some(last)) = (on_them().min(), on_them().max()) else {
+        let mut set = previous.clone();
+        set.cut = Some(Arc::new(Cut {
+            revision,
+            ..cut.clone()
+        }));
+        return changed.none().then_some(set);
+    };
+    // What a block's neighbours decide of it (contextual spacing, joined borders, the larger
+    // space) reaches one block; a table's columns are worked out over the whole table.
+    let mut window = first.saturating_sub(1)..(last + 2).min(app.block_count());
+    if let Some(table) = app.table(window.start) {
+        window.start = window.start.min(table.blocks.start);
+    }
+    if let Some(table) = window.end.checked_sub(1).and_then(|end| app.table(end)) {
+        window.end = window.end.max(table.blocks.end);
+    }
+    let viewport = app.get_viewport(window);
+    let maps = Maps::over(app, setter, &viewport, &paper.widths);
+    let columns = maps.columns();
+    let column = &columns[0];
+    for index in changed.blocks.clone() {
+        let view = viewport.get(index)?;
+        let piece = touched
+            .iter()
+            .flat_map(|&number| &cut.pages[number].pieces)
+            .find(|piece| piece.index == index)?;
+        let layout = maps.layout(column, view, piece.width)?;
+        let shape = maps.shape(view, &layout);
+        if shape.is_none() || shape != *cut.shapes.get(index)? {
+            return None;
+        }
+    }
+    let mut set = previous.clone();
+    for number in touched {
+        let page = &cut.pages[number];
+        let heads = (cut.numbering[number], cut.chapters[number].as_slice());
+        let key = maps.key(column, cut.seed, page, heads);
+        if key != set.keys[number] {
+            set.pages[number] = Arc::new(maps.draw(column, &paper.sheets[page.slot], page, heads));
+            set.keys[number] = key;
+        }
+    }
+    set.cut = Some(Arc::new(Cut {
+        revision,
+        ..cut.clone()
+    }));
+    Some(set)
+}
+
+/// The blocks a page holds, in a piece or a cell.
+fn blocks_of(page: &grind_text::page::Page) -> impl Iterator<Item = usize> + '_ {
+    let pieces = page.pieces.iter().map(|piece| piece.index);
+    pieces.chain(page.cells.iter().map(|cell| cell.first))
+}
+
+/// The kinds of page the document is set on, laid out, and what a page's drawing reads of them.
+struct Paper<'a> {
+    kinds: Vec<Kind>,
+    sheets: Vec<Sheet<'a>>,
+    /// The widths text is set at: the document's own page first, then each master's that
+    /// differs.
+    widths: Vec<f64>,
+    slots: Vec<grind_text::page::Slot>,
+    /// What every page's drawing reads that is not the page's own: the paper, the page set, the
+    /// widths text is set at — and the document's styles, masters and running heads, which only
+    /// reading a document sets, so its generation names them.
+    seed: u64,
+}
+
+impl<'a> Paper<'a> {
+    fn new(app: &'a App, setter: &'a Typesetter, options: &Options, kinds: Vec<Kind>) -> Self {
+        let default_geometry = options.paper.or(app.page()).unwrap_or_default();
+        let sheets: Vec<Sheet<'_>> = kinds
+            .iter()
+            .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options))
+            .collect();
+        let mut widths = vec![pt(default_geometry.text_width())];
+        for sheet in &sheets {
+            let own = pt(sheet.geometry.text_width());
+            if !widths.iter().any(|w| (w - own).abs() < 1e-6) {
+                widths.push(own);
+            }
+        }
+        let slots = sheets
+            .iter()
+            .zip(&kinds)
+            .map(|(sheet, kind)| grind_text::page::Slot {
+                height: sheet.height,
+                next: kind.next,
+                measure: widths
+                    .iter()
+                    .position(|w| (w - pt(sheet.geometry.text_width())).abs() < 1e-6)
+                    .unwrap_or(0),
+                master: kind.master,
+                plain: kind.plain,
+                left: kind.left_twin,
+                hand: kind.hand,
+            })
+            .collect();
+        let seed = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = key_hasher();
+            app.styles_generation().hash(&mut hasher);
+            format!("{:?}|{:?}", options.paper, app.page()).hash(&mut hasher);
+            for kind in &kinds {
+                (&kind.name, kind.first, kind.left).hash(&mut hasher);
+            }
+            for width in &widths {
+                width.to_bits().hash(&mut hasher);
+            }
+            hasher.finish()
+        };
+        Paper {
+            kinds,
+            sheets,
+            widths,
+            slots,
+            seed,
+        }
+    }
+}
+
+/// What setting the blocks of a viewport reads about each: its face, room, label, box, tabs and
+/// the rest, by block index, worked out over the viewport.
+struct Maps<'a> {
+    app: &'a App,
+    setter: &'a Typesetter,
+    viewport: &'a grind_text::Viewport,
+    faces: Vec<RoleFace<'a>>,
+    blocks: HashMap<usize, RoleFace<'a>>,
+    spacing: HashMap<usize, crate::faces::Room>,
+    breaks: HashMap<usize, grind_text::page::Breaks>,
+    insets: HashMap<usize, f64>,
+    indents: HashMap<usize, f32>,
+    tabs: HashMap<usize, grind_core::layout::Tabs>,
+    aligns: HashMap<usize, crate::faces::Aligned>,
+    hyphenations: HashMap<usize, grind_core::layout::Hyphenate>,
+    looks: HashMap<String, grind_text::table_look::TableLook>,
+    /// Each table's look, hashed once: a cell's drawing reads its table's.
+    tables: HashMap<String, u64>,
+    labels: HashMap<usize, Label>,
+    frames: HashMap<usize, Frame>,
+    /// One per width text is set at ([`Paper::widths`]).
+    widths: Vec<f64>,
+    across: Vec<HashMap<usize, flow::Across>>,
+}
+
+impl<'a> Maps<'a> {
+    fn over(
+        app: &'a App,
+        setter: &'a Typesetter,
+        viewport: &'a grind_text::Viewport,
+        widths: &[f64],
+    ) -> Self {
+        let faces = role_faces(setter);
+        let looks: HashMap<String, grind_text::table_look::TableLook> = viewport
+            .iter()
+            .filter_map(|view| view.cell.as_ref().map(|cell| cell.table.clone()))
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|table| Some((table.clone(), app.table_look(&table)?)))
+            .collect();
+        let blocks = block_faces(app, setter, viewport);
+        let mut spacing = block_spacing(app, viewport);
+        if !app.paragraph_spaces_add() {
+            keep_the_larger_space(viewport, &mut spacing);
+        }
+        let breaks = block_breaks(app, viewport);
+        let mut indents: HashMap<usize, f32> = viewport
+            .iter()
+            .filter_map(|view| {
+                let resolved = app.paragraph_shared(view.index)?;
+                let props = &resolved.props;
+                let first = props.text_indent.as_deref().and_then(length_mm).map(pt)?;
+                (first != 0.0).then_some((view.index, first as f32))
+            })
+            .collect();
+        // Every paragraph's tab stops — its own and the default interval — in points.
+        let tabs: HashMap<usize, grind_core::layout::Tabs> = viewport
+            .iter()
+            .filter(|view| view.text.contains('\t'))
+            .filter_map(|view| {
+                let tabs = app.paragraph_shared(view.index)?.props.tabs();
+                (!tabs.is_empty()).then_some((view.index, tabs))
+            })
+            .collect();
+        let aligns: HashMap<usize, crate::faces::Aligned> = viewport
+            .iter()
+            .filter_map(|view| {
+                let resolved = app.paragraph_shared(view.index)?;
+                let props = &resolved.props;
+                let align = Align::parse(props.text_align.as_deref());
+                let last = Align::parse(props.text_align_last.as_deref());
+                let single = props.justify_single_word.as_deref() == Some("true");
+                (align != Align::Start).then_some((view.index, (align, last, single)))
+            })
+            .collect();
+        // Where the paragraph style asks for hyphenation, in its language (fact 55).
+        let hyphenations: HashMap<usize, grind_core::layout::Hyphenate> = viewport
+            .iter()
+            .filter_map(|view| {
+                let resolved = app.paragraph_shared(view.index)?;
+                let props = &resolved.props;
+                if props.hyphenate.as_deref() != Some("true") {
+                    return None;
+                }
+                let count = |value: &Option<String>| {
+                    value
+                        .as_deref()
+                        .and_then(|v| v.trim().parse().ok())
+                        .unwrap_or(0)
+                };
+                Some((
+                    view.index,
+                    grind_core::layout::Hyphenate {
+                        language: props.language.clone()?,
+                        head: count(&props.hyphenation_remain),
+                        tail: count(&props.hyphenation_push),
+                    },
+                ))
+            })
+            .collect();
+        let labels = level_labels(app, viewport, (&faces, &blocks), &mut spacing, &mut indents);
+        let frames = paragraph_frames(app, viewport, &mut spacing);
+        let insets: HashMap<usize, f64> = frames
+            .iter()
+            .filter(|(_, frame)| !frame.open_above)
+            .map(|(&index, frame)| (index, frame.inset(grind_text::table_look::TOP)))
+            .collect();
+        let across = widths
+            .iter()
+            .map(|&width| {
+                let looks = crate::faces::TableLooks(&looks);
+                flow::across_with(app, viewport, width, &SPACING, &looks)
+            })
+            .collect();
+        let tables = looks
+            .iter()
+            .map(|(name, look)| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = key_hasher();
+                format!("{look:?}").hash(&mut hasher);
+                (name.clone(), hasher.finish())
+            })
+            .collect();
+        Maps {
+            app,
+            setter,
+            viewport,
+            faces,
+            blocks,
+            spacing,
+            breaks,
+            insets,
+            indents,
+            tabs,
+            aligns,
+            hyphenations,
+            looks,
+            tables,
+            labels,
+            frames,
+            widths: widths.to_vec(),
+            across,
+        }
+    }
+
+    /// One [`Column`] per width text is set at.
+    fn columns(&self) -> Vec<Column<'_>> {
+        self.widths
+            .iter()
+            .zip(&self.across)
+            .map(|(&width, across)| Column {
+                insets: &self.insets,
+                indents: &self.indents,
+                tabs: &self.tabs,
+                aligns: &self.aligns,
+                hyphenations: &self.hyphenations,
+                looks: &self.looks,
+                faces: &self.faces,
+                blocks: &self.blocks,
+                spacing: &self.spacing,
+                breaks: &self.breaks,
+                width,
+                across,
+            })
+            .collect()
+    }
+
+    /// The face a caption is set in: its paragraph's.
+    fn caption_face(&self, view: &BlockView) -> &RoleFace<'_> {
+        crate::faces::face_for(
+            &self.faces,
+            &self.blocks,
+            view.index,
+            &view.kind,
+            view.style.as_deref(),
+        )
+    }
+
+    fn figure(&self, view: &BlockView, measure: f64) -> Option<Figure> {
+        figure(
+            view,
+            measure,
+            self.caption_face(view),
+            figure_look(self.app, view),
+        )
+    }
+
+    /// The block laid out `width` wide, as the flow and the drawing lay it out.
+    fn layout(
+        &self,
+        column: &Column<'_>,
+        view: &BlockView,
+        width: f64,
+    ) -> Option<grind_core::layout::Layout> {
+        let face = column.face(view.index, &view.kind, view.style.as_deref());
+        let setting = grind_text::Faces::setting(column, view.index);
+        self.app
+            .layout_block_set(view.index, width as f32, face, &setting)
+            .ok()
+    }
+
+    /// What of a block laid out as `layout` the cut reads: its kind, style, label and breaks,
+    /// and how tall each line is. A block another reads too — a heading, which names the pages
+    /// after it, or a table cell or picture, which do not stack as lines — has none.
+    fn shape(&self, view: &BlockView, layout: &grind_core::layout::Layout) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+        if matches!(view.kind, BlockKind::Heading { .. })
+            || view.cell.is_some()
+            || picture_of(view).is_some()
+        {
+            return None;
+        }
+        let mut hasher = key_hasher();
+        (&view.kind, &view.style, &view.label, view.generated).hash(&mut hasher);
+        self.breaks.get(&view.index).hash(&mut hasher);
+        for line in layout.lines() {
+            (line.top.to_bits(), line.height.to_bits()).hash(&mut hasher);
+        }
+        Some(hasher.finish())
+    }
+
+    /// The headings starting on `page`, for the outline.
+    fn headings(
+        &self,
+        sheet: &Sheet<'_>,
+        page: &grind_text::page::Page,
+        number: usize,
+    ) -> Vec<Heading> {
+        page.pieces
+            .iter()
+            .filter_map(|piece| {
+                let view = self.viewport.get(piece.index)?;
+                let BlockKind::Heading { level } = view.kind else {
+                    return None;
+                };
+                (piece.lines.start == 0 && self.figure(view, piece.width).is_none()).then(|| {
+                    Heading {
+                        level,
+                        title: view.text.clone(),
+                        page: number,
+                        y: (sheet.top + piece.top) as f32,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    /// A hash of everything drawing `page` reads that [`Paper::seed`] does not: its place in the
+    /// flow, its number and running heads, and its blocks with their labels, boxes, spacing and
+    /// setting.
+    fn key(
+        &self,
+        column: &Column<'_>,
+        seed: u64,
+        page: &grind_text::page::Page,
+        heads: ((usize, usize), &[String]),
+    ) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = key_hasher();
         seed.hash(&mut hasher);
         (page.slot, page.restart, page.number).hash(&mut hasher);
-        numbering[number].hash(&mut hasher);
-        chapters[number].hash(&mut hasher);
+        heads.hash(&mut hasher);
         for piece in &page.pieces {
             (piece.index, piece.lines.clone(), piece.repeat).hash(&mut hasher);
             for value in [piece.top, piece.left, piece.width] {
@@ -279,33 +574,28 @@ pub fn typeset_after(
                 value.to_bits().hash(&mut hasher);
             }
         }
-        let blocks = page
-            .pieces
-            .iter()
-            .map(|piece| piece.index)
-            .chain(page.cells.iter().map(|cell| cell.first));
-        for index in blocks {
-            let Some(view) = viewport.get(index) else {
+        for index in blocks_of(page) {
+            let Some(view) = self.viewport.get(index) else {
                 continue;
             };
             fingerprint(view, &mut hasher);
             if let Some(cell) = &view.cell {
-                tables.get(&cell.table).hash(&mut hasher);
+                self.tables.get(&cell.table).hash(&mut hasher);
             }
-            if let Some(label) = labels.get(&index) {
+            if let Some(label) = self.labels.get(&index) {
                 label.x.to_bits().hash(&mut hasher);
                 if let Some(bullet) = &label.bullet {
                     // The list style's own picture, which only reading sets: where it is names it.
                     let picture = &bullet.picture;
                     (&picture.mime, &picture.width, &picture.height).hash(&mut hasher);
-                    std::sync::Arc::as_ptr(&picture.data).hash(&mut hasher);
+                    Arc::as_ptr(&picture.data).hash(&mut hasher);
                     (bullet.width.to_bits(), bullet.height.to_bits()).hash(&mut hasher);
                 }
             }
-            if let Some(frame) = frames.get(&index) {
+            if let Some(frame) = self.frames.get(&index) {
                 format!("{frame:?}").hash(&mut hasher);
             }
-            if let Some(room) = spacing.get(&index) {
+            if let Some(room) = self.spacing.get(&index) {
                 for value in [
                     room.space.above,
                     room.space.below,
@@ -318,180 +608,146 @@ pub fn typeset_after(
             grind_text::Faces::setting(column, index).hash(&mut hasher);
         }
         hasher.finish()
-    };
-    let kept: HashMap<u64, &std::sync::Arc<Page>> = previous
-        .map_or_default(|previous| previous.keys.iter().copied().zip(&previous.pages).collect());
-    let keys: Vec<u64> = pages
-        .iter()
-        .enumerate()
-        .map(|(number, page)| key(number, page))
-        .collect();
+    }
 
-    let mut outline = Vec::new();
-    let pages = pages
-        .iter()
-        .enumerate()
-        .map(|(number, page)| {
-            let sheet = &sheets[page.slot];
-            let (geometry, top, header, footer) =
-                (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
-            let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
-            if let Some(same) = kept.get(&keys[number]) {
-                // Drawn before as it is now; only the outline is the setting's own.
-                for piece in &page.pieces {
-                    if let Some(view) = viewport.get(piece.index)
-                        && let BlockKind::Heading { level } = view.kind
-                        && piece.lines.start == 0
-                        && figure(
-                            view,
-                            piece.width,
-                            caption_face(view),
-                            figure_look(app, view),
-                        )
-                        .is_none()
-                    {
-                        outline.push(Heading {
-                            level,
-                            title: view.text.clone(),
-                            page: number,
-                            y: (top + piece.top) as f32,
-                        });
-                    }
-                }
-                return std::sync::Arc::clone(same);
-            }
-            let mut ops = Vec::new();
-            let mut placed: Vec<LineBox> = Vec::new();
-            ops.extend(
-                sheet
-                    .background
-                    .as_ref()
-                    .and_then(|background| background_op(background, geometry)),
-            );
-            let mut span: Option<(Caret, Caret)> = None;
-            let mut cover = |from: Caret, to: Caret| {
-                span = Some(match span {
-                    Some((start, end)) => (start.min(from), end.max(to)),
-                    None => (from, to),
-                });
-            };
-            for cell in &page.cells {
-                let look = viewport.get(cell.first).and_then(|view| {
-                    let at = view.cell.as_ref()?;
-                    let table = looks.get(&at.table)?;
-                    Some((table, table.cell(at.row, at.column)))
-                });
-                match look {
-                    // A table whose document styles its cells is drawn as they say — an
-                    // unstyled cell of it with no rules at all, as Writer draws one.
-                    Some((table, own)) if !table.cells.is_empty() => {
-                        if let Some(own) = own {
-                            let last = viewport
-                                .get(cell.first)
-                                .and_then(|view| view.cell.as_ref())
-                                .is_some_and(|at| at.row + at.rows_spanned.max(1) >= table.rows);
-                            styled_cell(&mut ops, cell, own, last, left, top);
-                        }
-                    }
-                    _ => rules(&mut ops, cell, left, top),
-                }
-            }
-            for piece in &page.pieces {
-                let Some(view) = viewport.get(piece.index) else {
-                    continue;
-                };
-                let origin = (left + piece.left, top + piece.top);
-                if let Some(figure) = figure(
-                    view,
-                    piece.width,
-                    caption_face(view),
-                    figure_look(app, view),
-                ) {
-                    let length = view.runs.last().map_or(0, grind_text::RunView::end);
-                    placed.push(figure.line_box(origin, piece.index, length));
-                    figure.draw(&mut ops, origin, setter, caption_face(view), piece.index);
-                    cover(caret(piece.index, 0), caret(piece.index, length));
-                    continue;
-                }
-                if let BlockKind::Heading { level } = view.kind
-                    && piece.lines.start == 0
-                {
-                    outline.push(Heading {
-                        level,
-                        title: view.text.clone(),
-                        page: number,
-                        y: origin.1 as f32,
-                    });
-                }
-                let face = column.face(view.index, &view.kind, view.style.as_deref());
-                let setting = grind_text::Faces::setting(column, view.index);
-                let label = labels.get(&view.index);
-                let under = ops.len();
-                let drawn = lines(
-                    (&mut ops, &mut placed),
-                    app,
-                    view,
-                    piece,
-                    face,
-                    (&setting, label),
-                    origin,
-                );
-                if let (Some(frame), Some(drawn)) = (frames.get(&view.index), &drawn) {
-                    let room = spacing.get(&view.index).copied().unwrap_or_default();
-                    let body = (top, top + sheet.height);
-                    let mut boxed = Vec::new();
-                    frame.draw(
-                        &mut boxed,
-                        piece,
-                        origin,
-                        (drawn.height, drawn.last),
-                        room,
-                        body,
-                    );
-                    ops.splice(under..under, boxed);
-                }
-                if let (Some(drawn), false) = (drawn, piece.repeat) {
-                    cover(caret(piece.index, drawn.from), caret(piece.index, drawn.to));
-                }
-            }
-            // The page's number within its run, and how many the run has: the whole document's
-            // unless a paragraph's style restarted the numbering (`doc/pdf-export.md`).
-            let (shown, count) = numbering[number];
-            let bottom = pt(geometry.height) - pt(geometry.bottom);
-            let body_bottom = footer
+    /// Draw `page` on `sheet`: its cells' rules, its blocks, and its header and footer with the
+    /// page's number and running heads.
+    fn draw(
+        &self,
+        column: &Column<'_>,
+        sheet: &Sheet<'_>,
+        page: &grind_text::page::Page,
+        ((shown, count), chapter): ((usize, usize), &[String]),
+    ) -> Page {
+        let (app, setter, viewport) = (self.app, self.setter, self.viewport);
+        let (geometry, top, header, footer) =
+            (sheet.geometry, sheet.top, &sheet.header, &sheet.footer);
+        let (left, margin_top) = (pt(geometry.left), pt(geometry.top));
+        let mut ops = Vec::new();
+        let mut placed: Vec<LineBox> = Vec::new();
+        ops.extend(
+            sheet
+                .background
                 .as_ref()
-                .map_or(bottom, |footer| bottom - footer.height - footer.spacing);
-            let boxes = Boxes {
-                paper: (pt(geometry.width), pt(geometry.height)),
-                body: (top, body_bottom - top),
+                .and_then(|background| background_op(background, geometry)),
+        );
+        let mut span: Option<(Caret, Caret)> = None;
+        let mut cover = |from: Caret, to: Caret| {
+            span = Some(match span {
+                Some((start, end)) => (start.min(from), end.max(to)),
+                None => (from, to),
+            });
+        };
+        for cell in &page.cells {
+            let look = viewport.get(cell.first).and_then(|view| {
+                let at = view.cell.as_ref()?;
+                let table = self.looks.get(&at.table)?;
+                Some((table, table.cell(at.row, at.column)))
+            });
+            match look {
+                // A table whose document styles its cells is drawn as they say — an
+                // unstyled cell of it with no rules at all, as Writer draws one.
+                Some((table, own)) if !table.cells.is_empty() => {
+                    if let Some(own) = own {
+                        let last = viewport
+                            .get(cell.first)
+                            .and_then(|view| view.cell.as_ref())
+                            .is_some_and(|at| at.row + at.rows_spanned.max(1) >= table.rows);
+                        styled_cell(&mut ops, cell, own, last, left, top);
+                    }
+                }
+                _ => rules(&mut ops, cell, left, top),
+            }
+        }
+        for piece in &page.pieces {
+            let Some(view) = viewport.get(piece.index) else {
+                continue;
             };
-            if let Some(header) = header {
-                header.draw(
+            let origin = (left + piece.left, top + piece.top);
+            if let Some(figure) = self.figure(view, piece.width) {
+                let length = view.runs.last().map_or(0, grind_text::RunView::end);
+                placed.push(figure.line_box(origin, piece.index, length));
+                figure.draw(
                     &mut ops,
-                    (left, margin_top),
-                    (shown, count, &chapters[number]),
-                    &boxes,
+                    origin,
+                    setter,
+                    self.caption_face(view),
+                    piece.index,
                 );
+                cover(caret(piece.index, 0), caret(piece.index, length));
+                continue;
             }
-            if let Some(footer) = footer {
-                footer.draw(
-                    &mut ops,
-                    (left, bottom - footer.height),
-                    (shown, count, &chapters[number]),
-                    &boxes,
+            let face = column.face(view.index, &view.kind, view.style.as_deref());
+            let setting = grind_text::Faces::setting(column, view.index);
+            let label = self.labels.get(&view.index);
+            let under = ops.len();
+            let drawn = lines(
+                (&mut ops, &mut placed),
+                app,
+                view,
+                piece,
+                face,
+                (&setting, label),
+                origin,
+            );
+            if let (Some(frame), Some(drawn)) = (self.frames.get(&view.index), &drawn) {
+                let room = self.spacing.get(&view.index).copied().unwrap_or_default();
+                let body = (top, top + sheet.height);
+                let mut boxed = Vec::new();
+                frame.draw(
+                    &mut boxed,
+                    piece,
+                    origin,
+                    (drawn.height, drawn.last),
+                    room,
+                    body,
                 );
+                ops.splice(under..under, boxed);
             }
-            std::sync::Arc::new(Page {
-                width: pt(geometry.width) as f32,
-                height: pt(geometry.height) as f32,
-                ops,
-                lines: placed,
-                start: span.map(|(start, _)| start),
-                end: span.map(|(_, end)| end),
-            })
-        })
-        .collect();
-    let structure = viewport
+            if let (Some(drawn), false) = (drawn, piece.repeat) {
+                cover(caret(piece.index, drawn.from), caret(piece.index, drawn.to));
+            }
+        }
+        // The page's number within its run, and how many the run has: the whole document's
+        // unless a paragraph's style restarted the numbering (`doc/pdf-export.md`).
+        let bottom = pt(geometry.height) - pt(geometry.bottom);
+        let body_bottom = footer
+            .as_ref()
+            .map_or(bottom, |footer| bottom - footer.height - footer.spacing);
+        let boxes = Boxes {
+            paper: (pt(geometry.width), pt(geometry.height)),
+            body: (top, body_bottom - top),
+        };
+        if let Some(header) = header {
+            header.draw(
+                &mut ops,
+                (left, margin_top),
+                (shown, count, chapter),
+                &boxes,
+            );
+        }
+        if let Some(footer) = footer {
+            footer.draw(
+                &mut ops,
+                (left, bottom - footer.height),
+                (shown, count, chapter),
+                &boxes,
+            );
+        }
+        Page {
+            width: pt(geometry.width) as f32,
+            height: pt(geometry.height) as f32,
+            ops,
+            lines: placed,
+            start: span.map(|(start, _)| start),
+            end: span.map(|(_, end)| end),
+        }
+    }
+}
+
+/// Every block that prints, as what it is.
+fn structure(viewport: &grind_text::Viewport) -> Vec<Element> {
+    viewport
         .iter()
         .map(|view| {
             let block = view.index;
@@ -519,13 +775,7 @@ pub fn typeset_after(
                 BlockKind::Paragraph => Element::Paragraph { block },
             }
         })
-        .collect();
-    Document {
-        pages,
-        outline,
-        structure,
-        keys,
-    }
+        .collect()
 }
 
 /// A hasher for page keys: fast, and the same in every setting of one process.
@@ -598,6 +848,7 @@ fn background_op(
 }
 
 /// One kind of page the document is set on: a master page, resolved.
+#[derive(Clone, Debug, PartialEq)]
 struct Kind {
     /// The master's name, or `None` for the document's own default page.
     name: Option<String>,
@@ -2301,6 +2552,48 @@ mod tests {
         }
         app.delete(blocks.len()..blocks.len() + 1).unwrap();
         app
+    }
+
+    /// A letter typed into a paragraph that keeps its lines: the pages are not cut again, only
+    /// the one holding it is drawn, and the result is what setting it from nothing gives. A
+    /// letter that adds a line is cut again.
+    #[test]
+    fn an_edit_that_keeps_a_paragraph_s_lines_draws_only_its_page() {
+        let paragraph = "All work and no play makes a dull document. ".repeat(12);
+        let app = doc(&vec![(BlockKind::Paragraph, paragraph.as_str()); 40]);
+        let (setter, options) = (setter(), Options::default());
+        let before = typeset(&app, &setter, &options);
+        assert!(before.pages.len() > 4);
+        app.insert_text(
+            Caret {
+                block: 20,
+                offset: 0,
+            },
+            "x",
+        )
+        .unwrap();
+        let after = typeset_after(&app, &setter, &options, Some(&before));
+        let cut = |set: &Document| Arc::clone(&set.cut.as_ref().unwrap().pages);
+        assert!(Arc::ptr_eq(&cut(&before), &cut(&after)), "cut again");
+        let redrawn = (before.pages.iter().zip(&after.pages))
+            .filter(|(a, b)| !Arc::ptr_eq(a, b))
+            .count();
+        assert_eq!(redrawn, 1);
+        let fresh = typeset(&app, &setter, &options);
+        assert_eq!(after.pages, fresh.pages);
+        assert_eq!(after.keys, fresh.keys);
+
+        app.insert_text(
+            Caret {
+                block: 20,
+                offset: 0,
+            },
+            &"longer ".repeat(20),
+        )
+        .unwrap();
+        let longer = typeset_after(&app, &setter, &options, Some(&after));
+        assert!(!Arc::ptr_eq(&cut(&after), &cut(&longer)), "a line more");
+        assert_eq!(longer.pages, typeset(&app, &setter, &options).pages);
     }
 
     /// Every text op on a page as `(x, y, text)`.

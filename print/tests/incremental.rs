@@ -80,6 +80,37 @@ fn steps() -> Vec<Step> {
             let middle = app.block_count() / 2;
             app.insert_text(at(middle, 0), "x").is_ok()
         }),
+        // A letter typed or taken out, which mostly leaves a paragraph's lines as they were.
+        Box::new(move |app: &App| {
+            let quarter = app.block_count() / 4;
+            app.insert_text(at(quarter, len(app, quarter) / 2), "a")
+                .is_ok()
+        }),
+        Box::new(move |app: &App| {
+            let quarter = app.block_count() / 4;
+            len(app, quarter) > 0 && app.erase(at(quarter, 0), at(quarter, 1)).is_ok()
+        }),
+        Box::new(move |app: &App| {
+            let late = app.block_count() * 3 / 4;
+            app.insert_text(at(late, len(app, late)), " z").is_ok()
+        }),
+        Box::new(move |app: &App| {
+            let item = (0..app.block_count()).find(|&index| {
+                app.get_viewport(index..index + 1)
+                    .get(index)
+                    .is_some_and(|view| matches!(view.kind, BlockKind::ListItem { .. }))
+            });
+            item.is_some_and(|item| app.insert_text(at(item, 0), "b").is_ok())
+        }),
+        // An input method's composition, and the next change taking it out again.
+        Box::new(move |app: &App| {
+            let middle = app.block_count() / 2;
+            app.compose(at(middle, 0), "ka", None).is_ok()
+        }),
+        Box::new(move |app: &App| {
+            let middle = app.block_count() / 2;
+            app.insert_text(at(middle, 0), "か").is_ok()
+        }),
     ]
 }
 
