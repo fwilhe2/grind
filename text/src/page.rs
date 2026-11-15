@@ -173,8 +173,9 @@ pub fn paginate_first(
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Vec<Page> {
     let slots = [Slot::single(0, first, 1, 0), Slot::single(1, height, 1, 0)];
+    let viewport = app.get_viewport(0..app.block_count());
     paginate_slots(
-        app,
+        (app, &viewport),
         &[(faces, column)],
         &slots,
         (0, &Starts::new()),
@@ -192,7 +193,7 @@ pub fn paginate_first(
 /// pages opened by a block in `starts` is laid out at its slot's measure — a landscape section's
 /// text as wide as its page.
 pub fn paginate_slots(
-    app: &App,
+    (app, viewport): (&App, &crate::Viewport),
     measures: &[(&dyn Faces, f64)],
     slots: &[Slot],
     (start, starts): (usize, &Starts),
@@ -205,18 +206,17 @@ pub fn paginate_slots(
         top: 0.0,
         ..*spacing
     };
-    let viewport = app.get_viewport(0..app.block_count());
     // One flow, each block set at the measure of its run of pages. A run opens on a page of its
     // own, so no page mixes two.
     let mixed = Mixed::new(
         measures,
-        &viewport,
+        viewport,
         |slot| slots.get(slot).map_or(0, |s| s.measure),
         (start, starts),
     );
     let column = measures.first().map_or(0.0, |&(_, column)| column);
-    let laid = flow::lay_out_over(app, &viewport, &mixed, column, &spacing, picture);
-    let units = units(app, &mixed, &laid, &viewport, picture, spacing.cell_pad);
+    let laid = flow::lay_out_over(app, viewport, &mixed, column, &spacing, picture);
+    let units = units(app, &mixed, &laid, viewport, picture, spacing.cell_pad);
     let mut cut = Cut {
         pages: vec![Page {
             slot: start,

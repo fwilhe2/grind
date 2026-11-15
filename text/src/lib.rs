@@ -514,7 +514,8 @@ pub struct App {
     layouts: std::sync::Mutex<Layouts>,
     /// Each paragraph style name resolved ([`App::paragraph`]), until the next change. Filled
     /// under the state's read lock and emptied under its write lock, so never stale.
-    paragraphs: std::sync::Mutex<std::collections::HashMap<Option<String>, paragraph::Resolved>>,
+    paragraphs:
+        std::sync::Mutex<std::collections::HashMap<Option<String>, Arc<paragraph::Resolved>>>,
 }
 
 /// Paragraphs already broken into lines, by everything that decides the result: the text and

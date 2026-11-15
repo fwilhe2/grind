@@ -45,7 +45,8 @@ pub struct Options {
 pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     setter.hint(app.font_generics());
     let default_geometry = options.paper.or(app.page()).unwrap_or_default();
-    let (kinds, starts) = page_kinds(app);
+    let viewport = app.get_viewport(0..app.block_count());
+    let (kinds, starts) = page_kinds(app, &viewport);
     let sheets: Vec<Sheet<'_>> = kinds
         .iter()
         .map(|kind| Sheet::lay_out(app, setter, kind, default_geometry, options))
@@ -76,7 +77,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         })
         .collect();
     let faces = role_faces(setter);
-    let viewport = app.get_viewport(0..app.block_count());
+
     let looks: std::collections::HashMap<String, grind_text::table_look::TableLook> = viewport
         .iter()
         .filter_map(|view| view.cell.as_ref().map(|cell| cell.table.clone()))
@@ -93,7 +94,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let mut indents: std::collections::HashMap<usize, f32> = viewport
         .iter()
         .filter_map(|view| {
-            let props = app.paragraph(view.index)?.props;
+            let resolved = app.paragraph_shared(view.index)?;
+            let props = &resolved.props;
             let first = props.text_indent.as_deref().and_then(length_mm).map(pt)?;
             (first != 0.0).then_some((view.index, first as f32))
         })
@@ -103,14 +105,15 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         .iter()
         .filter(|view| view.text.contains('\t'))
         .filter_map(|view| {
-            let tabs = app.paragraph(view.index)?.props.tabs();
+            let tabs = app.paragraph_shared(view.index)?.props.tabs();
             (!tabs.is_empty()).then_some((view.index, tabs))
         })
         .collect();
     let aligns: HashMap<usize, crate::faces::Aligned> = viewport
         .iter()
         .filter_map(|view| {
-            let props = app.paragraph(view.index)?.props;
+            let resolved = app.paragraph_shared(view.index)?;
+            let props = &resolved.props;
             let align = Align::parse(props.text_align.as_deref());
             let last = Align::parse(props.text_align_last.as_deref());
             let single = props.justify_single_word.as_deref() == Some("true");
@@ -121,7 +124,8 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
     let hyphenations: HashMap<usize, grind_core::layout::Hyphenate> = viewport
         .iter()
         .filter_map(|view| {
-            let props = app.paragraph(view.index)?.props;
+            let resolved = app.paragraph_shared(view.index)?;
+            let props = &resolved.props;
             if props.hyphenate.as_deref() != Some("true") {
                 return None;
             }
@@ -205,7 +209,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
         widows: stated.widows.unwrap_or(0) as usize,
     };
     let pages = paginate_slots(
-        app,
+        (app, &viewport),
         &measures,
         &slots,
         (0, &starts),
@@ -500,7 +504,7 @@ impl<'a> Sheet<'a> {
 /// A master page is named by the paragraph that starts it (`style:master-page-name`, `doc/odt-format.md`
 /// §5c fact 17), and the pages after it are set on its `style:next-style-name`: a letter
 /// series is a letter's first paragraph, over and over, and each letter gets its letterhead.
-fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
+fn page_kinds(app: &App, viewport: &grind_text::Viewport) -> (Vec<Kind>, grind_text::page::Starts) {
     let mut kinds: Vec<Kind> = Vec::new();
     let kind_of = |kinds: &mut Vec<Kind>, name: Option<&str>, first: bool, left: bool| -> usize {
         if let Some(at) = kinds.iter().position(|kind| {
@@ -528,21 +532,21 @@ fn page_kinds(app: &App) -> (Vec<Kind>, grind_text::page::Starts) {
     };
     let opening_of =
         |kinds: &mut Vec<Kind>, name: Option<&str>| kind_of(kinds, name, has_first(name), false);
-    let viewport = app.get_viewport(0..app.block_count());
     let first = viewport
         .iter()
         .next()
-        .and_then(|view| app.paragraph(view.index)?.props.master_page);
+        .and_then(|view| app.paragraph_shared(view.index)?.props.master_page.clone());
     let rest = app.rest_master();
     // The page the document opens on: what its first paragraph names, else the body's master.
     let opening = first.or_else(|| rest.clone());
     opening_of(&mut kinds, opening.as_deref());
     let mut starts = grind_text::page::Starts::new();
     for view in viewport.iter().filter(|view| view.cell.is_none()) {
-        let Some(props) = app.paragraph(view.index).map(|resolved| resolved.props) else {
+        let Some(resolved) = app.paragraph_shared(view.index) else {
             continue;
         };
-        let Some(name) = props.master_page else {
+        let props = &resolved.props;
+        let Some(name) = props.master_page.clone() else {
             continue;
         };
         let restart = props
@@ -653,24 +657,24 @@ fn block_faces<'a>(
     viewport
         .iter()
         .filter_map(|view| {
-            let resolved = app.paragraph(view.index)?;
-            let props = resolved.props;
+            let resolved = app.paragraph_shared(view.index)?;
+            let props = &resolved.props;
             let stated = if resolved.declared {
                 TextStyle {
-                    font_family: props.font_family,
-                    font_size: props.font_size,
-                    font_weight: props.font_weight,
-                    font_style: props.font_style,
-                    letter_spacing: props.letter_spacing,
-                    letter_kerning: props.letter_kerning,
+                    font_family: props.font_family.clone(),
+                    font_size: props.font_size.clone(),
+                    font_weight: props.font_weight.clone(),
+                    font_style: props.font_style.clone(),
+                    letter_spacing: props.letter_spacing.clone(),
+                    letter_kerning: props.letter_kerning.clone(),
                     text_position: None,
-                    font_variant: props.font_variant,
+                    font_variant: props.font_variant.clone(),
                 }
             } else {
                 TextStyle {
-                    font_family: props.font_family,
-                    letter_spacing: props.letter_spacing,
-                    letter_kerning: props.letter_kerning,
+                    font_family: props.font_family.clone(),
+                    letter_spacing: props.letter_spacing.clone(),
+                    letter_kerning: props.letter_kerning.clone(),
                     ..TextStyle::default()
                 }
             };
@@ -709,7 +713,7 @@ fn block_spacing(
     }
     let mut before: Option<Before> = None;
     for view in viewport.iter() {
-        let Some(resolved) = app.paragraph(view.index).filter(|r| r.declared) else {
+        let Some(resolved) = app.paragraph_shared(view.index).filter(|r| r.declared) else {
             before = None;
             continue;
         };
@@ -764,21 +768,18 @@ fn paragraph_frames(
     viewport: &grind_text::Viewport,
     spacing: &mut HashMap<usize, crate::faces::Room>,
 ) -> HashMap<usize, Frame> {
-    let props: Vec<Option<grind_text::paragraph::ParagraphProps>> = viewport
+    let resolved: Vec<Option<std::sync::Arc<grind_text::paragraph::Resolved>>> = viewport
         .iter()
-        .map(|view| {
-            let resolved = app.paragraph(view.index)?;
-            resolved.declared.then_some(resolved.props)
-        })
+        .map(|view| app.paragraph_shared(view.index).filter(|r| r.declared))
+        .collect();
+    let props: Vec<Option<&grind_text::paragraph::ParagraphProps>> = resolved
+        .iter()
+        .map(|resolved| resolved.as_deref().map(|resolved| &resolved.props))
         .collect();
     let views: Vec<&BlockView> = viewport.iter().collect();
     let looks: Vec<_> = props
         .iter()
-        .map(|props| {
-            props
-                .as_ref()
-                .and_then(grind_text::paragraph::ParagraphProps::look)
-        })
+        .map(|props| props.and_then(grind_text::paragraph::ParagraphProps::look))
         .collect();
     let joined = |at: usize| -> bool {
         let (Some(a), Some(b)) = (&props[at], &props[at + 1]) else {
@@ -1014,7 +1015,7 @@ fn level_labels(
                         _ if margin > end => margin,
                         _ => {
                             let interval = app
-                                .paragraph(view.index)
+                                .paragraph_shared(view.index)
                                 .map(|resolved| f64::from(resolved.props.tabs().interval))
                                 .filter(|interval| *interval > 0.0)
                                 .unwrap_or(pt(12.5));
@@ -1093,7 +1094,8 @@ fn block_breaks(
         .iter()
         .filter(|view| view.cell.is_none())
         .filter_map(|view| {
-            let props = app.paragraph(view.index)?.props;
+            let resolved = app.paragraph_shared(view.index)?;
+            let props = &resolved.props;
             let breaks = grind_text::page::Breaks {
                 page_before: page(&props.break_before),
                 page_after: page(&props.break_after),
@@ -1269,8 +1271,8 @@ fn lines(
     let count = layout.lines().len();
     // The paragraph style's ink, under every run that states none.
     let ink = app
-        .paragraph(view.index)
-        .and_then(|resolved| resolved.props.color)
+        .paragraph_shared(view.index)
+        .and_then(|resolved| resolved.props.color.clone())
         .as_deref()
         .and_then(Rgb::parse)
         .unwrap_or(Rgb::BLACK);
@@ -1957,10 +1959,10 @@ fn figure(
 /// start and [`CAPTION_GAP`].
 // ponytail: the frame's inner paragraphs' own styles are not kept; theirs is assumed.
 fn figure_look(app: &App, view: &BlockView) -> (Align, f64) {
-    let Some(resolved) = app.paragraph(view.index).filter(|r| r.declared) else {
+    let Some(resolved) = app.paragraph_shared(view.index).filter(|r| r.declared) else {
         return (Align::parse(None), CAPTION_GAP);
     };
-    let props = resolved.props;
+    let props = &resolved.props;
     let points = |value: &Option<String>| value.as_deref().and_then(length_mm).map_or(0.0, pt);
     (
         Align::parse(props.text_align.as_deref()),
