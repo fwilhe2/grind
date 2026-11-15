@@ -13,7 +13,7 @@
 //! browser's whole contribution — how wide is this text, in CSS pixels.
 //!
 //! That is the view until the print module has loaded; from then the document is drawn as its
-//! printed pages ([`paged`], `doc/page-model.md` PM7), and the lines are where it cannot load.
+//! printed pages (`text/paged.rs`, `doc/page-model.md` PM7), and the lines are where it cannot load.
 
 pub mod keymap;
 mod paged;
