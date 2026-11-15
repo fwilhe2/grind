@@ -200,6 +200,24 @@ pub fn line_bounds(doc: &Document, at: Caret) -> Option<(Caret, Caret)> {
     Some((caret(line.start), caret(line.end)))
 }
 
+/// The blocks with a line on `pages`, lowest to highest — table cells can put blocks out of order
+/// on a page. `None` when those pages have no text.
+#[must_use]
+pub fn blocks_on(doc: &Document, pages: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+    let blocks = doc
+        .pages
+        .get(pages)?
+        .iter()
+        .flat_map(|page| &page.lines)
+        .map(|line| line.block);
+    let (low, high) = blocks.fold(None, |range: Option<(usize, usize)>, block| {
+        Some(range.map_or((block, block), |(low, high)| {
+            (low.min(block), high.max(block))
+        }))
+    })?;
+    Some(low..high + 1)
+}
+
 /// The rectangles covering the text between two carets, in either order: one per line, on its
 /// page. What a selection, a find hit or a misspelt word's underline is drawn from.
 #[must_use]

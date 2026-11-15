@@ -1126,7 +1126,7 @@ mod imp {
                         ))
                     })
             };
-            let Some(blocks) = blocks_on(set, pages.clone()) else {
+            let Some(blocks) = place::blocks_on(set, pages.clone()) else {
                 return;
             };
             let found = self.found.borrow();
@@ -2072,23 +2072,6 @@ mod imp {
         let spot = place::locate(&shown.set, caret)?;
         let (x, y) = shown.strip.in_strip(spot.page, spot.x, spot.top)?;
         Some((x, y, f64::from(spot.height) * shown.strip.scale()))
-    }
-
-    /// The blocks with a line on `pages` — what a paint asks the core about. Table cells can
-    /// put blocks out of order on a page, so it is the lowest to the highest.
-    fn blocks_on(set: &grind_print::ops::Document, pages: Range<usize>) -> Option<Range<usize>> {
-        let blocks = set
-            .pages
-            .get(pages)?
-            .iter()
-            .flat_map(|page| &page.lines)
-            .map(|line| line.block);
-        let (low, high) = blocks.fold(None, |range: Option<(usize, usize)>, block| {
-            Some(range.map_or((block, block), |(low, high)| {
-                (low.min(block), high.max(block))
-            }))
-        })?;
-        Some(low..high + 1)
     }
 
     /// A wavy underline from `left` to `right` with its troughs on `y` — a misspelt word's mark,
