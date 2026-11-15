@@ -1324,6 +1324,7 @@ name = "grind-print"
 version = "0.0.0"
 dependencies = [
  "fontdb 0.24.0",
+ "gif",
  "grind-core",
  "grind-text",
  "harfrust",
@@ -1335,6 +1336,7 @@ dependencies = [
  "skrifa 0.49.0",
  "tiny-skia",
  "usvg",
+ "zune-jpeg",
 ]
 
 [[package]]

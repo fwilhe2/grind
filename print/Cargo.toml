@@ -58,6 +58,10 @@ usvg = { version = "=0.47.0", default-features = false, features = ["text"] }
 
 # The preview (doc/pdf-export.md §4): the same display list the PDF is written from, rasterised.
 # 0.12 shares `tiny-skia-path` with krilla rather than bringing a second copy.
+# Decoding a JPEG for the preview and the page view — the decoder krilla already brings.
+zune-jpeg = "0.5"
+# And a GIF's first frame, with the decoder krilla brings too.
+gif = "0.14"
 tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd", "png-format"] }
 
 [dev-dependencies]

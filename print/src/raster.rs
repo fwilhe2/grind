@@ -138,24 +138,28 @@ impl Rasteriser {
                     }
                     "image/png" => {
                         if let Ok(image) = Pixmap::decode_png(data) {
+                            let image = shrunk(image, (width, height));
                             let at = Transform::from_scale(
                                 w / image.width() as f32,
                                 h / image.height() as f32,
                             );
-                            out.draw_pixmap(
-                                0,
-                                0,
-                                image.as_ref(),
-                                &PixmapPaint::default(),
-                                at,
-                                None,
-                            );
+                            out.draw_pixmap(0, 0, image.as_ref(), &smooth(), at, None);
                         }
                     }
-                    // ponytail: a JPEG previews as its box, in the grey a viewer uses for a
-                    // picture still loading; the PDF itself carries it. A decoder is
-                    // `zune-jpeg`, already in the tree under krilla, when somebody previews one.
-                    _ => out.fill(tiny_skia::Color::from_rgba8(0xdd, 0xdd, 0xdd, 0xff)),
+                    "image/jpeg" | "image/jpg" | "image/gif" => match decoded(mime, data) {
+                        Some(image) => {
+                            let image = shrunk(image, (width, height));
+                            let at = Transform::from_scale(
+                                w / image.width() as f32,
+                                h / image.height() as f32,
+                            );
+                            out.draw_pixmap(0, 0, image.as_ref(), &smooth(), at, None);
+                        }
+                        None => out.fill(placeholder()),
+                    },
+                    // A picture nothing here reads is its box, in the grey a viewer uses for a
+                    // picture still loading; the PDF carries it as it is.
+                    _ => out.fill(placeholder()),
                 }
                 out
             });
@@ -321,6 +325,108 @@ impl Rasteriser {
             }
         }
     }
+}
+
+/// How a picture is scaled to its box: sampled smoothly, so a photograph drawn smaller than its
+/// pixels does not break into jagged dots.
+fn smooth() -> PixmapPaint {
+    PixmapPaint {
+        quality: tiny_skia::FilterQuality::Bicubic,
+        ..PixmapPaint::default()
+    }
+}
+
+/// `image` averaged down by the largest whole factor that keeps it at least as big as `box_`,
+/// when that is two or more: a picture many times its box's size, sampled straight down,
+/// loses every line thinner than the factor; averaged, a thin line stays as a lighter one.
+fn shrunk(image: Pixmap, (width, height): (u32, u32)) -> Pixmap {
+    let factor = (image.width() / width.max(1)).min(image.height() / height.max(1));
+    if factor < 2 {
+        return image;
+    }
+    let (w, h) = (image.width() / factor, image.height() / factor);
+    let Some(mut out) = Pixmap::new(w, h) else {
+        return image;
+    };
+    let from = image.data();
+    let stride = image.width() as usize * 4;
+    let area = factor * factor;
+    for (index, pixel) in out.data_mut().as_chunks_mut::<4>().0.iter_mut().enumerate() {
+        let (x, y) = (index as u32 % w, index as u32 / w);
+        let mut sum = [0u32; 4];
+        for dy in 0..factor {
+            let row = (y * factor + dy) as usize * stride;
+            for dx in 0..factor {
+                let at = row + (x * factor + dx) as usize * 4;
+                for (total, &channel) in sum.iter_mut().zip(&from[at..at + 4]) {
+                    *total += u32::from(channel);
+                }
+            }
+        }
+        for (channel, total) in pixel.iter_mut().zip(sum) {
+            *channel = ((total + area / 2) / area) as u8;
+        }
+    }
+    out
+}
+
+/// The box a picture this preview cannot read is drawn as — and the PDF, which cannot either.
+pub(crate) const PLACEHOLDER: Rgb = Rgb(0xdd, 0xdd, 0xdd);
+
+fn placeholder() -> tiny_skia::Color {
+    tiny_skia::Color::from_rgba8(PLACEHOLDER.0, PLACEHOLDER.1, PLACEHOLDER.2, 0xff)
+}
+
+/// A JPEG's or a GIF's pixels, or `None` for bytes that do not decode as one.
+fn decoded(mime: &str, data: &[u8]) -> Option<Pixmap> {
+    if mime == "image/gif" {
+        gif(data)
+    } else {
+        jpeg(data)
+    }
+}
+
+/// A GIF's first frame, on its own canvas: what a document shows of an animation.
+fn gif(data: &[u8]) -> Option<Pixmap> {
+    let mut options = gif::DecodeOptions::new();
+    options.set_color_output(gif::ColorOutput::RGBA);
+    let mut decoder = options.read_info(data).ok()?;
+    let (width, height) = (u32::from(decoder.width()), u32::from(decoder.height()));
+    let mut out = Pixmap::new(width, height)?;
+    let frame = decoder.read_next_frame().ok()??;
+    let (left, top) = (u32::from(frame.left), u32::from(frame.top));
+    let canvas = out.data_mut();
+    for (index, pixel) in frame.buffer.as_chunks::<4>().0.iter().enumerate() {
+        let (x, y) = (
+            left + index as u32 % u32::from(frame.width),
+            top + index as u32 / u32::from(frame.width),
+        );
+        if x >= width || y >= height {
+            continue;
+        }
+        let at = (y * width + x) as usize * 4;
+        // Straight alpha, which a pixmap holds premultiplied.
+        let alpha = u32::from(pixel[3]);
+        for c in 0..3 {
+            canvas[at + c] = ((u32::from(pixel[c]) * alpha + 127) / 255) as u8;
+        }
+        canvas[at + 3] = pixel[3];
+    }
+    Some(out)
+}
+
+/// A JPEG's pixels, or `None` for bytes that do not decode as one. Opaque, so its RGBA is
+/// already the premultiplied kind a pixmap holds.
+fn jpeg(data: &[u8]) -> Option<Pixmap> {
+    use zune_jpeg::zune_core::bytestream::ZCursor;
+    use zune_jpeg::zune_core::colorspace::ColorSpace;
+    use zune_jpeg::zune_core::options::DecoderOptions;
+    let options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::RGBA);
+    let mut decoder = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(data), options);
+    let pixels = decoder.decode().ok()?;
+    let info = decoder.info()?;
+    let size = tiny_skia::IntSize::from_wh(u32::from(info.width), u32::from(info.height))?;
+    Pixmap::from_vec(pixels, size)
 }
 
 /// A position in pixels as a whole pixel and the nearest quarter past it.

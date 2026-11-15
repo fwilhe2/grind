@@ -197,15 +197,34 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
             let data: krilla::Data = data.clone().into();
             let image = match mime.as_str() {
                 "image/png" => Image::from_png(data, true),
-                "image/jpeg" => Image::from_jpeg(data, true),
-                _ => return,
+                "image/jpeg" | "image/jpg" => Image::from_jpeg(data, true),
+                "image/gif" => Image::from_gif(data, true),
+                "image/webp" => Image::from_webp(data, true),
+                _ => Err(String::new()),
             };
-            let (Ok(image), Some(size)) = (image, Size::from_wh(*width, *height)) else {
+            let Some(size) = Size::from_wh(*width, *height) else {
                 return;
             };
-            surface.push_transform(&Transform::from_translate(*x, *y));
-            surface.draw_image(image, size);
-            surface.pop();
+            if let Ok(image) = image {
+                surface.push_transform(&Transform::from_translate(*x, *y));
+                surface.draw_image(image, size);
+                surface.pop();
+                return;
+            }
+            // A picture nothing here reads is its box, as the screen draws it
+            // (`raster::placeholder`): paper says a picture is missing rather than nothing.
+            draw(
+                surface,
+                &Op::Rect {
+                    x: *x,
+                    y: *y,
+                    width: *width,
+                    height: *height,
+                    color: crate::raster::PLACEHOLDER,
+                },
+                fonts,
+                faces,
+            );
         }
     }
 }
