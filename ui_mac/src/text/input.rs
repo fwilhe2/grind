@@ -37,17 +37,10 @@ pub fn offset(text: &str, units: usize) -> usize {
     text[..utf16::byte_of(text, units)].chars().count()
 }
 
-/// The string the input method is shown: the caret's block, with the marked text in it.
+/// The string the input method is shown: the caret's block, with the marked text in it, as
+/// `App::compose` set it.
 pub fn seen(app: &App, page: &Page) -> String {
-    let mut text = app.input_text(page.caret.block).unwrap_or_default();
-    if let Some(composing) = &page.composing {
-        let byte = text
-            .char_indices()
-            .nth(page.caret.offset)
-            .map_or(text.len(), |(b, _)| b);
-        text.insert_str(byte, &composing.text);
-    }
-    text
+    app.input_text(page.caret.block).unwrap_or_default()
 }
 
 /// `selectedRange`: the selection inside the caret's block, or the caret where the selection

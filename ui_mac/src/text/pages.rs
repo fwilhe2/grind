@@ -173,8 +173,21 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
             });
         }
     }
+    // The composition, underlined until it is committed.
+    if let Some(composing) = &state.composing {
+        let end = Caret {
+            offset: state.caret.offset + composing.text.chars().count(),
+            ..state.caret
+        };
+        for [x, y, w, h] in shown.bands(state.caret, end, pages.clone()) {
+            ops.push(Op::Fill {
+                rect: Rect::new(x, y + h - MARKED, w, MARKED),
+                color: (0, 0, 0),
+            });
+        }
+    }
     let at = |block: usize, offset: usize| Caret { block, offset };
-    let caret = state.caret;
+    let caret = state.shown_caret();
     if let Some(blocks) = shown.blocks(pages.clone()) {
         // The word still being typed is not marked: the caret at its end with nothing selected is
         // somebody halfway through it.
@@ -257,35 +270,10 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
     let Some(stroke) = shown.stroke(caret) else {
         return ops;
     };
-    // ponytail: an input method's composition is drawn over the page at the caret rather than
-    // set in the line, so it covers what follows until it is committed. Upgrade: the session
-    // sets it as a pending fragment (`doc/page-model.md` PM5 item 5).
-    if let Some(composing) = &state.composing {
-        let size = stroke.height * 0.7;
-        let width = composing.text.chars().count() as f64 * size * 0.6;
+    if state.composing.is_some() {
         ops.push(Op::Fill {
-            rect: Rect::new(stroke.x, stroke.y, width, stroke.height),
-            color: (0xff, 0xff, 0xff),
-        });
-        ops.push(Op::Run {
-            x: stroke.x,
-            top: stroke.y + (stroke.height - size * 1.2) / 2.0,
-            text: composing.text.clone(),
-            font: Font {
-                size,
-                bold: false,
-                italic: false,
-                family: Family::System,
-                tabular: false,
-            },
-            color: (0, 0, 0),
-            underline: false,
-            strike: false,
-            clip: Rect::new(stroke.x, stroke.y, width, stroke.height),
-        });
-        ops.push(Op::Fill {
-            rect: Rect::new(stroke.x, stroke.y + stroke.height - MARKED, width, MARKED),
-            color: (0, 0, 0),
+            rect: Rect::new(stroke.x, stroke.y, CARET_W, stroke.height),
+            color: palette.accent,
         });
         return ops;
     }
@@ -301,7 +289,7 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
 /// Where the caret is drawn, in the view's coordinates — for the input method's candidate window
 /// and for scrolling it into view.
 pub fn caret_rect(shown: &Shown, state: &Page) -> Option<Rect> {
-    let stroke = shown.stroke(state.caret)?;
+    let stroke = shown.stroke(state.shown_caret())?;
     Some(Rect::new(stroke.x, stroke.y, CARET_W, stroke.height))
 }
 

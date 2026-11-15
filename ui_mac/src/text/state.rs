@@ -6,8 +6,9 @@
 //! portable, tested over a real `grind_text::App` and [`grind_text::Fixed`].
 //!
 //! **The selection is presentation state**: an anchor and a caret, reaching `App` as two carets
-//! when something is done to it. So is a **composition**: the marked text is held here and drawn
-//! through `App::layout_composing`; the document learns of it only on commit.
+//! when something is done to it. A **composition** is set into the document at the caret by
+//! `App::compose`, which is no edit: the next change takes it out again, the commit's typing
+//! among them.
 //!
 //! Motions about lines are the printed pages' ([`Lines`], `grind_print::place` over the page's set
 //! document); about characters and words, `grind_text::caret`'s. What is this shell's is the Mac's
@@ -488,18 +489,27 @@ impl Page {
     /// begun.
     pub fn mark(&mut self, app: &App, text: &str, selected: Range<usize>) -> Result<(), Refused> {
         if text.is_empty() {
-            self.composing = None;
+            self.end_composing(app);
             return Ok(());
         }
         if self.composing.is_none() {
             self.drop_selection(app)?;
         }
+        app.compose(self.caret, text, self.resume.as_ref())
+            .map_err(|error| error.to_string())?;
         let len = text.chars().count();
         self.composing = Some(Composing {
             text: text.to_owned(),
             selected: selected.start.min(len)..selected.end.min(len),
         });
         Ok(())
+    }
+
+    /// The composition taken out of the document with nothing committed.
+    pub fn end_composing(&mut self, app: &App) {
+        if self.composing.take().is_some() {
+            let _ = app.compose(self.caret, "", None);
+        }
     }
 
     /// `unmarkText`: the input method is done and the marked text stands as it is.
@@ -524,7 +534,7 @@ impl Page {
 
     /// Undo or redo, and the caret put back somewhere real afterwards.
     pub fn history(&mut self, app: &App, undo: bool) -> bool {
-        self.composing = None;
+        self.end_composing(app);
         let done = if undo { app.undo() } else { app.redo() };
         self.clamp(app);
         self.anchor = self.caret;
@@ -772,15 +782,25 @@ mod tests {
         assert_eq!(page.caret, at(1, 1));
     }
 
-    /// Marked text is held here and not written; committing it types it, once, and an empty
-    /// one ends the composition with nothing written.
+    /// Marked text is set in the document but is no edit; committing it types it, once, and an
+    /// empty one ends the composition with nothing written.
     #[test]
-    fn a_composition_is_nothing_until_it_is_committed() {
+    fn a_composition_is_no_edit_until_it_is_committed() {
         let app = app(&["caf"]);
+        let saved = app.save_bytes(grind_text::Form::Flat).unwrap();
         let mut page = Page::default();
         page.place(at(0, 3), false);
         page.mark(&app, "\u{b4}", 1..1).unwrap();
-        assert_eq!(texts(&app), ["caf"], "nothing written while composing");
+        assert_eq!(
+            texts(&app),
+            ["caf\u{b4}"],
+            "set in the line while composing"
+        );
+        assert_eq!(
+            app.save_bytes(grind_text::Form::Flat).unwrap(),
+            saved,
+            "and not saved"
+        );
         assert_eq!(
             page.shown_caret(),
             at(0, 4),
