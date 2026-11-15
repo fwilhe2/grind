@@ -524,8 +524,9 @@ mod imp {
         pub grammar_spot: RefCell<Option<grind_text::grammar::Flag>>,
         /// The grammar rules the person ignores, which are not drawn.
         pub grammar_ignored: RefCell<Vec<String>>,
-        /// What the input method is composing and has not committed, with its own attributes.
-        pub preedit: RefCell<Option<(String, gtk::pango::AttrList)>>,
+        /// What the input method is composing and has not committed, set into the document at
+        /// its caret (`App::compose`).
+        pub preedit: Cell<Option<Composing>>,
         /// What the find bar looks for, and where it is, in document order.
         pub needle: RefCell<Option<String>>,
         pub found: RefCell<Vec<(Caret, Caret)>>,
@@ -571,7 +572,7 @@ mod imp {
                 spot: RefCell::new(None),
                 grammar_spot: RefCell::new(None),
                 grammar_ignored: RefCell::new(Vec::new()),
-                preedit: RefCell::new(None),
+                preedit: Cell::new(None),
                 needle: RefCell::new(None),
                 found: RefCell::new(Vec::new()),
             }
@@ -668,22 +669,15 @@ mod imp {
                 #[weak(rename_to = doc)]
                 widget,
                 move |im| {
-                    let (text, attrs, _) = im.preedit_string();
-                    attrs.insert(gtk::pango::AttrInt::new_underline(
-                        gtk::pango::Underline::Single,
-                    ));
-                    let composing = (!text.is_empty()).then(|| (text.to_string(), attrs));
-                    doc.imp().preedit.replace(composing);
-                    doc.queue_draw();
+                    let (text, _, cursor) = im.preedit_string();
+                    doc.imp()
+                        .compose(&text, usize::try_from(cursor).unwrap_or(0));
                 }
             ));
             self.im.connect_preedit_end(glib::clone!(
                 #[weak(rename_to = doc)]
                 widget,
-                move |_| {
-                    doc.imp().preedit.replace(None);
-                    doc.queue_draw();
-                }
+                move |_| doc.imp().compose("", 0)
             ));
 
             let keys = gtk::EventControllerKey::new();
@@ -1110,7 +1104,12 @@ mod imp {
         ) {
             let palette = self.palette();
             let (set, strip) = (&shown.set, &shown.strip);
-            let caret = self.caret.get();
+            let composing = self.preedit.get();
+            // Inside a composition the caret is where the input method says.
+            let caret = composing.map_or(self.caret.get(), |composing| Caret {
+                block: composing.at.block,
+                offset: composing.at.offset + composing.cursor,
+            });
             let selection = self.selection();
             // A run of text as rectangles in the strip, one per line it crosses.
             let bands = |from: Caret, to: Caret| {
@@ -1143,6 +1142,16 @@ mod imp {
             if let Some((from, to)) = selection {
                 for (x, y, w, h) in bands(from, to) {
                     snapshot.append_color(&palette.selection, &rect(x, y, w, h));
+                }
+            }
+            // The composition is underlined until it is committed.
+            if let Some(composing) = composing {
+                let end = Caret {
+                    block: composing.at.block,
+                    offset: composing.at.offset + composing.len,
+                };
+                for (x, y, w, h) in bands(composing.at, end) {
+                    snapshot.append_color(&palette.on_paper, &rect(x, y + h - 2.0, w, 1.0));
                 }
             }
             let at = |block: usize, offset: usize| Caret { block, offset };
@@ -1229,24 +1238,8 @@ mod imp {
                 1,
                 h as i32,
             ));
-            // ponytail: the text being composed is drawn over the page at the caret rather than
-            // set in it, so it covers what follows until it is committed. Upgrade: the session
-            // sets it as a pending fragment (`App::layout_composing`), `doc/page-model.md` PM5
-            // item 5.
-            if let Some((text, attrs)) = self.preedit.borrow().as_ref() {
-                let layout = self.obj().create_pango_layout(Some(text));
-                layout.set_attributes(Some(attrs));
-                let mut font = gtk::pango::FontDescription::new();
-                font.set_absolute_size(h * 0.7 * f64::from(gtk::pango::SCALE));
-                layout.set_font_description(Some(&font));
-                let (width, height) = layout.pixel_size();
-                let below = y + (h - f64::from(height)) / 2.0;
-                snapshot.append_color(&gdk::RGBA::WHITE, &rect(x, y, f64::from(width) + CARET, h));
-                snapshot.save();
-                snapshot.translate(&graphene::Point::new(x as f32, below as f32));
-                snapshot.append_layout(&layout, &gdk::RGBA::BLACK);
-                snapshot.restore();
-                snapshot.append_color(&palette.accent, &rect(x + f64::from(width), y, CARET, h));
+            if composing.is_some() {
+                snapshot.append_color(&palette.accent, &rect(x, y, CARET, h));
                 return;
             }
             if selection.is_none() && self.obj().is_focus() && self.lit.get() {
@@ -1771,6 +1764,8 @@ mod imp {
         /// takes back the whole of `**bold**`.
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
+            // The commit's typing takes the composition out of the document first.
+            self.preedit.set(None);
             // A document with no blocks at all has nowhere to put a character, and the first
             // thing anybody does with an empty window is type into it.
             if app.block_count() == 0
@@ -1889,7 +1884,50 @@ mod imp {
         /// [`Doc::place_caret`].
         pub fn move_caret(&self, caret: Caret, clear_goal: bool) {
             self.resume.replace(None);
+            self.end_composition();
             self.place_caret(caret, clear_goal);
+        }
+
+        /// The input method's text, `cursor` characters into it, set into the document at the
+        /// caret — a selection there is replaced first, as the commit would — or taken out
+        /// again when `text` is empty.
+        pub(super) fn compose(&self, text: &str, cursor: usize) {
+            let Some(app) = self.app() else { return };
+            if text.is_empty() {
+                if let Some(composing) = self.preedit.take() {
+                    let _ = app.compose(composing.at, "", None);
+                }
+                self.obj().queue_draw();
+                return;
+            }
+            let at = match self.preedit.get() {
+                Some(composing) => composing.at,
+                None => self.consume_selection(&app),
+            };
+            let resume = self.resume.borrow().clone();
+            match app.compose(at, text, resume.as_ref()) {
+                Ok(()) => {
+                    let len = text.chars().count();
+                    self.preedit.set(Some(Composing {
+                        at,
+                        len,
+                        cursor: cursor.min(len),
+                    }));
+                    self.scroll_into_view();
+                    self.obj().queue_draw();
+                }
+                Err(error) => self.notice(error.to_string()),
+            }
+        }
+
+        /// A composition the caret leaves is dropped, here and in the input method.
+        fn end_composition(&self) {
+            if let Some(composing) = self.preedit.take() {
+                self.im.reset();
+                if let Some(app) = self.app() {
+                    let _ = app.compose(composing.at, "", None);
+                }
+            }
         }
 
         /// The one place the caret changes: keep it inside the document, scroll it into view,
@@ -2080,6 +2118,14 @@ mod imp {
     }
 
     /// One page's pixels, and the page and scale they were drawn from.
+    /// An input method's composition: where it is set, how many characters, and its caret.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Composing {
+        pub at: Caret,
+        pub len: usize,
+        pub cursor: usize,
+    }
+
     pub struct Tile {
         page: std::sync::Arc<grind_print::ops::Page>,
         scale: u32,
@@ -2262,6 +2308,10 @@ mod tests {
         (
             "the pages are drawn on the desk, one under the other",
             the_pages_are_drawn_on_the_desk,
+        ),
+        (
+            "a composition is set in the line, and is no edit",
+            a_composition_is_set_in_the_line,
         ),
         (
             "a zoom keeps the point under the pointer where it was",
@@ -2991,14 +3041,54 @@ mod tests {
         gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
         assert!(snapshot.to_node().is_some(), "something was drawn");
         assert!(!imp.tiles.borrow().is_empty(), "and the page kept");
+    }
 
-        // Text an input method is composing is drawn at the caret, uncommitted.
-        imp.preedit
-            .replace(Some(("かな".to_owned(), gtk::pango::AttrList::new())));
+    /// Text an input method is composing is set in the line, pushing what follows along, and is
+    /// no edit until it is committed; moving the caret drops it.
+    fn a_composition_is_set_in_the_line() {
+        let (doc, app) = shell(&["one two"]);
+        let imp = doc.imp();
+        let x_of = |offset: usize| {
+            let shown = imp.shown().expect("set");
+            place::locate(&shown.set, Caret { block: 0, offset })
+                .expect("placed")
+                .x
+        };
+        let two = x_of(4);
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 4,
+            },
+            true,
+        );
+        imp.compose("かな", 1);
+        assert_eq!(text(&app), "one かなtwo");
+        assert!(x_of(6) > two, "what follows moved along");
         let snapshot = gtk::Snapshot::new();
         gtk::subclass::prelude::WidgetImpl::snapshot(imp, &snapshot);
         assert!(snapshot.to_node().is_some());
-        assert_eq!(app.input_text(0).unwrap(), paragraph, "and not written");
+
+        imp.type_text("かな");
+        assert_eq!(text(&app), "one かなtwo", "committed once");
+        assert_eq!(
+            imp.caret.get(),
+            Caret {
+                block: 0,
+                offset: 6
+            }
+        );
+
+        imp.compose("x", 1);
+        imp.move_caret(
+            Caret {
+                block: 0,
+                offset: 0,
+            },
+            true,
+        );
+        assert_eq!(text(&app), "one かなtwo", "dropped");
+        assert!(imp.preedit.get().is_none());
     }
 
     /// Zooming in about a point leaves the same spot of the same page under it, and the
