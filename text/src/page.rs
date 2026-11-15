@@ -246,6 +246,7 @@ pub fn paginate_slots(
     let mut break_pending = false;
     let mut heading: Vec<(&str, usize)> = Vec::new();
     let mut heading_closed = false;
+    let mut last_table: Option<&str> = None;
     for (at, unit) in units.iter().enumerate() {
         if std::mem::take(&mut break_pending) && !cut.fresh() {
             cut.turn(unit.broken_top());
@@ -291,9 +292,11 @@ pub fn paginate_slots(
                 kept,
             } => {
                 // The table's heading rows, kept to repeat on every page it continues on; its
-                // first non-heading row ends the list.
-                if heading.first().is_some_and(|&(t, _)| t != table.as_str()) {
+                // first non-heading row ends the list, and the next table starts one.
+                if last_table != Some(table.as_str()) {
                     heading.clear();
+                    heading_closed = false;
+                    last_table = Some(table.as_str());
                 }
                 if *header && !heading_closed {
                     heading.push((table.as_str(), at));
@@ -1229,6 +1232,38 @@ mod tests {
         assert_eq!(shaped[2], vec![(0, true), (5, false), (6, false)]);
         assert_eq!(pages[1].pieces[0].top, 0.0, "the heading at the top");
         assert_eq!(pages[1].pieces[1].top, 1.0, "the next row under it");
+    }
+
+    #[test]
+    fn a_second_table_repeats_its_heading_row_as_the_first_does() {
+        let app = App::new();
+        app.insert_table(0, 7, 1, Some("B".into())).unwrap();
+        app.insert_table(0, 2, 1, Some("A".into())).unwrap();
+        for index in 0..app.block_count() {
+            app.insert_text(
+                Caret {
+                    block: index,
+                    offset: 0,
+                },
+                "c",
+            )
+            .unwrap();
+        }
+        let pages = paginate(
+            &app,
+            &Headed,
+            10.0,
+            4.0,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        );
+        // Table A's two rows and B's heading and first row, then B's heading again over the rest.
+        let opening: Vec<(usize, bool)> = pages[1..]
+            .iter()
+            .map(|page| (page.pieces[0].index, page.pieces[0].repeat))
+            .collect();
+        assert_eq!(opening, vec![(2, true), (2, true)]);
     }
 
     /// A face whose block 1 cites a footnote two units tall.
