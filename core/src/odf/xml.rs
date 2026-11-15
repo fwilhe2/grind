@@ -75,7 +75,9 @@ pub fn element_extent(bytes: &[u8], start_tag: Range<usize>) -> Option<Range<usi
 
     let mut depth = 1usize;
     let mut at = start_tag.end;
-    while at < bytes.len() {
+    // Tag to tag: both patterns open with `<`.
+    while let Some(next) = bytes.get(at..)?.iter().position(|&c| c == b'<') {
+        at += next;
         if tag_at(bytes, at, &close) {
             depth -= 1;
             if depth == 0 {
