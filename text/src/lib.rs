@@ -546,6 +546,8 @@ pub struct App {
     /// under the state's read lock and emptied under its write lock, so never stale.
     paragraphs:
         std::sync::Mutex<std::collections::HashMap<Option<String>, Arc<paragraph::Resolved>>>,
+    /// [`App::counts`], until the next change: a status line asks on every caret move.
+    counts: std::sync::Mutex<Option<Counts>>,
 }
 
 /// Paragraphs already broken into lines, by everything that decides the result: the text and
@@ -594,6 +596,7 @@ impl App {
         let result = {
             let mut state = self.state.write().unwrap();
             self.paragraphs.lock().unwrap().clear();
+            self.counts.lock().unwrap().take();
             let composed = state
                 .composing
                 .as_ref()
@@ -838,16 +841,24 @@ impl App {
 
     pub fn counts(&self) -> Counts {
         let state = self.state.read().unwrap();
+        let mut kept = self.counts.lock().unwrap();
+        if let Some(counts) = *kept {
+            return counts;
+        }
         let mut counts = Counts {
             blocks: state.doc.blocks.len(),
             ..Counts::default()
         };
         for block in &state.doc.blocks {
-            let text = block.text();
-            counts.words += text.split_whitespace().count();
-            counts.characters += text.chars().count();
+            let mut in_word = false;
+            for c in block.runs.iter().flat_map(|run| run.text().chars()) {
+                counts.characters += 1;
+                counts.words += usize::from(!in_word && !c.is_whitespace());
+                in_word = !c.is_whitespace();
+            }
             counts.headings += usize::from(block.outline_level().is_some());
         }
+        *kept = Some(counts);
         counts
     }
 
