@@ -47,10 +47,10 @@ impl Session {
     }
 
     /// The document changed: its pages are set again when next asked for.
-    // ponytail: an edit that changes a paragraph's line count, adds or removes a block or
-    // touches a heading paginates the whole document again (150 ms for 560 pages), every
-    // measurement and unchanged layout kept. Re-cut from the first changed block when that is
-    // too slow (`doc/page-model.md` PM3 item 3).
+    // ponytail: an edit to a heading, a list's numbering, a table cell or a picture, or one
+    // adding or removing a list item, paginates the whole document again (150–300 ms for 560
+    // pages), every measurement and unchanged layout kept. Re-cut those from near the edit too
+    // when that is too slow (`doc/page-model.md` PM3 item 3).
     pub fn changed(&self) {
         self.named.replace(None);
         if let Some(set) = self.set.take() {

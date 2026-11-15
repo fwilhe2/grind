@@ -31,8 +31,18 @@ fn equivalent(name: &str, app: &App, setter: &Typesetter) -> usize {
         for (page, (a, b)) in incremental.pages.iter().zip(&fresh.pages).enumerate() {
             assert!(a == b, "{name}: page {} after edit {number}", page + 1);
         }
-        assert_eq!(incremental.outline, fresh.outline, "{name}: outline");
-        assert_eq!(incremental.keys, fresh.keys, "{name}: keys");
+        assert_eq!(
+            incremental.outline, fresh.outline,
+            "{name}: outline after edit {number}"
+        );
+        assert_eq!(
+            incremental.structure, fresh.structure,
+            "{name}: structure after edit {number}"
+        );
+        assert_eq!(
+            incremental.keys, fresh.keys,
+            "{name}: keys after edit {number}"
+        );
         copied += incremental
             .keys
             .iter()
@@ -101,6 +111,18 @@ fn steps() -> Vec<Step> {
                     .is_some_and(|view| matches!(view.kind, BlockKind::ListItem { .. }))
             });
             item.is_some_and(|item| app.insert_text(at(item, 0), "b").is_ok())
+        }),
+        // Lines added to and taken from a paragraph in the middle.
+        Box::new(move |app: &App| {
+            let middle = app.block_count() / 2 + 1;
+            let words = "Words enough to wrap onto a line or two more than it had. ".repeat(4);
+            app.insert_text(at(middle, len(app, middle) / 2), &words)
+                .is_ok()
+        }),
+        Box::new(move |app: &App| {
+            let middle = app.block_count() / 2 + 1;
+            let to = len(app, middle).min(240);
+            to > 0 && app.erase(at(middle, 0), at(middle, to)).is_ok()
         }),
         // An input method's composition, and the next change taking it out again.
         Box::new(move |app: &App| {

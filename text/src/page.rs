@@ -179,6 +179,7 @@ pub fn paginate_first(
         &[(faces, column)],
         &slots,
         (0, &Starts::new()),
+        None,
         spacing,
         rules,
         picture,
@@ -200,11 +201,17 @@ pub struct Paginated {
 /// `measures` are the widths text is set at, each with the faces that measure at it: a run of
 /// pages opened by a block in `starts` is laid out at its slot's measure — a landscape section's
 /// text as wide as its page.
+///
+/// With `after`, the cut goes on from pages cut before: `viewport` begins with the first block
+/// of a page, and `after` is the page before that one and how far down its text area that
+/// block's first line was. The pages answered are the ones from there.
+#[expect(clippy::too_many_arguments, reason = "each is one input of the cut")]
 pub fn paginate_slots(
     (app, viewport): (&App, &crate::Viewport),
     measures: &[(&dyn Faces, f64)],
     slots: &[Slot],
     (start, starts): (usize, &Starts),
+    after: Option<(&Page, f64)>,
     spacing: &Spacing,
     rules: Rules,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
@@ -242,6 +249,10 @@ pub fn paginate_slots(
         reserved: 0.0,
     };
     cut.set_slot(start, None);
+    if let Some((before, top)) = after {
+        cut.pages = vec![before.clone()];
+        cut.turn(units.first().map_or(0.0, Unit::top) - top);
+    }
     // A page break after the block before: the next unit starts a page wherever it is.
     let mut break_pending = false;
     let mut heading: Vec<(&str, usize)> = Vec::new();
@@ -395,10 +406,11 @@ pub fn paginate_slots(
             }
         }
     }
-    Paginated {
-        pages: cut.pages,
-        layouts,
+    let mut pages = cut.pages;
+    if after.is_some() {
+        pages.remove(0);
     }
+    Paginated { pages, layouts }
 }
 
 /// Several measures' faces as one: each block answered by the measure its run of pages is set

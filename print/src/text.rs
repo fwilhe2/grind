@@ -59,7 +59,10 @@ pub fn typeset_after(
     previous: Option<&Document>,
 ) -> Document {
     setter.hint(app.font_generics());
-    if let Some(set) = previous.and_then(|previous| touch_up(app, setter, options, previous)) {
+    if let Some(previous) = previous
+        && let Some(set) = touch_up(app, setter, options, previous)
+            .or_else(|| recut(app, setter, options, previous))
+    {
         return set;
     }
     let revision = app.revision();
@@ -75,35 +78,31 @@ pub fn typeset_after(
         .collect();
     let picture =
         |view: &BlockView, measure: f64| maps.figure(view, measure).map(|figure| figure.height);
-    // The document's own widows and orphans, and none where it states none — what Writer does
-    // (`doc/odt-format.md` §5c, fact 3).
-    let stated = app.paragraph_defaults();
-    let breaking = Rules {
-        orphans: stated.orphans.unwrap_or(0) as usize,
-        widows: stated.widows.unwrap_or(0) as usize,
-    };
     let Paginated { pages, layouts } = paginate_slots(
         (app, &viewport),
         &measures,
         &paper.slots,
         (0, &starts),
+        None,
         &SPACING,
-        breaking,
+        breaking(app),
         &picture,
     );
     let numbering = numbering(&pages);
-    let chapters = chapters(&pages, &viewport);
+    let chapters = chapters(Vec::new(), &pages, &viewport);
 
     let kept: HashMap<u64, &Arc<Page>> = previous
         .map_or_default(|previous| previous.keys.iter().copied().zip(&previous.pages).collect());
     let mut outline = Vec::new();
     let mut keys = Vec::with_capacity(pages.len());
+    let mut relative = Vec::with_capacity(pages.len());
     let drawn = pages
         .iter()
         .enumerate()
         .map(|(number, page)| {
             let heads = (numbering[number], chapters[number].as_slice());
-            let key = maps.key(column, paper.seed, page, heads);
+            relative.push(maps.key(column, paper.seed, page, heads));
+            let key = page_key(page, relative[number]);
             keys.push(key);
             outline.extend(maps.headings(&paper.sheets[page.slot], page, number));
             match kept.get(&key) {
@@ -126,10 +125,12 @@ pub fn typeset_after(
             revision,
             seed: paper.seed,
             kinds: paper.kinds,
+            starts: Arc::new(starts),
             pages: pages.into(),
             numbering: numbering.into(),
             chapters: chapters.into(),
             shapes,
+            relative: relative.into(),
         })),
     }
 }
@@ -142,11 +143,34 @@ pub(crate) struct Cut {
     /// [`Paper::seed`].
     seed: u64,
     kinds: Vec<Kind>,
+    starts: Arc<grind_text::page::Starts>,
     pages: Arc<[grind_text::page::Page]>,
     numbering: Arc<[(usize, usize)]>,
     chapters: Arc<[Vec<String>]>,
     /// Each block's [`Maps::shape`] as it was cut.
-    shapes: Arc<[Option<u64>]>,
+    shapes: Arc<[Option<Shape>]>,
+    /// Each page's [`Maps::key`], before [`page_key`] says where the page is.
+    relative: Arc<[u64]>,
+}
+
+/// What of a block the cut reads, hashed: its kind, style, label and breaks, and apart from
+/// them its lines' tops and heights; and whether other blocks count from it — a list item,
+/// whose list numbers on from it, or a paragraph opening a run of pages.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Shape {
+    look: u64,
+    lines: u64,
+    counted: bool,
+}
+
+/// The document's own widows and orphans, and none where it states none — what Writer does
+/// (`doc/odt-format.md` §5c, fact 3).
+fn breaking(app: &App) -> Rules {
+    let stated = app.paragraph_defaults();
+    Rules {
+        orphans: stated.orphans.unwrap_or(0) as usize,
+        widows: stated.widows.unwrap_or(0) as usize,
+    }
 }
 
 /// `previous` set again after an edit that left every block it changed the shape it was: then
@@ -211,10 +235,12 @@ fn touch_up(
         }
     }
     let mut set = previous.clone();
+    let mut relative = cut.relative.to_vec();
     for number in touched {
         let page = &cut.pages[number];
         let heads = (cut.numbering[number], cut.chapters[number].as_slice());
-        let key = maps.key(column, cut.seed, page, heads);
+        relative[number] = maps.key(column, cut.seed, page, heads);
+        let key = page_key(page, relative[number]);
         if key != set.keys[number] {
             set.pages[number] = Arc::new(maps.draw(column, &paper.sheets[page.slot], page, heads));
             set.keys[number] = key;
@@ -222,9 +248,249 @@ fn touch_up(
     }
     set.cut = Some(Arc::new(Cut {
         revision,
+        relative: relative.into(),
         ..cut.clone()
     }));
     Some(set)
+}
+
+/// `previous` cut again after an edit that changed blocks' lines, or added or took out plain
+/// paragraphs: from the last page before the change that opens on a whole block, over a window
+/// of blocks, to the first page that opens where one did before — on the same block, kind of
+/// page and number. The pages from there are the ones before, moved by the blocks the edit
+/// added or took out. `None` when the edit could have changed what other blocks show (a list
+/// item's number, a heading, a run of pages), no such page turns up near the change, or the
+/// pages are numbered differently; the whole document is set then.
+fn recut(
+    app: &App,
+    setter: &Typesetter,
+    options: &Options,
+    previous: &Document,
+) -> Option<Document> {
+    let cut = previous.cut.as_deref()?;
+    let revision = app.revision();
+    let changed = app.changed_since(cut.revision)?;
+    if changed.none() {
+        return None;
+    }
+    let by = isize::try_from(changed.blocks.len()).ok()? - isize::try_from(changed.before).ok()?;
+    let was = changed.blocks.start..changed.blocks.start + changed.before;
+    let paper = Paper::new(app, setter, options, cut.kinds.clone());
+    if paper.seed != cut.seed {
+        return None;
+    }
+    let count = app.block_count();
+    // The page the change is on, and the last at or before it opening on a whole block two
+    // before the change: where a page opens was decided by its first block and, when that one
+    // keeps with the next, the block after it.
+    let on = cut
+        .pages
+        .iter()
+        .position(|page| blocks_of(page).any(|index| index >= changed.blocks.start))?;
+    let from = (1..=on)
+        .rev()
+        .find(|&number| opening(&cut.pages[number]).is_some_and(|i| i + 2 <= changed.blocks.start))
+        .unwrap_or(0);
+    let first = if from == 0 {
+        0
+    } else {
+        opening(&cut.pages[from])?
+    };
+    let after = (from > 0).then(|| (&cut.pages[from - 1], cut.pages[from].pieces[0].top));
+    // A run of pages is set at the measure of the page that opened it.
+    let run = (cut.starts.iter())
+        .filter(|&(&index, _)| index <= first)
+        .max_by_key(|&(&index, _)| index)
+        .map_or(0, |(_, &(slot, _))| slot);
+    let starts: grind_text::page::Starts = (cut.starts.iter())
+        .map(|(&index, &start)| {
+            let moved = if index >= was.end {
+                index.saturating_add_signed(by)
+            } else {
+                index
+            };
+            (moved, start)
+        })
+        .collect();
+    let mut reach = 64;
+    while reach <= 4096 {
+        let mut end = (changed.blocks.end + reach).min(count);
+        if let Some(table) = app.table(end.saturating_sub(1)) {
+            end = end.max(table.blocks.end);
+        }
+        reach *= 4;
+        let flowing = app.get_viewport(first..end);
+        if flowing.get(first).is_some_and(|view| view.cell.is_some()) {
+            return None;
+        }
+        let read = app.get_viewport(first.saturating_sub(1)..(end + 1).min(count));
+        let maps = Maps::over(app, setter, &read, &paper.widths);
+        let columns = maps.columns();
+        let column = &columns[0];
+        let measures: Vec<(&dyn grind_text::Faces, f64)> = columns
+            .iter()
+            .map(|column| (column as &dyn grind_text::Faces, column.width))
+            .collect();
+        let picture =
+            |view: &BlockView, measure: f64| maps.figure(view, measure).map(|figure| figure.height);
+        let Paginated { pages, layouts } = paginate_slots(
+            (app, &flowing),
+            &measures,
+            &paper.slots,
+            (run, &starts),
+            after,
+            &SPACING,
+            breaking(app),
+            &picture,
+        );
+        let shapes = changed
+            .blocks
+            .clone()
+            .map(|index| maps.shape(flowing.get(index)?, layouts.get(index)?.as_ref()?))
+            .collect::<Option<Vec<Shape>>>()?;
+        let olds = cut.shapes.get(was.clone())?;
+        // Each block as it was, only its lines changed; or plain paragraphs, none of which
+        // another block counts from, for plain paragraphs.
+        let same = by == 0
+            && (olds.iter().zip(&shapes)).all(|(old, new)| old.is_some_and(|o| o.look == new.look));
+        let plain = changed.before > 0
+            && !changed.blocks.is_empty()
+            && olds.iter().all(|old| old.is_some_and(|old| !old.counted))
+            && shapes.iter().all(|new| !new.counted);
+        if !same && !plain {
+            return None;
+        }
+        // The first page past the change that opens as one did before, far enough from the
+        // window's end that nothing after it was missing from its cut, and from the change that
+        // its first block's neighbour is one the edit left alone.
+        let met = pages.iter().enumerate().skip(1).find_map(|(at, page)| {
+            let index = opening(page)?;
+            if index <= changed.blocks.end
+                || (end < count && index + 2 > end)
+                || read.get(index).is_none_or(|view| view.cell.is_some())
+            {
+                return None;
+            }
+            let then = index.checked_add_signed(-by)?;
+            let old = (from..cut.pages.len()).find(|&n| opening(&cut.pages[n]) == Some(then))?;
+            let was = &cut.pages[old];
+            (was.slot == page.slot
+                && was.number == page.number
+                && was.restart == page.restart
+                && drawn(was.pieces[0].top) == drawn(page.pieces[0].top))
+            .then_some((at, old))
+        });
+        let (new, old) = match met {
+            Some(met) => met,
+            None if end == count => (pages.len(), cut.pages.len()),
+            None => continue,
+        };
+        let fresh = &pages[..new];
+        let moved: Vec<grind_text::page::Page> = (cut.pages[old..].iter())
+            .map(|page| moved_by(page, by))
+            .collect();
+        let cut_pages: Vec<grind_text::page::Page> = (cut.pages[..from].iter())
+            .chain(fresh)
+            .chain(&moved)
+            .cloned()
+            .collect();
+        if numbering(&cut_pages) != *cut.numbering {
+            return None;
+        }
+        let before = from.checked_sub(1).map(|n| cut.chapters[n].clone());
+        let heads = chapters(before.unwrap_or_default(), fresh, &read);
+        let mut set = previous.clone();
+        let mut relative = cut.relative.to_vec();
+        let mut outline = Vec::new();
+        for (at, page) in fresh.iter().enumerate() {
+            let number = from + at;
+            let heads = (cut.numbering[number], heads[at].as_slice());
+            relative[number] = maps.key(column, cut.seed, page, heads);
+            let key = page_key(page, relative[number]);
+            outline.extend(maps.headings(&paper.sheets[page.slot], page, number));
+            if key != set.keys[number] {
+                set.pages[number] =
+                    Arc::new(maps.draw(column, &paper.sheets[page.slot], page, heads));
+                set.keys[number] = key;
+            }
+        }
+        if by != 0 {
+            for number in old..cut_pages.len() {
+                set.pages[number] = Arc::new(set.pages[number].shifted(by));
+                set.keys[number] = page_key(&cut_pages[number], relative[number]);
+            }
+        }
+        let (early, late): (Vec<Heading>, Vec<Heading>) = (previous.outline.iter())
+            .filter(|&heading| heading.page < from || heading.page >= old)
+            .cloned()
+            .partition(|heading| heading.page < from);
+        set.outline = early.into_iter().chain(outline).chain(late).collect();
+        let span = structure(&read)
+            .into_iter()
+            .filter(|element| changed.blocks.contains(&element.block()));
+        set.structure = (previous.structure[..was.start].iter().cloned())
+            .chain(span)
+            .chain(previous.structure[was.end..].iter().map(|e| e.shifted(by)))
+            .collect();
+        let chapters = (cut.chapters[..from].iter().cloned())
+            .chain(heads)
+            .chain(cut.chapters[old..].iter().cloned())
+            .collect();
+        let shapes = (cut.shapes[..was.start].iter().copied())
+            .chain(shapes.into_iter().map(Some))
+            .chain(cut.shapes[was.end..].iter().copied())
+            .collect();
+        set.cut = Some(Arc::new(Cut {
+            revision,
+            starts: Arc::new(starts),
+            pages: cut_pages.into(),
+            chapters,
+            shapes,
+            relative: relative.into(),
+            ..cut.clone()
+        }));
+        return Some(set);
+    }
+    None
+}
+
+/// A page as cut, `by` blocks further on.
+fn moved_by(page: &grind_text::page::Page, by: isize) -> grind_text::page::Page {
+    let mut page = page.clone();
+    for piece in &mut page.pieces {
+        piece.index = piece.index.saturating_add_signed(by);
+    }
+    for cell in &mut page.cells {
+        cell.first = cell.first.saturating_add_signed(by);
+    }
+    page
+}
+
+/// A place on the page at the precision it is drawn at. Where the flow is cut, it is a
+/// difference of two places hundreds of pages down, whose last bits depend on where the cut
+/// began; drawn, they are the same.
+fn drawn(value: f64) -> u32 {
+    (value as f32).to_bits()
+}
+
+/// The block a page opens with, when it opens with the first line of one that is not a
+/// heading row repeated.
+fn opening(page: &grind_text::page::Page) -> Option<usize> {
+    let piece = page.pieces.first()?;
+    (piece.lines.start == 0 && !piece.repeat).then_some(piece.index)
+}
+
+/// A page's key: its [`Maps::key`] and the block it starts from.
+fn page_key(page: &grind_text::page::Page, relative: u64) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = key_hasher();
+    (first_block(page), relative).hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The first block a page holds; 0 for an empty one.
+fn first_block(page: &grind_text::page::Page) -> usize {
+    blocks_of(page).min().unwrap_or(0)
 }
 
 /// The blocks a page holds, in a piece or a cell.
@@ -501,10 +767,10 @@ impl<'a> Maps<'a> {
             .ok()
     }
 
-    /// What of a block laid out as `layout` the cut reads: its kind, style, label and breaks,
-    /// and how tall each line is. A block another reads too — a heading, which names the pages
-    /// after it, or a table cell or picture, which do not stack as lines — has none.
-    fn shape(&self, view: &BlockView, layout: &grind_core::layout::Layout) -> Option<u64> {
+    /// What of a block laid out as `layout` the cut reads. A block another reads too — a
+    /// heading, which names the pages after it, or a table cell or picture, which do not stack
+    /// as lines — has none.
+    fn shape(&self, view: &BlockView, layout: &grind_core::layout::Layout) -> Option<Shape> {
         use std::hash::{Hash, Hasher};
         if matches!(view.kind, BlockKind::Heading { .. })
             || view.cell.is_some()
@@ -512,13 +778,24 @@ impl<'a> Maps<'a> {
         {
             return None;
         }
-        let mut hasher = key_hasher();
-        (&view.kind, &view.style, &view.label, view.generated).hash(&mut hasher);
-        self.breaks.get(&view.index).hash(&mut hasher);
+        let mut look = key_hasher();
+        (&view.kind, &view.style, &view.label, view.generated).hash(&mut look);
+        self.breaks.get(&view.index).hash(&mut look);
+        let mut lines = key_hasher();
         for line in layout.lines() {
-            (line.top.to_bits(), line.height.to_bits()).hash(&mut hasher);
+            (line.top.to_bits(), line.height.to_bits()).hash(&mut lines);
         }
-        Some(hasher.finish())
+        let opens = self
+            .app
+            .paragraph_shared(view.index)
+            .is_some_and(|resolved| resolved.props.master_page.is_some());
+        Some(Shape {
+            look: look.finish(),
+            lines: lines.finish(),
+            counted: view.label.is_some()
+                || matches!(view.kind, BlockKind::ListItem { .. })
+                || opens,
+        })
     }
 
     /// The headings starting on `page`, for the outline.
@@ -549,7 +826,8 @@ impl<'a> Maps<'a> {
 
     /// A hash of everything drawing `page` reads that [`Paper::seed`] does not: its place in the
     /// flow, its number and running heads, and its blocks with their labels, boxes, spacing and
-    /// setting.
+    /// setting — each block counted from the page's first, so a page that blocks added before
+    /// it moved keeps its key; [`page_key`] adds where it is.
     fn key(
         &self,
         column: &Column<'_>,
@@ -559,26 +837,27 @@ impl<'a> Maps<'a> {
     ) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = key_hasher();
+        let base = first_block(page);
         seed.hash(&mut hasher);
         (page.slot, page.restart, page.number).hash(&mut hasher);
         heads.hash(&mut hasher);
         for piece in &page.pieces {
-            (piece.index, piece.lines.clone(), piece.repeat).hash(&mut hasher);
+            (piece.index - base, piece.lines.clone(), piece.repeat).hash(&mut hasher);
             for value in [piece.top, piece.left, piece.width] {
-                value.to_bits().hash(&mut hasher);
+                drawn(value).hash(&mut hasher);
             }
         }
         for cell in &page.cells {
-            cell.first.hash(&mut hasher);
+            (cell.first - base).hash(&mut hasher);
             for value in [cell.top, cell.left, cell.width, cell.height] {
-                value.to_bits().hash(&mut hasher);
+                drawn(value).hash(&mut hasher);
             }
         }
         for index in blocks_of(page) {
             let Some(view) = self.viewport.get(index) else {
                 continue;
             };
-            fingerprint(view, &mut hasher);
+            fingerprint(view, base, &mut hasher);
             if let Some(cell) = &view.cell {
                 self.tables.get(&cell.table).hash(&mut hasher);
             }
@@ -785,9 +1064,9 @@ fn key_hasher() -> impl std::hash::Hasher {
 
 /// What of a block a page's drawing reads, into `hasher`. A picture by its length and a sample of
 /// its bytes: a picture is put in or taken out, never changed in place.
-fn fingerprint(view: &BlockView, hasher: &mut impl std::hash::Hasher) {
+fn fingerprint(view: &BlockView, base: usize, hasher: &mut impl std::hash::Hasher) {
     use std::hash::Hash;
-    (view.index, &view.kind, &view.style, &view.text).hash(hasher);
+    (view.index - base, &view.kind, &view.style, &view.text).hash(hasher);
     (
         view.styled,
         &view.marks,
@@ -1028,9 +1307,14 @@ fn page_kinds(app: &App, viewport: &grind_text::Viewport) -> (Vec<Kind>, grind_t
 }
 
 /// The heading each outline level shows on each page — the last of that level or above begun
-/// on it or before it (`doc/odt-format.md` §5c fact 43) — its line breaks as spaces.
-fn chapters(pages: &[grind_text::page::Page], viewport: &grind_text::Viewport) -> Vec<Vec<String>> {
-    let mut current = vec![String::new(); 10];
+/// on it or before it (`doc/odt-format.md` §5c fact 43) — its line breaks as spaces — going on
+/// from `current`, what the page before showed.
+fn chapters(
+    mut current: Vec<String>,
+    pages: &[grind_text::page::Page],
+    viewport: &grind_text::Viewport,
+) -> Vec<Vec<String>> {
+    current.resize(10, String::new());
     pages
         .iter()
         .map(|page| {
@@ -2555,8 +2839,8 @@ mod tests {
     }
 
     /// A letter typed into a paragraph that keeps its lines: the pages are not cut again, only
-    /// the one holding it is drawn, and the result is what setting it from nothing gives. A
-    /// letter that adds a line is cut again.
+    /// the one holding it is drawn, and the result is what setting it from nothing gives. Words
+    /// that add lines, and Enter, are cut again from near the edit, to the same result.
     #[test]
     fn an_edit_that_keeps_a_paragraph_s_lines_draws_only_its_page() {
         let paragraph = "All work and no play makes a dull document. ".repeat(12);
@@ -2591,9 +2875,29 @@ mod tests {
             &"longer ".repeat(20),
         )
         .unwrap();
-        let longer = typeset_after(&app, &setter, &options, Some(&after));
-        assert!(!Arc::ptr_eq(&cut(&after), &cut(&longer)), "a line more");
-        assert_eq!(longer.pages, typeset(&app, &setter, &options).pages);
+        assert!(
+            touch_up(&app, &setter, &options, &after).is_none(),
+            "a line more"
+        );
+        let longer = recut(&app, &setter, &options, &after).expect("cut again near the edit");
+        let fresh = typeset(&app, &setter, &options);
+        assert_eq!(longer.pages, fresh.pages);
+        assert_eq!(longer.keys, fresh.keys);
+        assert_eq!(longer.cut, fresh.cut, "cut as if from nothing");
+        assert_eq!(longer.outline, fresh.outline);
+
+        // Enter: a paragraph more, and every page after it moved on by one block.
+        app.split_block(Caret {
+            block: 10,
+            offset: 30,
+        })
+        .unwrap();
+        let split = recut(&app, &setter, &options, &longer).expect("cut again near Enter");
+        let fresh = typeset(&app, &setter, &options);
+        assert_eq!(split.pages, fresh.pages);
+        assert_eq!(split.keys, fresh.keys);
+        assert_eq!(split.structure, fresh.structure);
+        assert_eq!(split.cut, fresh.cut);
     }
 
     /// Every text op on a page as `(x, y, text)`.

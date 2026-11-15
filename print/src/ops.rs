@@ -43,6 +43,16 @@ pub enum Mark {
     Decoration,
 }
 
+impl Mark {
+    fn shifted(self, by: isize) -> Mark {
+        match self {
+            Mark::Content(block) => Mark::Content(block.saturating_add_signed(by)),
+            Mark::Label(block) => Mark::Label(block.saturating_add_signed(by)),
+            Mark::Decoration => Mark::Decoration,
+        }
+    }
+}
+
 /// One block's place in the document's structure.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Element {
@@ -82,6 +92,18 @@ impl Element {
             | Element::Figure { block, .. }
             | Element::Cell { block, .. } => *block,
         }
+    }
+
+    /// This element `by` blocks further on.
+    pub(crate) fn shifted(&self, by: isize) -> Element {
+        let mut element = self.clone();
+        let (Element::Paragraph { block }
+        | Element::Heading { block, .. }
+        | Element::ListItem { block, .. }
+        | Element::Figure { block, .. }
+        | Element::Cell { block, .. }) = &mut element;
+        *block = block.saturating_add_signed(by);
+        element
     }
 }
 
@@ -139,6 +161,26 @@ pub struct Page {
     /// at all. A page that ends where the next begins is the cut `grind text pages` prints.
     pub start: Option<grind_text::Caret>,
     pub end: Option<grind_text::Caret>,
+}
+
+impl Page {
+    /// This page with every block it holds `by` further on: what it is after blocks were added
+    /// or taken out before it.
+    pub(crate) fn shifted(&self, by: isize) -> Page {
+        let mut page = self.clone();
+        for op in &mut page.ops {
+            if let Op::Text { mark, .. } | Op::Image { mark, .. } = op {
+                *mark = mark.shifted(by);
+            }
+        }
+        for line in &mut page.lines {
+            line.block = line.block.saturating_add_signed(by);
+        }
+        for caret in [&mut page.start, &mut page.end].into_iter().flatten() {
+            caret.block = caret.block.saturating_add_signed(by);
+        }
+        page
+    }
 }
 
 /// A heading, for the PDF's outline (its bookmarks pane).
