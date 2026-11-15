@@ -43,23 +43,17 @@ impl App {
         ))
     }
 
-    /// One block laid out as if `text` had been typed at `at` — an input method's composition,
-    /// before it commits. Nothing is written; on commit it becomes one `type_markdown`. The
-    /// composed text takes the formatting typing there would (`resume`, else
-    /// [`App::insert_text`]'s rule), and breaks where the committed text will. Offsets count the
-    /// composed characters, so the caret inside the composition is `at.offset` plus its position
-    /// in `text`.
-    pub fn layout_composing(
-        &self,
-        at: Caret,
-        text: &str,
-        resume: Option<&CharStyle>,
-        width: f32,
-        metrics: &dyn Metrics,
-    ) -> Result<Layout> {
-        let state = self.state.read().unwrap();
-        let mut block = block_at(&state, at.block)?;
-        if !text.is_empty() {
+    /// Set an input method's composition into the document at `at`, as typing it would —
+    /// formatted as `resume` says, else by [`App::insert_text`]'s rule — so it is laid out,
+    /// paginated and located like any text, and a caret inside it is `at.offset` plus its
+    /// position in `text`. Not an edit: no undo step, never saved, and taken out again by the
+    /// next change, the commit's typing among them. Empty `text` ends it.
+    pub fn compose(&self, at: Caret, text: &str, resume: Option<&CharStyle>) -> Result<()> {
+        self.mutate(|state| {
+            if text.is_empty() {
+                return Ok(());
+            }
+            let mut block = block_at(state, at.block)?;
             let (mut runs, tail) = model::split_runs(&block.runs, at.offset.min(block.len()));
             let (style, props, href) = match resume {
                 Some(props) => (None, props.clone(), None),
@@ -74,8 +68,12 @@ impl App {
             runs.extend(tail);
             model::coalesce(&mut runs);
             block.runs = runs;
-        }
-        Ok(lay_out(&block, width, metrics, &state.doc.char_styles))
+            let Some(slot) = state.doc.blocks.get_mut(at.block) else {
+                return Err(Error::Xml(format!("no block {}", loc::format(at.block))));
+            };
+            state.composing = Some((at.block, std::mem::replace(slot, block)));
+            Ok(())
+        })
     }
 
     /// The x of a caret within its line — the goal column a shell keeps while Down is held, so

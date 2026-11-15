@@ -497,6 +497,36 @@ struct State {
     doc: Document,
     undo: Vec<Action>,
     redo: Vec<Action>,
+    /// An input method's composition, set into its block ([`App::compose`]): the block's index
+    /// and the block as it is without it.
+    composing: Option<(usize, Block)>,
+}
+
+impl State {
+    /// Take the composition out of its block, if there is one; `true` if there was.
+    fn uncompose(&mut self) -> bool {
+        let Some((index, block)) = self.composing.take() else {
+            return false;
+        };
+        if let Some(slot) = self.doc.blocks.get_mut(index) {
+            *slot = block;
+        }
+        true
+    }
+
+    /// The document as saved: without a composition.
+    fn committed(&self) -> std::borrow::Cow<'_, Document> {
+        match &self.composing {
+            None => std::borrow::Cow::Borrowed(&self.doc),
+            Some((index, block)) => {
+                let mut doc = self.doc.clone();
+                if let Some(slot) = doc.blocks.get_mut(*index) {
+                    slot.clone_from(block);
+                }
+                std::borrow::Cow::Owned(doc)
+            }
+        }
+    }
 }
 
 /// The word processor. Shells hold an `Arc<App>` and call these methods; every method takes
@@ -555,7 +585,8 @@ impl App {
     }
 
     /// Mutate, then notify with the write lock released: an observer calls straight back in to
-    /// re-read. `Err` from `f` means it left the state as it was, and nobody is notified.
+    /// re-read. `Err` from `f` means it left the state as it was, and nobody is notified. `f`
+    /// sees the document without a composition ([`App::compose`]), which an `Ok` ends.
     fn mutate<T, E>(
         &self,
         f: impl FnOnce(&mut State) -> std::result::Result<T, E>,
@@ -563,7 +594,18 @@ impl App {
         let result = {
             let mut state = self.state.write().unwrap();
             self.paragraphs.lock().unwrap().clear();
-            f(&mut state)
+            let composed = state
+                .composing
+                .as_ref()
+                .and_then(|(index, _)| Some((*index, state.doc.blocks.get(*index)?.clone())));
+            state.uncompose();
+            let result = f(&mut state);
+            if let (Err(_), Some((index, block))) = (&result, composed)
+                && let Some(slot) = state.doc.blocks.get_mut(index)
+            {
+                state.composing = Some((index, std::mem::replace(slot, block)));
+            }
+            result
         };
         if result.is_ok() {
             let observer = self.observer.read().unwrap().clone();
@@ -606,11 +648,11 @@ impl App {
     /// Serialise the current document. The browser has no filesystem (rule 5), and saving is an
     /// operation, never a getter for the document.
     pub fn save_bytes(&self, form: Form) -> Result<Vec<u8>> {
-        write_bytes(&self.state.read().unwrap().doc, form)
+        write_bytes(&self.state.read().unwrap().committed(), form)
     }
 
     pub fn save_file(&self, path: &Path) -> Result<()> {
-        write_file(&self.state.read().unwrap().doc, path)
+        write_file(&self.state.read().unwrap().committed(), path)
     }
 
     // --- reading ---

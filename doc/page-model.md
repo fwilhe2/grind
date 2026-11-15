@@ -228,7 +228,7 @@ names its own.
    bookmark marks, link hover and Ctrl+click.
 4. Pointer: click, Shift+click, drag, double and triple click, through `hit`.
 5. Input method: the preedit is set by the session as a pending fragment
-   (`App::layout_composing`'s job), and the candidate window is placed from `locate`.
+   (`App::compose`), and the candidate window is placed from `locate`.
 6. Scrolling follows the caret across a page gap; the scrollbar is sized from page count.
 7. Status: "Page 3 of 12" beside the address; the font substitution sentence as a toast on
    open.

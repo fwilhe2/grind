@@ -181,8 +181,8 @@ impl App {
         pictures: &commonmark::Pictures,
     ) -> Result<commonmark::Exported> {
         let state = self.state.read().unwrap();
-        let blocks = state
-            .doc
+        let doc = state.committed();
+        let blocks = doc
             .blocks
             .get(range)
             .ok_or_else(|| Error::Xml("that range runs past the end".to_owned()))?;
