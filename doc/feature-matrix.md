@@ -488,7 +488,7 @@ There is no dialog.
 | Where each page begins | ● | ● | ● | — | — | — |
 | Edit on the pages as they print (`doc/page-model.md`) | ● ᵖᵐ | ● ᵖᵐ | ◐ ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ |
 | Zoom | — | ● ᵖᵐ | — | ○ | ● ᵖᵐ | ● ᵖᵐ |
-| Page setup — paper, orientation, margins (fact 59) | ● | ● | ○ | ○ | ○ | ○ |
+| Page setup — paper, orientation, margins (fact 59) | ● | ● | ● ᵖˢ | ● ᵖˢ | ● ᵖˢ | ● ᵖˢ |
 | Start a page — a page break (`doc/odt-format.md` §5c fact 58) | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
 | Print | — | ● | ● ˡᵖ | ● ᵖᵖ | ● ᵖᵖ | ● |
@@ -518,6 +518,10 @@ part given an automatic style over its own with `fo:break-before` (PM8, 2026-11-
 break p3+12` (or `p3` for a whole paragraph, `--remove` to take one away), Ctrl+Enter in the GNOME,
 Windows and browser windows, `insertContainerBreak:` on the Mac, `:break` in the terminal. Backspace
 at the front of the new page joins the two again, as in LibreOffice.
+ᵖˢ Said in words, as `PageGeometry::set_up` reads them — `a5 landscape 15mm`, the page as it is
+offered to edit: `:page-setup` in the terminal, *Page setup…* in the browser's palette, File ▸ Page
+Setup… on Windows and the Mac (⇧⌘P), each an `App::set_page`. The GNOME window has a dialog
+(`ui_text_gtk/src/page_setup.rs`); the Mac's native page layout panel is not used (2026-11-15).
 ᵖᵖ The CLI's preview is one page as a PNG (`grind text preview`). The Mac's is the system print
 panel's own, over the PDF itself; the browser prints by opening the PDF in the browser's viewer,
 and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's

@@ -4118,6 +4118,7 @@ fn do_command(hwnd: HWND, command: Command) {
         | Command::ExportPdf
         | Command::PrintPreview
         | Command::Print
+        | Command::PageSetup
         // Grammar is for documents, never a spreadsheet's labels.
         | Command::NextGrammarFinding
         | Command::ToggleGrammar
@@ -7097,6 +7098,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::ToggleGrammar
         | Command::GrammarStyle
         | Command::Print
+        | Command::PageSetup
         | Command::ShowSource
         | Command::CheckDocument
         | Command::ToggleFormulas
@@ -8121,6 +8123,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::ExportMarkdown => text_export_markdown(hwnd),
         Command::ExportPdf => text_export_pdf(hwnd),
         Command::PrintPreview => text_print_preview(hwnd),
+        Command::PageSetup => text_page_setup(hwnd),
         Command::NextMisspelling => text_next_misspelling(hwnd),
         Command::SpellingLanguage => text_spelling_language(hwnd),
         Command::PersonalDictionary => personal_dictionary(hwnd),
@@ -8249,6 +8252,45 @@ fn text_go_to(hwnd: HWND) {
     };
     match outcome {
         Some(Err(message)) => dialog::error(hwnd, &message),
+        Some(Ok(())) => refresh(hwnd),
+        None => {}
+    }
+}
+
+/// File ▸ Page Setup… — the paper, how it lies and the margins, in words (`a5 landscape 15mm`),
+/// the page as it is offered to edit.
+fn text_page_setup(hwnd: HWND) {
+    // SAFETY: one borrow, for a value; nothing inside dispatches.
+    let Some(page) = (unsafe { with_text(hwnd, |text| text.app.page().unwrap_or_default()) })
+    else {
+        return;
+    };
+    let offered = format!(
+        "{} {} {}mm",
+        page.iso_name().unwrap_or_default().to_lowercase(),
+        if page.width > page.height {
+            "landscape"
+        } else {
+            "portrait"
+        },
+        page.top
+    );
+    let Some(words) = dialog::prompt(
+        hwnd,
+        "Page Setup",
+        "Paper, orientation and margins — e.g. a5 landscape 15mm:",
+        offered.trim(),
+    ) else {
+        return;
+    };
+    let page = match page.set_up(&words) {
+        Ok(page) => page,
+        Err(why) => return dialog::error(hwnd, &why),
+    };
+    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
+    let outcome = unsafe { with_text(hwnd, |text| text.app.set_page(page)) };
+    match outcome {
+        Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(())) => refresh(hwnd),
         None => {}
     }

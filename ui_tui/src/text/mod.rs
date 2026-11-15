@@ -46,6 +46,7 @@ Word processor:
                                       pages begins, Enter goes to one
   :page <n>                         — the top of printed page n; each page's start is ruled in
   :break                            — split here and start a page with the rest (Ctrl+Enter)
+  :page-setup [a5] [landscape] [2cm] — the paper, how it lies, the margins; bare, says them
   :print                            — that PDF, sent to the printer through lp
   :move <address>                   — this block, put before that one
   :mark <name>   :mark!             — anchor a bookmark here, or drop the one that is

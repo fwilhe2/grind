@@ -277,6 +277,7 @@ impl Delegate {
             | Command::ExportMarkdown
             | Command::ExportPdf
             | Command::Print
+            | Command::PageSetup
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle => {

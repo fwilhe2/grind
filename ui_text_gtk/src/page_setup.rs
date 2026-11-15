@@ -28,20 +28,13 @@ pub fn chosen(
     let sized = paper
         .and_then(|index| PAPERS.get(index))
         .and_then(|name| PageGeometry::paper(name))
-        .unwrap_or(page);
-    let (short, long) = (sized.width.min(sized.height), sized.width.max(sized.height));
-    let (width, height) = if landscape {
-        (long, short)
-    } else {
-        (short, long)
-    };
+        .map_or(page, |paper| page.with_paper(paper));
     PageGeometry {
-        width,
-        height,
         top,
         right,
         bottom,
         left,
+        ..sized.turned(landscape)
     }
 }
 
@@ -126,8 +119,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>, app: &Arc<App>, refused: impl Fn(
             landscape.is_active(),
             [top.value(), right.value(), bottom.value(), left.value()],
         );
-        if chosen.left + chosen.right >= chosen.width || chosen.top + chosen.bottom >= chosen.height
-        {
+        if !chosen.has_room() {
             refused("The margins leave no room on the page.".to_owned());
             return;
         }

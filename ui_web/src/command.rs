@@ -616,6 +616,7 @@ pub const TEXT: &[Command] = &[
         "Ctrl+P",
         false,
     ),
+    cmd("doc.page-setup", "Page setup…", "Document", "", false),
     cmd("edit.copy", "Copy", "Edit", "Ctrl+C", true),
     cmd("edit.cut", "Cut", "Edit", "Ctrl+X", false),
     cmd("edit.paste", "Paste", "Edit", "Ctrl+V", false),

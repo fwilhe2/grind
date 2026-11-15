@@ -1025,6 +1025,27 @@ impl App {
         }
     }
 
+    /// `:page-setup [paper] [landscape|portrait] [margins]` — e.g. `a5 landscape 15mm`; bare, says
+    /// the page as it is. A paper keeps the margins, as a page setup does.
+    fn cmd_page_setup(&mut self, args: &str) {
+        let before = self.core.page().unwrap_or_default();
+        if args.trim().is_empty() {
+            self.status = before.describe();
+            return;
+        }
+        let page = match before.set_up(args) {
+            Ok(page) => page,
+            Err(why) => {
+                self.status = why;
+                return;
+            }
+        };
+        match self.core.set_page(page) {
+            Ok(()) => self.status = page.describe(),
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
     // --- Command mode ---
 
     fn on_command_key(&mut self, code: KeyCode) {
@@ -1127,6 +1148,8 @@ impl App {
             #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
             "break" => self.cmd_break(),
+            "page-setup" => self.cmd_page_setup(""),
+            _ if let Some(rest) = cmd.strip_prefix("page-setup ") => self.cmd_page_setup(rest),
             #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("page ") => self.cmd_page(rest.trim()),
             #[cfg(feature = "pdf")]
@@ -3350,6 +3373,26 @@ mod tests {
         assert_eq!(rows[0].address, "p1+0");
         assert_eq!(rows[0].label, "Page 1");
         assert!(rows[1].address.starts_with('p') && rows[1].address.contains('+'));
+    }
+
+    /// `:page-setup` sets the paper, how it lies and the margins, and bare says them.
+    #[test]
+    fn page_setup_sets_the_page_and_says_it() {
+        let mut app = app(&["one"]);
+        app.run_command("page-setup a5 landscape 15mm");
+        let page = app.core.page().expect("a page now");
+        assert_eq!((page.width, page.height, page.top), (210.0, 148.0, 15.0));
+        assert!(app.status.starts_with("A5 landscape"), "{}", app.status);
+        app.run_command("page-setup");
+        assert!(
+            app.status.contains("margins 15 15 15 15 mm"),
+            "{}",
+            app.status
+        );
+        app.run_command("page-setup a5 80mm");
+        assert!(app.status.contains("no room"), "{}", app.status);
+        app.run_command("page-setup b5");
+        assert!(app.status.starts_with("b5:"), "{}", app.status);
     }
 
     /// A paged pane rules where each printed page begins, says which page the caret is on, and

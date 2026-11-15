@@ -493,6 +493,35 @@ impl TextPane {
             Command::ExportMarkdown => return self.export_markdown(mtm),
             Command::ExportPdf => return self.export_pdf(mtm),
             Command::Print => return self.print(mtm),
+            Command::PageSetup => {
+                let page = self.app.page().unwrap_or_default();
+                let offered = format!(
+                    "{} {} {}mm",
+                    page.iso_name().unwrap_or_default().to_lowercase(),
+                    if page.width > page.height {
+                        "landscape"
+                    } else {
+                        "portrait"
+                    },
+                    page.top
+                );
+                let Some(words) = prompt::ask(
+                    mtm,
+                    "Page Setup",
+                    "The paper, how it lies and the margins — a5 landscape 15mm, say.",
+                    "Set",
+                    offered.trim(),
+                ) else {
+                    return;
+                };
+                match page.set_up(&words) {
+                    Ok(page) => self.app.set_page(page),
+                    Err(why) => {
+                        prompt::tell(mtm, "That is not a page.", &why);
+                        return;
+                    }
+                }
+            }
             Command::MoveParagraph(up) => {
                 return self.act_on(|page, app, _| page.move_paragraphs(app, up));
             }

@@ -173,6 +173,9 @@ pub enum Command {
     /// The same pages to a printer, through the system's print dialog. Windows has no API that
     /// prints a PDF, so the pages go as rasters at the printer's resolution (`doc/pdf-export.md`).
     Print,
+    /// The paper, how it lies and the margins, said in words (`PageGeometry::set_up`) and set
+    /// through `App::set_page`.
+    PageSetup,
     Recalculate,
     /// Every function grind implements, as a list to pick from (`sheet/assist.rs`'s
     /// `function_lines`, the `grind sheet functions --long` catalog). Picking one puts `=NAME(` in
@@ -419,6 +422,7 @@ impl Command {
         Command::ExportPdf,
         Command::PrintPreview,
         Command::Print,
+        Command::PageSetup,
         Command::Recalculate,
         Command::FunctionList,
         Command::ExplainFormula,
@@ -657,6 +661,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::Print,
                 label: "&Print…\tCtrl+P",
+            },
+            Item::Verb {
+                command: Command::PageSetup,
+                label: "Page Set&up…",
             },
             Item::Separator,
             Item::Verb {
@@ -1468,6 +1476,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::ExportPdf
         | Command::PrintPreview
         | Command::Print
+        | Command::PageSetup
         // Grammar is for documents, never a spreadsheet's labels (`doc/grammar.md` §1).
         | Command::NextGrammarFinding
         | Command::ToggleGrammar

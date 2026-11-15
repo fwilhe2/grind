@@ -87,6 +87,97 @@ impl PageGeometry {
         }
     }
 
+    /// Another paper's size, this page's margins — what choosing a paper in a page setup does.
+    #[must_use]
+    pub fn with_paper(self, paper: PageGeometry) -> Self {
+        PageGeometry {
+            width: paper.width,
+            height: paper.height,
+            ..self
+        }
+    }
+
+    /// The page lying on its side when `landscape`, upright when not.
+    #[must_use]
+    pub fn turned(self, landscape: bool) -> Self {
+        let (short, long) = (self.width.min(self.height), self.width.max(self.height));
+        let (width, height) = if landscape {
+            (long, short)
+        } else {
+            (short, long)
+        };
+        PageGeometry {
+            width,
+            height,
+            ..self
+        }
+    }
+
+    /// All four margins `mm` wide.
+    #[must_use]
+    pub fn with_margins(self, mm: f64) -> Self {
+        PageGeometry {
+            top: mm,
+            bottom: mm,
+            left: mm,
+            right: mm,
+            ..self
+        }
+    }
+
+    /// The page in a line: its paper by name where it has one, how it lies, and its margins —
+    /// `A5 landscape, margins 15 15 15 15 mm (top, right, bottom, left)`.
+    #[must_use]
+    pub fn describe(&self) -> String {
+        let mm = |value: f64| format!("{}", (value * 10.0).round() / 10.0);
+        let paper = self
+            .iso_name()
+            .unwrap_or_else(|| format!("{} × {} mm", mm(self.width), mm(self.height)));
+        let lies = if self.width > self.height {
+            "landscape"
+        } else {
+            "portrait"
+        };
+        format!(
+            "{paper} {lies}, margins {} {} {} {} mm (top, right, bottom, left)",
+            mm(self.top),
+            mm(self.right),
+            mm(self.bottom),
+            mm(self.left)
+        )
+    }
+
+    /// The page a page setup said in words makes: each a paper (`a5`, `a4-landscape`), `landscape`
+    /// or `portrait`, or a length for all four margins (`15mm`, `2cm`), in any order —
+    /// `a5 landscape 15mm`. A paper keeps the margins. Refused, in a sentence, when a word is none
+    /// of those or the margins leave no room.
+    pub fn set_up(self, words: &str) -> Result<Self, String> {
+        let mut page = self;
+        for word in words.split_whitespace() {
+            if let Some(paper) = PageGeometry::paper(word) {
+                page = page.with_paper(paper);
+            } else if word == "landscape" || word == "portrait" {
+                page = page.turned(word == "landscape");
+            } else if let Some(mm) = crate::style::length_mm(word).filter(|mm| *mm >= 0.0) {
+                page = page.with_margins(mm);
+            } else {
+                return Err(format!(
+                    "{word}: not a paper, an orientation or a length like 2cm"
+                ));
+            }
+        }
+        if !page.has_room() {
+            return Err("the margins leave no room on the page".to_owned());
+        }
+        Ok(page)
+    }
+
+    /// Whether the margins leave room on the page to set text in.
+    #[must_use]
+    pub fn has_room(&self) -> bool {
+        self.left + self.right < self.width && self.top + self.bottom < self.height
+    }
+
     /// Read from `style:page-layout-properties`, through `get`, which answers an `fo:` attribute
     /// by its local name.
     ///
@@ -144,6 +235,18 @@ pub fn pt(mm: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_page_setup_changes_the_paper_turns_it_and_sets_margins() {
+        let page = PageGeometry::a4().with_margins(15.0);
+        let a5 = page.with_paper(PageGeometry::iso_a(5).unwrap());
+        assert_eq!((a5.width, a5.height, a5.left), (148.0, 210.0, 15.0));
+        let lying = a5.turned(true);
+        assert_eq!((lying.width, lying.height), (210.0, 148.0));
+        assert_eq!(lying.turned(false), a5);
+        assert!(a5.has_room());
+        assert!(!a5.with_margins(80.0).has_room());
+    }
+
     use super::*;
 
     fn props<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<&'a str> {

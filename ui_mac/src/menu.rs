@@ -138,6 +138,9 @@ pub enum Command {
     /// The same PDF handed to the system's print panel through PDFKit, whose preview is then the
     /// PDF itself — File ▸ Print….
     Print,
+    /// The paper, how it lies and the margins, in words (`PageGeometry::set_up`) —
+    /// File ▸ Page Setup….
+    PageSetup,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
@@ -370,6 +373,7 @@ impl Command {
             Command::ExportMarkdown,
             Command::ExportPdf,
             Command::Print,
+            Command::PageSetup,
             Command::About,
             Command::InsertChart(None),
             Command::InsertChart(Some(ChartKind::Bar)),
@@ -422,6 +426,7 @@ impl Command {
                 | Command::ExportMarkdown
                 | Command::ExportPdf
                 | Command::Print
+                | Command::PageSetup
                 | Command::InsertTable
                 | Command::InsertBookmark
                 | Command::InsertPicture
@@ -492,6 +497,7 @@ impl Command {
             | Command::ExportMarkdown
             | Command::ExportPdf
             | Command::Print
+            | Command::PageSetup
             | Command::MoveParagraph(_)
             | Command::DeleteParagraph
             | Command::ParagraphStyle
@@ -1050,6 +1056,7 @@ pub static MENUS: &[Menu] = &[
                 menu: &REVERT_TO,
             },
             Item::Separator,
+            command("Page Setup…", key("p", SHIFT_CMD), Command::PageSetup),
             // Where every Mac application keeps it, at the key every one uses.
             command("Print…", key("p", CMD), Command::Print),
         ],
@@ -1624,7 +1631,7 @@ mod tests {
         assert!(!Command::Mark(Emphasis::Code).applies(sheet));
         assert!(!Command::Number(Preset::Currency).applies(text));
         assert!(Command::Block(Block::Heading(2)).applies(text));
-        for paper in [Command::ExportPdf, Command::Print] {
+        for paper in [Command::ExportPdf, Command::Print, Command::PageSetup] {
             assert!(paper.applies(text) && !paper.applies(sheet), "{paper:?}");
         }
     }

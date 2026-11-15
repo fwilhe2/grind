@@ -974,6 +974,7 @@ impl Ui {
             "edit.find-next" => self.find_step(Towards::Next),
             "edit.find-previous" => self.find_step(Towards::Previous),
             "edit.replace" => self.replace(),
+            "doc.page-setup" => self.page_setup(),
             "view.names" => {
                 let on = !self.names.get();
                 self.names.set(on);
@@ -1585,6 +1586,38 @@ impl Ui {
     /// *Replace in the document…* — two questions, then `App::replace` over every paragraph in
     /// one undo step. Prompts rather than a form, as the spreadsheet's does: this page has no
     /// dialog surface, and a replace is two words. Exact in case, since it writes.
+    /// Page setup… — the paper, how it lies and the margins, said in words as the terminal's
+    /// `:page-setup` takes them (`PageGeometry::set_up`): the page as it is is offered to edit.
+    fn page_setup(&self) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let page = self.app.page().unwrap_or_default();
+        let offered = format!(
+            "{} {} {}mm",
+            page.iso_name().unwrap_or_default().to_lowercase(),
+            if page.width > page.height {
+                "landscape"
+            } else {
+                "portrait"
+            },
+            page.top
+        );
+        let Ok(Some(words)) = window.prompt_with_message_and_default(
+            "Page setup — a paper, landscape or portrait, and the margins, e.g. a5 landscape 15mm",
+            offered.trim(),
+        ) else {
+            return;
+        };
+        match page.set_up(&words) {
+            Ok(page) => match self.app.set_page(page) {
+                Ok(()) => self.set_message(page.describe()),
+                Err(error) => self.set_message(error.to_string()),
+            },
+            Err(why) => self.set_message(why),
+        }
+    }
+
     fn replace(&self) {
         let Some(window) = web_sys::window() else {
             return;
