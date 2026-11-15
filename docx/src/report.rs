@@ -16,7 +16,8 @@ pub use grind_ooxml::Flavour;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Dropped {
     /// A comment whose text the document does not have — its id names nothing in
-    /// `word/comments.xml`. Every other comment is carried, as an `office:annotation`.
+    /// `word/comments.xml` — or one the body never anchors, as a reply can be. Every other
+    /// comment is carried, as an `office:annotation`.
     Comment,
     /// A tracked change around whole paragraphs or table rows. Changes within a paragraph are
     /// carried as ODF's own; these are applied — the inserted paragraph kept, the deleted one
@@ -55,6 +56,13 @@ pub enum Dropped {
     /// The rest of a document whose XML stops being well formed part-way through. What came
     /// before the damage is kept.
     Damaged,
+    /// A tracked change of formatting (`w:rPrChange`, `w:pPrChange`): the new formatting is
+    /// applied, and the record of the old is not.
+    FormatChange,
+    /// Line numbers in the margin (`w:lnNumType`), once per section.
+    LineNumbering,
+    /// A title, subject, description, keywords or category in `docProps/core.xml`.
+    DocumentProperties,
 }
 
 impl Dropped {
@@ -78,6 +86,9 @@ impl Dropped {
             Dropped::Frame => "positioned paragraph",
             Dropped::Macro => "macro",
             Dropped::Damaged => "damaged remainder of the document",
+            Dropped::FormatChange => "tracked formatting change (applied)",
+            Dropped::LineNumbering => "line numbering",
+            Dropped::DocumentProperties => "document properties",
         }
     }
 }

@@ -1016,3 +1016,34 @@ fn a_comment_is_an_annotation_over_its_range() {
         "{odf}"
     );
 }
+
+/// A comment the body never anchors — a reply written with no range of its own — is counted,
+/// as are a tracked change of formatting and numbered lines: none is carried, and none may go
+/// without a word.
+#[test]
+fn an_unanchored_reply_a_format_change_and_line_numbers_are_counted() {
+    let comments = (
+        "word/comments.xml",
+        "comments",
+        format!(
+            r#"<w:comments xmlns:w="{W}">
+                 <w:comment w:id="0" w:author="Ada"><w:p><w:r><w:t>Why?</w:t></w:r></w:p></w:comment>
+                 <w:comment w:id="1" w:author="Bo"><w:p><w:r><w:t>Because.</w:t></w:r></w:p></w:comment>
+               </w:comments>"#
+        )
+        .into_bytes(),
+    );
+    let body = r#"<w:p><w:commentRangeStart w:id="0"/><w:r><w:rPr><w:b/><w:rPrChange w:id="5" w:author="Ada"><w:rPr/></w:rPrChange></w:rPr><w:t>Bold now</w:t></w:r>
+        <w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r></w:p>
+        <w:sectPr><w:lnNumType w:countBy="1"/></w:sectPr>"#;
+    let (doc, report) = import(&docx(body, &[comments]));
+    assert_eq!(texts(&doc), ["Bold now"]);
+    assert_eq!(report.comments, 1);
+    assert_eq!(
+        report.dropped[&grind_docx::Dropped::Comment],
+        1,
+        "the reply"
+    );
+    assert_eq!(report.dropped[&grind_docx::Dropped::FormatChange], 1);
+    assert_eq!(report.dropped[&grind_docx::Dropped::LineNumbering], 1);
+}

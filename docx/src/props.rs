@@ -121,6 +121,8 @@ pub struct ParaFacts {
     pub frame: bool,
     /// `w:framePr/@w:dropCap`: the paragraph is the large first letter of the next one.
     pub drop_cap: bool,
+    /// A tracked change to these properties (`w:pPrChange`): the new ones are applied.
+    pub changed: bool,
 }
 
 /// What a `w:rPr` says: its formatting, and the character style it names.
@@ -129,6 +131,8 @@ pub struct RunFacts {
     pub props: Props,
     /// `w:rStyle` — a style id.
     pub style: Option<String>,
+    /// A tracked change to these properties (`w:rPrChange`): the new ones are applied.
+    pub changed: bool,
 }
 
 /// The theme's two font families, for `w:asciiTheme="minorHAnsi"` and friends.
@@ -252,6 +256,8 @@ pub fn read_rpr(r: &mut Reader, fonts: &Fonts) -> grind_ooxml::Result<RunFacts> 
     r.children(|_, name, attrs| {
         if name.w("rStyle") {
             out.style = attrs.val().map(str::to_owned);
+        } else if name.w("rPrChange") {
+            out.changed = true;
         } else {
             run_property(&mut out.props, &name.local, attrs, fonts);
         }
@@ -564,6 +570,7 @@ pub fn read_ppr(r: &mut Reader) -> grind_ooxml::Result<ParaFacts> {
                 }
             }
             "sectPr" => out.section = Some(Box::new(crate::section::read(r)?)),
+            "pPrChange" => out.changed = true,
             "framePr" => {
                 out.frame = true;
                 out.drop_cap = matches!(attrs.w("dropCap"), Some("drop" | "margin"));

@@ -116,6 +116,12 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     {
         report.drop_one(Dropped::Macro);
     }
+    if package
+        .part("docProps/core.xml")
+        .is_some_and(|core| grind_ooxml::has_core_properties(&core))
+    {
+        report.drop_one(Dropped::DocumentProperties);
+    }
 
     let mut ctx = Ctx::new(&mut package, &fonts, &mut report, &mut seen);
 
@@ -171,6 +177,9 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     for section in &sections {
         if section.columns.is_some() {
             ctx.report.drop_one(Dropped::Columns);
+        }
+        if section.line_numbers {
+            ctx.report.drop_one(Dropped::LineNumbering);
         }
     }
     let rels: HashMap<String, String> = ctx

@@ -112,6 +112,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         endnotes: 0,
         notes_written: 0,
         comments_open: HashSet::new(),
+        comments_written: HashSet::new(),
         images: 0,
         in_note: false,
     };
@@ -289,6 +290,12 @@ pub fn write(input: Input, report: &mut Report) -> String {
     }
     out.push_str(&body);
     out.push_str("  </office:text>\n </office:body>\n</office:document>\n");
+    let unanchored = input
+        .comments
+        .keys()
+        .filter(|id| !w.comments_written.contains(*id))
+        .count();
+    w.report.drop_many(Dropped::Comment, unanchored);
     out
 }
 
@@ -394,6 +401,9 @@ struct Writer<'i, 'r> {
     notes_written: usize,
     /// Comments whose range has been opened, so their end is written and no other.
     comments_open: HashSet<String>,
+    /// Comments written, so one the body never anchors — a reply with no range of its own — is
+    /// counted rather than lost without a word.
+    comments_written: HashSet<String>,
     images: usize,
     in_note: bool,
 }
@@ -944,6 +954,7 @@ impl Writer<'_, '_> {
             return;
         };
         self.report.comments += 1;
+        self.comments_written.insert(id.to_owned());
         out.push_str("<office:annotation");
         if ranged {
             let _ = write!(out, " office:name=\"{}\"", comment_name(id));

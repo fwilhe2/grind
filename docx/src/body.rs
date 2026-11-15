@@ -438,6 +438,9 @@ fn read_paragraph(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Para> {
             if para.facts.frame {
                 ctx.report.drop_one(Dropped::Frame);
             }
+            if para.facts.changed {
+                ctx.report.drop_one(Dropped::FormatChange);
+            }
             if let Some(section) = para.facts.section.clone() {
                 ctx.sections.push(*section);
             }
@@ -693,6 +696,9 @@ fn read_run(r: &mut Reader, ctx: &mut Ctx, out: &mut Vec<Inline>) -> grind_ooxml
         match name.local.as_str() {
             "rPr" => {
                 let facts = props::read_rpr(r, fonts)?;
+                if facts.changed {
+                    ctx.report.drop_one(Dropped::FormatChange);
+                }
                 run.props = facts.props;
                 run.style = facts.style;
             }

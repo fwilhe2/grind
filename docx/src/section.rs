@@ -41,6 +41,8 @@ pub struct Section {
     pub start: Option<String>,
     /// `w:cols/@w:num` above one.
     pub columns: Option<i64>,
+    /// `w:lnNumType`: the section's lines are numbered in the margin.
+    pub line_numbers: bool,
 }
 
 impl Section {
@@ -109,6 +111,8 @@ pub fn read(r: &mut Reader) -> grind_ooxml::Result<Section> {
             s.start = attrs.val().map(str::to_owned);
         } else if name.w("cols") {
             s.columns = attrs.int("num").filter(|n| *n > 1);
+        } else if name.w("lnNumType") {
+            s.line_numbers = true;
         } else {
             return Ok(Handled::No);
         }
