@@ -1045,27 +1045,7 @@ impl App {
     /// its very end leaves a body paragraph behind it; split in the middle, it makes two headings.
     pub fn split_block(&self, at: Caret) -> Result<()> {
         self.mutate(|state| {
-            let mut block = block_at(state, at.block)?;
-            let offset = at.offset.min(block.len());
-            let (mut head, mut tail) = model::split_runs(&block.runs, offset);
-            model::coalesce(&mut head);
-            model::coalesce(&mut tail);
-
-            let id = state.doc.next_id();
-            let mut second = Block::new(id, block.kind.clone());
-            second.style.clone_from(&block.style);
-            // And its table cell: Return inside a cell makes a second block in that cell, or the
-            // table would be cut in two at the caret (`model::Cell`).
-            second.cell.clone_from(&block.cell);
-            second.runs = tail;
-            if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
-                second.kind = BlockKind::Paragraph;
-                // Only the kind and style change; the cell stays. A body paragraph wearing
-                // `Heading_20_1` would look like a heading without being one.
-                second.style = None;
-            }
-            block.runs = head;
-
+            let (block, second) = Self::split_parts(state, at)?;
             Self::commit(
                 state,
                 Action::Batch(vec![
@@ -1080,6 +1060,99 @@ impl App {
                 ]),
             )
         })
+    }
+
+    /// Split the block at `at` and start a page with the second part — Ctrl+Enter, as Writer
+    /// does it (`doc/odt-format.md` §5c fact 58). One undo step. Backspace at the front of the
+    /// new page's first block joins them again, and the break goes with the join.
+    pub fn break_page(&self, at: Caret) -> Result<()> {
+        self.mutate(|state| {
+            let (block, mut second) = Self::split_parts(state, at)?;
+            second.page_break = true;
+            Self::commit(
+                state,
+                Action::Batch(vec![
+                    Action::SetBlock {
+                        index: at.block,
+                        block: Box::new(block),
+                    },
+                    Action::InsertBlock {
+                        index: at.block + 1,
+                        block: Box::new(second),
+                    },
+                ]),
+            )
+        })
+    }
+
+    /// Start a page at block `index`, or no longer. A break this suite made goes as it came; one
+    /// the block's automatic style says, and nothing else, goes with the style — the block takes
+    /// that style's parent, which is Writer's own Ctrl+Enter undone. A break a named style or a
+    /// fuller automatic style carries is refused: it is the style's to change.
+    pub fn set_page_break(&self, index: usize, on: bool) -> Result<()> {
+        self.mutate(|state| {
+            let mut block = block_at(state, index)?;
+            if on {
+                if block.page_break {
+                    return Ok(());
+                }
+                block.page_break = true;
+            } else if block.page_break {
+                block.page_break = false;
+            } else {
+                let only_break = paragraph::ParagraphProps {
+                    break_before: Some("page".to_owned()),
+                    ..Default::default()
+                };
+                let own = block
+                    .style
+                    .as_deref()
+                    .and_then(|name| state.doc.paragraph_styles.get(name));
+                match own {
+                    Some(style) if style.automatic && style.props == only_break => {
+                        block.style.clone_from(&style.parent);
+                    }
+                    _ => {
+                        return Err(Error::Xml(
+                            "that page break is the paragraph style's own; change the style"
+                                .to_owned(),
+                        ));
+                    }
+                }
+            }
+            Self::commit(
+                state,
+                Action::SetBlock {
+                    index,
+                    block: Box::new(block),
+                },
+            )
+        })
+    }
+
+    /// The two blocks a split at `at` makes, the first in the place of the one split.
+    fn split_parts(state: &mut State, at: Caret) -> Result<(Block, Block)> {
+        let mut block = block_at(state, at.block)?;
+        let offset = at.offset.min(block.len());
+        let (mut head, mut tail) = model::split_runs(&block.runs, offset);
+        model::coalesce(&mut head);
+        model::coalesce(&mut tail);
+
+        let id = state.doc.next_id();
+        let mut second = Block::new(id, block.kind.clone());
+        second.style.clone_from(&block.style);
+        // And its table cell: Return inside a cell makes a second block in that cell, or the
+        // table would be cut in two at the caret (`model::Cell`).
+        second.cell.clone_from(&block.cell);
+        second.runs = tail;
+        if second.is_empty() && matches!(block.kind, BlockKind::Heading { .. }) {
+            second.kind = BlockKind::Paragraph;
+            // Only the kind and style change; the cell stays. A body paragraph wearing
+            // `Heading_20_1` would look like a heading without being one.
+            second.style = None;
+        }
+        block.runs = head;
+        Ok((block, second))
     }
 
     /// Join a block with the one after it — Backspace at the front of a block. The first block's

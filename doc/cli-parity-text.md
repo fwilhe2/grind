@@ -83,6 +83,11 @@ operations that feel like they belong to a UI.
   span survives, collapsed to the caret, and one whose whole block goes does not
 - `split_block` — `grind text split <at>`. The Return key. The second half keeps the first's
   kind and style, except that a heading split at its very end leaves a body paragraph
+- `break_page` — `grind text break <file> p3+12`. Ctrl+Enter: the paragraph split there and the
+  second part starting a page, written as LibreOffice writes it (`doc/odt-format.md` §5c fact 58).
+- `set_page_break` — `grind text break <file> p3`, and `--remove` to take one away: a break
+  made here goes as it came, and LibreOffice's own Ctrl+Enter style goes with its style.
+- `starts_page` — `grind text pages`, which begins a page at every block it is true of
 - `join_block` — `grind text join <at>`. The Backspace key, named from the block above it. The
   first block's kind and style are what survive
 - `insert_image` — `grind text image <at> --from <path>`. One caret position, like a tab — the

@@ -408,6 +408,22 @@ impl Page {
         Ok(())
     }
 
+    /// A page break: the split Return makes, the second block starting a page — one undo step.
+    pub fn break_page(&mut self, app: &App) -> Result<(), Refused> {
+        self.composing = None;
+        self.drop_selection(app)?;
+        let at = self.caret;
+        app.break_page(at).map_err(|error| error.to_string())?;
+        self.place(
+            Caret {
+                block: at.block + 1,
+                offset: 0,
+            },
+            false,
+        );
+        Ok(())
+    }
+
     /// Return: one block becomes two, and the caret goes to the front of the second.
     pub fn split(&mut self, app: &App) -> Result<(), Refused> {
         self.drop_selection(app)?;

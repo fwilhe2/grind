@@ -194,6 +194,8 @@ pub enum PageAction {
     },
     /// Return: one block becomes two.
     Split,
+    /// `insertContainerBreak:` — the same, the second starting a page (`App::break_page`).
+    PageBreak,
     /// A line break inside the block — `text:line-break` — rather than a new block.
     LineBreak,
     /// Tab and ⇧Tab: a list nested or un-nested where there is one, a tab where there is not.
@@ -343,6 +345,7 @@ pub const PAGE: &[(&str, PageAction)] = &[
     ("insertNewline:", PageAction::Split),
     ("insertParagraphSeparator:", PageAction::Split),
     ("insertLineBreak:", PageAction::LineBreak),
+    ("insertContainerBreak:", PageAction::PageBreak),
     ("insertNewlineIgnoringFieldEditor:", PageAction::LineBreak),
     ("insertTab:", PageAction::Tab { back: false }),
     ("insertBacktab:", PageAction::Tab { back: true }),
@@ -406,6 +409,10 @@ mod tests {
             "⌃K"
         );
         assert_eq!(page_action("insertNewline:"), Some(PageAction::Split));
+        assert_eq!(
+            page_action("insertContainerBreak:"),
+            Some(PageAction::PageBreak)
+        );
         assert_eq!(page_action("noSuchSelector:"), None);
     }
 

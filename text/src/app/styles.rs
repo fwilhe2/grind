@@ -163,13 +163,19 @@ impl App {
     }
 
     /// The block at `index`'s paragraph style, resolved down its chain to the default style
-    /// ([`paragraph::resolve`]); `None` for no such block.
+    /// ([`paragraph::resolve`]), with a page break made here over it; `None` for no such block.
     pub fn paragraph(&self, index: usize) -> Option<paragraph::Resolved> {
         let state = self.state.read().unwrap();
         let block = state.doc.block(index)?;
+        let broken = |mut resolved: paragraph::Resolved| {
+            if block.page_break {
+                resolved.props.break_before = Some("page".to_owned());
+            }
+            resolved
+        };
         let mut kept = self.paragraphs.lock().unwrap();
         if let Some(resolved) = kept.get(&block.style) {
-            return Some(resolved.clone());
+            return Some(broken(resolved.clone()));
         }
         let style = block.style.as_deref();
         let resolved = paragraph::Resolved {
@@ -182,7 +188,17 @@ impl App {
             named: paragraph::named(&state.doc.paragraph_styles, style),
         };
         kept.insert(block.style.clone(), resolved.clone());
-        Some(resolved)
+        Some(broken(resolved))
+    }
+
+    /// Whether a page starts at block `index`: its style says so, or a break was made there.
+    pub fn starts_page(&self, index: usize) -> bool {
+        self.paragraph(index).is_some_and(|resolved| {
+            matches!(
+                resolved.props.break_before.as_deref(),
+                Some("page" | "even-page" | "odd-page")
+            )
+        })
     }
 }
 

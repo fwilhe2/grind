@@ -1272,6 +1272,7 @@ mod imp {
             match action {
                 Action::Move(motion) => self.go(motion, mods.shift),
                 Action::Split => self.split(),
+                Action::PageBreak => self.page_break(),
                 Action::EraseBack => self.erase_back(),
                 Action::EraseForward => self.erase_forward(),
                 Action::EraseWord(delta) => self.erase_word(delta),
@@ -1794,6 +1795,23 @@ mod imp {
             let Some(app) = self.app() else { return };
             let caret = self.consume_selection(&app);
             match app.split_block(caret) {
+                Ok(()) => self.move_caret(
+                    Caret {
+                        block: caret.block + 1,
+                        offset: 0,
+                    },
+                    true,
+                ),
+                Err(error) => self.notice(error.to_string()),
+            }
+        }
+
+        /// Ctrl+Enter: the split Enter makes, the second part starting a page
+        /// (`App::break_page`). Backspace at the front of that page joins them again.
+        pub fn page_break(&self) {
+            let Some(app) = self.app() else { return };
+            let caret = self.consume_selection(&app);
+            match app.break_page(caret) {
                 Ok(()) => self.move_caret(
                     Caret {
                         block: caret.block + 1,

@@ -46,6 +46,8 @@ pub enum Action {
     },
     /// Enter: one block becomes two.
     Split,
+    /// Ctrl+Enter: the same, the second starting a page.
+    PageBreak,
     /// Tab or Shift+Tab: structural where `grind_text::indent_kind` says there is structure to
     /// change — nesting, un-nesting, or starting a list at a block's front — and a literal
     /// `text:tab` otherwise.
@@ -82,6 +84,7 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
         (Key::Backspace, false) => Some(Action::Erase { forward: false }),
         (Key::Delete, false) => Some(Action::Erase { forward: true }),
         (Key::Return, false) => Some(Action::Split),
+        (Key::Return, true) => Some(Action::PageBreak),
         (Key::Tab, false) => Some(Action::Tab { back: mods.shift }),
         _ => None,
     }

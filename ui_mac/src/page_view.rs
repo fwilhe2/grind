@@ -449,6 +449,7 @@ impl TextPane {
                 self.act_on(|page, app, faces| page.erase(app, faces, unit, forward));
             }
             PageAction::Split => self.act_on(|page, app, _| page.split(app)),
+            PageAction::PageBreak => self.act_on(|page, app, _| page.break_page(app)),
             PageAction::LineBreak => self.act_on(|page, app, _| page.insert_plain(app, "\n")),
             PageAction::Tab { back } => self.act_on(|page, app, _| page.tab(app, back)),
             PageAction::LiteralTab => self.act_on(|page, app, _| page.insert_plain(app, "\t")),

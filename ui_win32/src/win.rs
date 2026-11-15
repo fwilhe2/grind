@@ -7755,6 +7755,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
         }
         text::keymap::Action::Erase { forward } => text_erase(hwnd, forward),
         text::keymap::Action::Split => text_split(hwnd),
+        text::keymap::Action::PageBreak => text_page_break(hwnd),
         text::keymap::Action::Tab { back } => text_indent(hwnd, back),
     }
     true
@@ -7864,6 +7865,33 @@ fn text_split(hwnd: HWND) {
             text_drop_selection(text);
             let at = text.caret;
             match text.app.split_block(at) {
+                Ok(()) => {
+                    text.place(
+                        Caret {
+                            block: at.block + 1,
+                            offset: 0,
+                        },
+                        false,
+                    );
+                    text.resume = None;
+                    text.caret_on = true;
+                    text.say(None);
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// Ctrl+Enter: the split Return makes, the second block starting a page (`App::break_page`).
+fn text_page_break(hwnd: HWND) {
+    // SAFETY: one borrow. `break_page` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            text_drop_selection(text);
+            let at = text.caret;
+            match text.app.break_page(at) {
                 Ok(()) => {
                     text.place(
                         Caret {

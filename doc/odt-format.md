@@ -1048,6 +1048,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    wider ones, where the `!` was, though UAX #14 has no break before `!`. The same with `?`, `)`,
    `]`, `;`, `:` and `,` after a space. So Writer's line ends are not monotonic in the measure
    there.
+58. **What Ctrl+Enter writes** — `MEASURED` (2026-11-15, 26.8.2.2, Writer driven over UNO:
+   `.uno:InsertPagebreak` between two `insertString`s, saved as Flat XML). The paragraph is split
+   at the caret and the second part starts the page: it is given an **automatic paragraph style
+   parented on the paragraph's own style** whose only property is `fo:break-before="page"`
+   (rng:1297) — `<style:style style:name="P1" style:family="paragraph"
+   style:parent-style-name="Standard"><style:paragraph-properties fo:break-before="page"/>`. In a
+   heading both halves stay headings of its level, the second's style parented on
+   `Heading_20_1`. **Backspace at the front of that paragraph** joins the two again, the first
+   one's style kept, and the break is gone with the join.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

@@ -821,6 +821,20 @@ pub(crate) enum TextCommand {
         at: String,
     },
 
+    /// Start a page: split a paragraph there, or begin one at a paragraph
+    ///
+    /// The Ctrl+Enter key. At a position inside a paragraph (p3+12) the paragraph is split and
+    /// the second part starts a page; at a whole paragraph (p3) that paragraph starts one. Written
+    /// as LibreOffice writes it, so the break is the same one there.
+    Break {
+        file: PathBuf,
+        /// Where, e.g. p3+12 to split there, or p3 for the whole paragraph
+        at: String,
+        /// Take the page break before that paragraph away instead
+        #[arg(long)]
+        remove: bool,
+    },
+
     /// Join a block with the one after it
     ///
     /// The Backspace key, seen from the block above it. The first block's kind and style are

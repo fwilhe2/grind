@@ -53,6 +53,8 @@ pub enum Action<'a> {
     /// does not arrive (`doc/web-shell.md`).
     Type(&'a str),
     Split,
+    /// Ctrl+Enter — the same split, the second part starting a page.
+    PageBreak,
     EraseBack,
     EraseForward,
     /// Tab, which means two different things depending on what the caret is in — a list item
@@ -105,6 +107,7 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
             "3" => Some(Action::Run("block.h3")),
             "Home" => go(Motion::DocStart),
             "End" => go(Motion::DocEnd),
+            "Enter" => Some(Action::PageBreak),
             // Ctrl+T and F5 still belong to the browser — and so do Ctrl+C, Ctrl+X and
             // Ctrl+V, whose *events* are how this shell reaches the clipboard at all.
             _ => None,

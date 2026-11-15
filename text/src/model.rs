@@ -414,6 +414,9 @@ pub struct Block {
     /// The innermost `text:section` it is in, an index into [`Document::sections`], so a
     /// regenerated body wraps it in its section again.
     pub section: Option<usize>,
+    /// A page break before it that its style does not say — one made here, written as an
+    /// automatic style over its own (`doc/odt-format.md` §5c fact 58).
+    pub page_break: bool,
 }
 
 impl Block {
@@ -427,6 +430,7 @@ impl Block {
             runs: Vec::new(),
             generated: false,
             section: None,
+            page_break: false,
         }
     }
 

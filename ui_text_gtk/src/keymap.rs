@@ -71,6 +71,8 @@ pub enum Action {
     EraseWord(i32),
     /// Enter — a new block, split at the caret.
     Split,
+    /// Ctrl+Enter — the same split, the second part starting a page.
+    PageBreak,
     /// Tab and Shift+Tab: one step deeper into a list, or out of it — structural at the front of a
     /// block. A block that is not a list item gets a `text:tab` instead (`Doc::indent_or_tab`).
     Indent(i32),
@@ -91,6 +93,7 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
         Key::End if mods.ctrl => go(Motion::DocEnd),
         Key::Home => go(Motion::LineStart),
         Key::End => go(Motion::LineEnd),
+        Key::Return if mods.ctrl => Some(Action::PageBreak),
         Key::Return => Some(Action::Split),
         Key::Tab if mods.shift => Some(Action::Indent(-1)),
         Key::Tab => Some(Action::Indent(1)),
@@ -148,6 +151,7 @@ mod tests {
     #[test]
     fn the_editing_keys_are_the_three_a_caret_has() {
         assert_eq!(action_for(Key::Return, PLAIN), Some(Action::Split));
+        assert_eq!(action_for(Key::Return, CTRL), Some(Action::PageBreak));
         assert_eq!(action_for(Key::Backspace, PLAIN), Some(Action::EraseBack));
         assert_eq!(action_for(Key::Delete, PLAIN), Some(Action::EraseForward));
     }

@@ -1007,6 +1007,24 @@ impl App {
         }
     }
 
+    /// `:break` — the split Enter makes, the second part starting a page (`App::break_page`):
+    /// Ctrl+Enter, which a terminal cannot tell from Enter.
+    fn cmd_break(&mut self) {
+        match self.core.break_page(self.caret) {
+            Ok(()) => {
+                self.caret = Caret {
+                    block: self.caret.block + 1,
+                    offset: 0,
+                };
+                self.anchor = None;
+                self.resume = None;
+                self.goal_x = None;
+                self.status.clear();
+            }
+            Err(e) => self.status = e.to_string(),
+        }
+    }
+
     // --- Command mode ---
 
     fn on_command_key(&mut self, code: KeyCode) {
@@ -1108,6 +1126,7 @@ impl App {
             _ if let Some(rest) = cmd.strip_prefix("pdf ") => self.cmd_pdf(rest.trim()),
             #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
+            "break" => self.cmd_break(),
             #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("page ") => self.cmd_page(rest.trim()),
             #[cfg(feature = "pdf")]

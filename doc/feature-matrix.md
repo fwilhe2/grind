@@ -488,6 +488,7 @@ There is no dialog.
 | Where each page begins | ● | ● | ● | — | — | — |
 | Edit on the pages as they print (`doc/page-model.md`) | ● ᵖᵐ | ● ᵖᵐ | ◐ ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ |
 | Zoom | — | ● ᵖᵐ | — | ○ | ● ᵖᵐ | ● ᵖᵐ |
+| Start a page — a page break (`doc/odt-format.md` §5c fact 58) | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
 | Print | — | ● | ● ˡᵖ | ● ᵖᵖ | ● ᵖᵖ | ● |
 | **Files** | | | | | | |
@@ -511,6 +512,11 @@ Ctrl+wheel, both scroll bars, the caret's page on the status bar. The browser sh
 print module has loaded, the first time a text document is on screen (PM7 item 1): a canvas per
 page, at the printed size — the browser's own zoom scales it. The Mac's page view is the pages too
 (PM7 item 3, type-checked here): its scroll view's magnification is the zoom.
+ᵖᵇ `App::break_page`, as LibreOffice writes it: the paragraph split at the caret and the second
+part given an automatic style over its own with `fo:break-before` (PM8, 2026-11-15). `grind text
+break p3+12` (or `p3` for a whole paragraph, `--remove` to take one away), Ctrl+Enter in the GNOME,
+Windows and browser windows, `insertContainerBreak:` on the Mac, `:break` in the terminal. Backspace
+at the front of the new page joins the two again, as in LibreOffice.
 ᵖᵖ The CLI's preview is one page as a PNG (`grind text preview`). The Mac's is the system print
 panel's own, over the PDF itself; the browser prints by opening the PDF in the browser's viewer,
 and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's

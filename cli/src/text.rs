@@ -282,6 +282,25 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             finish_text(&app, cli, file, true)
         }
 
+        TextCommand::Break {
+            file,
+            at: address,
+            remove,
+        } => {
+            let app = open_text(file)?;
+            let loc = grind_text::loc::parse(address).map_err(|e| e.to_string())?;
+            let caret = app.resolve_caret(&loc).map_err(|e| e.to_string())?;
+            let done = match (remove, loc.offset) {
+                (false, Some(_)) => app.break_page(caret),
+                (on, None) => app.set_page_break(caret.block, !on),
+                (true, Some(_)) => {
+                    return Err("--remove takes a paragraph, e.g. p3, not a position in one".into());
+                }
+            };
+            done.map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
         TextCommand::Join { file, at: address } => {
             let app = open_text(file)?;
             let index = at(&app, address)?;

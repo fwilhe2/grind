@@ -1901,6 +1901,10 @@ impl Ui {
                 self.erase_selection();
                 self.split();
             }
+            Action::PageBreak => {
+                self.erase_selection();
+                self.page_break();
+            }
             Action::EraseBack => {
                 if !self.erase_selection() {
                     self.erase_back();
@@ -2123,6 +2127,21 @@ impl Ui {
     fn split(&self) {
         let caret = self.caret.get();
         match self.app.split_block(caret) {
+            Ok(()) => {
+                self.goal_x.set(None);
+                self.set_caret(Caret {
+                    block: caret.block + 1,
+                    offset: 0,
+                });
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+    }
+
+    /// Ctrl+Enter: the split Enter makes, the second part starting a page (`App::break_page`).
+    fn page_break(&self) {
+        let caret = self.caret.get();
+        match self.app.break_page(caret) {
             Ok(()) => {
                 self.goal_x.set(None);
                 self.set_caret(Caret {

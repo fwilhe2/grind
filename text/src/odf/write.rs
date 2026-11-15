@@ -241,7 +241,7 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
     // formatting the file has no name for cannot be spliced. Only the edited blocks: an untouched
     // block goes back as its own bytes, so a run without an exact twin among the file's automatic
     // styles must not turn an untouched save into a regenerate (`tdf97879.odt`).
-    let pool = Pool::spliced(
+    let mut pool = Pool::spliced(
         doc.blocks
             .iter()
             .filter(|block| doc.edits.blocks.contains(&block.id))
@@ -250,6 +250,21 @@ fn splice(doc: &Document, form: Form) -> Option<Vec<u8>> {
             .filter(|props| props.needs_style()),
         source,
     )?;
+    // A page break made here is a style declared beside the file's own, in its prefixes.
+    let broken = || {
+        doc.blocks
+            .iter()
+            .filter(|block| block.page_break && doc.edits.blocks.contains(&block.id))
+    };
+    if broken().next().is_some() {
+        let standard = envelope::prefix_for(&source.bytes, STYLE).as_deref() == Some("style")
+            && envelope::prefix_for(&source.bytes, FO).as_deref() == Some("fo");
+        if !standard {
+            return None;
+        }
+        let taken = envelope::automatic_style_names(&source.bytes);
+        pool.add_breaks(broken(), doc, Some(source), &taken);
+    }
     // A formatting the file has no style for is declared at the end of its own automatic styles —
     // the one splice site outside the body — so a click on Bold stays a splice.
     let mut patches: Vec<(std::ops::Range<usize>, String)> = Vec::new();
@@ -366,6 +381,9 @@ struct Pool {
     /// only the changed properties rewritten, so unread superscript, language or letter spacing
     /// survive Bold.
     patched: std::collections::HashMap<String, String>,
+    /// The automatic paragraph styles page breaks made here are written under: the style a broken
+    /// block wears, the name its break is written as, and that style's declaration.
+    breaks: Vec<(Option<String>, String, String)>,
 }
 
 impl Pool {
@@ -517,7 +535,11 @@ impl Pool {
     /// Every style this pool declares that the file does not, as `style:style` elements for a
     /// splice to insert into the file's `office:automatic-styles`.
     fn declarations(&self) -> String {
-        let mut out = String::new();
+        let mut out: String = self
+            .breaks
+            .iter()
+            .map(|(_, _, element)| element.as_str())
+            .collect();
         for (props, name) in &self.entries {
             if self.declared.contains(name) {
                 continue;
@@ -546,8 +568,88 @@ impl Pool {
     }
 
     fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+        self.entries.is_empty() && self.breaks.is_empty()
     }
+
+    /// The name a block wearing `style` is written under when a page break was made before it.
+    fn break_name(&self, style: Option<&str>) -> Option<&str> {
+        self.breaks
+            .iter()
+            .find(|(worn, ..)| worn.as_deref() == style)
+            .map(|(_, name, _)| name.as_str())
+    }
+
+    /// A style for each distinct style the `broken` blocks wear (`doc/odt-format.md` §5c fact 58):
+    /// the file's own automatic style copied with `fo:break-before`, so what it says beside the
+    /// break stays said, or one parented on the named style. Each new name is `P` and a number
+    /// nothing in `taken` has. A file's style that cannot be copied gives way to its parent.
+    fn add_breaks<'a>(
+        &mut self,
+        broken: impl Iterator<Item = &'a Block>,
+        doc: &Document,
+        source: Option<&super::source::Source>,
+        taken: &std::collections::HashSet<String>,
+    ) {
+        let mut next = 1;
+        for block in broken {
+            if self.break_name(block.style.as_deref()).is_some() {
+                continue;
+            }
+            let name = loop {
+                let name = format!("P{next}");
+                next += 1;
+                if !taken.contains(&name)
+                    && !doc.paragraph_styles.contains_key(&name)
+                    && !self.breaks.iter().any(|(_, used, _)| *used == name)
+                {
+                    break name;
+                }
+            };
+            let own = block
+                .style
+                .as_deref()
+                .and_then(|worn| Some((worn, doc.paragraph_styles.get(worn)?)))
+                .filter(|(_, style)| style.automatic);
+            let copied = own.and_then(|(worn, _)| broken_copy(source?, worn, &name));
+            let element = copied.unwrap_or_else(|| {
+                let parent = match own {
+                    Some((_, style)) => style.parent.as_deref(),
+                    None => block.style.as_deref(),
+                };
+                let parent = parent.map_or(String::new(), |parent| {
+                    format!(" style:parent-style-name=\"{}\"", esc(parent))
+                });
+                format!(
+                    "<style:style style:name=\"{}\" style:family=\"paragraph\"{parent}>\
+                     <style:paragraph-properties fo:break-before=\"page\"/></style:style>",
+                    esc(&name)
+                )
+            });
+            self.breaks.push((block.style.clone(), name, element));
+        }
+    }
+}
+
+/// The file's automatic paragraph style `worn`, renamed `name`, with a page break before
+/// (`envelope::patch_style`). `None` when the file spells `style:` or `fo:` otherwise or the
+/// element is not there.
+fn broken_copy(source: &super::source::Source, worn: &str, name: &str) -> Option<String> {
+    let standard = envelope::prefix_for(&source.bytes, STYLE).as_deref() == Some("style")
+        && envelope::prefix_for(&source.bytes, FO).as_deref() == Some("fo");
+    if !standard {
+        return None;
+    }
+    let range = envelope::automatic_style_range(&source.bytes, "paragraph", worn)?;
+    let element = std::str::from_utf8(source.bytes.get(range)?).ok()?;
+    envelope::patch_style(
+        element,
+        &[("style:name", Some(name))],
+        &[(
+            "style:paragraph-properties",
+            vec![("fo:break-before".to_owned(), Some("page".to_owned()))],
+        )],
+        &["style:paragraph-properties", "style:text-properties"],
+    )
 }
 
 /// `base`'s element in the file, renamed `name`, with what differs from `props` rewritten
@@ -606,7 +708,13 @@ fn content(
     } else {
         doc
     };
-    let pool = Pool::of(doc, source, reserved);
+    let mut pool = Pool::of(doc, source, reserved);
+    pool.add_breaks(
+        doc.blocks.iter().filter(|block| block.page_break),
+        doc,
+        source,
+        reserved,
+    );
     let mut used = Used::of(doc, &pool);
     let bullets = opens_lists(doc, source) && !reserved.contains(BULLETS);
     used.styles |= bullets;
@@ -687,6 +795,7 @@ fn opens_lists(doc: &Document, source: Option<&super::source::Source>) -> bool {
 /// `office:body`, so a name is declared before a span uses it.
 fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
     if !bullets
+        && pool.breaks.is_empty()
         && pool
             .entries
             .iter()
@@ -697,6 +806,9 @@ fn automatic_styles(out: &mut String, pool: &Pool, bullets: bool) {
     out.push_str(" <office:automatic-styles>\n");
     if bullets {
         let _ = writeln!(out, "  {}", bullets_declaration());
+    }
+    for (_, _, element) in &pool.breaks {
+        let _ = writeln!(out, "  {element}");
     }
     for (props, name) in &pool.entries {
         if pool.declared.contains(name) {
@@ -1300,7 +1412,14 @@ fn paragraph(out: &mut String, block: &Block, indent: String, keep: &str, pool: 
         BlockKind::Heading { level } => ("text:h", format!(" text:outline-level=\"{level}\"")),
         _ => ("text:p", String::new()),
     };
-    let style = match &block.style {
+    let worn = match pool
+        .break_name(block.style.as_deref())
+        .filter(|_| block.page_break)
+    {
+        Some(broken) => Some(broken),
+        None => block.style.as_deref(),
+    };
+    let style = match worn {
         Some(name) => format!(" text:style-name=\"{}\"", esc(name)),
         None => String::new(),
     };

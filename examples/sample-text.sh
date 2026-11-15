@@ -119,6 +119,9 @@ run split "$doc" '#typed+7'
 say "join: the Backspace key — and the first block's kind is the one that survives"
 run join "$doc" "$(text find "$doc" 'Proof: ' | cut -f1)"
 
+say "break: Ctrl+Enter — the addresses start a page of their own, as LibreOffice writes it"
+run break "$doc" "$(text find "$doc" 'Addresses' | head -n1 | cut -f1 | cut -d+ -f1)"
+
 say "erase: characters rather than blocks, so the block itself stays behind"
 run erase "$doc" '#typed+0:#typed+7'
 
