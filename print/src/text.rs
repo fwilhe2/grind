@@ -234,15 +234,12 @@ pub fn typeset_after(
     let numbering = numbering(&pages);
     let chapters = chapters(&pages, &viewport);
 
-    // What every page's drawing reads that is not the page's own: the paper, the masters and
-    // their running heads, the widths text is set at, the tables' looks, and the document's
-    // styles, which no edit changes.
     // What every page's drawing reads that is not the page's own: the paper, the page set, the
     // widths text is set at — and the document's styles, masters and running heads, which only
     // reading a document sets, so its generation names them.
     let seed = {
         use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = key_hasher();
         app.styles_generation().hash(&mut hasher);
         format!("{:?}|{:?}", options.paper, app.page()).hash(&mut hasher);
         for kind in &kinds {
@@ -258,14 +255,14 @@ pub fn typeset_after(
         .iter()
         .map(|(name, look)| {
             use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            let mut hasher = key_hasher();
             format!("{look:?}").hash(&mut hasher);
             (name, hasher.finish())
         })
         .collect();
     let key = |number: usize, page: &grind_text::page::Page| -> u64 {
         use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = key_hasher();
         seed.hash(&mut hasher);
         (page.slot, page.restart, page.number).hash(&mut hasher);
         numbering[number].hash(&mut hasher);
@@ -529,6 +526,11 @@ pub fn typeset_after(
         structure,
         keys,
     }
+}
+
+/// A hasher for page keys: fast, and the same in every setting of one process.
+fn key_hasher() -> impl std::hash::Hasher {
+    std::hash::BuildHasher::build_hasher(&foldhash::quality::FixedState::default())
 }
 
 /// What of a block a page's drawing reads, into `hasher`. A picture by its length and a sample of

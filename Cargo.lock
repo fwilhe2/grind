@@ -1323,6 +1323,7 @@ dependencies = [
 name = "grind-print"
 version = "0.0.0"
 dependencies = [
+ "foldhash",
  "fontdb 0.24.0",
  "gif",
  "grind-core",
