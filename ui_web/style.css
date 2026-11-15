@@ -499,6 +499,72 @@ input[type="text"] {
   color: CanvasText;
 }
 
+/* The document as its printed pages (ui_web/src/text/paged.rs): a strip as wide and tall as the
+   print module places it, each page a canvas at its place on a desk, and the marks that are not
+   on paper over them. White paper in either theme, as it prints. */
+.flow.paged {
+  position: relative;
+  max-width: none;
+  margin: 0;
+}
+
+.page:has(.flow.paged) {
+  background: color-mix(in srgb, CanvasText 8%, Canvas);
+}
+
+.sheet {
+  position: absolute;
+  background: white;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+
+.marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.marks > div {
+  position: absolute;
+}
+
+.band.sel {
+  background: color-mix(in srgb, Highlight 35%, transparent);
+}
+
+/* A misspelt word and a grammar finding, as the line view draws them: a wavy line along the
+   bottom of the text's band. */
+.band.misspelt-mark,
+.band.grammar-mark {
+  background: bottom left / 6px 3px repeat-x
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5 L1.5 0.5 L3 2.5 L4.5 0.5 L6 2.5' fill='none' stroke='%23d6342c' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+.band.grammar-mark {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='3'%3E%3Cpath d='M0 2.5 L1.5 0.5 L3 2.5 L4.5 0.5 L6 2.5' fill='none' stroke='%233584e4' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+.band.quiet-mark {
+  border-bottom: 1.5px dotted #3584e4;
+}
+
+.caret.paged {
+  display: block;
+  height: auto;
+  margin: 0;
+}
+
+.mark-tick.paged {
+  background: #606060;
+}
+
+.mark-name.paged {
+  color: #606060;
+  font: 11px system-ui, sans-serif;
+  white-space: nowrap;
+  padding-left: 0.5em;
+}
+
 .block {
   margin: 0 0 var(--block-gap, 14px);
 }

@@ -1146,6 +1146,19 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("its preview is the pages", sheets.length, 1);
   check("at the scale asked for", [sheets[0].width, sheets[0].height], [148, 210]);
 
+  // The page view (doc/page-model.md PM7): the text pane's pages, kept typeset in the print
+  // module and asked about in the strip's CSS pixels. A click where the caret is drawn is that
+  // caret.
+  const pages = new print.Pages(fonts);
+  const damaged = pages.set(new Uint8Array(writer));
+  check("the page view sets every page", [...damaged], [0]);
+  pages.place(96 / 72, 1000);
+  check("and counts them", pages.count(), 1);
+  const spot = pages.spot(1, 2);
+  check("a caret is somewhere on its page", spot !== undefined && spot[0] > 0 && spot[1] > 0, true);
+  check("and a click there is that caret", [...pages.hit(spot[0], spot[1] + spot[2] / 2)], [1, 2]);
+  check("setting it again draws nothing", [...pages.set(new Uint8Array(writer))], []);
+
   console.log(failures === 0 ? "\nall checks passed" : `\n${failures} check(s) failed`);
   process.exit(failures === 0 ? 0 : 1);
 })();

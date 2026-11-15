@@ -13,6 +13,7 @@
 //! browser's whole contribution — how wide is this text, in CSS pixels.
 
 pub mod keymap;
+mod paged;
 mod runs;
 mod table;
 
@@ -21,7 +22,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use grind_core::style::TextStyle;
 use grind_text::find::{self, Towards};
@@ -61,6 +62,9 @@ const INDENT: f64 = 1.6;
 /// as zero, and a zero width means "do not wrap" to the core — right for a headless test, wrong
 /// for a window not yet measured.
 const UNMEASURED: f64 = 640.0;
+
+/// CSS pixels per point at which the pages are shown: a page at its printed size.
+const PAGE_SCALE: f64 = 96.0 / 72.0;
 
 /// One block-level face: a font, its line height, and a canvas to measure with, in **CSS pixels**.
 ///
@@ -248,6 +252,11 @@ pub struct Ui {
     dom: Dom,
     faces: Faces,
     pending: Arc<AtomicBool>,
+    /// How many times the document has changed, counted by its observer.
+    changes: Arc<AtomicU64>,
+    /// The printed pages, once the print module has loaded (`doc/page-model.md` decision 3):
+    /// until then, and where it cannot load, the document is drawn as lines.
+    paged: RefCell<Option<paged::Paged>>,
     // Everything below is *presentation*. None of it is the document, which is why the core
     // neither knows nor keeps it.
     caret: Cell<Caret>,
@@ -287,6 +296,7 @@ impl Ui {
         document: &Document,
         app: Arc<App>,
         pending: Arc<AtomicBool>,
+        changes: Arc<AtomicU64>,
     ) -> Result<Rc<Self>, JsValue> {
         // A canvas never added to the page, there to be asked how wide a string is. Optional: a
         // page with no canvas still opens documents, and refusing to start over it would take the
@@ -304,6 +314,8 @@ impl Ui {
             dom: Dom::find(document)?,
             faces: Faces::new(ctx),
             pending,
+            changes,
+            paged: RefCell::new(None),
             caret: Cell::new(Caret {
                 block: 0,
                 offset: 0,
@@ -342,7 +354,24 @@ impl Ui {
         *self.resume.borrow_mut() = None;
         self.images.borrow_mut().clear();
         self.dom.pane.set_scroll_top(0);
+        if let Some(paged) = self.paged.borrow_mut().as_mut() {
+            paged.forget();
+        }
         Ok(())
+    }
+
+    /// Show the document as its printed pages from here on, `pages` being the print module's
+    /// `Pages` with the fonts already in it.
+    pub fn attach(&self, pages: JsValue) {
+        self.dom.flow.set_text_content(None);
+        self.dom.flow.set_class_name("flow paged");
+        *self.paged.borrow_mut() = Some(paged::Paged::new(pages));
+        self.request_repaint();
+    }
+
+    /// Whether the document is shown as its pages.
+    pub fn is_paged(&self) -> bool {
+        self.paged.borrow().is_some()
     }
 
     pub fn save_bytes(&self, form: Form) -> Result<Vec<u8>, String> {
@@ -375,6 +404,9 @@ impl Ui {
     }
 
     fn render(&self) -> Result<(), JsValue> {
+        if self.is_paged() {
+            return self.render_pages();
+        }
         let caret = self.caret.get();
         let selection = self.selection();
         // ponytail: the whole document is rendered, not the part on screen. Windowing needs a
@@ -515,6 +547,128 @@ impl Ui {
             parent.append_child(&element)?;
         }
 
+        self.render_chrome();
+        self.follow_caret();
+        Ok(())
+    }
+
+    /// The document as its pages: each a canvas the print module drew, and over them what is
+    /// not on paper — the selection, spelling and grammar underlines, bookmark names, the caret.
+    fn render_pages(&self) -> Result<(), JsValue> {
+        let mut slot = self.paged.borrow_mut();
+        let Some(paged) = slot.as_mut() else {
+            return Ok(());
+        };
+        paged.sync(self.changes.load(Ordering::SeqCst), || {
+            self.app.save_bytes(Form::Flat).ok()
+        });
+        let pane = &self.dom.pane;
+        let width = match pane.client_width() {
+            0 => UNMEASURED,
+            width => f64::from(width),
+        };
+        paged.place(PAGE_SCALE, width);
+        let (strip_width, strip_height) = paged.size();
+        let flow = &self.dom.flow;
+        let style = flow.style();
+        style.set_property("width", &format!("{strip_width}px"))?;
+        style.set_property("height", &format!("{strip_height}px"))?;
+        let top = f64::from(pane.scroll_top());
+        let bottom = top + f64::from(pane.client_height()).max(1.0);
+        let ratio = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
+        paged.draw(&self.dom.document, flow, (top, bottom), PAGE_SCALE, ratio)?;
+
+        if let Some(old) = self.dom.document.get_element_by_id("marks") {
+            old.remove();
+        }
+        let marks = self.dom.document.create_element("div")?;
+        marks.set_id("marks");
+        marks.set_class_name("marks");
+        let mark = |class: &str, [x, y, w, h]: paged::Rect| -> Result<Element, JsValue> {
+            let element = self.dom.document.create_element("div")?;
+            element.set_class_name(class);
+            element.set_attribute(
+                "style",
+                &format!("left:{x}px;top:{y}px;width:{w}px;height:{h}px"),
+            )?;
+            marks.append_child(&element)?;
+            Ok(element)
+        };
+        let caret = self.caret.get();
+        let selection = self.selection();
+        if let Some((from, to)) = selection {
+            for band in paged.bands(from, to, top, bottom) {
+                mark("band sel", band)?;
+            }
+        }
+        let at = |block: usize, offset: usize| Caret { block, offset };
+        if let Some(blocks) = paged.blocks(top, bottom) {
+            for wrong in self.app.misspellings(blocks.clone()) {
+                if selection.is_none() && wrong.being_typed(caret) {
+                    continue;
+                }
+                let (from, to) = (
+                    at(wrong.block, wrong.offset),
+                    at(wrong.block, wrong.offset + wrong.len),
+                );
+                for band in paged.bands(from, to, top, bottom) {
+                    mark("band misspelt-mark", band)?;
+                }
+            }
+            for flag in self.grammar_flags(blocks.clone()) {
+                let range = &flag.finding.range;
+                if selection.is_none() && flag.block == caret.block && range.end == caret.offset {
+                    continue;
+                }
+                let (start, end) = if range.is_empty() {
+                    (range.start.saturating_sub(1), range.end + 1)
+                } else {
+                    (range.start, range.end)
+                };
+                let quiet = matches!(
+                    flag.finding.kind,
+                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                );
+                let class = if quiet {
+                    "band quiet-mark"
+                } else {
+                    "band grammar-mark"
+                };
+                for band in paged.bands(at(flag.block, start), at(flag.block, end), top, bottom) {
+                    mark(class, band)?;
+                }
+            }
+            // A bookmark contributes no characters (`doc/view-modes.md` §3.6): a tick where it
+            // anchors, and its name past the end of its line.
+            if self.names.get() {
+                let viewport = self.app.get_viewport(blocks.clone());
+                for index in blocks {
+                    let Some(block) = viewport.get(index) else {
+                        continue;
+                    };
+                    for (offset, name) in &block.marks {
+                        let anchor = at(index, *offset);
+                        let Some([x, y, h, _]) = paged.spot(anchor) else {
+                            continue;
+                        };
+                        mark("mark-tick paged", [x - 1.0, y, 2.0, h])?;
+                        let end = paged
+                            .bounds(anchor)
+                            .and_then(|(_, end)| paged.spot(end))
+                            .map_or(x, |[x, ..]| x);
+                        let label = mark("mark-name paged", [end, y, 0.0, h])?;
+                        label.set_text_content(Some(&format!("\u{2039}{name}\u{203a}")));
+                    }
+                }
+            }
+        }
+        if selection.is_none()
+            && let Some([x, y, h, _]) = paged.spot(caret)
+        {
+            mark("caret paged", [x, y, 0.0, h])?.set_id("caret");
+        }
+        flow.append_child(&marks)?;
+        drop(slot);
         self.render_chrome();
         self.follow_caret();
         Ok(())
@@ -676,6 +830,10 @@ impl Ui {
         } else {
             format!("{here} · {words}{selected}")
         };
+        let line = match self.page_here() {
+            Some((page, count)) => format!("Page {page} of {count} · {line}"),
+            None => line,
+        };
         self.dom.summary.set_text_content(Some(&line));
         let _ = self.dom.summary.set_attribute(
             "title",
@@ -688,6 +846,16 @@ impl Ui {
         self.dom
             .message
             .set_text_content(Some(&self.message.borrow()));
+    }
+
+    /// The printed page the caret is on, from 1, and how many there are — when the document
+    /// is shown as its pages.
+    fn page_here(&self) -> Option<(usize, usize)> {
+        let paged = self.paged.borrow();
+        let paged = paged.as_ref()?;
+        let [_, y, h, _] = paged.spot(self.caret.get())?;
+        let page = paged.visible(y + h / 2.0, y + h / 2.0).start;
+        Some((page + 1, paged.count()))
     }
 
     // --- the selection ---
@@ -1773,6 +1941,12 @@ impl Ui {
             self.anchor.set(None);
         }
         let caret = self.caret.get();
+        if let Some(moved) = self.go_on_pages(motion, caret) {
+            if !matches!(motion, Motion::Line(_) | Motion::Page(_)) {
+                self.goal_x.set(None);
+            }
+            return self.set_caret(moved);
+        }
         let faces = self.column();
         let moved = match motion {
             Motion::Char(delta) => Some(self.stepped(delta)),
@@ -1812,6 +1986,39 @@ impl Ui {
             self.goal_x.set(None);
         }
         self.set_caret(moved);
+    }
+
+    /// A motion by lines, a screenful or to a line's end, answered by the printed pages when the
+    /// document is shown as them; `None` for every other motion, and with no pages.
+    fn go_on_pages(&self, motion: Motion, caret: Caret) -> Option<Caret> {
+        let paged = self.paged.borrow();
+        let paged = paged.as_ref()?;
+        match motion {
+            Motion::Line(steps) | Motion::Page(steps) => {
+                let spot = paged.spot(caret)?;
+                // A page is however many of the caret's lines fit, less one so that the line you
+                // were reading is still there afterwards.
+                let lines = match motion {
+                    Motion::Page(_) => {
+                        let view = f64::from(self.dom.pane.client_height());
+                        ((view / spot[2].max(1.0)) as isize - 1).max(1)
+                    }
+                    _ => 1,
+                };
+                let goal = self.goal_x.get().map_or(spot[3], f64::from);
+                self.goal_x.set(Some(goal as f32));
+                paged.step(caret, steps as isize * lines, goal)
+            }
+            Motion::LineStart | Motion::LineEnd => {
+                let (start, end) = paged.bounds(caret)?;
+                Some(if matches!(motion, Motion::LineStart) {
+                    start
+                } else {
+                    end
+                })
+            }
+            _ => None,
+        }
     }
 
     /// One character left or right, rolling onto the neighbouring block at either end —
@@ -1964,6 +2171,12 @@ impl Ui {
     /// The caret a pointer position names, or `None` when it landed on nothing — the gap
     /// between two blocks, or the chrome.
     fn caret_at(&self, event: &MouseEvent) -> Result<Option<Caret>, JsValue> {
+        if let Some(paged) = self.paged.borrow().as_ref() {
+            let flow = self.dom.flow.get_bounding_client_rect();
+            let x = f64::from(event.client_x()) - flow.left();
+            let y = f64::from(event.client_y()) - flow.top();
+            return Ok(paged.hit(x, y));
+        }
         let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
             return Ok(None);
         };
@@ -2137,6 +2350,14 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
         if event.detail() >= 2 && !event.shift_key() {
             click.dragging.set(false);
             click.select_around(event.detail() >= 3);
+        }
+    })?;
+
+    // Pages come into view as the pane scrolls, and a page that changed is drawn when it does.
+    let scrolled = ui.clone();
+    listen(&ui.dom.pane, "scroll", move |_: Event| {
+        if scrolled.is_paged() {
+            scrolled.request_repaint();
         }
     })?;
 

@@ -131,8 +131,8 @@ pub fn start() -> Result<(), JsValue> {
     text_app.set_observer(Arc::new(Notifier(pending.clone(), changes.clone())));
 
     let shell = Rc::new(Shell {
-        sheet: sheet::Ui::new(&document, sheet_app, pending.clone(), changes)?,
-        text: text::Ui::new(&document, text_app, pending.clone())?,
+        sheet: sheet::Ui::new(&document, sheet_app, pending.clone(), changes.clone())?,
+        text: text::Ui::new(&document, text_app, pending.clone(), changes)?,
         dom: Chrome::find(&document)?,
         palette: palette::Palette::find(&document)?,
         swatches: Rc::new(swatch::Swatches::find(&document)?),
@@ -142,6 +142,7 @@ pub fn start() -> Result<(), JsValue> {
         source: RefCell::new(None),
         problems: RefCell::new(None),
         previewing: Cell::new(false),
+        pages_asked: Cell::new(false),
         fonts: RefCell::new(None),
         pick: Cell::new(Pick::Document),
         csv_words: RefCell::new(String::new()),
@@ -319,6 +320,8 @@ struct Shell {
     problems: RefCell<Option<problems::Listing>>,
     /// Whether the print preview is the surface on screen (`doc/pdf-export.md` §4).
     previewing: Cell<bool>,
+    /// Whether the page view has been asked for — once a visit.
+    pages_asked: Cell<bool>,
     /// The bundled faces as `Uint8Array`s, fetched from `fonts/` the first time anything is put
     /// on paper and kept for the rest of the visit — megabytes nobody pays for who never exports.
     fonts: RefCell<Option<js_sys::Array>>,
@@ -432,6 +435,9 @@ impl Shell {
     /// invisible pane would still take the keyboard.
     fn show(&self, mode: Mode) -> Result<(), JsValue> {
         self.mode.set(mode);
+        if mode == Mode::Text {
+            self.load_pages();
+        }
         let sheet = mode == Mode::Sheet;
         let welcome = mode == Mode::Welcome;
         // **Five panes, one on screen.** The code view and the problems pane are not modes: the
@@ -1035,6 +1041,39 @@ impl Shell {
         }
         *self.fonts.borrow_mut() = Some(fonts.clone());
         Some(fonts)
+    }
+
+    /// Start showing text documents as their printed pages, once: the print module and the fonts
+    /// are fetched the first time a text document is on screen (`doc/page-model.md` decision 3).
+    /// Not on a page that cannot load the module, which keeps drawing lines.
+    fn load_pages(&self) {
+        let can = web_sys::window()
+            .and_then(|window| js_sys::Reflect::get(&window, &"grindPrint".into()).ok())
+            .is_some_and(|loader| loader.is_function());
+        if !can || self.pages_asked.replace(true) {
+            return;
+        }
+        let Some(shell) = SHELL.with(|shell| shell.borrow().clone()) else {
+            return;
+        };
+        wasm_bindgen_futures::spawn_local(async move {
+            let Some(fonts) = shell.fonts().await else {
+                return;
+            };
+            let Some(module) = shell.print_module().await else {
+                return;
+            };
+            let pages = js_sys::Reflect::get(&module, &"Pages".into())
+                .and_then(JsCast::dyn_into::<js_sys::Function>)
+                .and_then(|class| js_sys::Reflect::construct(&class, &js_sys::Array::of1(&fonts)));
+            match pages {
+                Ok(pages) => {
+                    shell.text.attach(pages);
+                    shell.set_message(String::new());
+                }
+                Err(error) => web_sys::console::error_1(&error),
+            }
+        });
     }
 
     /// The print module (`ui_web_print`), loaded by `index.html`'s `grindPrint` on first use.
