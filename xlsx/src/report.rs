@@ -39,6 +39,19 @@ pub enum Dropped {
     /// A form control that is not a checkbox — a button, a list, a spinner — or a checkbox with
     /// nowhere to go (`controls.rs`).
     FormControl,
+    /// A cell's hyperlink. The cell's text is kept; where it pointed is not.
+    Hyperlink,
+    /// An Excel table (`<tablePart>`). Its cells are carried, and a structured reference into it
+    /// is translated to the range it meant; the table's name, style and filter buttons are not.
+    Table,
+    /// How a sheet prints: landscape, a scale or fit to pages, a header or footer, a manual
+    /// break, a print area or print titles. Once per sheet; default margins alone are not
+    /// counted, since every workbook states them.
+    PageSetup,
+    /// A sparkline (`x14:sparkline`), counted per cell that drew one.
+    Sparkline,
+    /// A title, subject, description, keywords or category in `docProps/core.xml`.
+    DocumentProperties,
 }
 
 impl Dropped {
@@ -64,6 +77,11 @@ impl Dropped {
             Dropped::FontFamily => "font family",
             Dropped::Protection => "protection",
             Dropped::FormControl => "form control",
+            Dropped::Hyperlink => "hyperlink (its text kept)",
+            Dropped::Table => "table (its data kept)",
+            Dropped::PageSetup => "page setup (per sheet)",
+            Dropped::Sparkline => "sparkline",
+            Dropped::DocumentProperties => "document properties",
         }
     }
 }

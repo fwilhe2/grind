@@ -240,6 +240,8 @@ pub struct Names {
     /// Per sheet index, the names that are sheet-local there — lower-case, since names match
     /// case-insensitively (ODF §5.11, and Excel). A formula on that sheet naming one is refused.
     pub local: Vec<BTreeSet<String>>,
+    /// Sheets with a print area or print titles (`_xlnm.Print_Area`, `_xlnm.Print_Titles`).
+    pub printed: BTreeSet<usize>,
 }
 
 impl Names {
@@ -269,6 +271,7 @@ impl Names {
 pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) -> Names {
     let mut out = Names {
         local: vec![BTreeSet::new(); document.sheets.len()],
+        printed: BTreeSet::new(),
     };
     let mut definitions: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
@@ -276,7 +279,12 @@ pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) 
         *definitions.entry(defined.name.to_lowercase()).or_default() += 1;
     }
     for defined in &workbook.names {
-        if defined.name.starts_with("_xlnm.") {
+        if let Some(own) = defined.name.strip_prefix("_xlnm.") {
+            if matches!(own, "Print_Area" | "Print_Titles")
+                && let Some(sheet) = defined.local
+            {
+                out.printed.insert(sheet);
+            }
             continue;
         }
         let collides = definitions[&defined.name.to_lowercase()] > 1;

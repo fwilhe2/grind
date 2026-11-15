@@ -78,6 +78,22 @@ const ORACLE_SPELLING: &str = "The manifest expects Excel's name with the `_xlfn
 /// no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
+        "document/defined-names.xlsx",
+        "dropped:PageSetup",
+        "The manifest expects none; this build counts one. `Data` has a print area and print \
+         titles (`_xlnm.Print_Area`, `_xlnm.Print_Titles`), which the model has no home for: \
+         the names are skipped as Excel's bookkeeping, and how the sheet prints goes with them. \
+         Counted since 2026-11-15, when the Craft corpus found it lost without a word.",
+    ),
+    (
+        "document/tables.xlsx",
+        "dropped:Table",
+        "The manifest expects none; this build counts one. The table's cells are carried and \
+         its structured references translated to the ranges they meant, but the table itself — \
+         its name, style and filter buttons — has no home in the model. Counted since \
+         2026-11-15, when the Craft corpus found it lost without a word.",
+    ),
+    (
         "document/merged-cells.xlsx",
         "dropped:MergedCells",
         "The manifest expects all seven dropped, from when the model carried no spans; this \

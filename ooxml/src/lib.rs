@@ -69,3 +69,43 @@ impl Error {
         matches!(self, Error::Encrypted)
     }
 }
+
+/// Whether `docProps/core.xml` gives the document a title, subject, description, keywords or
+/// category — what a person typed into File ▸ Properties. The author and dates are not counted:
+/// every Office file carries them, and they say nothing the person chose to write down.
+#[must_use]
+pub fn has_core_properties(core: &[u8]) -> bool {
+    let mut reader = xml::Reader::new(core);
+    if !matches!(reader.root(), Ok(Some(_))) {
+        return false;
+    }
+    let mut any = false;
+    let _ = reader.children(|reader, name, _| {
+        if matches!(
+            name.local.as_str(),
+            "title" | "subject" | "description" | "keywords" | "category"
+        ) {
+            any |= !reader.text()?.trim().is_empty();
+            return Ok(xml::Handled::Yes);
+        }
+        Ok(xml::Handled::No)
+    });
+    any
+}
+
+#[cfg(test)]
+mod core_properties_tests {
+    use super::has_core_properties;
+
+    const HEAD: &str = r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">"#;
+
+    #[test]
+    fn a_title_counts_and_an_author_does_not() {
+        let titled = format!("{HEAD}<dc:title>Budget</dc:title></cp:coreProperties>");
+        let authored =
+            format!("{HEAD}<dc:creator>A. Example</dc:creator><dc:title/></cp:coreProperties>");
+        assert!(has_core_properties(titled.as_bytes()));
+        assert!(!has_core_properties(authored.as_bytes()));
+        assert!(!has_core_properties(b"not xml"));
+    }
+}

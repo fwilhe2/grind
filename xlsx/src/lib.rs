@@ -100,6 +100,12 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
     if package.part("xl/vbaProject.bin").is_some() {
         report.drop_one(Dropped::Macro);
     }
+    if package
+        .part("docProps/core.xml")
+        .is_some_and(|core| grind_ooxml::has_core_properties(&core))
+    {
+        report.drop_one(Dropped::DocumentProperties);
+    }
 
     let mut document = workbook::document(&book, &mut report);
     let names = workbook::names(&book, &mut document, &mut report);
@@ -140,6 +146,7 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
                 .and_then(|bytes| tables::read(&bytes, index))
             {
                 tables.list.push(table);
+                report.drop_one(Dropped::Table);
             }
         }
     }

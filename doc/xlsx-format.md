@@ -811,14 +811,28 @@ LibreOffice's own `.xlsx` export writes `<workbookProtection/>` with no attribut
 `<sheetProtection sheet>` to false, so neither element protects anything unless a lock is set.
 Only a set lock is counted as `Dropped::Protection`.
 
-### 7.3 Filtered rows — `SPEC`
+### 7.3 Page setup the oracle's own default already prints — `MEASURED`
+
+A spreadsheet document with no page style of its own prints, in the oracle, the sheet's name
+centred as its header and `Page N` centred as its footer (`grind sheet import
+xlsx/tests/data/sample.xlsx`, then `soffice --convert-to pdf` in the pinned image, LibreOffice
+26.2, 2026-11-15). LibreOffice's `.xlsx` export writes exactly that on every sheet:
+`<oddHeader>&amp;C&amp;"Times New Roman,Regular"&amp;12&amp;A</oddHeader>` and
+`<oddFooter>&amp;C&amp;"Times New Roman,Regular"&amp;12Page &amp;P</oddFooter>` (the same file).
+Read with the font codes (`&"…"`, ECMA-376 §18.3.1.39) and size codes (`&` and digits) left out,
+those two are the default the import already produces, and are not counted; any other header or
+footer text is `Dropped::PageSetup`. So are a landscape page, a scale other than 100,
+`fitToPage`, a manual break, and a print area or titles. `<pageMargins>` alone is not: every
+producer writes it.
+
+### 7.4 Filtered rows — `SPEC`
 
 Excel writes `hidden="1"` on every row an autofilter excludes (§18.3.1.73 does not distinguish
 the reason), so a row hidden by the filter and a row hidden by hand are one spelling. This
 filter gives a row to the carried filter when the filter hides it, and keeps it hidden by hand
 otherwise — which is right unless a row was both, a case the file cannot express either.
 
-### 7.4 A comma at the top of a defined name — `SPEC`
+### 7.5 A comma at the top of a defined name — `SPEC`
 
 In a `<definedName>` a top-level `,` is the union operator (`Data!$A$1:$A$2,Data!$B$4:$B$5`,
 `document/defined-names.xlsx`'s `Multi_Area`); in a cell's formula a comma only ever separates

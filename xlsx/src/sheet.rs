@@ -99,6 +99,7 @@ pub fn read(
     };
     let mut filter = None;
     let mut rules = crate::rules::Pending::default();
+    let mut printed = context.names.printed.contains(&index);
     if matches!(reader.root(), Ok(Some((ref root, _))) if root.is("worksheet")) {
         let _ = reader.children(|reader, name, attrs| {
             if name.is("sheetData") {
@@ -150,11 +151,34 @@ pub fn read(
                 }
             } else if name.is("autoFilter") {
                 filter = autofilter(reader, attrs, report)?;
+            } else if name.is("hyperlinks") {
+                report.drop_many(Dropped::Hyperlink, count(reader, "hyperlink")?);
+            } else if name.is("sheetPr") {
+                reader.children(|_, name, attrs| {
+                    printed |= name.is("pageSetUpPr") && attrs.flag("fitToPage");
+                    Ok(Handled::No)
+                })?;
+            } else if name.is("pageSetup") {
+                printed |= attrs.plain("orientation") == Some("landscape")
+                    || attrs.plain("scale").is_some_and(|s| s.trim() != "100");
+            } else if name.is("headerFooter") {
+                reader.children(|reader, name, _| {
+                    let text = reader.text()?;
+                    printed |= !default_marginal(&name.local, &text);
+                    Ok(Handled::Yes)
+                })?;
+            } else if name.is("rowBreaks") || name.is("colBreaks") {
+                printed |= count(reader, "brk")? > 0;
+            } else if name.is("extLst") {
+                report.drop_many(Dropped::Sparkline, deep_count(reader, "sparkline")?);
             } else {
                 return Ok(Handled::No);
             }
             Ok(Handled::Yes)
         });
+    }
+    if printed {
+        report.drop_one(Dropped::PageSetup);
     }
     shared.resolve(index, context, sheet, report);
     tracks.finish(sheet, report);
@@ -184,6 +208,52 @@ fn count(reader: &mut Reader<'_>, local: &str) -> crate::Result<usize> {
     reader.children(|_, name, _| {
         n += usize::from(name.is(local));
         Ok(Handled::No)
+    })?;
+    Ok(n)
+}
+
+/// Whether a header or footer prints what the oracle's default page already does: nothing, or
+/// the sheet's name on top and `Page N` below, centred (`doc/xlsx-format.md` §7.3). Font and
+/// size codes are left out of the comparison.
+fn default_marginal(element: &str, text: &str) -> bool {
+    let mut plain = String::new();
+    let mut chars = text.trim().chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '&' {
+            plain.push(c);
+            continue;
+        }
+        match chars.peek() {
+            Some('"') => {
+                chars.next();
+                for c in chars.by_ref() {
+                    if c == '"' {
+                        break;
+                    }
+                }
+            }
+            Some(d) if d.is_ascii_digit() => while chars.next_if(char::is_ascii_digit).is_some() {},
+            _ => plain.push(c),
+        }
+    }
+    match plain.as_str() {
+        "" => true,
+        "&C&A" => element == "oddHeader",
+        "&CPage &P" => element == "oddFooter",
+        _ => false,
+    }
+}
+
+/// How many `<local>` elements, in any namespace, lie anywhere below the current one.
+fn deep_count(reader: &mut Reader<'_>, local: &str) -> crate::Result<usize> {
+    let mut n = 0;
+    reader.children(|reader, name, _| {
+        if name.local == local {
+            n += 1;
+        } else {
+            n += deep_count(reader, local)?;
+        }
+        Ok(Handled::Yes)
     })?;
     Ok(n)
 }
@@ -1591,6 +1661,35 @@ mod tests {
             Some("0.74pt solid #000000".into())
         );
         assert_eq!(report.styled, 3);
+    }
+
+    /// What the model has no home for is counted, not dropped without a word: a link, a page
+    /// set to print (once per sheet, however many ways), a sparkline. Default margins and the
+    /// oracle's own default header and footer count for nothing.
+    #[test]
+    fn links_page_setup_and_sparklines_are_counted() {
+        let (_, report) = worksheet(
+            r#"<sheetData/><hyperlinks><hyperlink ref="A1"/><hyperlink ref="A2"/></hyperlinks>
+               <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+               <pageSetup orientation="landscape"/>
+               <headerFooter><oddHeader>&amp;CReport</oddHeader></headerFooter>
+               <extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}"
+                 xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
+                 <x14:sparklineGroups><x14:sparklineGroup><x14:sparklines>
+                   <x14:sparkline/><x14:sparkline/><x14:sparkline/>
+                 </x14:sparklines></x14:sparklineGroup></x14:sparklineGroups></ext></extLst>"#,
+            &Styles::default(),
+        );
+        assert_eq!(report.dropped[&Dropped::Hyperlink], 2);
+        assert_eq!(report.dropped[&Dropped::PageSetup], 1);
+        assert_eq!(report.dropped[&Dropped::Sparkline], 3);
+        let (_, report) = worksheet(
+            r#"<sheetData/><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
+               <pageSetup orientation="portrait" scale="100"/><headerFooter><oddHeader>&amp;C&amp;"Times New Roman,Regular"&amp;12&amp;A</oddHeader>
+               <oddFooter>&amp;C&amp;"Times New Roman,Regular"&amp;12Page &amp;P</oddFooter><evenHeader/></headerFooter>"#,
+            &Styles::default(),
+        );
+        assert!(report.dropped.is_empty(), "{:?}", report.dropped);
     }
 
     #[test]
