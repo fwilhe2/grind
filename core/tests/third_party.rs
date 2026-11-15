@@ -67,6 +67,8 @@ const NOT_SHIPPED: &[&str] = &[
     "docx/tests/",
     "print/tests/",
     "grammar/tests/",
+    // The Craft corpus's recorded probe statuses: test data for a CI job (`doc/craft-corpus.md`).
+    "scripts/craft-corpus/",
     // The container recipe: it builds an image of `grind`, and nothing of it is in one.
     "Containerfile.distroless-cli",
 ];
