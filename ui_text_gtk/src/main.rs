@@ -20,6 +20,7 @@ mod keymap;
 mod licences;
 mod link;
 mod lint;
+mod page_setup;
 mod print;
 mod theme;
 mod view;
@@ -1628,6 +1629,10 @@ fn actions() -> Vec<(&'static str, &'static [&'static str], Handler)> {
             print::preview(ui);
         }),
         ("print", &["<Control>p"][..], print::print),
+        ("page-setup", &[][..], |ui| {
+            let told = ui.clone();
+            page_setup::present(&ui.window, &ui.app, move |message| told.toast(&message));
+        }),
         ("undo", &["<Control>z"][..], |ui| {
             ui.app.undo();
         }),
@@ -1829,6 +1834,7 @@ fn primary_menu() -> gio::Menu {
     paper.append(Some("Export PDF…"), Some("win.export-pdf"));
     paper.append(Some("Print Preview"), Some("win.print-preview"));
     paper.append(Some("Print…"), Some("win.print"));
+    paper.append(Some("Page Setup…"), Some("win.page-setup"));
     menu.append_section(None, &paper);
 
     // **The document and the window, nothing about the selection** — the HIG's rule for a primary
