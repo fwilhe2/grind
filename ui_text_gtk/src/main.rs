@@ -21,7 +21,6 @@ mod licences;
 mod link;
 mod lint;
 mod print;
-mod strip;
 mod theme;
 mod view;
 mod words;

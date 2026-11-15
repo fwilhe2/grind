@@ -195,7 +195,7 @@ impl Doc {
     /// middle when `None`) where it is. Never written to the document.
     pub fn set_zoom(&self, zoom: f64, anchor: Option<(f64, f64)>) {
         let imp = self.imp();
-        let levels = crate::strip::ZOOMS;
+        let levels = grind_print::strip::ZOOMS;
         let zoom = zoom.clamp(levels[0], levels[levels.len() - 1]);
         let (width, height) = (self.width(), self.height());
         let (ax, ay) = anchor.unwrap_or((f64::from(width) / 2.0, f64::from(height) / 2.0));
@@ -232,7 +232,7 @@ impl Doc {
                     && (0.0..f64::from(self.height())).contains(&y)
             })
             .map(|(x, y, _)| (x, y));
-        self.set_zoom(crate::strip::zoom_step(self.zoom(), inward), anchor);
+        self.set_zoom(grind_print::strip::zoom_step(self.zoom(), inward), anchor);
     }
 
     /// The zoom at which the widest page fills the window's width.
@@ -247,7 +247,7 @@ impl Doc {
             .map(|page| f64::from(page.width))
             .fold(0.0, f64::max);
         let scale = f64::from(crate::print::pixels_per_point(1.0, 1.0));
-        let zoom = crate::strip::fit_width(widest, f64::from(self.width()), scale);
+        let zoom = grind_print::strip::fit_width(widest, f64::from(self.width()), scale);
         self.set_zoom(zoom, None);
     }
 
@@ -261,7 +261,7 @@ impl Doc {
             return;
         };
         let scale = f64::from(crate::print::pixels_per_point(1.0, 1.0));
-        let zoom = crate::strip::fit_page(
+        let zoom = grind_print::strip::fit_page(
             (f64::from(page.width), f64::from(page.height)),
             (f64::from(self.width()), f64::from(self.height())),
             scale,
@@ -282,7 +282,7 @@ impl Doc {
             return;
         };
         if let Some(sheet) = shown.strip.sheet(page) {
-            adjustment.set_value(sheet.y - crate::strip::PAD);
+            adjustment.set_value(sheet.y - grind_print::strip::PAD);
         }
     }
 
@@ -449,8 +449,8 @@ mod imp {
     use gtk::{gdk, graphene, gsk};
 
     use crate::keymap::{self, Action, Key, Mods, Motion};
-    use crate::strip::{self, Strip};
     use crate::theme::Palette;
+    use grind_print::strip::{self, Strip};
 
     type NoticeHook = Box<dyn Fn(String)>;
     type MovedHook = Box<dyn Fn(Caret)>;
@@ -793,7 +793,7 @@ mod imp {
                             let point = native.compute_point(&doc, &point)?;
                             Some((f64::from(point.x()), f64::from(point.y())))
                         });
-                    let zoom = crate::strip::zoom_step(doc.zoom(), dy < 0.0);
+                    let zoom = grind_print::strip::zoom_step(doc.zoom(), dy < 0.0);
                     doc.set_zoom(zoom, anchor);
                     glib::Propagation::Stop
                 }
@@ -2976,7 +2976,7 @@ mod tests {
             shown.strip.sheet(0).expect("a first page"),
             shown.strip.sheet(1).expect("a second page"),
         );
-        assert!(second.y >= first.y + first.height + crate::strip::GAP);
+        assert!(second.y >= first.y + first.height + grind_print::strip::GAP);
         // Below the first page's last line, in its bottom margin: still the first page's text.
         let caret = imp
             .caret_at(first.x + 100.0, first.y + first.height - 2.0)
@@ -3041,7 +3041,10 @@ mod tests {
         // A whole page fits a 400-pixel-tall view, and the next is scrolled to the top.
         doc.fit_page();
         let sheet = imp.shown().expect("set").strip.sheet(0).expect("a page");
-        assert!(sheet.height + 2.0 * crate::strip::PAD <= 400.5, "{sheet:?}");
+        assert!(
+            sheet.height + 2.0 * grind_print::strip::PAD <= 400.5,
+            "{sheet:?}"
+        );
         doc.show_page(1);
         let second = imp
             .shown()
@@ -3049,7 +3052,7 @@ mod tests {
             .strip
             .sheet(1)
             .expect("a second page");
-        assert_eq!(down.value(), second.y - crate::strip::PAD);
+        assert_eq!(down.value(), second.y - grind_print::strip::PAD);
     }
 
     /// `doc/page-model.md` PM5's exit: with nothing drawn over it, a page as the window shows it

@@ -2,9 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where each page sits in the window: a column of sheets on a desk, centred, scrolled as one
-//! (`doc/page-model.md` PM5). Pure arithmetic between the window's pixels and a page's points;
-//! what is *on* a page is `grind_print`'s.
+//! Where each page sits in a window: a column of sheets on a desk, centred, scrolled as one
+//! (`doc/page-model.md` PM5). Pure arithmetic between a window's pixels and a page's points, the
+//! same in every shell that shows pages.
 
 use std::ops::Range;
 
@@ -34,6 +34,7 @@ pub struct Strip {
 impl Strip {
     /// Stack pages of these sizes, in points, at `scale` pixels per point in a window `window`
     /// pixels wide. A sheet is whole pixels, rounded down as a raster of it is.
+    #[must_use]
     pub fn new(sizes: impl IntoIterator<Item = (f32, f32)>, scale: f64, window: f64) -> Self {
         let sizes: Vec<(f64, f64)> = sizes
             .into_iter()
@@ -72,20 +73,24 @@ impl Strip {
         }
     }
 
+    #[must_use]
     pub fn scale(&self) -> f64 {
         self.scale
     }
 
     /// How wide and how tall the whole strip is: what the scrollbars cover.
+    #[must_use]
     pub fn size(&self) -> (f64, f64) {
         (self.width, self.height)
     }
 
+    #[must_use]
     pub fn sheet(&self, page: usize) -> Option<Sheet> {
         self.sheets.get(page).copied()
     }
 
     /// The pages any part of which is between `top` and `bottom`.
+    #[must_use]
     pub fn visible(&self, top: f64, bottom: f64) -> Range<usize> {
         let from = self
             .sheets
@@ -95,6 +100,7 @@ impl Strip {
     }
 
     /// The page at a height in the strip — between two, the nearer; `None` with no pages.
+    #[must_use]
     pub fn page_at(&self, y: f64) -> Option<usize> {
         let below = self
             .sheets
@@ -109,6 +115,7 @@ impl Strip {
     }
 
     /// A point of the strip, in points on `page` — outside the sheet when the point is.
+    #[must_use]
     pub fn on_page(&self, page: usize, x: f64, y: f64) -> Option<(f32, f32)> {
         let sheet = self.sheet(page)?;
         Some((
@@ -118,6 +125,7 @@ impl Strip {
     }
 
     /// A point on `page`, in the strip's pixels.
+    #[must_use]
     pub fn in_strip(&self, page: usize, x: f32, y: f32) -> Option<(f64, f64)> {
         let sheet = self.sheet(page)?;
         Some((
@@ -135,6 +143,7 @@ pub const ZOOMS: [f64; 15] = [
 
 /// The next level in from `at`, or out — whichever level is past it, so a zoom between two
 /// steps to the nearer one that way.
+#[must_use]
 pub fn zoom_step(at: f64, inward: bool) -> f64 {
     let past = if inward {
         ZOOMS.iter().find(|&&level| level > at + 1e-6)
@@ -148,12 +157,14 @@ pub fn zoom_step(at: f64, inward: bool) -> f64 {
 
 /// The zoom at which a page `width` points wide, with the desk either side, fills a window
 /// `window` pixels wide, at `scale` pixels per point at 100%.
+#[must_use]
 pub fn fit_width(width: f64, window: f64, scale: f64) -> f64 {
     ((window - 2.0 * PAD) / (width * scale).max(1.0)).clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1])
 }
 
 /// The zoom at which a whole page `width` × `height` points, with the desk round it, fits a
 /// window `window` pixels across and down.
+#[must_use]
 pub fn fit_page(page: (f64, f64), window: (f64, f64), scale: f64) -> f64 {
     let down = (window.1 - 2.0 * PAD) / (page.1 * scale).max(1.0);
     fit_width(page.0, window.0, scale).min(down.clamp(ZOOMS[0], ZOOMS[ZOOMS.len() - 1]))
@@ -161,6 +172,7 @@ pub fn fit_page(page: (f64, f64), window: (f64, f64), scale: f64) -> f64 {
 
 /// Where a scroll must be for a stretch `from..from + length` to be in a view `view` long over
 /// content `content` long, moving as little as possible.
+#[must_use]
 pub fn follow(scroll: f64, view: f64, content: f64, from: f64, length: f64) -> f64 {
     let scroll = match scroll {
         _ if from < scroll => from,
