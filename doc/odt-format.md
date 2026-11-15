@@ -1086,6 +1086,18 @@ oracle turned out to be unable to answer the font questions (fact 4).
    the first line — and what follows its last piece is set on as usual: `icexpia a b c` shares a
    line. The same in a justified paragraph, and in a table cell narrower than one letter, where
    every line holds one.
+62. **`fo:text-transform`** — `MEASURED` (2026-11-15, 26.8.2.2, Liberation Serif 12 pt, English;
+   `pdftotext` of the PDF and its rendering). Writer shows the text cased, character by
+   character, and the document keeps it as typed. `uppercase`: `straße` shows `STRAẞE` (the
+   capital sharp s, not `SS`), `ǆemal` `ǄEMAL`, `ﬁne` `FINE`. `lowercase`: `ΣΟΦΟΣ` shows
+   `σοφος`, the sigma ending the word the final one, and `İSTANBUL` shows `İstanbul` (the
+   dotted capital kept). `capitalize`: the first character of
+   each word, when it is a letter, as its capital — `o'neil` `O'neil`, `e-mail` `E-mail`, `x.y`
+   `X.y`, `wORLD` `WORLD`, `ǆemal` `Ǆemal` — and a word beginning with anything else as it is:
+   `3rd`, `(paren)`, `«quote»`. A word is what follows a space; a span starting inside one does
+   not start another (`hel<span>lo</span>` shows `Hello`). `none` in a style undoes its
+   parent's. A run in `fo:font-variant="small-caps"` as well shows small capitals: every letter
+   of `small caps upper` came out at the small size.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

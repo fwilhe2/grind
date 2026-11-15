@@ -87,7 +87,7 @@ type Advances = HashMap<Box<str>, Rc<[f32]>>;
 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// A size, as bits, and how the letters at it are set: [`Letters::set`].
-type Set = (u32, u32, bool);
+type Set = (u32, u32, bool, Case);
 
 /// How a style sets its letters past what its face does (`doc/odt-format.md` §5c facts 51 and
 /// 52): the space after every character, in points, and whether the face's kerning applies.
@@ -95,6 +95,7 @@ type Set = (u32, u32, bool);
 struct Letters {
     spacing: f32,
     kern: bool,
+    case: Case,
 }
 
 impl Letters {
@@ -108,11 +109,82 @@ impl Letters {
         Letters {
             spacing,
             kern: style.letter_kerning.as_deref() != Some("false"),
+            case: Case::of(style),
         }
     }
 
     fn set(self, size: f32) -> Set {
-        (size.to_bits(), self.spacing.to_bits(), self.kern)
+        (size.to_bits(), self.spacing.to_bits(), self.kern, self.case)
+    }
+}
+
+/// How a style shows its letters' case: small capitals (`fo:font-variant`, §5c fact 56), which
+/// win over `fo:text-transform`, or as that says (fact 62).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Case {
+    AsTyped,
+    SmallCaps,
+    Upper,
+    Lower,
+    /// The first letter of every word; of the first word only when the text does not carry on
+    /// one begun before it.
+    Capitalize {
+        mid_word: bool,
+    },
+}
+
+impl Case {
+    fn of(style: &TextStyle) -> Self {
+        if style.font_variant.as_deref() == Some("small-caps") {
+            return Case::SmallCaps;
+        }
+        match style.text_transform.as_deref() {
+            Some("uppercase") => Case::Upper,
+            Some("lowercase") => Case::Lower,
+            Some("capitalize") => Case::Capitalize {
+                mid_word: style.mid_word,
+            },
+            _ => Case::AsTyped,
+        }
+    }
+
+    /// `text` as shown, and the byte in `text` of the character each shown one stands for;
+    /// `None` where it shows as typed. One character at a time, as Writer cases it.
+    fn shown(self, text: &str) -> Option<(String, Vec<usize>)> {
+        let upper = |c: char, out: &mut String| match c {
+            'ß' => out.push('ẞ'),
+            c => out.extend(c.to_uppercase()),
+        };
+        let mut shown = String::with_capacity(text.len());
+        let mut from = Vec::with_capacity(text.len());
+        let mut word_start = !matches!(self, Case::Capitalize { mid_word: true });
+        let mut chars = text.char_indices().peekable();
+        let mut previous: Option<char> = None;
+        while let Some((at, c)) = chars.next() {
+            let before = shown.len();
+            match self {
+                Case::AsTyped | Case::SmallCaps => return None,
+                Case::Upper => upper(c, &mut shown),
+                Case::Lower if c == 'İ' => shown.push(c),
+                // A sigma ending a word is the final one.
+                Case::Lower
+                    if c == 'Σ'
+                        && previous.is_some_and(char::is_alphabetic)
+                        && !chars.peek().is_some_and(|&(_, next)| next.is_alphabetic()) =>
+                {
+                    shown.push('ς');
+                }
+                Case::Lower => shown.extend(c.to_lowercase()),
+                Case::Capitalize { .. } if word_start && c.is_alphabetic() => {
+                    upper(c, &mut shown);
+                }
+                Case::Capitalize { .. } => shown.push(c),
+            }
+            word_start = c.is_whitespace();
+            previous = Some(c);
+            from.extend(shown[before..].chars().map(|_| at));
+        }
+        (shown != text).then_some((shown, from))
     }
 }
 
@@ -233,14 +305,16 @@ impl Typesetter {
                 glyphs: glyphs.to_vec(),
             };
         }
-        let small_caps = style.font_variant.as_deref() == Some("small-caps")
-            && text.chars().any(|c| small_capital(c).is_some());
+        let small_caps =
+            letters.case == Case::SmallCaps && text.chars().any(|c| small_capital(c).is_some());
         let mut shaped = if small_caps {
             Shaped {
                 face,
                 size,
                 glyphs: self.small_caps(face, size, letters.kern, text),
             }
+        } else if let Some((shown, from)) = letters.case.shown(text) {
+            self.cased(face, size, letters.kern, text, (&shown, &from))
         } else {
             self.shape_in(face, size, letters.kern, text)
         };
@@ -383,6 +457,40 @@ impl Typesetter {
             }
         }
         shaped.glyphs = out;
+        shaped
+    }
+
+    /// `text` shaped as `shown`, which [`Case::shown`] made of it: each glyph's cluster is the
+    /// bytes of `text` its characters stand for, so a caret and a click see the text as typed.
+    fn cased(
+        &self,
+        face: FaceId,
+        size: f32,
+        kern: bool,
+        text: &str,
+        (shown, from): (&str, &[usize]),
+    ) -> Shaped {
+        let starts: Vec<usize> = shown.char_indices().map(|(byte, _)| byte).collect();
+        let original = |byte: usize| {
+            from.get(starts.partition_point(|&start| start < byte))
+                .copied()
+                .unwrap_or(text.len())
+        };
+        let mut shaped = self.shape_in(face, size, kern, shown);
+        for glyph in &mut shaped.glyphs {
+            let start = original(glyph.text.start);
+            let end = original(glyph.text.end);
+            // A character shown as several (`ﬁ` as `FI`): each of them stands for all of it.
+            let end = if end > start {
+                end
+            } else {
+                text[start..]
+                    .chars()
+                    .next()
+                    .map_or(start, |c| start + c.len_utf8())
+            };
+            glyph.text = start..end;
+        }
         shaped
     }
 
@@ -695,6 +803,58 @@ mod tests {
         near(t.rise(&at("-33% 100%")), -4.55);
         assert_eq!(t.rise(&serif()), 0.0);
         assert_eq!(t.rise(&at("nowhere")), 0.0);
+    }
+
+    #[test]
+    fn text_is_cased_as_writer_cases_it() {
+        let shown = |case: Case, text: &str| {
+            case.shown(text)
+                .map_or_else(|| text.to_owned(), |(shown, _)| shown)
+        };
+        assert_eq!(shown(Case::Upper, "straße ǆemal"), "STRAẞE ǄEMAL");
+        assert_eq!(shown(Case::Lower, "ΣΟΦΟΣ İSTANBUL"), "σοφος İstanbul");
+        let capitalize = Case::Capitalize { mid_word: false };
+        assert_eq!(
+            shown(capitalize, "o'neil e-mail 3rd (paren) wORLD x.y"),
+            "O'neil E-mail 3rd (paren) WORLD X.y"
+        );
+        assert_eq!(
+            shown(Case::Capitalize { mid_word: true }, "lo world"),
+            "lo World"
+        );
+        // Each shown character traces back to the one it stands for.
+        let (_, from) = Case::Upper.shown("aﬁb").unwrap();
+        assert_eq!(from, [0, 1, 1, 4]);
+    }
+
+    /// `doc/odt-format.md` §5c fact 62: the glyphs are the capitals', their clusters the text's.
+    #[test]
+    fn an_uppercase_run_is_drawn_in_capitals_and_measured_so() {
+        let t = setter();
+        let upper = TextStyle {
+            text_transform: Some("uppercase".to_owned()),
+            ..serif()
+        };
+        let plain = t.shape("ab ﬁ", &serif());
+        let shaped = t.shape("ab ﬁ", &upper);
+        let capitals = t.shape("AB FI", &serif());
+        let ids = |s: &Shaped| s.glyphs.iter().map(|g| g.id).collect::<Vec<_>>();
+        assert_eq!(ids(&shaped), ids(&capitals));
+        assert_ne!(
+            ids(&shaped),
+            ids(&plain),
+            "a plain shape is not handed out again"
+        );
+        let clusters: Vec<_> = shaped.glyphs.iter().map(|g| g.text.clone()).collect();
+        assert_eq!(clusters, [0..1, 1..2, 2..3, 3..6, 3..6]);
+        let mut wide = Vec::new();
+        t.advances("ab", &upper, &mut wide);
+        let mut narrow = Vec::new();
+        t.advances("ab", &serif(), &mut narrow);
+        assert!(
+            wide[1] > narrow[1],
+            "measured as drawn: {wide:?} {narrow:?}"
+        );
     }
 
     /// `doc/odt-format.md` §5c fact 56: in small capitals a lowercase letter is its capital at

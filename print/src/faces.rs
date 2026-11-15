@@ -158,6 +158,11 @@ impl<'a> RoleFace<'a> {
                 .font_variant
                 .clone()
                 .or_else(|| stated.font_variant.clone()),
+            text_transform: run
+                .text_transform
+                .clone()
+                .or_else(|| stated.text_transform.clone()),
+            mid_word: run.mid_word,
         }
     }
 }

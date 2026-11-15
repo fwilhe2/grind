@@ -841,6 +841,8 @@ fn block_faces<'a>(
                     letter_kerning: props.letter_kerning.clone(),
                     text_position: None,
                     font_variant: props.font_variant.clone(),
+                    text_transform: props.text_transform.clone(),
+                    mid_word: false,
                 }
             } else {
                 TextStyle {
@@ -1618,7 +1620,13 @@ fn lines(
                 if text.is_empty() {
                     continue;
                 }
-                let style = face.style(&cut.props.metrics());
+                let style = face.style(&grind_core::style::TextStyle {
+                    mid_word: start
+                        .checked_sub(1)
+                        .and_then(|before| chars.get(before))
+                        .is_some_and(|c| !c.is_whitespace()),
+                    ..cut.props.metrics()
+                });
                 let mut shaped = setter.shape(text, &style);
                 let x = left as f32 + layout.x_at(start);
                 if line.stretch > 0.0 {
@@ -1795,6 +1803,8 @@ impl<'a> Marginal<'a> {
                     letter_kerning: props.letter_kerning,
                     text_position: None,
                     font_variant: props.font_variant,
+                    text_transform: props.text_transform,
+                    mid_word: false,
                 };
                 let line = crate::faces::LineRule::parse(props.line_height.as_deref());
                 let face =
@@ -1865,12 +1875,23 @@ impl<'a> Marginal<'a> {
             .map(grind_text::CharStyle::metrics)
             .collect();
         let plain = TextStyle::default();
+        // Each piece in its look, carrying on the word the one before it ended in.
+        let mut last: Option<char> = None;
+        let looks: Vec<TextStyle> = pieces
+            .iter()
+            .map(|(text, at)| {
+                let style = TextStyle {
+                    mid_word: last.is_some_and(|c| !c.is_whitespace()),
+                    ..styles.get(*at).unwrap_or(&plain).clone()
+                };
+                last = text.chars().next_back().or(last);
+                style
+            })
+            .collect();
         let mut fragments: Vec<Fragment<'_>> = pieces
             .iter()
-            .map(|(text, at)| Fragment {
-                text,
-                style: styles.get(*at).unwrap_or(&plain),
-            })
+            .zip(&looks)
+            .map(|((text, _), style)| Fragment { text, style })
             .collect();
         // An empty paragraph still has a line, as tall as its face's.
         if fragments.is_empty() {
@@ -2021,9 +2042,12 @@ impl<'a> Marginal<'a> {
                     let piece: String = text[from..at].iter().collect();
                     if !piece.trim().is_empty() {
                         let look = look(from);
-                        let style = paragraph
-                            .face
-                            .style(&look.map_or_default(grind_text::CharStyle::metrics));
+                        let style = paragraph.face.style(&TextStyle {
+                            mid_word: from
+                                .checked_sub(1)
+                                .is_some_and(|before| !text[before].is_whitespace()),
+                            ..look.map_or_default(grind_text::CharStyle::metrics)
+                        });
                         let ink = look
                             .and_then(|look| look.color.as_deref())
                             .and_then(Rgb::parse)

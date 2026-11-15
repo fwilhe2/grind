@@ -1516,6 +1516,7 @@ impl Context<Builder> for ParagraphStyleDef {
             props.font_style = get("font-style");
             props.letter_spacing = get("letter-spacing");
             props.font_variant = get("font-variant");
+            props.text_transform = get("text-transform");
             props.hyphenate = get("hyphenate");
             props.hyphenation_remain = get("hyphenation-remain-char-count");
             props.hyphenation_push = get("hyphenation-push-char-count");
@@ -2027,6 +2028,7 @@ impl Context<Builder> for TextStyleDef {
             letter_kerning: attrs.get(Ns::Style, "letter-kerning").map(str::to_owned),
             text_position: attrs.get(Ns::Style, "text-position").map(str::to_owned),
             font_variant: attrs.get(Ns::Fo, "font-variant").map(str::to_owned),
+            text_transform: attrs.get(Ns::Fo, "text-transform").map(str::to_owned),
             origin: crate::style::Origin::default(),
         };
         // Anything else on the element (superscript, a language, letter spacing) is unread, and

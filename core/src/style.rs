@@ -192,4 +192,9 @@ pub struct TextStyle {
     pub text_position: Option<String>,
     /// `fo:font-variant` — `small-caps` sets lowercase letters as smaller capitals.
     pub font_variant: Option<String>,
+    /// `fo:text-transform` — `uppercase`, `lowercase` or `capitalize` shows the text so cased.
+    pub text_transform: Option<String>,
+    /// Whether the text carries on a word begun before it, whose first letter `capitalize`
+    /// then leaves be. Where a piece of text sits, not how it is styled.
+    pub mid_word: bool,
 }

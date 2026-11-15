@@ -50,6 +50,8 @@ pub struct CharStyle {
     /// `style:text-position` and `fo:font-variant`, read and carried the same way.
     pub text_position: Option<String>,
     pub font_variant: Option<String>,
+    /// `fo:text-transform`, read and carried the same way.
+    pub text_transform: Option<String>,
     /// The automatic style this formatting was read from, when it says what the fields do not —
     /// superscript, a language, letter spacing. Not formatting, and equal to every other
     /// [`Origin`]; a save builds a restyled run's new style from it, so what the model never read
@@ -143,14 +145,17 @@ impl CharStyle {
             letter_kerning: self.letter_kerning.clone(),
             text_position: self.text_position.clone(),
             font_variant: self.font_variant.clone(),
+            text_transform: self.text_transform.clone(),
+            mid_word: false,
         }
     }
 
     /// Layer `other` over `self`: what `other` sets wins. What nested spans mean, inner winning,
     /// which is why reading can flatten them (`doc/text-core.md`).
     pub fn layer(&mut self, other: &CharStyle) {
-        let fields: [(&mut Option<String>, &Option<String>); 12] = [
+        let fields: [(&mut Option<String>, &Option<String>); 13] = [
             (&mut self.font_variant, &other.font_variant),
+            (&mut self.text_transform, &other.text_transform),
             (&mut self.text_position, &other.text_position),
             (&mut self.letter_spacing, &other.letter_spacing),
             (&mut self.letter_kerning, &other.letter_kerning),
@@ -190,6 +195,7 @@ impl CharStyle {
             letter_kerning: agreed(self.letter_kerning.as_ref(), other.letter_kerning.as_ref()),
             text_position: agreed(self.text_position.as_ref(), other.text_position.as_ref()),
             font_variant: agreed(self.font_variant.as_ref(), other.font_variant.as_ref()),
+            text_transform: agreed(self.text_transform.as_ref(), other.text_transform.as_ref()),
             // A reading for a toolbar, not a run: it came from nowhere.
             origin: Origin::default(),
         }

@@ -1556,14 +1556,20 @@ fn lay_out_set(
 ) -> Layout {
     let default = grind_core::style::TextStyle::default();
     // Measured as shown: a run's named style is part of how wide it is.
+    let mut last: Option<char> = None;
     let styles: Vec<grind_core::style::TextStyle> = block
         .runs
         .iter()
-        .map(|run| match run {
-            Run::Text { style, props, .. } => {
-                paragraph::shown(named, style.as_deref(), props).metrics()
-            }
-            _ => run.props().map_or_default(CharStyle::metrics),
+        .map(|run| {
+            let mut metrics = match run {
+                Run::Text { style, props, .. } => {
+                    paragraph::shown(named, style.as_deref(), props).metrics()
+                }
+                _ => run.props().map_or_default(CharStyle::metrics),
+            };
+            metrics.mid_word = last.is_some_and(|c| !c.is_whitespace());
+            last = run.text().chars().next_back().or(last);
+            metrics
         })
         .collect();
     let mut fragments: Vec<layout::Fragment<'_>> = block
