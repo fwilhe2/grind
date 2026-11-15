@@ -324,3 +324,10 @@ SPDX-FileCopyrightText = [
     "2007 Free Software Foundation, Inc. <http://fsf.org/>",
 ]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The Craft corpus's recorded status of each probe (`doc/craft-corpus.md`): test data, rewritten
+# by `compat_matrix.py --update-expect`, and JSON, so no header.
+[[annotations]]
+path = "scripts/craft-corpus/expected.json"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "CC0-1.0"

@@ -67,7 +67,7 @@ semantics never are.
 | Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md` |
 | Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
 | Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
-| Import filters | `doc/xlsx-import.md`, `doc/docx-import.md` |
+| Import filters | `doc/xlsx-import.md`, `doc/docx-import.md`, `doc/craft-corpus.md` (the compatibility matrix and import timings) |
 | Shells | `doc/sheet-shell.md` (its "Four surfaces" governs the GTK chrome), `doc/text-shell.md`, `doc/tui-shell.md`, `doc/web-shell.md`, `doc/windows-shell.md`, `doc/macos-shell.md` |
 | Parity and licences | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md`, `doc/feature-matrix.md`, `doc/third-party.md` |
 | The language | `doc/rust-idioms.md` (which spelling, what CI's lints hold, what to do when a toolchain arrives) |
@@ -176,6 +176,7 @@ oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a Li
 | E | generated formulas, evaluated by us and by LibreOffice | `sheet/tests/loop_e.rs`, `doc/differential-fuzz.md` |
 | F | project → read back is the same model | `sheet/tests/loop_f.rs`, `text/tests/loop_f.rs` |
 | G′ | the built-in grammar checker over written slips and tempting correct sentences, with a `FLOOR` | `grammar/tests/loop_g_prime.rs`, `doc/grammar.md` §6 |
+| Craft | Office files written by WordCraft and GridCraft, one per feature plus Northstar-style tiers to 200k rows and 1,600 pages: each probe held to `expected.json` both ways, import timed (`craft-corpus.yml`) | `scripts/craft-corpus/`, `doc/craft-corpus.md` |
 
 These never skip: `sheet/tests/kb.rs` (R7, plus R2/R3/R6), `text/tests/libreoffice.rs` (vendored
 Writer documents in both forms), `xlsx/tests/ooxmlgen.rs` (Open XML SDK workbooks with a manifest

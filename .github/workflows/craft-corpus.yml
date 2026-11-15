@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The Craft corpus (`doc/craft-corpus.md`): Office files written by WordCraft and GridCraft —
+# one per feature, and Northstar-style workbooks and playbooks at growing sizes — imported by
+# a release build. Each probe is held to `scripts/craft-corpus/expected.json` both ways; the
+# timings are reported, never gated on, since a shared runner's clock is no oracle.
+#
+# On the import filters and what they stand on only: the run builds about 150 files and
+# imports the largest, a 200,000-row workbook, three times.
+
+name: craft-corpus
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "core/**"
+      - "sheet/**"
+      - "text/**"
+      - "ooxml/**"
+      - "xlsx/**"
+      - "docx/**"
+      - "print/**"
+      - "cli/**"
+      - "Cargo.lock"
+      - "scripts/craft-corpus/**"
+      - ".github/workflows/craft-corpus.yml"
+  pull_request:
+    paths:
+      - "core/**"
+      - "sheet/**"
+      - "text/**"
+      - "ooxml/**"
+      - "xlsx/**"
+      - "docx/**"
+      - "print/**"
+      - "cli/**"
+      - "Cargo.lock"
+      - "scripts/craft-corpus/**"
+      - ".github/workflows/craft-corpus.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: craft-corpus-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: linux-release-cli
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install the pinned Craft CLIs
+        run: scripts/craft-corpus/install.sh
+      - name: Build grind
+        run: cargo build --locked --release -p grind-cli
+      - name: Build the corpus, import it, hold the probes to expected.json
+        run: scripts/craft-corpus/run.sh target/craft-corpus
+        env:
+          GRIND_BIN: ${{ github.workspace }}/target/release/grind
+          WORDCRAFT_REGION: en-US
+      - name: Summary
+        if: always()
+        run: cat target/craft-corpus/grind/matrix.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: craft-corpus-matrix
+          path: |
+            target/craft-corpus/manifest.json
+            target/craft-corpus/grind/matrix.md
+            target/craft-corpus/grind/matrix.json
+            target/craft-corpus/probes/
+          if-no-files-found: warn
