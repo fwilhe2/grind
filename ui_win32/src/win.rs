@@ -67,21 +67,24 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON,
     TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND,
     WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_HSCROLL, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
-    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
-    WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    WM_HSCROLL, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
+    WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+    WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW,
+    WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_CONTROL, VK_MENU, VK_SHIFT,
 };
-// The one corner of IME support this shell has: positioning the composition window the IME
-// draws for itself. Everything else about composing — the candidate list, committing a result —
-// stays with `DefWindowProcW`, which is why this is the only IME import.
+// An IME's composition: read and set in the text pane's line, its candidate list placed at the
+// caret, and cancelled when a click moves the caret away.
 use windows::Win32::UI::Input::Ime::{
-    CFS_POINT, COMPOSITIONFORM, ImmGetContext, ImmReleaseContext, ImmSetCompositionWindow,
+    CANDIDATEFORM, CFS_CANDIDATEPOS, CFS_POINT, COMPOSITIONFORM, CPS_CANCEL, GCS_COMPSTR,
+    GCS_CURSORPOS, GCS_RESULTSTR, IME_COMPOSITION_STRING, ISC_SHOWUICOMPOSITIONWINDOW,
+    ImmGetCompositionStringW, ImmGetContext, ImmNotifyIME, ImmReleaseContext,
+    ImmSetCandidateWindow, ImmSetCompositionWindow, NI_COMPOSITIONSTR,
 };
 // The caret API — a system caret's whole vocabulary — and the text pane's is Win32's real
 // object rather than a drawn rectangle since `place_system_caret`.
@@ -876,6 +879,8 @@ struct Text {
     /// one that matters every keystroke rather than only at the start of an edit: this pane has
     /// no native control to assemble a pair for it.
     surrogate: Option<u16>,
+    /// What the IME is composing, set into the document at the caret (`text_compose`).
+    composing: Option<text::pages::Composing>,
     /// `doc/view-modes.md`'s name overlay, this pane's own — `:names`' equivalent, a bookmark
     /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
     show_names: bool,
@@ -1110,7 +1115,7 @@ impl Text {
     /// four, since `CreateCaret` takes a size and a heading's caret is taller.
     fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
         let width = scale(text::draw::CARET_W, self.page.dpi).max(1.0);
-        let spot = self.shown().spot(self.caret, width)?;
+        let spot = self.shown().spot(self.shown_caret(), width)?;
         let body = self.page.body();
         if spot.y + spot.h < body.y || spot.y > body.y + body.h {
             return None;
@@ -1121,6 +1126,12 @@ impl Text {
             spot.w.round() as i32,
             spot.h.max(1.0).round() as i32,
         ))
+    }
+
+    /// Where the caret is drawn: inside a composition, where the IME puts it.
+    fn shown_caret(&self) -> Caret {
+        self.composing
+            .map_or(self.caret, text::pages::Composing::caret)
     }
 
     /// One block's plain text, for the questions that are about characters rather than about
@@ -1357,6 +1368,7 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         banner: None,
         resume: None,
         surrogate: None,
+        composing: None,
         show_names: false,
         needle: String::new(),
         hover: None,
@@ -1788,13 +1800,31 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                 unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
             }
         }
-        // A composing IME is about to show its candidate window — moved to the caret before
-        // `DefWindowProcW` draws it. The rest of composing (the list, the committed `WM_CHAR`s) is
-        // the default handling; this is the one IME message answered.
+        // A composing IME is about to show its windows — moved to the caret first. The text
+        // pane draws the composition itself; anywhere else the IME does.
         WM_IME_STARTCOMPOSITION => {
             position_ime_composition(hwnd);
+            if is_text(hwnd) {
+                return LRESULT(0);
+            }
             // SAFETY: the arguments this message came with, unchanged.
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }
+        // The text pane sets a composition in its line (`text_ime_composition`), so the IME's
+        // own composition window is not shown there; its candidate list still is.
+        WM_IME_SETCONTEXT if is_text(hwnd) => {
+            let shown = LPARAM(lparam.0 & !(ISC_SHOWUICOMPOSITIONWINDOW as isize));
+            // SAFETY: the arguments this message came with, less one flag the IME reads.
+            unsafe { DefWindowProcW(hwnd, message, wparam, shown) }
+        }
+        // Answered here, not by `DefWindowProcW`, which would send the result again as `WM_CHAR`s.
+        WM_IME_COMPOSITION if is_text(hwnd) => {
+            text_ime_composition(hwnd, lparam);
+            LRESULT(0)
+        }
+        WM_IME_ENDCOMPOSITION if is_text(hwnd) => {
+            text_compose(hwnd, None);
+            LRESULT(0)
         }
         // A key that went to one of the child `EDIT`s, relayed by the pump in `run`.
         WM_CHILD_KEY => LRESULT(isize::from(child_key(
@@ -3176,12 +3206,98 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
     }
 }
 
-/// Move a composing IME's composition window to the caret. Only the text pane needs it: the grid
-/// edits in a native `EDIT`, which positions its own IME, while this pane draws its own caret, and
-/// with `CFS_DEFAULT` the window stays wherever it last was.
+/// An IME's `WM_IME_COMPOSITION`: what it committed typed, and what it is composing now set into
+/// the line at the caret.
+fn text_ime_composition(hwnd: HWND, lparam: LPARAM) {
+    let flags = lparam.0 as u32;
+    let has = |what: IME_COMPOSITION_STRING| flags & what.0 != 0;
+    // SAFETY: `ImmGetContext`/`ImmReleaseContext` paired within this block, as in
+    // `position_ime_composition`; each read asks for the length first and fills a buffer of it.
+    let (result, composing) = unsafe {
+        let himc = ImmGetContext(hwnd);
+        if himc.0.is_null() {
+            return;
+        }
+        let read = |what: IME_COMPOSITION_STRING| {
+            let bytes = ImmGetCompositionStringW(himc, what, None, 0);
+            let mut units = vec![0u16; usize::try_from(bytes).unwrap_or(0) / 2];
+            if !units.is_empty() {
+                let size = u32::try_from(units.len() * 2).unwrap_or(0);
+                ImmGetCompositionStringW(himc, what, Some(units.as_mut_ptr().cast()), size);
+            }
+            String::from_utf16_lossy(&units)
+        };
+        let result = has(GCS_RESULTSTR).then(|| read(GCS_RESULTSTR));
+        let composing = has(GCS_COMPSTR).then(|| {
+            let cursor = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
+            (read(GCS_COMPSTR), usize::try_from(cursor).unwrap_or(0))
+        });
+        let _ = ImmReleaseContext(hwnd, himc);
+        (result, composing)
+    };
+    if let Some(result) = result.filter(|result| !result.is_empty()) {
+        text_type(hwnd, &result);
+    }
+    if let Some(composing) = composing {
+        text_compose(hwnd, Some(composing));
+    }
+    position_ime_composition(hwnd);
+}
+
+/// Set `composing` — the text and the IME's caret in it, in UTF-16 units — into the line at the
+/// caret, replacing the selection when a composition starts, as the commit would; `None` or
+/// empty text takes it out again.
+fn text_compose(hwnd: HWND, composing: Option<(String, usize)>) {
+    // SAFETY: one borrow. `compose` notifies, and the observer posts rather than sends.
+    unsafe {
+        with_text(hwnd, |text| {
+            let Some((composed, cursor)) = composing.filter(|(composed, _)| !composed.is_empty())
+            else {
+                if let Some(composing) = text.composing.take() {
+                    let _ = text.app.compose(composing.at, "", None);
+                }
+                return;
+            };
+            if text.composing.is_none() {
+                text_drop_selection(text);
+            }
+            let at = text.composing.map_or(text.caret, |composing| composing.at);
+            match text.app.compose(at, &composed, text.resume.as_ref()) {
+                Ok(()) => {
+                    text.composing = Some(text::pages::Composing::new(at, &composed, cursor));
+                }
+                Err(error) => text.say(Some(error.to_string())),
+            }
+        });
+    }
+    refresh(hwnd);
+}
+
+/// A composition the caret leaves is dropped, in the line and in the IME.
+fn text_cancel_composition(hwnd: HWND) {
+    // SAFETY: one borrow, for one field.
+    let composing = unsafe { with_text(hwnd, |text| text.composing.is_some()) }.unwrap_or(false);
+    if !composing {
+        return;
+    }
+    // SAFETY: paired as in `position_ime_composition`; cancelling sends no message back that
+    // this pane does not answer by taking the composition out, which `text_compose` does next.
+    unsafe {
+        let himc = ImmGetContext(hwnd);
+        if !himc.0.is_null() {
+            let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            let _ = ImmReleaseContext(hwnd, himc);
+        }
+    }
+    text_compose(hwnd, None);
+}
+
+/// Move a composing IME's composition and candidate windows to the caret. Only the text pane
+/// needs it: the grid edits in a native `EDIT`, which positions its own IME, while this pane draws
+/// its own caret, and with `CFS_DEFAULT` the windows stay wherever they last were.
 fn position_ime_composition(hwnd: HWND) {
     // SAFETY: one borrow, released before the IME calls below; nothing here dispatches.
-    let Some((x, y, ..)) = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten()
+    let Some((x, y, _, h)) = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten()
     else {
         return;
     };
@@ -3199,6 +3315,14 @@ fn position_ime_composition(hwnd: HWND) {
             ..Default::default()
         };
         let _ = ImmSetCompositionWindow(himc, &raw const form);
+        // The candidate list under the line, where it covers none of it.
+        let candidates = CANDIDATEFORM {
+            dwIndex: 0,
+            dwStyle: CFS_CANDIDATEPOS,
+            ptCurrentPos: POINT { x, y: y + h },
+            ..Default::default()
+        };
+        let _ = ImmSetCandidateWindow(himc, &raw const candidates);
         let _ = ImmReleaseContext(hwnd, himc);
     }
 }
@@ -7771,22 +7895,21 @@ fn text_char(hwnd: HWND, c: char) -> bool {
     if m.ctrl || m.alt || c.is_control() {
         return false;
     }
-    text_type(hwnd, c);
+    text_type(hwnd, &c.to_string());
     true
 }
 
-/// Type one character through `App::type_markdown`, so `**bold**` is read as it is typed. A
-/// selection is dropped first, as [`text_insert`] drops one, since `type_markdown` only inserts.
-fn text_type(hwnd: HWND, c: char) {
+/// Type through `App::type_markdown`, so `**bold**` is read as it is typed — a character, or
+/// what an IME commits, which takes its composition out first. A selection is dropped first, as
+/// [`text_insert`] drops one, since `type_markdown` only inserts.
+fn text_type(hwnd: HWND, typed: &str) {
     // SAFETY: one borrow. `type_markdown` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
+            text.composing = None;
             text_drop_selection(text);
             let at = text.caret;
-            match text
-                .app
-                .type_markdown(at, &c.to_string(), text.resume.as_ref())
-            {
+            match text.app.type_markdown(at, typed, text.resume.as_ref()) {
                 Ok(typed) => {
                     text.place(typed.caret, false);
                     text.resume = typed.resume;
@@ -7965,6 +8088,7 @@ fn text_button_down(hwnd: HWND, lparam: LPARAM) {
         }
         return;
     }
+    text_cancel_composition(hwnd);
     let extend = mods().shift;
     // SAFETY: one borrow; the hit test is arithmetic over a layout and dispatches nothing.
     unsafe {
@@ -9334,7 +9458,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .app
         .misspellings(blocks.clone())
         .into_iter()
-        .filter(|m| from != to || !m.being_typed(state.caret))
+        .filter(|m| from != to || !m.being_typed(state.shown_caret()))
         .flat_map(|m| shown.bands(at(m.block, m.offset), at(m.block, m.offset + m.len)))
         .collect();
     let flagged: Vec<(Rect, bool)> = state
@@ -9382,8 +9506,16 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         }
     }
     let caret = (state.caret_on && !system_caret && from == to)
-        .then(|| shown.spot(state.caret, scale(text::draw::CARET_W, state.page.dpi)))
+        .then(|| {
+            shown.spot(
+                state.shown_caret(),
+                scale(text::draw::CARET_W, state.page.dpi),
+            )
+        })
         .flatten();
+    let composed = state
+        .composing
+        .map_or_default(|composing| shown.bands(composing.at, composing.end()));
 
     let here = state
         .app
@@ -9425,6 +9557,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             names: &names,
             misspelt: &misspelt,
             flagged: &flagged,
+            composed: &composed,
         },
     );
 }

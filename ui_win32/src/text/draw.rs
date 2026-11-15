@@ -88,6 +88,8 @@ mod windows_impl {
         /// Each grammar finding's lines, and whether it is a quiet one (typography and style),
         /// dotted rather than wavy.
         pub flagged: &'a [(Rect, bool)],
+        /// The lines of what an IME is composing, underlined until it is committed.
+        pub composed: &'a [Rect],
     }
 
     /// Draw one frame of the document onto `dc`, writing every pixel of the client area, so
@@ -160,6 +162,11 @@ mod windows_impl {
                     theme.accent,
                 );
             }
+        }
+        for band in frame.composed {
+            let (left, _, right, _) = band.edges();
+            let y = below(band).round() as i32;
+            gdi::fill(dc, left, y, right, y + 1, crate::theme::Rgb(0, 0, 0));
         }
         if !frame.names.is_empty() {
             let ink = crate::theme::Rgb(0x60, 0x60, 0x60);
