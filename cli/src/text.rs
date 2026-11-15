@@ -6,10 +6,9 @@
 use super::*;
 
 /// `--paper`: the ISO 216 A series and nothing else (`doc/pdf-export.md`, decision 7).
-#[cfg(feature = "pdf")]
 pub(super) fn paper(name: &str) -> Result<grind_core::page::PageGeometry, String> {
     grind_core::page::PageGeometry::paper(name).ok_or_else(|| {
-        format!("{name:?} is not a paper this build prints on: a0 to a10, e.g. a4 or a5-landscape")
+        format!("{name:?} is not a paper this build knows: a0 to a10, e.g. a4 or a5-landscape")
     })
 }
 
