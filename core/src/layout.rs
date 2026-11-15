@@ -461,6 +461,23 @@ fn breaks(text: &str) -> Vec<(usize, BreakOpportunity)> {
     out
 }
 
+/// Whether `c` belongs with the character before it, so that a word broken inside is never
+/// broken before it: a combining mark, a joiner, a variation selector or a skin tone.
+// ponytail: ranges rather than grapheme clusters; a spacing mark in an Indic script is not
+// among them.
+fn joins(c: char) -> bool {
+    matches!(c,
+        '\u{0300}'..='\u{036F}'
+        | '\u{1AB0}'..='\u{1AFF}'
+        | '\u{1DC0}'..='\u{1DFF}'
+        | '\u{200C}'..='\u{200D}'
+        | '\u{20D0}'..='\u{20FF}'
+        | '\u{FE00}'..='\u{FE0F}'
+        | '\u{FE20}'..='\u{FE2F}'
+        | '\u{1F3FB}'..='\u{1F3FF}'
+        | '\u{E0100}'..='\u{E01EF}')
+}
+
 /// [`wrap`], set as `setting` says. Every tab character is advanced to its stop on its own line —
 /// which depends on where the line starts, so tabs are placed *while* breaking rather than
 /// measured once beforehand — and each line is then aligned, so every caret x is where the ink is.
@@ -714,6 +731,22 @@ pub fn wrap_set(
         points.sort_by_key(|&(at, _)| at);
     }
 
+    // A run too wide for a line of its own, broken after as many characters as fit, at least
+    // one a line, until what is left fits (`doc/odt-format.md` §5c fact 61).
+    let split = |start: &mut usize, at: usize, top: &mut f32, lines: &mut Vec<Line>| {
+        while *start < at && !fits(*start, at, lines.is_empty()) {
+            let first_line = lines.is_empty();
+            let room = width - if first_line { first } else { 0.0 };
+            let from = *start;
+            let end = (from + 2..at)
+                .take_while(|&end| span(from, end, first_line) <= room)
+                .filter(|&end| !joins(chars[end]))
+                .last()
+                .unwrap_or(from + 1);
+            push(from, end, top, lines);
+            *start = end;
+        }
+    };
     for (at, opportunity) in points {
         if at <= start {
             continue;
@@ -748,6 +781,9 @@ pub fn wrap_set(
                 && span(start, at + 1, first_line) > room
         };
         if opportunity == BreakOpportunity::Mandatory {
+            if width > 0.0 {
+                split(&mut start, at, &mut top, &mut lines);
+            }
             if at > start {
                 push(start, at, &mut top, &mut lines);
             }
@@ -757,11 +793,8 @@ pub fn wrap_set(
         } else if fits(start, at, lines.is_empty()) {
             last_fit = Some(at);
         } else {
-            // Still too wide on a line of its own: an unbreakable run has to go somewhere, and
-            // letting it overhang is better than dropping it or looping forever.
-            push(start, at, &mut top, &mut lines);
-            start = at;
-            last_fit = None;
+            split(&mut start, at, &mut top, &mut lines);
+            last_fit = Some(at);
         }
     }
     if start < len || lines.is_empty() {
@@ -1236,22 +1269,28 @@ mod tests {
         let text = "cc aa ! b";
         assert_eq!(rendered(text, &at(text, 5.5)), ["cc aa ", "! b"]);
         assert_eq!(rendered(text, &at(text, 6.5)), ["cc ", "aa ! b"]);
-        let text = "cc aa /bin";
-        assert_eq!(rendered(text, &at(text, 6.5)), ["cc ", "aa /bin"]);
-        assert_eq!(rendered(text, &at(text, 7.5)), ["cc aa ", "/bin"]);
+        let text = "cc aa /b";
+        assert_eq!(rendered(text, &at(text, 6.5)), ["cc ", "aa /b"]);
+        assert_eq!(rendered(text, &at(text, 7.5)), ["cc aa ", "/b"]);
     }
 
+    /// `doc/odt-format.md` §5c fact 61: a word wider than the line takes a line of its own and is
+    /// broken inside after as many characters as fit; what follows its last piece sets on.
     #[test]
-    fn a_word_wider_than_the_line_breaks_rather_than_overflowing_silently() {
+    fn a_word_wider_than_the_line_is_broken_where_the_line_ends() {
         let text = "a supercalifragilistic b";
-        let layout = at(text, 6.0);
-        let lines = rendered(text, &layout);
-        assert_eq!(lines[0], "a ");
         assert_eq!(
-            lines[1], "supercalifragilistic ",
-            "an unbreakable run has to go somewhere, and it goes on a line of its own"
+            rendered(text, &at(text, 6.0)),
+            ["a ", "superc", "alifra", "gilist", "ic b"]
         );
-        assert_eq!(lines[2], "b");
+        // The paragraph's end is no exception, nor a line narrower than one letter.
+        assert_eq!(rendered("abcde", &at("abcde", 2.0)), ["ab", "cd", "e"]);
+        assert_eq!(rendered("abc", &at("abc", 0.5)), ["a", "b", "c"]);
+        // Never between a letter and its combining mark.
+        assert_eq!(
+            rendered("abe\u{301}cd", &at("abe\u{301}cd", 3.0)),
+            ["ab", "e\u{301}c", "d"]
+        );
     }
 
     /// UAX #14, not "split on spaces" — the difference is the point of taking the dependency.
@@ -1262,9 +1301,9 @@ mod tests {
         let layout = at(text, 12.0);
         assert_eq!(rendered(text, &layout), vec!["well-known-", "example"]);
 
-        // A no-break space is not one, so this cannot be split at all.
-        let text = "aaa\u{a0}bbb";
-        assert_eq!(at(text, 4.0).lines().len(), 1);
+        // A no-break space is not one, so the words it joins go down together.
+        let text = "a aaa\u{a0}bbb";
+        assert_eq!(rendered(text, &at(text, 7.5)), ["a ", "aaa\u{a0}bbb"]);
     }
 
     #[test]
@@ -1633,7 +1672,8 @@ mod tests {
         // break is at the space and `hyphen-` fits on the next.
         assert_eq!(set(en(0, 0), 7.0), [(0, 5, 1.0), (5, 9, 1.0), (9, 14, 0.0)]);
         assert_eq!(set(en(3, 0), 7.0), [(0, 3, 0.0), (3, 9, 1.0), (9, 14, 0.0)]);
-        assert_eq!(set(None, 10.0), [(0, 3, 0.0), (3, 14, 0.0)]);
+        // Unhyphenated, `hyphenation` is wider than ten and broken where the line ends.
+        assert_eq!(set(None, 10.0), [(0, 3, 0.0), (3, 13, 0.0), (13, 14, 0.0)]);
         assert_eq!(
             set(
                 Some(Hyphenate {
@@ -1643,7 +1683,7 @@ mod tests {
                 }),
                 10.0
             ),
-            [(0, 3, 0.0), (3, 14, 0.0)]
+            [(0, 3, 0.0), (3, 13, 0.0), (13, 14, 0.0)]
         );
     }
 }

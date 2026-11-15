@@ -1078,6 +1078,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `text:space-before` plus `text:min-label-width` (1.8, 2.8 and 2.8 cm), the first-line indent
    not applying to it. Word documents converted by LibreOffice and older Writer files are in
    this mode.
+61. **A word wider than the line** — `MEASURED` (2026-11-15, 26.8.2.2, Liberation Serif 12 pt
+   on a 3 cm measure, hyphenation off). A word that does not fit on a line of its own is broken
+   inside it, after as many characters as fit: `Supercalifragilisticexpialidocious` sets as
+   `Supercalifragilist` (2.91 cm; one more `i` would pass 3 cm) over `icexpialidocious`. The word
+   first takes a line of its own — `a Supercalifragilisticexpialidocious b` leaves `a` alone on
+   the first line — and what follows its last piece is set on as usual: `icexpia a b c` shares a
+   line. The same in a justified paragraph, and in a table cell narrower than one letter, where
+   every line holds one.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
