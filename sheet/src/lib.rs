@@ -2203,7 +2203,7 @@ fn references_renamed(doc: &Document, from: &str, to: &str) -> Vec<Action> {
     for (name, expression) in &doc.names {
         if let Some(expression) = formula::rename::rename_in_formula(expression, from, to) {
             actions.push(Action::SetName {
-                name: name.clone(),
+                name: doc.name_spelling(name).to_owned(),
                 expression: Some(expression),
             });
         }

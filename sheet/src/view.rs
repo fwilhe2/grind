@@ -317,7 +317,7 @@ impl Names {
                 continue;
             };
             anchors.push(NameAnchor {
-                name: name.clone(),
+                name: doc.name_spelling(name).to_owned(),
                 sheet,
                 rows,
                 cols,

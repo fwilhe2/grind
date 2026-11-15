@@ -1711,7 +1711,8 @@ fn a_named_range_can_be_defined_and_used_from_a_formula() {
     // name worth having.
     assert!(ok_top(&["info", &s(&file)]).contains("[$Sheet1.$A$1:.$A$4]"));
 
-    // Redefining is not a second name — §5.11 names are case-consistent.
+    // Redefining is not a second name — §5.11 names are case-consistent — and the name is
+    // spelled as it was last defined.
     ok(&["name", &s(&file), "SALES", "A1:A2"]);
     ok(&["recalc", &s(&file)]);
     assert_eq!(ok(&["get", &s(&file), "C1"]).trim(), "30");
@@ -1719,10 +1720,16 @@ fn a_named_range_can_be_defined_and_used_from_a_formula() {
         // Lines, not occurrences: `average` mentions `sales` in its own expression.
         ok_top(&["info", &s(&file)])
             .lines()
-            .filter(|l| l.starts_with("sales\t"))
+            .filter(|l| l.to_lowercase().starts_with("sales\t"))
             .count(),
         1,
         "redefining made a second name"
+    );
+    assert!(
+        ok_top(&["info", &s(&file)])
+            .lines()
+            .any(|l| l.starts_with("SALES\t")),
+        "the name keeps its latest spelling"
     );
 
     // Deleting one a formula still mentions is allowed, and says what it cost.

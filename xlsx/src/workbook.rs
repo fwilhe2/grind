@@ -302,6 +302,7 @@ pub fn names(workbook: &Workbook, document: &mut Document, report: &mut Report) 
         match translated {
             Ok(expr) => {
                 let expr = renamed(&expr, &report.renamed);
+                document.name_spell(&defined.name);
                 document
                     .names
                     .insert(defined.name.to_lowercase(), expr.to_string());

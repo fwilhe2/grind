@@ -134,6 +134,7 @@ thing that grows.
 |---|---|
 | `Document::sheets` | `sheet` |
 | `Document::names` | `name` |
+| `Document::name_spellings` | `name` (its first argument, as spelled) |
 | `Document::null_date` | `null-date` |
 | `Document::null_year` | `null-year` |
 | `Document::locale` | `locale` |

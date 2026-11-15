@@ -936,6 +936,9 @@ pub struct Document {
     /// ponytail: one flat map, so a sheet-local name is visible document-wide; two colliding
     /// sheet-local names are what this gets wrong.
     pub names: BTreeMap<String, String>,
+    /// How a name in [`Document::names`] was spelled, where that is not its lower-case key —
+    /// what a name is written as, so `TaxRate` stays `TaxRate`.
+    pub name_spellings: BTreeMap<String, String>,
     /// `HOST-NULL-DATE` (Part 4 §3.4 item 8): the epoch, as days from 1970-01-01, from
     /// `table:null-date`. Document-wide, as the spec says.
     pub null_date: i64,
@@ -996,6 +999,7 @@ impl Default for Document {
         Self {
             sheets: vec![Sheet::new("Sheet1")],
             names: BTreeMap::new(),
+            name_spellings: BTreeMap::new(),
             null_date: crate::formula::date::DEFAULT_NULL_DATE,
             null_year: crate::formula::date::DEFAULT_NULL_YEAR,
             locale: None,
@@ -1011,6 +1015,22 @@ impl Document {
     /// Resolve a named expression (§5.11), case-insensitively.
     pub fn name(&self, name: &str) -> Option<&str> {
         self.names.get(&name.to_lowercase()).map(String::as_str)
+    }
+
+    /// Remember how `name` is spelled, when that is not its key.
+    pub fn name_spell(&mut self, name: &str) {
+        let key = name.to_lowercase();
+        if key == name {
+            self.name_spellings.remove(&key);
+        } else {
+            self.name_spellings.insert(key, name.to_owned());
+        }
+    }
+
+    /// A [`Document::names`] key as the name was spelled.
+    #[must_use]
+    pub fn name_spelling<'a>(&'a self, key: &'a str) -> &'a str {
+        self.name_spellings.get(key).map_or(key, String::as_str)
     }
 
     #[must_use]

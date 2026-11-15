@@ -54,6 +54,7 @@ pub fn read(text: &str) -> Result<Document> {
             "name" => {
                 let name = text_arg(node, 0)?;
                 let expression = text_arg(node, 1)?;
+                doc.name_spell(&name);
                 doc.names.insert(name.to_lowercase(), expression);
             }
             "sheet" => doc.sheets.push(sheet(node, &mut source)?),

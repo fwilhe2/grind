@@ -40,7 +40,7 @@ fn one_undo_step_covers_filter_banding_totals_and_the_name() {
     assert!(app.filter(0).unwrap().is_some(), "autofilter applied");
     assert_eq!(
         app.names(),
-        vec![("table1".to_owned(), "[$Sheet1.$A$1:.$B$5]".to_owned())],
+        vec![("Table1".to_owned(), "[$Sheet1.$A$1:.$B$5]".to_owned())],
         "the named range covers the header through the totals row"
     );
 

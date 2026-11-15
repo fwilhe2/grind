@@ -766,7 +766,7 @@ fn named_expressions(doc: &Document) -> String {
         let _ = writeln!(
             out,
             "    <table:named-expression table:name=\"{}\" table:expression=\"{}\"/>",
-            esc(name),
+            esc(doc.name_spelling(name)),
             esc(expression)
         );
     }

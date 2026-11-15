@@ -221,6 +221,7 @@ impl Builder {
             doc: Document {
                 sheets: Vec::new(),
                 names: std::collections::BTreeMap::default(),
+                name_spellings: std::collections::BTreeMap::default(),
                 null_date: date::DEFAULT_NULL_DATE,
                 null_year: date::DEFAULT_NULL_YEAR,
                 locale: None,
@@ -792,6 +793,7 @@ impl Context<Builder> for NamedExpressions {
             None
         };
         if let Some(expression) = expression {
+            b.doc.name_spell(key);
             b.doc.names.insert(key.to_lowercase(), expression);
         }
         Some(Box::new(super::context::Ignore))

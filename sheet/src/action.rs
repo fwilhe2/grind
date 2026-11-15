@@ -312,7 +312,10 @@ impl Document {
             Action::SetName { name, expression } => {
                 let key = name.to_lowercase();
                 let previous = match expression {
-                    Some(e) => self.names.insert(key.clone(), e),
+                    Some(e) => {
+                        self.name_spell(&name);
+                        self.names.insert(key.clone(), e)
+                    }
                     None => self.names.remove(&key),
                 };
                 Some(Action::SetName {

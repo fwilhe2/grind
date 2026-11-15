@@ -142,7 +142,7 @@ fn settings(out: &mut Emitter, doc: &Document) {
     }
     for (name, expression) in &doc.names {
         out.begin("name");
-        out.arg(name.as_str());
+        out.arg(doc.name_spelling(name));
         out.arg(expression.as_str());
         out.anchor(name.clone());
         out.end();

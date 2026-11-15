@@ -224,13 +224,11 @@ impl App {
 
     /// Every named expression, name and expression alike (§5.11).
     pub fn names(&self) -> Vec<(String, String)> {
-        self.state
-            .read()
-            .unwrap()
-            .doc
-            .names
+        let state = self.state.read().unwrap();
+        let doc = &state.doc;
+        doc.names
             .iter()
-            .map(|(name, expr)| (name.clone(), expr.clone()))
+            .map(|(name, expr)| (doc.name_spelling(name).to_owned(), expr.clone()))
             .collect()
     }
 }
