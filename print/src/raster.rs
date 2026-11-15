@@ -206,11 +206,12 @@ impl Rasteriser {
                 let mut mask = Mask::new(width, height)?;
                 let shift = at.post_translate(-left as f32, -top as f32);
                 mask.fill_path(path, FillRule::Winding, true, shift);
+                let curve = contrast(ppem);
                 Some(Coverage {
                     left,
                     top,
                     width: width as usize,
-                    alpha: mask.data().to_vec(),
+                    alpha: mask.data().iter().map(|&a| curve[usize::from(a)]).collect(),
                 })
             });
             self.keep(made.as_ref().map_or(0, |made| made.alpha.len()));
@@ -331,6 +332,23 @@ fn quarters(at: f32) -> (i32, u8) {
     )
 }
 
+/// How a glyph's coverage is darkened at `ppem` pixels per em, as a table from coverage to ink:
+/// partly covered pixels made darker at text sizes, where an unhinted stem spreads over two
+/// pixels and reads grey, and left alone from [`CONTRAST_TO`] up, where a stem is many pixels
+/// wide. The outline and the PDF are untouched; only how much ink a pixel gets changes
+/// (`doc/page-model.md` PM4 item 3).
+fn contrast(ppem: f32) -> [u8; 256] {
+    let share = ((CONTRAST_TO - ppem) / (CONTRAST_TO - CONTRAST_FROM)).clamp(0.0, 1.0);
+    let exponent = 1.0 / (1.0 + (CONTRAST_GAMMA - 1.0) * share);
+    std::array::from_fn(|a| ((a as f32 / 255.0).powf(exponent) * 255.0).round() as u8)
+}
+
+/// The sizes, in pixels per em, below which the contrast is whole and from which there is none,
+/// and how strong it is.
+const CONTRAST_FROM: f32 = 20.0;
+const CONTRAST_TO: f32 = 40.0;
+const CONTRAST_GAMMA: f32 = 1.2;
+
 /// Lay `coverage` in `ink` over the pixmap with the glyph's origin at the pixel `at`.
 fn blend(pixmap: &mut Pixmap, coverage: &Coverage, at: (i32, i32), ink: Rgb) {
     let (columns, rows) = (pixmap.width() as i32, pixmap.height() as i32);
@@ -418,6 +436,23 @@ impl OutlinePen for Pen {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn small_text_is_darkened_and_large_text_is_not() {
+        let large = contrast(CONTRAST_TO);
+        assert!(large.iter().enumerate().all(|(a, &b)| usize::from(b) == a));
+        let body = contrast(16.0);
+        assert_eq!((body[0], body[255]), (0, 255), "empty and full stay so");
+        assert!(body[128] > 128, "half covered is darker: {}", body[128]);
+        assert!(
+            body.array_windows().all(|[a, b]| a <= b),
+            "and the order is kept"
+        );
+        assert!(
+            contrast(30.0)[128] < body[128],
+            "fading towards the large sizes"
+        );
+    }
+
     use super::*;
     use crate::metrics::Typesetter;
     use crate::ops::{Op, Rgb};
