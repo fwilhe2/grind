@@ -17,9 +17,11 @@ the pitch, `CONTRIBUTING.md` the contributor rules, `doc/plan.md` phases 0–9 a
 phase 10.
 
 - **`grind sheet`** — the spreadsheet, complete through phase 9.
-- **`grind text`** — the word processor: reads, writes, edits by block and by caret, lays text
-  out, tables, Markdown in and out, PDF export. Not built: a session (no `undo` across CLI
-  invocations), table styles and `table:formula`, footnotes, fields, style definitions, RTL.
+- **`grind text`** — the word processor: reads, writes, edits by block and by caret, tables,
+  Markdown in and out, PDF export, page breaks and page setup. Every graphical shell edits on the
+  printed pages themselves (`doc/page-model.md`): `grind-print` sets them and its raster is the
+  screen. Not built: a session (no `undo` across CLI invocations), table styles and
+  `table:formula`, footnotes, fields, style definitions, RTL.
 - **Import filters**, one way in and never out: `.xlsx` (`grind-xlsx`), `.docx` (`grind-docx`).
 - **Shells**: GTK (one per document type), terminal, browser, Windows, macOS (built, not yet run
   on a Mac). `doc/feature-matrix.md` is which client can do what.
@@ -178,7 +180,10 @@ oracle image pinned by digest in `ci/libreoffice-image`. Loops A and B want a Li
 These never skip: `sheet/tests/kb.rs` (R7, plus R2/R3/R6), `text/tests/libreoffice.rs` (vendored
 Writer documents in both forms), `xlsx/tests/ooxmlgen.rs` (Open XML SDK workbooks with a manifest
 of expectations; its `PENDING`/`UNSPELLABLE`/`DECIDED_OTHERWISE` tables are checked both ways),
-and the function samples (`sheet/tests/function_samples.rs`).
+and the function samples (`sheet/tests/function_samples.rs`). Two more run over the vendored
+documents always and over a LibreOffice checkout with `GRIND_LO_CORPUS`:
+`print/tests/incremental.rs` (pages set again after an edit equal pages set from nothing) and
+`print/tests/screen_is_paper.rs` (each page's raster against a PDF renderer's of our PDF).
 
 - A `FLOOR` in a loop test is a ratchet: raise it, never lower it.
 - Each loop has its documented loosenings and no others; any other exception is a bug in the
