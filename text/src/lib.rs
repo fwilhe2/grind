@@ -1510,22 +1510,9 @@ fn lay_out_kept(
     identity.hash(&mut key);
     width.to_bits().hash(&mut key);
     setting.hash(&mut key);
-    for run in &block.runs {
-        run.text().hash(&mut key);
-        // As `lay_out_set` measures it.
-        let shown = match run {
-            Run::Text { style, props, .. } => {
-                paragraph::shown(named, style.as_deref(), props).metrics()
-            }
-            _ => run.props().map_or_default(CharStyle::metrics),
-        };
-        (
-            shown.font_family,
-            shown.font_size,
-            shown.font_weight,
-            shown.font_style,
-        )
-            .hash(&mut key);
+    // Each run as `lay_out_set` measures it.
+    for (run, shown) in block.runs.iter().zip(measured(block, named)) {
+        (run.text(), shown).hash(&mut key);
     }
     let key = key.finish();
     if let Some(made) = layouts.lock().unwrap().made.get(&key) {
@@ -1534,6 +1521,27 @@ fn lay_out_kept(
     let layout = lay_out_set(block, width, metrics, setting, named);
     layouts.lock().unwrap().keep(key, &layout);
     layout
+}
+
+/// What each of `block`'s runs is measured as: its named style under its direct formatting, and
+/// whether it carries on the word the run before it ended in.
+fn measured(block: &Block, named: &Named) -> Vec<grind_core::style::TextStyle> {
+    let mut last: Option<char> = None;
+    block
+        .runs
+        .iter()
+        .map(|run| {
+            let mut metrics = match run {
+                Run::Text { style, props, .. } => {
+                    paragraph::shown(named, style.as_deref(), props).metrics()
+                }
+                _ => run.props().map_or_default(CharStyle::metrics),
+            };
+            metrics.mid_word = last.is_some_and(|c| !c.is_whitespace());
+            last = run.text().chars().next_back().or(last);
+            metrics
+        })
+        .collect()
 }
 
 /// The named character styles a layout measures runs by ([`paragraph::shown`]).
@@ -1555,23 +1563,7 @@ fn lay_out_set(
     named: &Named,
 ) -> Layout {
     let default = grind_core::style::TextStyle::default();
-    // Measured as shown: a run's named style is part of how wide it is.
-    let mut last: Option<char> = None;
-    let styles: Vec<grind_core::style::TextStyle> = block
-        .runs
-        .iter()
-        .map(|run| {
-            let mut metrics = match run {
-                Run::Text { style, props, .. } => {
-                    paragraph::shown(named, style.as_deref(), props).metrics()
-                }
-                _ => run.props().map_or_default(CharStyle::metrics),
-            };
-            metrics.mid_word = last.is_some_and(|c| !c.is_whitespace());
-            last = run.text().chars().next_back().or(last);
-            metrics
-        })
-        .collect();
+    let styles = measured(block, named);
     let mut fragments: Vec<layout::Fragment<'_>> = block
         .runs
         .iter()

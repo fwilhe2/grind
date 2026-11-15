@@ -2913,6 +2913,45 @@ mod tests {
         assert_eq!(face("plain"), Some(("Liberation Sans".into(), false, 12.0)));
     }
 
+    /// Two blocks with the same text and family are not one layout when anything else that sets
+    /// their width differs: here the letter spacing and the case.
+    #[test]
+    fn a_layout_is_kept_for_its_whole_look() {
+        let words = "word ".repeat(30);
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="S" style:family="text"><style:text-properties fo:letter-spacing="0.2cm"/></style:style>
+              <style:style style:name="U" style:family="text"><style:text-properties fo:text-transform="uppercase"/></style:style>
+              <style:style style:name="P" style:family="paragraph"><style:text-properties fo:letter-spacing="0.2cm"/></style:style>
+            </office:automatic-styles>
+            <office:body><office:text><text:p>{words}</text:p><text:p><text:span text:style-name="S">{words}</text:span></text:p><text:p><text:span text:style-name="U">{words}</text:span></text:p><text:p text:style-name="P">{words}</text:p></office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("k.fodt", bytes.as_bytes()).unwrap();
+        let set = typeset(&app, &setter(), &Options::default());
+        let lines = |block: usize| {
+            set.pages
+                .iter()
+                .flat_map(|page| &page.lines)
+                .filter(|line| line.block == block)
+                .count()
+        };
+        assert!(
+            lines(1) > lines(0),
+            "spaced {} plain {}",
+            lines(1),
+            lines(0)
+        );
+        assert!(lines(2) > lines(0), "upper {} plain {}", lines(2), lines(0));
+        assert!(
+            lines(3) > lines(0),
+            "styled {} plain {}",
+            lines(3),
+            lines(0)
+        );
+    }
+
     /// `doc/odt-format.md` §5c facts 5 and 6, on paper: a declared style's space below and the
     /// next one's space above add, and the first paragraph's space above is applied.
     #[test]

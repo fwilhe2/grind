@@ -172,7 +172,7 @@ mod tests {
 /// background, which change how text looks but not the room it takes. Values are ODF's own; a
 /// shell's [`crate::layout::Metrics`] turns them into numbers. `CellStyle` and `CharStyle` each
 /// hand one out.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TextStyle {
     /// `fo:font-family`, or `style:font-name` resolved through `office:font-face-decls`.
     pub font_family: Option<String>,

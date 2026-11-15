@@ -195,14 +195,7 @@ impl Metrics for RoleFace<'_> {
             line,
         } = self;
         setter.id().hash(&mut state);
-        role.hash(&mut state);
-        (
-            &stated.font_family,
-            &stated.font_size,
-            &stated.font_weight,
-            &stated.font_style,
-        )
-            .hash(&mut state);
+        (role, stated).hash(&mut state);
         match line {
             None => 0u8.hash(&mut state),
             Some(LineRule::Proportional(share)) => (1u8, share.to_bits()).hash(&mut state),
