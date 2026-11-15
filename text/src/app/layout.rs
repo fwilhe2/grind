@@ -72,6 +72,7 @@ impl App {
                 return Err(Error::Xml(format!("no block {}", loc::format(at.block))));
             };
             state.composing = Some((at.block, std::mem::replace(slot, block)));
+            state.doc.changes.record(changes::Changed::set(at.block));
             Ok(())
         })
     }

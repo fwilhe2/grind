@@ -20,6 +20,7 @@ mod app;
 
 // The document and what changes it.
 pub mod action;
+pub mod changes;
 pub mod loc;
 pub mod marginal;
 pub mod model;
@@ -372,6 +373,22 @@ pub struct Counts {
 }
 
 impl Counts {
+    /// One block's.
+    fn of(block: &Block) -> Counts {
+        let mut counts = Counts {
+            blocks: 1,
+            headings: usize::from(block.outline_level().is_some()),
+            ..Counts::default()
+        };
+        let mut in_word = false;
+        for c in block.runs.iter().flat_map(|run| run.text().chars()) {
+            counts.characters += 1;
+            counts.words += usize::from(!in_word && !c.is_whitespace());
+            in_word = !c.is_whitespace();
+        }
+        counts
+    }
+
     /// How many minutes the document takes to read, rounded up, at 230 words a minute.
     #[must_use]
     pub fn reading_minutes(&self) -> usize {
@@ -510,6 +527,7 @@ impl State {
         };
         if let Some(slot) = self.doc.blocks.get_mut(index) {
             *slot = block;
+            self.doc.changes.record(changes::Changed::set(index));
         }
         true
     }
@@ -546,8 +564,9 @@ pub struct App {
     /// under the state's read lock and emptied under its write lock, so never stale.
     paragraphs:
         std::sync::Mutex<std::collections::HashMap<Option<String>, Arc<paragraph::Resolved>>>,
-    /// [`App::counts`], until the next change: a status line asks on every caret move.
-    counts: std::sync::Mutex<Option<Counts>>,
+    /// [`App::counts`] block by block, as of a revision: a status line asks after every change,
+    /// and only the blocks changed since are counted again.
+    counts: std::sync::Mutex<Option<(u64, Vec<Counts>)>>,
 }
 
 /// Paragraphs already broken into lines, by everything that decides the result: the text and
@@ -596,7 +615,6 @@ impl App {
         let result = {
             let mut state = self.state.write().unwrap();
             self.paragraphs.lock().unwrap().clear();
-            self.counts.lock().unwrap().take();
             let composed = state
                 .composing
                 .as_ref()
@@ -689,6 +707,17 @@ impl App {
             blocks: start..end,
             items,
         }
+    }
+
+    /// The document's revision, which [`App::changed_since`] answers from.
+    pub fn revision(&self) -> u64 {
+        self.state.read().unwrap().doc.changes.revision()
+    }
+
+    /// The blocks changed since `revision`, as one span; `None` when that revision is another
+    /// document's or too far back to follow.
+    pub fn changed_since(&self, revision: u64) -> Option<changes::Changed> {
+        self.state.read().unwrap().doc.changes.since(revision)
     }
 
     /// The document as its projection — plain text, with the token and span maps beside it
@@ -841,24 +870,23 @@ impl App {
 
     pub fn counts(&self) -> Counts {
         let state = self.state.read().unwrap();
+        let blocks = &state.doc.blocks;
         let mut kept = self.counts.lock().unwrap();
-        if let Some(counts) = *kept {
-            return counts;
-        }
-        let mut counts = Counts {
-            blocks: state.doc.blocks.len(),
-            ..Counts::default()
-        };
-        for block in &state.doc.blocks {
-            let mut in_word = false;
-            for c in block.runs.iter().flat_map(|run| run.text().chars()) {
-                counts.characters += 1;
-                counts.words += usize::from(!in_word && !c.is_whitespace());
-                in_word = !c.is_whitespace();
+        let each = match kept.take() {
+            Some((revision, mut each)) if let Some(changed) = state.doc.changes.since(revision) => {
+                let replaced = changed.blocks.start..changed.blocks.start + changed.before;
+                each.splice(replaced, blocks[changed.blocks].iter().map(Counts::of));
+                each
             }
-            counts.headings += usize::from(block.outline_level().is_some());
-        }
-        *kept = Some(counts);
+            _ => blocks.iter().map(Counts::of).collect(),
+        };
+        let counts = each.iter().fold(Counts::default(), |all, one| Counts {
+            words: all.words + one.words,
+            characters: all.characters + one.characters,
+            blocks: all.blocks + one.blocks,
+            headings: all.headings + one.headings,
+        });
+        *kept = Some((state.doc.changes.revision(), each));
         counts
     }
 

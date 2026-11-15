@@ -623,6 +623,8 @@ pub struct Document {
     pub projection_source: Option<Box<grind_core::projection::Source>>,
     /// What has changed since it was read. See [`crate::odf::source::Edits`].
     pub edits: crate::odf::source::Edits,
+    /// Which blocks changed lately, for a reader that set them before ([`crate::changes`]).
+    pub changes: crate::changes::Changes,
 }
 
 /// A new document: one empty paragraph, since a caret lives in a block (`loc.rs`) and a document
@@ -675,6 +677,7 @@ impl Document {
             source: None,
             projection_source: None,
             edits: crate::odf::source::Edits::default(),
+            changes: crate::changes::Changes::default(),
         }
     }
 

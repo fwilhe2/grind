@@ -7,6 +7,7 @@
 //! inverse is valid only applied in order against the document that produced it — what an undo
 //! stack guarantees.
 
+use crate::changes::Changed;
 use crate::model::{Block, Document};
 
 /// One change, carrying what it needs to be undone without the document, so a stack of inverses
@@ -41,6 +42,7 @@ impl Document {
                 self.edits.blocks.insert(old.id);
                 self.edits.blocks.insert(block.id);
                 self.blocks[index] = *block;
+                self.changes.record(Changed::set(index));
                 Action::SetBlock {
                     index,
                     block: Box::new(old),
@@ -53,6 +55,10 @@ impl Document {
                 // The sequence moved (`odf::source::Edits::structural`).
                 self.edits.structural = true;
                 self.blocks.insert(index, *block);
+                self.changes.record(Changed {
+                    blocks: index..index + 1,
+                    before: 0,
+                });
                 Action::RemoveBlock { index }
             }
             Action::RemoveBlock { index } => {
@@ -61,6 +67,10 @@ impl Document {
                 }
                 self.edits.structural = true;
                 let old = self.blocks.remove(index);
+                self.changes.record(Changed {
+                    blocks: index..index,
+                    before: 1,
+                });
                 Action::InsertBlock {
                     index,
                     block: Box::new(old),
@@ -69,6 +79,7 @@ impl Document {
             Action::SetPage { page } => {
                 self.edits.page = true;
                 let old = std::mem::replace(&mut self.page, page);
+                self.changes.forget();
                 Action::SetPage { page: old }
             }
             Action::Batch(actions) => {

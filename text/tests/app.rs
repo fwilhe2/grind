@@ -780,6 +780,37 @@ fn formatting_lists_only_what_carries_a_style_of_its_own() {
     assert_eq!(styled[0].style.as_deref(), Some("Quote"));
 }
 
+/// The counts kept between changes, recounted only where a change was, agree with counting
+/// the whole document again after every kind of change.
+#[test]
+fn counts_kept_across_changes_are_counted_again_where_they_changed() {
+    fn at(block: usize, offset: usize) -> Caret {
+        Caret { block, offset }
+    }
+    let app = app(&["one two three", "four", "five six", "seven"]);
+    let edits: [fn(&App); 9] = [
+        |app| app.insert_text(at(1, 4), " and more").map(drop).unwrap(),
+        |app| app.split_block(at(0, 3)).map(drop).unwrap(),
+        |app| app.join_block(2).map(drop).unwrap(),
+        |app| app.set_kind(0, BlockKind::Heading { level: 1 }).unwrap(),
+        |app| app.delete(1..2).map(drop).unwrap(),
+        |app| app.compose(at(0, 0), "x y ", None).unwrap(),
+        |app| app.insert_text(at(2, 0), "z").map(drop).unwrap(),
+        |app| assert!(app.undo()),
+        |app| assert!(app.undo()),
+    ];
+    for edit in edits {
+        app.counts();
+        edit(&app);
+        let view = app.get_viewport(0..app.block_count());
+        let words: usize = view.iter().map(|b| b.text.split_whitespace().count()).sum();
+        let characters: usize = view.iter().map(|b| b.text.chars().count()).sum();
+        let counts = app.counts();
+        assert_eq!((counts.words, counts.characters), (words, characters));
+        assert_eq!(counts.blocks, app.block_count());
+    }
+}
+
 #[test]
 fn counts_are_what_a_status_bar_shows() {
     let app = app(&["one two three", "four"]);

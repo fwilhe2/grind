@@ -236,6 +236,11 @@ had no width and therefore no lines.
 - `styles_generation` — `grind text pages` and `export-pdf`, through the session that sets pages
   again after an edit; nothing prints it, a number with no meaning outside the process
 - `paragraph_shared` — `paragraph`'s answer without a copy, for setting every page; the same verbs
+- `revision` — `grind text pages` and `export-pdf`, through the session that sets only the pages
+  an edit changed; nothing prints it, a number with no meaning outside the process
+- `changed_since` — the same, for which blocks changed since a revision
+- `font_families` — `grind text export-pdf`, `pages` and `preview`, which look on the machine for
+  every family the document names; `export-pdf` says what each one was set in
 - `paragraph` — `grind text pages` and `export-pdf`, which lay every block out by its resolved paragraph style (`doc/pdf-export.md` P5); no verb prints a style's resolution on its own yet
 - `paragraph_defaults` — `grind text pages` and `export-pdf`, whose page breaks honour the default paragraph style's widows and orphans (`doc/odt-format.md` §5c); no verb prints them on their own, since they mean nothing apart from a page
 - `set_page` — `grind text page-setup <file> --paper a5 --landscape --margins 15mm`, and with
