@@ -13,6 +13,8 @@
 //! spreadsheet cell both produce. There are no pages here, and layout is left-to-right only
 //! (`doc/text-layout.md`, decision 1).
 
+use std::sync::Arc;
+
 use unicode_linebreak::{BreakOpportunity, linebreaks};
 
 use crate::style::TextStyle;
@@ -127,13 +129,13 @@ impl Line {
 }
 
 /// The result of breaking one paragraph's worth of fragments at a width. It carries the x of every
-/// caret position, so nothing below needs [`Metrics`] again.
+/// caret position, so nothing below needs [`Metrics`] again. Cloning one shares it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Layout {
-    lines: Vec<Line>,
+    lines: Arc<[Line]>,
     /// Cumulative advance at every caret offset `0..=len`, measured from the start of the whole
     /// text rather than of its line. Line-relative x is a subtraction (see [`Layout::x_at`]).
-    xs: Vec<f32>,
+    xs: Arc<[f32]>,
     /// Distance from each line's top to its baseline: the largest ascent of any fragment, by
     /// the same rule that makes every line as tall as the tallest one ([`wrap`]).
     baseline: f32,
@@ -824,8 +826,8 @@ pub fn wrap_set(
     };
 
     let mut layout = Layout {
-        lines,
-        xs,
+        lines: lines.into(),
+        xs: xs.into(),
         baseline,
         first,
     };
@@ -841,12 +843,14 @@ impl Layout {
     /// the paragraph's last line, whose trailing spaces Writer counts (`doc/odt-format.md` §5c
     /// fact 19). The first line's indent is part of what is aligned.
     fn align(&mut self, setting: &Setting, width: f32, chars: &[char]) {
-        let count = self.lines.len();
-        let natural = self.xs.clone();
+        let natural = self.xs.to_vec();
+        let mut xs = natural.clone();
+        let mut lines = self.lines.to_vec();
+        let count = lines.len();
         // How much wider everything before the line in hand has been set.
         let mut added = 0.0_f32;
         for at in 0..count {
-            let line = self.lines[at];
+            let line = lines[at];
             let last = at + 1 == count;
             let indent = self.indent_of(line.start);
             let visible_end = (line.start..line.end)
@@ -893,25 +897,24 @@ impl Layout {
                 let spread = (i + 1)
                     .min(visible_end.saturating_sub(1))
                     .saturating_sub(line.start);
-                self.xs[i + 1] += added + stretch * interior as f32 + letters * spread as f32;
+                xs[i + 1] += added + stretch * interior as f32 + letters * spread as f32;
             }
             let spread = visible_end.saturating_sub(line.start + 1);
             let wider = stretch * interior as f32 + letters * spread as f32;
             added += wider;
-            let line = &mut self.lines[at];
+            let line = &mut lines[at];
             line.shift = shift;
             line.stretch = stretch;
             line.letters = letters;
             line.width += wider;
         }
-        if let Some(rest) = self
-            .xs
-            .get_mut(self.lines.last().map_or(0, |l| l.end) + 1..)
-        {
+        if let Some(rest) = xs.get_mut(lines.last().map_or(0, |l| l.end) + 1..) {
             for x in rest {
                 *x += added;
             }
         }
+        self.xs = xs.into();
+        self.lines = lines.into();
     }
 }
 
