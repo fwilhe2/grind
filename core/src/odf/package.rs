@@ -30,7 +30,7 @@ pub const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Open a package, refusing one whose own directory says it is a bomb: more parts than
 /// [`MAX_PARTS`], or sizes claimed past [`MAX_PART_BYTES`] or [`MAX_TOTAL_BYTES`]. A claim is only
 /// a claim; [`read_entry`] enforces the limits on what actually arrives.
-pub fn archive(bytes: &[u8]) -> Result<zip::ZipArchive<Cursor<&[u8]>>> {
+pub fn archive<B: AsRef<[u8]>>(bytes: B) -> Result<zip::ZipArchive<Cursor<B>>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|e| Error::Package(format!("not a readable ODF package: {e}")))?;
     if archive.len() > MAX_PARTS {
@@ -138,6 +138,26 @@ pub fn part(bytes: &[u8], path: &str) -> Option<Vec<u8>> {
     let mut archive = archive(bytes).ok()?;
     let mut file = archive.by_name(path).ok()?;
     read_entry(&mut file).ok()
+}
+
+/// A package opened once to read many parts — a reader resolving every picture a document
+/// names, where [`part`] would read the package's directory again for each.
+pub struct Parts(zip::ZipArchive<Cursor<Vec<u8>>>);
+
+impl Parts {
+    /// `None` for the flat form or an unreadable package.
+    #[must_use]
+    pub fn open(bytes: Vec<u8>) -> Option<Parts> {
+        if !is_package(&bytes) {
+            return None;
+        }
+        archive(bytes).ok().map(Parts)
+    }
+
+    /// A part by path; `None` for a missing or unreadable one.
+    pub fn part(&mut self, path: &str) -> Option<Vec<u8>> {
+        read_entry(&mut self.0.by_name(path).ok()?).ok()
+    }
 }
 
 /// Does the manifest declare any part as encrypted? Without this, a password-protected document

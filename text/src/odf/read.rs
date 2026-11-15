@@ -64,9 +64,9 @@ pub struct Builder {
     /// How many `draw:frame` are open. LibreOffice wraps a resizable image in an inner frame
     /// (through a `draw:text-box`); only the outermost frame's end emits a [`Run::Image`].
     frame_depth: u32,
-    /// The original bytes when they are a package, for a `draw:image`'s `xlink:href` into
+    /// The package being read, when the document is one, for a `draw:image`'s `xlink:href` into
     /// `Pictures/`.
-    package: Option<Vec<u8>>,
+    package: Option<std::cell::RefCell<grind_core::odf::package::Parts>>,
     /// Every `style:page-layout` read so far, by name.
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
     /// Each page layout's `style:page-usage`, where it states one.
@@ -469,12 +469,12 @@ impl Builder {
 
     /// Record the package being read, for resolving `xlink:href`s. Called before parsing.
     pub fn set_package(&mut self, bytes: Vec<u8>) {
-        self.package = Some(bytes);
+        self.package = grind_core::odf::package::Parts::open(bytes).map(std::cell::RefCell::new);
     }
 
     /// A part of the package by path; `None` for the flat form and for a missing part.
     fn resolve_part(&self, path: &str) -> Option<Vec<u8>> {
-        super::package::part(self.package.as_deref()?, path)
+        self.package.as_ref()?.borrow_mut().part(path)
     }
 
     /// Open a `text:span`, resolving its style into a name the model keeps and formatting it
