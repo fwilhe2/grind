@@ -18,6 +18,7 @@ pub mod session;
 pub mod strip;
 pub mod svg;
 pub mod text;
+pub mod view;
 
 use grind_core::page::PageGeometry;
 use grind_text::App;

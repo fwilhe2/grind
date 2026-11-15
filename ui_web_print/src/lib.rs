@@ -13,9 +13,10 @@
 //! its pages placed in a strip, and every question about where text is answered in the strip's
 //! CSS pixels, so the main module positions elements and knows no font.
 
-use grind_print::ops::Document;
+use std::rc::Rc;
+
 use grind_print::raster::Rasteriser;
-use grind_print::strip::Strip;
+use grind_print::view::Shown;
 use grind_print::{Fonts, Options, Typesetter, place};
 use grind_text::{App, Caret};
 use wasm_bindgen::prelude::*;
@@ -161,8 +162,7 @@ pub fn preview(document: &[u8], fonts: &js_sys::Array, scale: f32) -> Result<Vec
 /// in a strip at a zoom and a width, and asked about in the strip's pixels.
 pub struct PageView {
     setter: Typesetter,
-    set: Document,
-    strip: Strip,
+    shown: Shown,
     rasteriser: Rasteriser,
 }
 
@@ -177,8 +177,7 @@ impl PageView {
         );
         PageView {
             setter,
-            set,
-            strip: Strip::new([], 1.0, 0.0),
+            shown: Shown::new(Rc::new(set), 1.0, 0.0),
             rasteriser: Rasteriser::default(),
         }
     }
@@ -193,48 +192,50 @@ impl PageView {
             .pages
             .iter()
             .enumerate()
-            .filter(|(at, page)| self.set.pages.get(*at) != Some(page))
+            .filter(|(at, page)| self.shown.set.pages.get(*at) != Some(page))
             .map(|(at, _)| at as u32)
             .collect();
-        self.set = set;
+        self.shown = Shown::new(
+            Rc::new(set),
+            self.shown.strip.scale(),
+            self.shown.strip.size().0,
+        );
         Ok(damaged)
     }
 
     /// Place the pages at `scale` pixels per point in a view `width` pixels wide.
     pub fn place(&mut self, scale: f64, width: f64) {
-        let sizes = self.set.pages.iter().map(|page| (page.width, page.height));
-        self.strip = Strip::new(sizes, scale, width);
+        self.shown = Shown::new(self.shown.set.clone(), scale, width);
     }
 
     #[must_use]
     pub fn count(&self) -> usize {
-        self.set.pages.len()
+        self.shown.set.pages.len()
     }
 
     /// The strip's width and height.
     #[must_use]
     pub fn size(&self) -> [f64; 2] {
-        let (width, height) = self.strip.size();
+        let (width, height) = self.shown.strip.size();
         [width, height]
     }
 
     /// Page `page`'s rectangle in the strip: x, y, width, height.
     #[must_use]
     pub fn sheet(&self, page: usize) -> Option<[f64; 4]> {
-        let sheet = self.strip.sheet(page)?;
-        Some([sheet.x, sheet.y, sheet.width, sheet.height])
+        self.shown.sheet(page)
     }
 
     /// The pages any part of which is between `top` and `bottom`.
     #[must_use]
     pub fn visible(&self, top: f64, bottom: f64) -> [usize; 2] {
-        let range = self.strip.visible(top, bottom);
+        let range = self.shown.visible(top, bottom);
         [range.start, range.end]
     }
 
     /// Page `page` drawn at `scale` pixels per point: width, height and premultiplied RGBA.
     pub fn render(&mut self, page: usize, scale: f32) -> Option<(u32, u32, Vec<u8>)> {
-        let page = self.set.pages.get(page)?;
+        let page = self.shown.set.pages.get(page)?;
         let raster = self.rasteriser.render(page, self.setter.fonts(), scale);
         Some((raster.width, raster.height, raster.rgba))
     }
@@ -243,50 +244,37 @@ impl PageView {
     /// which is what a run of Down presses aims for.
     #[must_use]
     pub fn spot(&self, at: Caret) -> Option<[f64; 4]> {
-        let spot = place::locate(&self.set, at)?;
-        let (x, y) = self.strip.in_strip(spot.page, spot.x, spot.top)?;
-        let height = f64::from(spot.height) * self.strip.scale();
-        Some([x, y, height, f64::from(spot.x)])
+        let stroke = self.shown.stroke(at)?;
+        Some([stroke.x, stroke.y, stroke.height, f64::from(stroke.page_x)])
     }
 
     /// The caret a point of the strip means: on the page under it or the nearer of two, and on
     /// it the nearest line.
     #[must_use]
     pub fn hit(&self, x: f64, y: f64) -> Option<Caret> {
-        let page = self.strip.page_at(y)?;
-        let (x, y) = self.strip.on_page(page, x, y)?;
-        place::hit(&self.set, page, x, y)
+        self.shown.hit(x, y)
     }
 
     /// `delta` lines from `at`, as near the page x `goal` as each line allows.
     #[must_use]
     pub fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret {
-        place::step(&self.set, at, delta, goal)
+        place::step(&self.shown.set, at, delta, goal)
     }
 
     /// The two ends of the caret's own line.
     #[must_use]
     pub fn bounds(&self, at: Caret) -> Option<(Caret, Caret)> {
-        place::line_bounds(&self.set, at)
+        place::line_bounds(&self.shown.set, at)
     }
 
     /// The text between two carets on the pages between `top` and `bottom` of the strip, one
     /// rectangle per line: x, y, width, height after each other.
     #[must_use]
     pub fn bands(&self, from: Caret, to: Caret, top: f64, bottom: f64) -> Vec<f64> {
-        let scale = self.strip.scale();
-        let pages = self.strip.visible(top, bottom);
-        place::selection_on(&self.set, pages, from, to)
+        let pages = self.shown.visible(top, bottom);
+        self.shown
+            .bands(from, to, pages)
             .into_iter()
-            .filter_map(|(page, band)| {
-                let (x, y) = self.strip.in_strip(page, band.x, band.y)?;
-                Some([
-                    x,
-                    y,
-                    f64::from(band.width) * scale,
-                    f64::from(band.height) * scale,
-                ])
-            })
             .flatten()
             .collect()
     }
@@ -294,7 +282,7 @@ impl PageView {
     /// The blocks with a line on the pages between `top` and `bottom` of the strip.
     #[must_use]
     pub fn blocks(&self, top: f64, bottom: f64) -> Option<[usize; 2]> {
-        let range = place::blocks_on(&self.set, self.strip.visible(top, bottom))?;
+        let range = self.shown.blocks(self.shown.visible(top, bottom))?;
         Some([range.start, range.end])
     }
 }

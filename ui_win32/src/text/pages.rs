@@ -10,7 +10,6 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use grind_print::ops::Document;
-use grind_print::place;
 use grind_print::strip::Strip;
 use grind_text::Caret;
 
@@ -23,8 +22,7 @@ pub fn pixels_per_point(zoom: f64, dpi: u32) -> f64 {
 
 /// The pages as they are now and where each sits, scrolled into a body of the window.
 pub struct Shown {
-    pub set: Rc<Document>,
-    pub strip: Strip,
+    pub view: grind_print::view::Shown,
     /// The window's body, where the strip is seen through.
     pub body: Rect,
     /// How far the strip is scrolled across and down, in pixels.
@@ -34,93 +32,79 @@ pub struct Shown {
 impl Shown {
     /// Pages of `set` at `scale` pixels per point, in `body` scrolled by `scroll`.
     pub fn new(set: Rc<Document>, scale: f64, body: Rect, scroll: (f64, f64)) -> Self {
-        let sizes = set.pages.iter().map(|page| (page.width, page.height));
-        let strip = Strip::new(sizes, scale, body.w);
         Shown {
-            set,
-            strip,
+            view: grind_print::view::Shown::new(set, scale, body.w),
             body,
             scroll,
         }
     }
 
-    /// A point of the strip in client pixels.
-    fn client(&self, x: f64, y: f64) -> (f64, f64) {
-        (
-            self.body.x + x - self.scroll.0,
-            self.body.y + y - self.scroll.1,
-        )
+    pub fn set(&self) -> &Document {
+        &self.view.set
+    }
+
+    pub fn strip(&self) -> &Strip {
+        &self.view.strip
+    }
+
+    /// A rectangle of the strip in client pixels.
+    fn client(&self, [x, y, w, h]: grind_print::view::Rect) -> Rect {
+        Rect {
+            x: self.body.x + x - self.scroll.0,
+            y: self.body.y + y - self.scroll.1,
+            w,
+            h,
+        }
     }
 
     /// The pages any part of which is in the body.
     pub fn visible(&self) -> Range<usize> {
-        self.strip
+        self.view
             .visible(self.scroll.1, self.scroll.1 + self.body.h)
     }
 
     /// Where page `page` is drawn, in client pixels.
     pub fn sheet(&self, page: usize) -> Option<Rect> {
-        let sheet = self.strip.sheet(page)?;
-        let (x, y) = self.client(sheet.x, sheet.y);
-        Some(Rect {
-            x,
-            y,
-            w: sheet.width,
-            h: sheet.height,
-        })
+        self.view.sheet(page).map(|sheet| self.client(sheet))
     }
 
     /// The caret a point in the window means: on the page under it, or the nearer of two.
     pub fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
-        let (x, y) = (
+        self.view.hit(
             x - self.body.x + self.scroll.0,
             y - self.body.y + self.scroll.1,
-        );
-        let page = self.strip.page_at(y)?;
-        let (x, y) = self.strip.on_page(page, x, y)?;
-        place::hit(&self.set, page, x, y)
+        )
     }
 
     /// The caret's stroke in the strip's pixels: x, top and height.
     pub fn spot_in_strip(&self, at: Caret) -> Option<(f64, f64, f64)> {
-        let spot = place::locate(&self.set, at)?;
-        let (x, y) = self.strip.in_strip(spot.page, spot.x, spot.top)?;
-        Some((x, y, f64::from(spot.height) * self.strip.scale()))
+        let stroke = self.view.stroke(at)?;
+        Some((stroke.x, stroke.y, stroke.height))
     }
 
     /// The caret's stroke in client pixels, `width` wide.
     pub fn spot(&self, at: Caret, width: f64) -> Option<Rect> {
         let (x, y, h) = self.spot_in_strip(at)?;
-        let (x, y) = self.client(x, y);
-        Some(Rect { x, y, w: width, h })
+        Some(self.client([x, y, width, h]))
     }
 
     /// The text between two carets as client rectangles, one per line, on the pages in view.
     pub fn bands(&self, from: Caret, to: Caret) -> Vec<Rect> {
-        let scale = self.strip.scale();
-        place::selection_on(&self.set, self.visible(), from, to)
+        self.view
+            .bands(from, to, self.visible())
             .into_iter()
-            .filter_map(|(page, band)| {
-                let (x, y) = self.strip.in_strip(page, band.x, band.y)?;
-                let (x, y) = self.client(x, y);
-                Some(Rect {
-                    x,
-                    y,
-                    w: f64::from(band.width) * scale,
-                    h: f64::from(band.height) * scale,
-                })
-            })
+            .map(|band| self.client(band))
             .collect()
     }
 
     /// The blocks with a line on the pages in view.
     pub fn blocks(&self) -> Option<Range<usize>> {
-        place::blocks_on(&self.set, self.visible())
+        self.view.blocks(self.visible())
     }
 
-    /// How far down and across the strip can scroll in this body.
+    /// How far across and down the strip can scroll in this body.
     pub fn limits(&self) -> (f64, f64) {
-        let (width, height) = self.strip.size();
+        let (width, height) = self.view.strip.size();
         (
             (width - self.body.w).max(0.0),
             (height - self.body.h).max(0.0),
@@ -152,7 +136,7 @@ mod tests {
     #[test]
     fn a_click_lands_on_the_caret_drawn_there() {
         let shown = shown((0.0, 0.0));
-        assert!(shown.set.pages.len() >= 2);
+        assert!(shown.set().pages.len() >= 2);
         let at = Caret {
             block: 0,
             offset: 40,
@@ -183,7 +167,7 @@ mod tests {
         assert_eq!(top.visible().start, 0);
         let (_, down) = top.limits();
         let bottom = shown((0.0, down));
-        assert_eq!(bottom.visible().end, bottom.set.pages.len());
+        assert_eq!(bottom.visible().end, bottom.set().pages.len());
         assert!(bottom.visible().start > 0);
         assert!(bottom.blocks().unwrap().end >= 8);
     }

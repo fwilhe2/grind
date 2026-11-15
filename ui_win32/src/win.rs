@@ -1092,7 +1092,7 @@ impl Text {
         let Some((x, y, height)) = shown.spot_in_strip(self.caret) else {
             return;
         };
-        let (width, down) = shown.strip.size();
+        let (width, down) = shown.strip().size();
         let body = self.page.body();
         self.page.scroll = grind_print::strip::follow(self.page.scroll, body.h, down, y, height);
         let room = grind_print::strip::GAP;
@@ -1102,7 +1102,7 @@ impl Text {
 
     /// The caret's x on its page, in points — what Down and Up aim for.
     fn caret_x(&self) -> Option<f32> {
-        grind_print::place::locate(&self.shown().set, self.caret).map(|spot| spot.x)
+        grind_print::place::locate(self.shown().set(), self.caret).map(|spot| spot.x)
     }
 
     /// Where the caret is drawn, in client pixels, and its size. `position_ime_composition` wants
@@ -1154,9 +1154,9 @@ impl Text {
                     None => self.moved(Motion::Char(step), goal),
                 }
             }
-            Motion::Line(delta) => grind_print::place::step(&self.shown().set, at, delta, goal),
+            Motion::Line(delta) => grind_print::place::step(self.shown().set(), at, delta, goal),
             Motion::LineStart | Motion::LineEnd => {
-                match grind_print::place::line_bounds(&self.shown().set, at) {
+                match grind_print::place::line_bounds(self.shown().set(), at) {
                     Some((start, end)) => match motion {
                         Motion::LineStart => start,
                         _ => end,
@@ -1211,8 +1211,8 @@ impl Text {
     /// one, keeping a line of context across the jump.
     fn page_lines(&self) -> isize {
         let shown = self.shown();
-        let line = grind_print::place::locate(&shown.set, self.caret)
-            .map_or(20.0, |spot| f64::from(spot.height) * shown.strip.scale());
+        let line = grind_print::place::locate(shown.set(), self.caret)
+            .map_or(20.0, |spot| f64::from(spot.height) * shown.strip().scale());
         ((self.page.body().h / line.max(1.0)) as isize - 1).max(1)
     }
 
@@ -7583,7 +7583,7 @@ fn text_refresh(hwnd: HWND) {
 /// it is drawn. The horizontal one covers a page zoomed wider than the window.
 fn text_scrollbars(hwnd: HWND, text: &Text) {
     let shown = text.shown();
-    let (width, height) = shown.strip.size();
+    let (width, height) = shown.strip().size();
     let body = text.page.body();
     let info = |max: f64, page: f64, pos: f64| SCROLLINFO {
         cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
@@ -9304,7 +9304,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
                 let Some(tick) = shown.spot(anchor, 1.0) else {
                     continue;
                 };
-                let end = grind_print::place::line_bounds(&shown.set, anchor)
+                let end = grind_print::place::line_bounds(shown.set(), anchor)
                     .and_then(|(_, end)| shown.spot(end, 1.0))
                     .map_or(tick.x, |spot| spot.x);
                 names.push((tick, end, name.clone()));
@@ -9322,11 +9322,11 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .map_or_default(|block| text::status::describe(&block.kind, block.style.as_deref()));
     // The language is the picker's to say, at the bar's end (`Page::status_picker`).
     let mut status = text::status::status_line(&here, selected_chars(state), state.app.counts());
-    if let Some(spot) = grind_print::place::locate(&shown.set, state.caret) {
+    if let Some(spot) = grind_print::place::locate(shown.set(), state.caret) {
         status = format!(
             "Page {} of {} \u{00b7} {}% \u{00b7} {status}",
             spot.page + 1,
-            shown.set.pages.len(),
+            shown.set().pages.len(),
             (state.zoom * 100.0).round()
         );
     }
@@ -9382,7 +9382,7 @@ fn text_tiles<'a>(
         tiles.retain(|number, _| keep.contains(number));
         if let Some((_, rasteriser)) = rasteriser.as_mut() {
             for number in visible {
-                let Some(page) = shown.set.pages.get(number) else {
+                let Some(page) = shown.set().pages.get(number) else {
                     continue;
                 };
                 let kept = tiles
