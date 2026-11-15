@@ -2,12 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A laid-out document painted onto a device context. **What a line is made of is portable** —
-//! `grind_text::paint`'s `pieces`, `covered`, `band` and `bullet` — and only putting pixels down
-//! needs Windows. The Windows half draws **run by run through `crate::metrics::Face`**, never
-//! `DrawTextW`: the core placed every caret with GDI's own advances, so the ink is placed with the
-//! same ones (`Face::draw_run`, decision 3). `paint` takes an `HDC` and a `Frame`, so
-//! `--render-to` is a second caller.
+//! The text pane painted onto a device context: the pages in view, blitted from
+//! `grind_print::raster`, the marks over them that are not on paper (selection, underlines,
+//! bookmarks, the caret), and the window's bands. Where any of it goes is `text::pages`'; `paint`
+//! takes an `HDC` and a `Frame`, so `--render-to` is a second caller.
 
 /// The caret's width in pixels at 100%, and how far a selection's wash moves the ground towards
 /// the theme's selection colour. The wash matches the grid's, so the two panes look like one
@@ -15,66 +13,42 @@
 pub const CARET_W: f64 = 2.0;
 pub const WASH: f64 = 0.30;
 
-/// How far a table's rule moves the page towards the text's ink — the foreground at 28%, as the
-/// GNOME window draws one. Not the grid's `grid_line`, which is the hairline of an infinite sheet
-/// and recedes, where a table in a document is structure a reader follows; at `grid_line`'s weight
-/// an empty table all but vanished.
-pub const RULE_INK: f64 = 0.28;
-
 #[cfg(windows)]
-pub use windows_impl::{Frame, Painted, paint};
+pub use windows_impl::{Frame, Sheet, paint};
 
 #[cfg(windows)]
 mod windows_impl {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Gdi::{HDC, SetBkMode, TRANSPARENT};
 
-    use grind_core::layout::Layout;
-    use grind_text::style::CharStyle;
-    use grind_text::{BlockView, Caret};
-
     use crate::gdi::{self, Font, Selected};
-    use crate::metrics::Faces;
     use crate::sheet::draw::{Align, draw_text};
     use crate::sheet::geom::{Rect, scale};
     use crate::theme::Theme;
 
-    use super::super::geom::{CellBox, Page, RULE, Slot, StripHit};
-    use grind_text::paint::{band, covered, drawable, pieces};
+    use super::super::geom::{Page, StripHit};
 
-    use super::{CARET_W, WASH};
+    use super::WASH;
 
-    /// One block, ready to draw: where it goes, what is in it, and how its lines broke — computed
-    /// and thrown away, as `App::get_viewport` content is.
-    pub struct Painted<'a> {
-        pub slot: Slot,
-        pub view: &'a BlockView,
-        pub layout: Layout,
+    /// One page in view: where it is drawn, in client pixels, and its raster — premultiplied
+    /// BGRA, `size` pixels, the same scale as `rect`.
+    pub struct Sheet<'a> {
+        pub rect: Rect,
+        pub size: (u32, u32),
+        pub pixels: &'a [u8],
     }
 
     /// Everything one frame of the text pane needs.
     pub struct Frame<'a> {
         pub page: &'a Page,
         pub theme: Theme,
-        pub faces: &'a Faces<'a>,
-        /// The blocks on screen, in document order, and nothing else — architecture rule 1.
-        pub blocks: &'a [Painted<'a>],
-        /// Every table cell's box (`Flow::cells`) — the grid's rules, drawn under the text. All of
-        /// them rather than the ones on screen, because a box is four numbers and the painter
-        /// skips the ones outside the body by itself.
-        pub cells: &'a [CellBox],
-        /// How tall the whole document measured — `Flow::height`, which is what the page card is
-        /// drawn to and what the scrollbar already reports. The blocks above are only the ones on
-        /// screen, so this cannot be derived from them.
-        pub height: f64,
-        /// The selection's two ends, in document order. Presentation state: the core is never
-        /// told about it, and it reaches `App` as two carets when something is done to it.
-        pub selection: (Caret, Caret),
-        pub caret: Caret,
-        /// Whether the caret is in its *on* phase — the blink, which is the user's own
-        /// `GetCaretBlinkTime` rather than a constant. Always on where there is no window at all,
-        /// so that two `--render-to` frames of one document are identical.
-        pub caret_on: bool,
+        /// The pages in view, in order.
+        pub sheets: &'a [Sheet<'a>],
+        /// What is selected, one rectangle per line, in client pixels.
+        pub selected: &'a [Rect],
+        /// The caret's stroke, when it is drawn by the paint — only `render`'s windowless frame,
+        /// which has no system caret.
+        pub caret: Option<Rect>,
         pub status: &'a str,
         /// The spelling language in letters at the bar's end, in `Page::status_picker` — GDI has
         /// no colour glyphs and Windows no flags (`grind_spell::Setting::chip`).
@@ -106,16 +80,14 @@ mod windows_impl {
         /// is what *Automatic* looks like.
         pub color: Option<&'a str>,
         pub highlight: Option<&'a str>,
-        /// The name overlay for a document with no cells. A bookmark contributes no characters, so
-        /// nothing says it is there; `BlockView::marks` is the list `grind text view --names`
-        /// prints, drawn beside the text it anchors rather than spliced in.
-        pub names: bool,
-        /// The misspelt words in the blocks on screen (`App::misspellings`), less the one still
-        /// being typed — drawn as a squiggle under each. Empty with spelling off.
-        pub misspelt: &'a [grind_text::Misspelling],
-        /// The grammar findings on screen, less one ending at the caret while typing — a
-        /// squiggle in the accent under each, dotted for typography and style.
-        pub flagged: &'a [grind_text::grammar::Flag],
+        /// Each bookmark in view, with `View ▸ Names` on: a tick where it anchors, and its
+        /// name drawn from `x` past the end of its line (`doc/view-modes.md` §3.6).
+        pub names: &'a [(Rect, f64, String)],
+        /// Each misspelt word's lines, less the word still being typed — a squiggle under each.
+        pub misspelt: &'a [Rect],
+        /// Each grammar finding's lines, and whether it is a quiet one (typography and style),
+        /// dotted rather than wavy.
+        pub flagged: &'a [(Rect, bool)],
     }
 
     /// Draw one frame of the document onto `dc`, writing every pixel of the client area, so
@@ -137,273 +109,91 @@ mod windows_impl {
             SetBkMode(dc, TRANSPARENT);
         }
 
-        let body = page.body();
-        let (column_x, _) = page.text_column();
-
-        // **The page**: the document's surface on the window's backdrop, drawn first and clipped
-        // to the body by hand, since this file sets no clip region. A card whose top is far above
-        // the window is right for a document scrolled that far, as long as its other corner stays
-        // on screen.
-        {
-            let card = page.page_card(frame.height);
-            let radius = scale(crate::theme::space::RADIUS_SURFACE, page.dpi).round() as i32;
-            let (left, mut top, right, mut bottom) = card.edges();
-            let (body_top, body_bottom) = (body.y.round() as i32, (body.y + body.h).round() as i32);
-            // Overshoot the band by a corner's worth rather than clamping to it: that way an edge
-            // that is really off-screen is drawn off-screen, and only the visible corners round.
-            top = top.max(body_top - radius * 2);
-            bottom = bottom.min(body_bottom + radius * 2);
-            if bottom > top {
-                gdi::round_rect(
-                    dc,
-                    RECT {
-                        left,
-                        top,
-                        right,
-                        bottom,
-                    },
-                    radius,
-                    theme.background,
-                    theme.stroke,
-                );
-            }
-        }
-        // **A table's grid**, under its text, at `RULE_INK`. Each edge is a one-pixel band *on*
-        // the box's outer line, where the neighbour's edges are too, so a shared edge is drawn
-        // twice onto the same pixels and stays one pixel.
-        let rule = scale(RULE, page.dpi).round().max(1.0) as i32;
-        let rule_ink = theme.background.blend(theme.text, super::RULE_INK);
-        for cell in frame.cells {
-            let shift = body.y - page.scroll;
-            if cell.bottom() + shift < body.y || cell.top + shift > body.y + body.h {
-                continue;
-            }
-            let (l, t) = (
-                (column_x + cell.left).round() as i32,
-                (cell.top + shift).round() as i32,
-            );
-            let (r, b) = (
-                (column_x + cell.right_edge()).round() as i32,
-                (cell.bottom() + shift).round() as i32,
-            );
-            for (x0, y0, x1, y1) in [
-                (l, t, r + rule, t + rule),
-                (l, b, r + rule, b + rule),
-                (l, t, l + rule, b + rule),
-                (r, t, r + rule, b + rule),
-            ] {
-                gdi::fill(dc, x0, y0, x1, y1, rule_ink);
-            }
-        }
-
-        let (from, to) = frame.selection;
-        // The chrome's own font, small and never the document's — used here for the name
-        // overlay's marks and again below for the banner and the status bar. One `Font`, so a
-        // resize does not build it twice.
         let chrome = Font::new(frame.face, frame.font_px, false);
-        let muted = theme.text.blend(theme.background, 0.45);
-        for painted in frame.blocks {
-            let x = column_x + painted.slot.indent;
-            let top = body.y + painted.slot.top - page.scroll;
-            let face = frame
-                .faces
-                .face(&painted.view.kind, painted.view.style.as_deref());
-
-            // A picture block, optionally with its caption's text, is drawn as one rather than as
-            // the placeholder character `RunView::text` returns (`grind_text::picture_of`).
-            // Decoded here, not a second time in `text::geom::flow_of`'s hook.
-            if let Some((image, caption)) = grind_text::picture_of(painted.view) {
-                let width = painted.slot.width;
-                if let Some(decoded) = crate::image::decode(&image.data) {
-                    let (w, h) = (f64::from(decoded.width), f64::from(decoded.height));
-                    let draw_w = width.min(w);
-                    let draw_h = h * (draw_w / w);
-                    crate::image::draw(
-                        dc,
-                        Rect {
-                            x,
-                            y: top,
-                            w: draw_w,
-                            h: draw_h,
-                        },
-                        &decoded,
-                    );
-                    if let Some(caption) = caption.filter(|text| !text.is_empty()) {
-                        let gap = scale(super::super::geom::CAPTION_GAP, page.dpi);
-                        face.draw_wrapped(dc, caption, x, top + draw_h + gap, width, muted);
-                    }
-                }
-                continue;
-            }
-
-            // The list's mark — its number or its style's bullet (`BlockView::mark`) — drawn
-            // outside the text column and outside the model.
-            if let Some(mark) = painted.view.mark() {
-                face.draw_run(
+        // White paper in either theme (`doc/page-model.md` decision 5), on the window's backdrop
+        // with a hairline round it: the raster is the page, and the page is what prints.
+        for sheet in frame.sheets {
+            let (left, top, right, bottom) = sheet.rect.edges();
+            gdi::fill(dc, left - 1, top - 1, right + 1, bottom + 1, theme.stroke);
+            gdi::fill(
+                dc,
+                left,
+                top,
+                right,
+                bottom,
+                crate::theme::Rgb(255, 255, 255),
+            );
+            gdi::blit_image(dc, sheet.rect, sheet.size, sheet.pixels);
+        }
+        for band in frame.selected {
+            gdi::wash(dc, *band, theme.selection, WASH);
+        }
+        let below = |band: &Rect| band.y + band.h - scale(3.0, page.dpi);
+        for band in frame.misspelt {
+            gdi::squiggle(
+                dc,
+                band.x,
+                band.x + band.w,
+                below(band),
+                scale(2.0, page.dpi),
+                theme.misspelt,
+            );
+        }
+        for (band, quiet) in frame.flagged {
+            let (left, right) = (band.x, band.x + band.w);
+            if *quiet {
+                gdi::dotted(
                     dc,
-                    x - scale(super::super::geom::INDENT, page.dpi) * 0.7,
-                    top + f64::from(painted.layout.baseline()),
-                    mark,
-                    &CharStyle::default(),
-                    theme.text,
+                    left,
+                    right,
+                    below(band),
+                    scale(1.5, page.dpi),
+                    theme.accent,
+                );
+            } else {
+                gdi::squiggle(
+                    dc,
+                    left,
+                    right,
+                    below(band),
+                    scale(2.0, page.dpi),
+                    theme.accent,
                 );
             }
-
-            let caret_line = (painted.slot.index == frame.caret.block && frame.caret_on)
-                .then(|| painted.layout.line_at(frame.caret.offset));
-            for (number, line) in painted.layout.lines().iter().enumerate() {
-                let line_top = top + f64::from(line.top);
-                // Wholly above or below the body: nothing to draw, and no measuring either.
-                if line_top + f64::from(line.height) < body.y || line_top > body.y + body.h {
-                    continue;
-                }
-                // The selection's wash, under the text. A block's own offsets only mean
-                // something once the block is known to be inside the selection at all, which is
-                // what the two clamps below decide.
-                if let Some((left, right)) = covered(painted.slot.index, from, to)
-                    .and_then(|(start, end)| band(&painted.layout, line, start, end))
-                {
-                    let left = x + f64::from(left);
-                    let right = x + f64::from(right);
-                    gdi::fill(
-                        dc,
-                        left.round() as i32,
-                        line_top.round() as i32,
-                        right.round() as i32,
-                        (line_top + f64::from(line.height)).round() as i32,
-                        theme.background.blend(theme.selection, WASH),
-                    );
-                }
-
-                for piece in pieces(&painted.view.runs, line.start, line.end) {
-                    // A run highlighted but uncoloured is ODF's *automatic* over the highlight,
-                    // not the page (`theme::automatic_ink`) — the theme's near-white vanishes on a
-                    // yellow highlight in the dark palette. A run the document coloured is lifted
-                    // until it reads on the dark page (`theme::document_ink`).
-                    let fill = piece
-                        .props
-                        .background
-                        .as_deref()
-                        .filter(|value| *value != "transparent")
-                        .and_then(crate::theme::Rgb::parse);
-                    let ink = crate::theme::document_ink(
-                        piece
-                            .props
-                            .color
-                            .as_deref()
-                            .and_then(crate::theme::Rgb::parse),
-                        fill.unwrap_or(theme.background),
-                        fill.is_some(),
-                        theme,
-                    );
-                    // Every segment is placed at the x the **core** measured for its first
-                    // character, never where the last ended — which makes a tab and a line break
-                    // work: both measured, neither drawn.
-                    for (start, segment) in drawable(piece.start, piece.text) {
-                        face.draw_run(
-                            dc,
-                            x + f64::from(painted.layout.x_at(start)),
-                            line_top + f64::from(painted.layout.baseline()),
-                            segment,
-                            piece.props,
-                            ink,
-                        );
-                    }
-                }
-
-                // A misspelt word's squiggle, under each line it crosses — `band` is the
-                // selection's own arithmetic, so a word that wraps is marked on both lines
-                // exactly where its characters are.
-                for wrong in frame
-                    .misspelt
-                    .iter()
-                    .filter(|m| m.block == painted.slot.index)
-                {
-                    if let Some((left, right)) = band(
-                        &painted.layout,
-                        line,
-                        wrong.offset,
-                        wrong.offset + wrong.len,
-                    ) {
-                        gdi::squiggle(
-                            dc,
-                            x + f64::from(left),
-                            x + f64::from(right),
-                            line_top + f64::from(line.height) - scale(3.0, page.dpi),
-                            scale(2.0, page.dpi),
-                            theme.misspelt,
-                        );
-                    }
-                }
-
-                // A grammar finding's mark, the same way, in the accent rather than spelling's
-                // red; a finding covering nothing (a missing comma) marks the character before.
-                for flag in frame
-                    .flagged
-                    .iter()
-                    .filter(|f| f.block == painted.slot.index)
-                {
-                    let range = &flag.finding.range;
-                    let from = range.start.saturating_sub(usize::from(range.is_empty()));
-                    let Some((left, right)) = band(&painted.layout, line, from, range.end) else {
-                        continue;
-                    };
-                    let (left, right) = (x + f64::from(left), x + f64::from(right));
-                    let top = line_top + f64::from(line.height) - scale(3.0, page.dpi);
-                    if matches!(
-                        flag.finding.kind,
-                        grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
-                    ) {
-                        gdi::dotted(dc, left, right, top, scale(1.5, page.dpi), theme.accent);
-                    } else {
-                        gdi::squiggle(dc, left, right, top, scale(2.0, page.dpi), theme.accent);
-                    }
-                }
-
-                // The caret, over the text it sits in. Which line it is on is `Layout`'s answer
-                // rather than a range test, because at a soft break the offset is on two lines
-                // and only the core knows which one it resolved to.
-                if caret_line == Some(number) {
-                    let caret_x = x + f64::from(painted.layout.x_at(frame.caret.offset));
-                    gdi::fill(
-                        dc,
-                        caret_x.round() as i32,
-                        line_top.round() as i32,
-                        (caret_x + scale(CARET_W, page.dpi)).round() as i32,
-                        (line_top + f64::from(line.height)).round() as i32,
-                        theme.text,
-                    );
-                }
-
-                // The name overlay: every bookmark on this line drawn beside it, not spliced into
-                // the text, which would move every offset after it — the caret-and-ink
-                // disagreement decision 3 rules out. Muted, like the grid's name overlay.
-                if frame.names {
-                    for (offset, name) in &painted.view.marks {
-                        if painted.layout.line_at(*offset) != number {
-                            continue;
-                        }
-                        let mark_x = x + f64::from(painted.layout.x_at(*offset));
-                        let label = format!("\u{2039}{name}\u{203a}");
-                        let _font = Selected::font(dc, &chrome);
-                        draw_text(
-                            dc,
-                            &label,
-                            mark_x.round() as i32,
-                            line_top.round() as i32,
-                            (mark_x + scale(120.0, page.dpi)).round() as i32,
-                            (line_top + f64::from(line.height)).round() as i32,
-                            Align::Left,
-                            muted,
-                            scale(2.0, page.dpi),
-                        );
-                    }
-                }
+        }
+        if !frame.names.is_empty() {
+            let ink = crate::theme::Rgb(0x60, 0x60, 0x60);
+            let _font = Selected::font(dc, &chrome);
+            for (tick, end, name) in frame.names {
+                let (left, top, _, bottom) = tick.edges();
+                gdi::fill(dc, left - 1, top, left + 1, bottom, ink);
+                draw_text(
+                    dc,
+                    &format!("  \u{2039}{name}\u{203a}"),
+                    end.round() as i32,
+                    top,
+                    (end + scale(160.0, page.dpi)).round() as i32,
+                    bottom,
+                    Align::Left,
+                    ink,
+                    0.0,
+                );
             }
         }
+        if let Some(caret) = frame.caret {
+            let (left, top, right, bottom) = caret.edges();
+            gdi::fill(
+                dc,
+                left,
+                top,
+                right.max(left + 1),
+                bottom,
+                crate::theme::Rgb(0, 0, 0),
+            );
+        }
 
-        // The bands, over the text: a line scrolled under the status bar must not show through
-        // it, and drawing them second is cheaper than clipping the loop above. The chrome is set
+        // The bands, over the pages: a page scrolled under the status bar must not show through
+        // it, and drawing them second is cheaper than clipping. The chrome is set
         // in the shell font at the shell's size — it is the *window* talking, not the document.
         if let Some(notice) = frame.banner.filter(|_| page.banner_h > 0.0) {
             // An inset card with a stripe down its leading edge, as the grid's notice bar is: two

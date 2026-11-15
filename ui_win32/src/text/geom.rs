@@ -2,46 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where each block sits down the page, and where the page sits in the window — pure arithmetic,
-//! **no Windows types**. Line breaking is `grind_core::layout`'s and stacking the blocks — boxes,
-//! table cells, what is on screen, scrolling to the caret — is [`grind_text::flow`]'s; what is
-//! here is this pane's numbers ([`spacing`]), where the page sits ([`Page`]), and the strip.
-
-use std::collections::HashMap;
-
-pub use grind_text::flow::{Across, CellBox, Flow, Slot, Spacing};
+//! The text pane's bands — notice, format strip, body, status bar — and the strip's controls, in
+//! window pixels: pure arithmetic, **no Windows types**. Where the pages sit in the body is
+//! `text::pages`'.
 
 use crate::sheet::geom::{Rect, scale};
-
-/// Space either side of the text column, in pixels at 100% — wide enough for the **page** card
-/// ([`PAGE_PAD`] outside the text) with a strip of the window's backdrop showing either side, or
-/// the page is the window.
-pub const MARGIN: f64 = 48.0;
-
-/// The widest the text column may get — roughly 80 characters at a normal body size, since prose
-/// across 1800 pixels is unreadable; the column is centred in what is left.
-pub const MEASURE: f64 = 720.0;
-
-/// How far one nesting level of a list indents its text.
-pub const INDENT: f64 = 28.0;
-
-/// The page's top margin — space above the first block, which **scrolls with the text**, so a
-/// document scrolled to the bottom has no dead band at the top. Also the page card's top padding:
-/// forty pixels reads as a margin where twenty-four looked like a mistake.
-pub const TOP: f64 = 40.0;
-
-/// How far the page card extends past the text column on each side and below the last block. The
-/// card is the document's surface, `Theme::background`, on the window's backdrop: text set
-/// straight on the chrome is no document, only some text.
-pub const PAGE_PAD: f64 = 40.0;
-
-/// Space under a block, and the extra a heading gets above it — the whole of this pane's
-/// typography beyond the font itself.
-pub const GAP: f64 = 10.0;
-pub const HEADING_GAP: f64 = 18.0;
-
-/// The gap between a picture and its caption — small, since they read as one figure.
-pub const CAPTION_GAP: f64 = 4.0;
 
 /// The status bar, the same height the grid's is so that the two panes' windows agree.
 pub const STATUS_H: f64 = crate::sheet::draw::STATUS_H;
@@ -72,15 +37,6 @@ pub const SWATCH_W: f64 = crate::theme::space::CONTROL_H;
 
 /// *Clear Formatting*'s width — wider than a toggle, since "Clear" does not fit [`BUTTON_W`].
 pub const CLEAR_W: f64 = 64.0;
-
-/// The text column inside a pane `width` pixels wide: where it starts and how wide it is, centred
-/// once the window is wider than [`MEASURE`].
-pub fn column(width: f64, dpi: u32) -> (f64, f64) {
-    let margin = scale(MARGIN, dpi);
-    let available = (width - 2.0 * margin).max(1.0);
-    let text = available.min(scale(MEASURE, dpi));
-    (margin + (available - text) / 2.0, text)
-}
 
 /// Which of the strip's controls a click landed on — [`Page::strip_hit`]'s answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,74 +227,11 @@ impl Page {
         }
         None
     }
-
-    /// The text column, in window coordinates.
-    pub fn text_column(&self) -> (f64, f64) {
-        column(self.width, self.dpi)
-    }
-
-    /// **The page** — the document's surface, `height` pixels of content tall, in window
-    /// coordinates and already scrolled: its top is the document's top, its bottom the last block
-    /// plus one [`PAGE_PAD`]. Nothing is clipped here; the painter clips to the body. Decorative:
-    /// the caret knows nothing of it, and [`Page::text_column`] decides where lines break and
-    /// clicks land.
-    pub fn page_card(&self, height: f64) -> Rect {
-        let body = self.body();
-        let (x, w) = self.text_column();
-        let pad = scale(PAGE_PAD, self.dpi);
-        Rect {
-            x: x - pad,
-            y: body.y - self.scroll,
-            w: w + pad * 2.0,
-            h: height + pad,
-        }
-    }
-}
-
-/// The space between a cell's rule and its text, and the rule's width, in pixels at 100% — the
-/// GNOME window's numbers, so a table is one shape everywhere.
-pub const CELL_PAD: f64 = 6.0;
-pub const RULE: f64 = 1.0;
-
-/// This pane's page at a monitor's scaling — the numbers [`grind_text::flow`] stacks with, rebuilt
-/// from the constants at each DPI rather than scaled from the last answer.
-pub fn spacing(dpi: u32) -> Spacing {
-    Spacing {
-        top: scale(TOP, dpi),
-        gap: scale(GAP, dpi),
-        heading: scale(HEADING_GAP, dpi),
-        indent: scale(INDENT, dpi),
-        cell_pad: scale(CELL_PAD, dpi),
-    }
-}
-
-/// Every block that is in a table cell, with where it sits across a column `column` wide —
-/// [`grind_text::flow::across`] at this monitor's scaling, built once per reflow and read by
-/// `metrics::Faces`, so that a caret motion inside a cell measures where the ink is.
-pub fn across(app: &grind_text::App, column: f64, dpi: u32) -> HashMap<usize, Across> {
-    grind_text::flow::across(app, column, &spacing(dpi))
-}
-
-/// Measure every block of a document and stack them, a table as a grid —
-/// [`grind_text::flow::lay_out`] with this pane's numbers. Portable: the only Windows in it is the
-/// [`grind_text::Faces`] it is handed, so off Windows it takes [`grind_text::Uniform`] over
-/// [`grind_text::Fixed`] and matches `grind text view --width`. `picture` is `lay_out`'s hook —
-/// `image.rs`'s WIC decoder sizing a picture block; a caller with no decoder passes `&|_, _|
-/// None`.
-pub fn flow_of(
-    app: &grind_text::App,
-    faces: &dyn grind_text::Faces,
-    column: f64,
-    dpi: u32,
-    picture: &dyn Fn(&grind_text::BlockView, f64) -> Option<f64>,
-) -> Flow {
-    grind_text::flow::lay_out(app, faces, column, &spacing(dpi), picture)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grind_text::BlockKind;
 
     /// An ordinary window on an ordinary document: 800 by 600 at 100%, no notice up.
     fn page() -> Page {
@@ -350,55 +243,6 @@ mod tests {
             status_h: STATUS_H,
             dpi: 96,
             scroll: 0.0,
-        }
-    }
-
-    #[test]
-    fn the_text_column_is_centred_once_the_window_is_wider_than_the_measure() {
-        let (x, w) = column(400.0, 96);
-        assert_eq!((x, w), (MARGIN, 400.0 - 2.0 * MARGIN), "narrow: all of it");
-        let (x, w) = column(2.0 * MEASURE, 96);
-        assert_eq!(w, MEASURE, "wide: the measure holds");
-        assert!(x > MARGIN, "and what is left is split either side");
-        assert_eq!(x + w + x, 2.0 * MEASURE, "symmetrically");
-        assert!(
-            column(1.0, 96).1 >= 1.0,
-            "a window narrower than its margins"
-        );
-    }
-
-    /// Everything measured is rebuilt from the constants at this monitor's scaling rather than
-    /// scaled from the last answer, which is the same rule the grid follows.
-    #[test]
-    fn the_column_scales_with_the_monitor() {
-        let (_, wide) = column(4000.0, 192);
-        assert_eq!(wide, 2.0 * MEASURE, "the measure is a physical size");
-    }
-
-    /// The page is the document's own surface: wider than the text on it, starting where the
-    /// document starts, and moving with the scroll rather than framing the window.
-    #[test]
-    fn the_page_is_a_surface_the_text_stands_on() {
-        let page = page();
-        let (x, w) = page.text_column();
-        let card = page.page_card(1000.0);
-        assert!(card.x < x, "the page is wider than the text on it");
-        assert_eq!(card.x, x - PAGE_PAD);
-        assert_eq!(card.x + card.w, x + w + PAGE_PAD);
-        assert_eq!(card.y, page.body().y, "unscrolled, it starts at the body");
-        assert!(card.h > 1000.0, "and there is room under the last line");
-        // Scrolled, it moves with the document — a page is a thing in the document, not a frame
-        // round the window.
-        let scrolled = Page {
-            scroll: 300.0,
-            ..page
-        };
-        assert_eq!(scrolled.page_card(1000.0).y, page.body().y - 300.0);
-        // And there is always window left either side of it, or it would not read as a page.
-        for width in [400.0, 800.0, 2400.0] {
-            let card = Page { width, ..page }.page_card(100.0);
-            assert!(card.x > 0.0, "{width}: the page touches the window's edge");
-            assert!(card.x + card.w < width, "{width}");
         }
     }
 
@@ -513,29 +357,5 @@ mod tests {
             page.strip_hit(rects[4].x + 1.0, rects[4].y + 1.0),
             Some(StripHit::Clear)
         );
-    }
-
-    /// `flow_of` is `grind_text::flow::lay_out` with this pane's numbers, and those numbers are
-    /// rebuilt at each monitor's scaling: the page's top margin, a list's indent and a cell's
-    /// padding all double at 200%. The stacking rules themselves are tested where they live.
-    #[test]
-    fn the_flow_is_set_in_this_panes_numbers_at_this_monitors_scale() {
-        let app = grind_text::App::new();
-        app.insert(0, BlockKind::ListItem { depth: 1 }, "One item")
-            .unwrap();
-        app.insert_table(1, 1, 2, Some("T".into())).unwrap();
-        let column = 400.0;
-        for dpi in [96, 192] {
-            let factor = f64::from(dpi) / 96.0;
-            let across = across(&app, column, dpi);
-            let faces = grind_text::Uniform::new(column as f32, &grind_text::Fixed);
-            let flow = flow_of(&app, &faces, column, dpi, &|_, _| None);
-            let item = flow.slot(0).unwrap();
-            assert_eq!(item.top, TOP * factor, "{dpi}: the page's margin");
-            assert_eq!(item.indent, INDENT * factor, "{dpi}: one level");
-            let cell = across[&1];
-            assert_eq!(cell.left, CELL_PAD * factor, "{dpi}: inside the padding");
-            assert_eq!(flow.slot(1).unwrap().indent, cell.left);
-        }
     }
 }

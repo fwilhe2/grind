@@ -1423,10 +1423,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         // `doc/view-modes.md`'s role overlay is `CellRole`, the grid's own vocabulary; the text
         // pane has no per-character role.
         | Command::ToggleFormulas
-        | Command::ZoomIn
-        | Command::ZoomOut
-        | Command::ZoomReset
         | Command::ToggleRoles => matches!(kind, Spreadsheet),
+        // The grid's cells and the document's pages both zoom.
+        Command::ZoomIn | Command::ZoomOut | Command::ZoomReset => {
+            matches!(kind, Spreadsheet | Text)
+        }
         // Bold, italic, a text colour and Clear mean the same thing to a run and to a cell, and each
         // pane answers them over its own style — `CharStyle` there, `CellStyle` here — so they are
         // both panes' verbs, and Ctrl+B is bold wherever the window is.

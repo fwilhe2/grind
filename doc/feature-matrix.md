@@ -486,8 +486,8 @@ There is no dialog.
 | **Paper** (`doc/pdf-export.md`) | | | | | | |
 | Export a PDF | ● | ● | ● | ● | ● | ● |
 | Where each page begins | ● | ● | ● | — | — | — |
-| Edit on the pages as they print (`doc/page-model.md`) | ● ᵖᵐ | ● ᵖᵐ | ◐ ᵖᵐ | ○ | ○ | ○ |
-| Zoom | — | ● ᵖᵐ | — | ○ | ○ | ○ |
+| Edit on the pages as they print (`doc/page-model.md`) | ● ᵖᵐ | ● ᵖᵐ | ◐ ᵖᵐ | ○ | ● ᵖᵐ | ○ |
+| Zoom | — | ● ᵖᵐ | — | ○ | ● ᵖᵐ | ○ |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
 | Print | — | ● | ● ˡᵖ | ● ᵖᵖ | ● ᵖᵖ | ● |
 | **Files** | | | | | | |
@@ -505,7 +505,10 @@ boxes the pages were set with, so a click and an arrow key land where the ink is
 wheel, a pinch, Ctrl+plus/minus, Fit Width and Actual Size on the status line's zoom button) and
 says the caret's page. The CLI's half is `grind text locate` and `hit`. The terminal keeps its
 column of cells and rules where each printed page begins, says "page 3 of 12" on the status line
-and goes to a page with `:page 3` (PM7 item 4). The other windows get it in PM7.
+and goes to a page with `:page 3` (PM7 item 4). The Windows pane draws the pages from the same
+raster and answers the caret from the same line boxes (PM7 item 2, 2026-11-15): View ▸ Zoom and
+Ctrl+wheel, both scroll bars, the caret's page on the status bar. The browser and the Mac get it
+in PM7.
 ᵖᵖ The CLI's preview is one page as a PNG (`grind text preview`). The Mac's is the system print
 panel's own, over the PDF itself; the browser prints by opening the PDF in the browser's viewer,
 and Windows, which has no API that prints a PDF, sends the preview's rasters at the printer's

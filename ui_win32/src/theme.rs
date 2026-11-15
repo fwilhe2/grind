@@ -410,10 +410,6 @@ pub mod text {
     /// A cell's own text, which is **not** body: a document's column widths were chosen against a
     /// size near this, and raising it makes the numbers stop fitting the columns sized for them.
     pub const CELL: f64 = 13.0;
-    /// Prose in the text pane. Larger than [`CELL`] on purpose: a spreadsheet is read by
-    /// scanning and a document by reading, and every word processor there has ever been sets body
-    /// text bigger than a cell.
-    pub const PROSE: f64 = 15.0;
 }
 
 /// The spacing ramp, in pixels at 100% — Fluent's 4-pixel grid; every chrome measurement is one of
@@ -869,7 +865,6 @@ mod tests {
         const {
             assert!(text::CAPTION < text::CELL);
             assert!(text::CELL < text::BODY);
-            assert!(text::BODY < text::PROSE);
             assert!(text::BODY == 14.0);
         }
     }

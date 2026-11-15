@@ -37,9 +37,12 @@
 
 #![cfg(windows)]
 
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -98,7 +101,6 @@ use crate::gdi::{self, BackBuffer, Brush, Dib, Font};
 use crate::image;
 use crate::menu::{self, Command, Item};
 use crate::menubar;
-use crate::metrics::{Faces, Fonts};
 use crate::notice;
 use crate::problems;
 use crate::sheet::assist;
@@ -112,14 +114,14 @@ use crate::sheet::state::{self, Outcome, Seed};
 use crate::sheet::status;
 use crate::surrogate;
 use crate::text;
-use crate::text::geom::{Flow, Page, StripHit};
+use crate::text::geom::{Page, StripHit};
 use crate::theme::{self, Mode, Theme};
 use crate::welcome;
 use grind_core::DocumentKind;
 use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
 use grind_text::caret::START;
-use grind_text::{Caret, Layout, markdown};
+use grind_text::{Caret, markdown};
 use windows::Win32::UI::WindowsAndMessaging::{
     HTMENU, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN,
     WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCPAINT, WM_SYSCOMMAND,
@@ -142,10 +144,6 @@ fn face() -> &'static str {
 /// notification and a menu item's click apart in the one message Win32 uses for both.
 const ID_NAME_BOX: usize = 1;
 const ID_EDITOR: usize = 2;
-
-/// The size prose is set at, in pixels at 100% — the ramp's own, and larger than a cell's for
-/// the reason `theme::text::PROSE` gives. Headings scale off this (`metrics.rs`).
-const TEXT_PX: i32 = theme::text::PROSE as i32;
 
 /// "A key went to one of our child controls", sent by the message loop. Enter, Escape, Tab and the
 /// arrows never reach a child `EDIT`'s parent — the control swallows them — so the pump in [`run`]
@@ -823,9 +821,17 @@ impl Sheet {
     }
 }
 
-/// Everything the *word processor's* pane owns — smaller than [`Sheet`], but holding a
-/// [`text::geom::Flow`] that had to be *measured*, which is why the font cache is here: state,
-/// expensive, and the measuring pane's.
+/// One page's raster as drawn: kept while the page is in view or next to it, and drawn again only
+/// when the page or the scale changed.
+struct Tile {
+    page: grind_print::ops::Page,
+    scale: u64,
+    size: (u32, u32),
+    bgra: Vec<u8>,
+}
+
+/// Everything the *word processor's* pane owns: the document, its pages as set and drawn, and
+/// where in them the caret and the view are.
 struct Text {
     app: grind_text::App,
     path: Option<PathBuf>,
@@ -836,27 +842,26 @@ struct Text {
     dirty: bool,
     /// The window's bands and how far down the document the body starts.
     page: Page,
-    /// Where every block sits, measured — rebuilt when the document, the width or the DPI changes,
-    /// not per paint.
-    flow: Flow,
-    /// Where every block in a table cell sits across the column and the width it is set at
-    /// (`text::geom::across`), rebuilt with `flow` and read by [`Text::faces`] — which is how a
-    /// caret motion inside a cell measures the cell rather than the whole column.
-    across: HashMap<usize, text::geom::Across>,
+    /// The document's pages, set again when [`Text::edits`] has moved past [`Text::seen`].
+    session: grind_print::session::Session,
+    /// How many changes the core has reported, counted by its observer as they happen — ahead
+    /// of `WM_DOC_CHANGED`, which is posted, so an edit's own refresh sees its pages.
+    edits: Arc<AtomicU64>,
+    seen: Cell<u64>,
+    /// How large the pages are drawn: 1.0 is their printed size.
+    zoom: f64,
+    /// How far the pages are scrolled across, in pixels; [`Page::scroll`] is how far down.
+    scroll_x: f64,
+    /// Each page's raster as last drawn, and the rasteriser that keeps glyphs between them.
+    tiles: RefCell<HashMap<usize, Tile>>,
+    rasteriser: RefCell<Option<(Rc<grind_print::Typesetter>, grind_print::raster::Rasteriser)>>,
     /// The caret and the other end of the selection. Presentation state: the core is never told
     /// about it, exactly as the grid's `Selection` is never told to `grind_sheet::App`.
     caret: Caret,
     anchor: Caret,
-    /// The column Down and Up aim for, in pixels, kept across a run of vertical keystrokes and
-    /// dropped when the caret moves horizontally — a property of the keystrokes, not the document,
-    /// which is why `App::caret_line` takes it.
+    /// The page x Down and Up aim for, in points, kept across a run of vertical keystrokes and
+    /// dropped when the caret moves horizontally (`grind_print::place::step`).
     goal_x: Option<f32>,
-    /// The fonts everything is measured and drawn with (`metrics.rs`). `None` only before the
-    /// first `WM_CREATE`, and rebuilt whole on `WM_DPICHANGED` — a font is a size in *pixels*,
-    /// so every one of them is wrong on a monitor with different scaling.
-    fonts: Option<Fonts>,
-    /// The DPI `fonts` was built for, which is the only reason to build another.
-    fonts_dpi: u32,
     /// Whether a drag is extending the selection.
     dragging: bool,
     /// Whether a caret is drawn by the paint — only for `render`'s windowless frame, which has no
@@ -1002,8 +1007,8 @@ impl Text {
             .find(|m| m.offset <= at.offset && at.offset <= m.offset + m.len)
     }
 
-    /// Rebuild the bands, the fonts if the monitor changed, and the flow — from the document,
-    /// never scaled from the last answer, as [`Sheet::relayout`] does.
+    /// Rebuild the bands for a window this size on a monitor of `dpi`, and keep the scroll inside
+    /// the pages.
     fn relayout(&mut self, width: f64, height: f64, dpi: u32) {
         self.page = Page {
             width,
@@ -1017,57 +1022,48 @@ impl Text {
             dpi,
             scroll: self.page.scroll,
         };
-        if self.fonts.is_none() || self.fonts_dpi != dpi {
-            // The old cache goes first: it owns every `HFONT` in it, and a shell that kept both
-            // would leak one per monitor change — `doc/windows-shell.md` names exactly that as
-            // this shell's classic `unsafe` risk.
-            self.fonts = Fonts::new(scale(f64::from(TEXT_PX), dpi));
-            self.fonts_dpi = dpi;
-        }
-        self.reflow();
-        self.page.scroll = self
-            .page
-            .scroll
-            .clamp(0.0, self.flow.limit(self.page.body().h));
+        self.clamp_scroll();
     }
 
-    /// Measure every block and stack them.
-    ///
-    /// ponytail: the **whole document** is laid out, so a five-hundred-page one is measured on
-    /// every resize. That is what makes the scrollbar honest, and it is fast enough for everything
-    /// in `text/tests/data/`. The upgrade is an estimated height for unseen blocks, replaced as
-    /// they scroll past, when a resize is visibly slow.
-    fn reflow(&mut self) {
-        let dpi = self.page.dpi;
-        let (_, column) = self.page.text_column();
-        // Before the faces, which read it: a cell's measure is a fact about the table's shape
-        // and the column, and nothing about how tall anything is.
-        self.across = text::geom::across(&self.app, column, dpi);
-        let Some(faces) = self.faces() else {
-            return;
-        };
-        // A picture is measured from its decoded pixels — fit the column, keep the aspect ratio,
-        // never larger than its own size (`flow_of`). `None` when the block is no picture or WIC
-        // cannot read it (R5), so a bad picture takes its placeholder's room rather than stopping
-        // the document.
-        let picture = |view: &grind_text::BlockView, width: f64| -> Option<f64> {
-            let (image, caption) = grind_text::picture_of(view)?;
-            let (w, h) = image::size(&image.data)?;
-            let picture_h = f64::from(h) * (width.min(f64::from(w)) / f64::from(w));
-            match caption {
-                Some(text) if !text.is_empty() => {
-                    let body = faces.face(&grind_text::BlockKind::Paragraph, None);
-                    let gap = scale(text::geom::CAPTION_GAP, dpi);
-                    Some(
-                        picture_h
-                            + gap
-                            + body.wrapped_height(self.fonts.as_ref()?.dc(), text, width),
-                    )
-                }
-                _ => Some(picture_h),
+    /// The pages as they are now, where this window shows them. Set again first if the document
+    /// changed since they were.
+    fn shown(&self) -> text::pages::Shown {
+        let edits = self.edits.load(Ordering::SeqCst);
+        if edits != self.seen.get() {
+            self.session.changed();
+            self.seen.set(edits);
+        }
+        text::pages::Shown::new(
+            self.session.document(&self.app),
+            text::pages::pixels_per_point(self.zoom, self.page.dpi),
+            self.page.body(),
+            (self.scroll_x, self.page.scroll),
+        )
+    }
+
+    fn clamp_scroll(&mut self) {
+        let (across, down) = self.shown().limits();
+        self.scroll_x = self.scroll_x.clamp(0.0, across);
+        self.page.scroll = self.page.scroll.clamp(0.0, down);
+    }
+
+    /// Draw the pages larger or smaller, keeping the caret where it is on screen when it is in
+    /// view, and in view when it is not.
+    fn set_zoom(&mut self, zoom: f64) {
+        let levels = grind_print::strip::ZOOMS;
+        let zoom = zoom.clamp(levels[0], levels[levels.len() - 1]);
+        let before = self.shown().spot(self.caret, 1.0);
+        self.zoom = zoom;
+        let shown = self.shown();
+        if let (Some(before), Some((x, y, _))) = (before, shown.spot_in_strip(self.caret)) {
+            let body = self.page.body();
+            if body.contains(before.x, before.y) {
+                self.scroll_x = x - (before.x - body.x);
+                self.page.scroll = y - (before.y - body.y);
             }
-        };
-        self.flow = text::geom::flow_of(&self.app, &faces, column, dpi, &picture);
+        }
+        self.clamp_scroll();
+        self.reveal();
     }
 
     /// Whether anything is selected at all.
@@ -1090,74 +1086,40 @@ impl Text {
         grind_text::caret::end(&self.app)
     }
 
-    /// The faces this document is set in, at the current measure — built per call, since it
-    /// borrows the font cache; the fonts are cached, so this is a few map lookups.
-    fn faces(&self) -> Option<Faces<'_>> {
-        let fonts = self.fonts.as_ref()?;
-        let (_, width) = self.page.text_column();
-        Some(Faces::new(
-            fonts,
-            width,
-            text::geom::spacing(self.page.dpi),
-            &self.across,
-        ))
-    }
-
-    /// One block's lines, measured in its own face — computed and thrown away, since a kept layout
-    /// goes stale on the next keystroke.
-    fn layout_of(&self, index: usize) -> Option<Layout> {
-        let faces = self.faces()?;
-        let viewport = self.app.get_viewport(index..index + 1);
-        let view = viewport.get(index)?;
-        let (width, metrics) =
-            grind_text::Faces::of(&faces, index, &view.kind, view.style.as_deref());
-        self.app.layout_block(index, width, metrics).ok()
-    }
-
     /// Scroll the least it takes to put the caret's own line on screen, and no more.
     fn reveal(&mut self) {
-        let Some(slot) = self.flow.slot(self.caret.block).copied() else {
+        let shown = self.shown();
+        let Some((x, y, height)) = shown.spot_in_strip(self.caret) else {
             return;
         };
-        let target = match self.layout_of(self.caret.block) {
-            Some(layout) => {
-                let line = layout.lines()[layout.line_at(self.caret.offset)];
-                (slot.top + f64::from(line.top), f64::from(line.height))
-            }
-            None => (slot.top, slot.height),
-        };
-        let page = self.page.body().h;
-        self.page.scroll = self.flow.follow(self.page.scroll, page, target);
-    }
-
-    /// The caret's x within its line, in pixels — what Down and Up aim for.
-    fn caret_x(&self) -> Option<f32> {
-        let faces = self.faces()?;
-        self.app.caret_x(self.caret, &faces).ok()
-    }
-
-    /// Where the caret is drawn, in client pixels, and its size — `text/draw.rs`'s geometry
-    /// without a `Frame`. `position_ime_composition` wants the point, so an IME's candidate list
-    /// appears at the caret; `place_system_caret` wants all four, since `CreateCaret` takes a size
-    /// and a heading's caret is taller.
-    fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
-        let slot = self.flow.slot(self.caret.block).copied()?;
-        let layout = self.layout_of(self.caret.block)?;
-        let line = layout
-            .lines()
-            .get(layout.line_at(self.caret.offset))
-            .copied()?;
-        let (column_x, _) = self.page.text_column();
+        let (width, down) = shown.strip.size();
         let body = self.page.body();
-        let x = column_x + slot.indent + f64::from(layout.x_at(self.caret.offset));
-        let y = body.y + slot.top + f64::from(line.top) - self.page.scroll;
+        self.page.scroll = grind_print::strip::follow(self.page.scroll, body.h, down, y, height);
+        let room = grind_print::strip::GAP;
+        self.scroll_x =
+            grind_print::strip::follow(self.scroll_x, body.w, width, x - room, 2.0 * room);
+    }
+
+    /// The caret's x on its page, in points — what Down and Up aim for.
+    fn caret_x(&self) -> Option<f32> {
+        grind_print::place::locate(&self.shown().set, self.caret).map(|spot| spot.x)
+    }
+
+    /// Where the caret is drawn, in client pixels, and its size. `position_ime_composition` wants
+    /// the point, so an IME's candidate list appears at the caret; `place_system_caret` wants all
+    /// four, since `CreateCaret` takes a size and a heading's caret is taller.
+    fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
         let width = scale(text::draw::CARET_W, self.page.dpi).max(1.0);
-        let height = f64::from(line.height).max(1.0);
+        let spot = self.shown().spot(self.caret, width)?;
+        let body = self.page.body();
+        if spot.y + spot.h < body.y || spot.y > body.y + body.h {
+            return None;
+        }
         Some((
-            x.round() as i32,
-            y.round() as i32,
-            width.round() as i32,
-            height.round() as i32,
+            spot.x.round() as i32,
+            spot.y.round() as i32,
+            spot.w.round() as i32,
+            spot.h.max(1.0).round() as i32,
         ))
     }
 
@@ -1170,15 +1132,14 @@ impl Text {
             .map_or_default(|view| view.text.clone())
     }
 
-    /// Where a motion lands, without moving anything. Every vertical answer is
-    /// [`grind_text::App`]'s — `caret_line` and `caret_line_bounds` through this pane's [`Faces`]
-    /// (`doc/text-layout.md`); the horizontal half, about characters, is here.
+    /// Where a motion lands, without moving anything. Every answer about lines is the printed
+    /// pages' (`grind_print::place`); the one about characters is the core's.
     fn moved(&self, motion: text::keymap::Motion, goal: f32) -> Caret {
         use text::keymap::Motion;
         let at = self.caret;
         match motion {
             // Off the end of a block is the start of the next one: a document is one flow, not a
-            // list of boxes, which is the same rule `App::caret_line` follows.
+            // list of boxes.
             Motion::Char(step) => grind_text::caret::step(&self.app, at, i32::from(step)),
             Motion::Word(step) => {
                 let forward = step > 0;
@@ -1193,20 +1154,16 @@ impl Text {
                     None => self.moved(Motion::Char(step), goal),
                 }
             }
-            Motion::Line(delta) => match self.faces() {
-                Some(faces) => self.app.caret_line(at, delta, goal, &faces).unwrap_or(at),
-                None => at,
-            },
-            Motion::LineStart | Motion::LineEnd => match self.faces() {
-                Some(faces) => match self.app.caret_line_bounds(at, &faces) {
-                    Ok((start, end)) => match motion {
+            Motion::Line(delta) => grind_print::place::step(&self.shown().set, at, delta, goal),
+            Motion::LineStart | Motion::LineEnd => {
+                match grind_print::place::line_bounds(&self.shown().set, at) {
+                    Some((start, end)) => match motion {
                         Motion::LineStart => start,
                         _ => end,
                     },
-                    Err(_) => at,
-                },
-                None => at,
-            },
+                    None => at,
+                }
+            }
             Motion::DocStart => START,
             Motion::DocEnd => self.last_caret(),
         }
@@ -1244,29 +1201,19 @@ impl Text {
         self.reveal();
     }
 
-    /// Which caret position a point is nearest — **nearest, never nothing** ([`Flow::at`]): a
-    /// click in a line's margin lands at its near end, since a caret refusing to move is a bug
-    /// nobody can see the cause of.
+    /// The caret a point in the window means — the page under it, or the nearer of two, and on
+    /// it the nearest line: a click in a margin is the text beside it.
     fn caret_at(&self, x: f64, y: f64) -> Option<Caret> {
-        let body = self.page.body();
-        let (column_x, _) = self.page.text_column();
-        grind_text::caret::hit(
-            &self.flow,
-            x - column_x,
-            y - body.y + self.page.scroll,
-            |block| self.layout_of(block),
-        )
+        self.shown().caret_at(x, y)
     }
 
-    /// How many lines Page Up or Down moves: body lines, one short of a screenful, keeping a line
-    /// of context across the jump, as the grid's page does.
+    /// How many lines Page Up or Down moves: as many of the caret's lines as the body holds, less
+    /// one, keeping a line of context across the jump.
     fn page_lines(&self) -> isize {
-        let height = self
-            .fonts
-            .as_ref()
-            .map_or(20.0, |fonts| fonts.body_px() * 1.3)
-            .max(1.0);
-        ((self.page.body().h / height) as isize - 1).max(1)
+        let shown = self.shown();
+        let line = grind_print::place::locate(&shown.set, self.caret)
+            .map_or(20.0, |spot| f64::from(spot.height) * shown.strip.scale());
+        ((self.page.body().h / line.max(1.0)) as isize - 1).max(1)
     }
 
     /// Put something in the notice bar, or take it away. The sentence and the *height* change
@@ -1303,10 +1250,13 @@ fn hint_h(hint: &[assist::Piece], dpi: u32) -> f64 {
 /// and a `SendMessageW` there would re-enter this procedure while a handler holds `&mut State`.
 /// The window is an `isize`, not an `HWND`, so this is `Send + Sync` without an unsafe promise, as
 /// [`grind_core::Observer`] requires.
-struct Changed(isize);
+struct Changed(isize, Option<Arc<AtomicU64>>);
 
 impl grind_core::Observer for Changed {
     fn changed(&self) {
+        if let Some(edits) = &self.1 {
+            edits.fetch_add(1, Ordering::SeqCst);
+        }
         // SAFETY: posting to a window that has already been destroyed is defined — it fails and
         // returns an error, which is why the result is discarded rather than checked.
         unsafe {
@@ -1390,13 +1340,16 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
             dpi: 96,
             ..Page::default()
         },
-        flow: Flow::default(),
-        across: HashMap::new(),
+        session: grind_print::session::Session::new(false),
+        edits: Arc::new(AtomicU64::new(0)),
+        seen: Cell::new(u64::MAX),
+        zoom: 1.0,
+        scroll_x: 0.0,
+        tiles: RefCell::default(),
+        rasteriser: RefCell::default(),
         caret: START,
         anchor: START,
         goal_x: None,
-        fonts: None,
-        fonts_dpi: 0,
         dragging: false,
         // On, so that a document opened and immediately rendered shows its caret — and so that
         // two `--render-to` frames of one document are identical, which is what that flag is for.
@@ -1697,10 +1650,14 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
                     // Registered here rather than in `opened`: it needs a window to post to, and a
                     // document read before there is one must not arrive as a change the user made
                     // — so no "loading" flag is needed.
-                    let observer = Arc::new(Changed(hwnd.0 as isize));
+                    let window = hwnd.0 as isize;
                     match pane {
-                        Pane::Sheet(sheet) => sheet.app.set_observer(observer),
-                        Pane::Text(text) => text.app.set_observer(observer),
+                        Pane::Sheet(sheet) => {
+                            sheet.app.set_observer(Arc::new(Changed(window, None)));
+                        }
+                        Pane::Text(text) => text
+                            .app
+                            .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
                         // Nothing to observe: no document, so nothing can change under us.
                         Pane::Welcome(_) => {}
                     }
@@ -6953,10 +6910,12 @@ fn adopt(hwnd: HWND, pane: Pane) {
     // pane that was there releases its fonts and its document with no message in between.
     unsafe {
         with_pane(hwnd, |slot| {
-            let observer = Arc::new(Changed(hwnd.0 as isize));
+            let window = hwnd.0 as isize;
             match &pane {
-                Pane::Sheet(sheet) => sheet.app.set_observer(observer),
-                Pane::Text(text) => text.app.set_observer(observer),
+                Pane::Sheet(sheet) => sheet.app.set_observer(Arc::new(Changed(window, None))),
+                Pane::Text(text) => text
+                    .app
+                    .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
                 // No document, so nothing to observe — and nothing that could mark a title.
                 Pane::Welcome(_) => {}
             }
@@ -7620,70 +7579,69 @@ fn text_refresh(hwnd: HWND) {
     place_system_caret(hwnd);
 }
 
-/// The scrollbars for a document, in **pixels** where the grid's are tracks — a document is as
-/// tall as it measures, and a line is no unit anything else here counts in. The horizontal bar is
-/// disabled: the measure is fixed.
+/// The scrollbars over the pages, in **pixels** where the grid's are tracks: a page is as tall as
+/// it is drawn. The horizontal one covers a page zoomed wider than the window.
 fn text_scrollbars(hwnd: HWND, text: &Text) {
-    let page = text.page.body().h.max(1.0);
-    let info = SCROLLINFO {
+    let shown = text.shown();
+    let (width, height) = shown.strip.size();
+    let body = text.page.body();
+    let info = |max: f64, page: f64, pos: f64| SCROLLINFO {
         cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
         fMask: SCROLLINFO_MASK(SIF_RANGE.0 | SIF_PAGE.0 | SIF_POS.0),
         nMin: 0,
-        nMax: text.flow.height().round() as i32,
-        nPage: page.round() as u32,
-        nPos: text.page.scroll.round() as i32,
+        nMax: max.round() as i32,
+        nPage: page.max(1.0).round() as u32,
+        nPos: pos.round() as i32,
         nTrackPos: 0,
     };
-    // SAFETY: `info` is a live, fully initialised local read for the length of the call.
+    let down = info(height, body.h, text.page.scroll);
+    let across = info(width, body.w, text.scroll_x);
+    // SAFETY: both infos are live, fully initialised locals read for the length of the call.
     unsafe {
-        SetScrollInfo(hwnd, SB_VERT, &raw const info, true);
-        let flat = SCROLLINFO {
-            nMax: 0,
-            nPage: 1,
-            nPos: 0,
-            ..info
-        };
-        SetScrollInfo(hwnd, SB_HORZ, &raw const flat, true);
+        SetScrollInfo(hwnd, SB_VERT, &raw const down, true);
+        SetScrollInfo(hwnd, SB_HORZ, &raw const across, true);
     }
 }
 
-/// Move the view by a number of pixels, clamped to the document.
-fn text_scroll_by(hwnd: HWND, delta: f64) {
+/// Move the view by a number of pixels down, or across, clamped to the pages.
+fn text_scroll_by(hwnd: HWND, delta: f64, vertical: bool) {
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
         with_text(hwnd, |text| {
-            let page = text.page.body().h;
-            let limit = text.flow.limit(page);
-            let to = (text.page.scroll + delta).clamp(0.0, limit);
-            if to == text.page.scroll {
-                return;
+            let before = (text.scroll_x, text.page.scroll);
+            if vertical {
+                text.page.scroll += delta;
+            } else {
+                text.scroll_x += delta;
             }
-            text.page.scroll = to;
-            text_scrollbars(hwnd, text);
+            text.clamp_scroll();
+            if before != (text.scroll_x, text.page.scroll) {
+                text_scrollbars(hwnd, text);
+            }
         });
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
+    place_system_caret(hwnd);
 }
 
-/// One scrollbar message on the document.
+/// One scrollbar message on the pages.
 fn text_scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
-    if !vertical {
-        return;
-    }
     let code = (wparam.0 & 0xffff) as i32;
     let thumb = ((wparam.0 >> 16) & 0xffff) as i32;
-    // SAFETY: one borrow, for two numbers; nothing inside dispatches.
-    let Some((at, page, line)) = (unsafe {
+    // SAFETY: one borrow, for three numbers; nothing inside dispatches.
+    let Some((at, page)) = (unsafe {
         with_text(hwnd, |text| {
-            (
-                text.page.scroll,
-                text.page.body().h,
-                text.fonts.as_ref().map_or(15.0, Fonts::body_px) * 1.3,
-            )
+            let body = text.page.body();
+            if vertical {
+                (text.page.scroll, body.h)
+            } else {
+                (text.scroll_x, body.w)
+            }
         })
     }) else {
         return;
     };
+    let line = scale(LINE_STEP, dpi_of(hwnd));
     let delta = match scroll_code(code) {
         SB_LINEUP => -line,
         SB_LINEDOWN => line,
@@ -7696,29 +7654,54 @@ fn text_scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
         SB_THUMBPOSITION | SB_THUMBTRACK => f64::from(thumb) - at,
         _ => return,
     };
-    text_scroll_by(hwnd, delta);
+    text_scroll_by(hwnd, delta, vertical);
 }
 
-/// The wheel over a document: the user's own `SPI_GETWHEELSCROLLLINES`, in lines of prose.
+/// How far one line of the wheel or a scrollbar arrow moves the pages, in pixels at 100%.
+const LINE_STEP: f64 = 20.0;
+
+/// The monitor's DPI for this window.
+fn dpi_of(hwnd: HWND) -> u32 {
+    // SAFETY: `hwnd` is this window's.
+    unsafe { GetDpiForWindow(hwnd) }.max(96)
+}
+
+/// The wheel over the pages: the user's own `SPI_GETWHEELSCROLLLINES`; with Ctrl, a zoom step
+/// about the caret.
 fn text_wheel(hwnd: HWND, notches: f64, lines: u32) {
+    if mods().ctrl {
+        if notches != 0.0 {
+            text_zoom(hwnd, |zoom| {
+                grind_print::strip::zoom_step(zoom, notches > 0.0)
+            });
+        }
+        return;
+    }
     // SAFETY: one borrow, for one number; nothing inside dispatches.
-    let Some((line, page)) = (unsafe {
-        with_text(hwnd, |text| {
-            (
-                text.fonts.as_ref().map_or(15.0, Fonts::body_px) * 1.3,
-                text.page.body().h,
-            )
-        })
-    }) else {
+    let Some(page) = (unsafe { with_text(hwnd, |text| text.page.body().h) }) else {
         return;
     };
     // Zero means "do not scroll", which is a real setting; `WHEEL_PAGESCROLL` means a screenful.
     let step = match lines {
         0 => return,
         u32::MAX => page,
-        n => f64::from(n) * line,
+        n => f64::from(n) * scale(LINE_STEP, dpi_of(hwnd)),
     };
-    text_scroll_by(hwnd, -notches * step);
+    text_scroll_by(hwnd, -notches * step, true);
+}
+
+/// Set the zoom from what it is now: a step, a fit, 100%.
+fn text_zoom(hwnd: HWND, to: impl FnOnce(f64) -> f64) {
+    // SAFETY: one borrow; setting the zoom sets pages and dispatches nothing.
+    unsafe {
+        with_text(hwnd, |text| {
+            let zoom = to(text.zoom);
+            text.set_zoom(zoom);
+            text_scrollbars(hwnd, text);
+        });
+        let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+    place_system_caret(hwnd);
 }
 
 /// One keystroke in the text pane. `false` hands it back to `DefWindowProc`.
@@ -8198,10 +8181,10 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::ImportCsvWith
         | Command::ExportCsv
         | Command::ToggleFormulas
-        | Command::ZoomIn
-        | Command::ZoomOut
-        | Command::ZoomReset
         | Command::ToggleRoles => {}
+        Command::ZoomIn => text_zoom(hwnd, |zoom| grind_print::strip::zoom_step(zoom, true)),
+        Command::ZoomOut => text_zoom(hwnd, |zoom| grind_print::strip::zoom_step(zoom, false)),
+        Command::ZoomReset => text_zoom(hwnd, |_| 1.0),
     }
 }
 
@@ -9250,77 +9233,112 @@ fn text_paste(hwnd: HWND) {
 /// state, so [`render`] is a second caller. `system_caret` is `false` only for [`render`]'s
 /// windowless frame; elsewhere Windows draws its own caret, and drawing one here too would be two.
 fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
-    let body = state.page.body();
-    let visible = state
-        .flow
-        .visible(state.page.scroll, state.page.scroll + body.h);
-    // Exactly the blocks on screen reach `get_viewport`, which is architecture rule 1: no getter
-    // hands out the whole document.
-    let range = match (visible.first(), visible.last()) {
-        (Some(first), Some(last)) => first.index..last.index + 1,
-        _ => 0..0,
+    let shown = state.shown();
+    let visible = shown.visible();
+    let ppp = text::pages::pixels_per_point(state.zoom, state.page.dpi);
+    // The pages in view and one either side, which a scroll reaches first, are kept.
+    let tiles = text_tiles(state, &shown, visible.clone(), ppp);
+    let sheets: Vec<text::draw::Sheet> = visible
+        .clone()
+        .filter_map(|number| {
+            let tile = tiles.get(&number)?;
+            Some(text::draw::Sheet {
+                rect: shown.sheet(number)?,
+                size: tile.size,
+                pixels: &tile.bgra,
+            })
+        })
+        .collect();
+
+    let (from, to) = state.range();
+    let selected = if from == to {
+        Vec::new()
+    } else {
+        shown.bands(from, to)
     };
-    let viewport = state.app.get_viewport(range);
-    let Some(faces) = state.faces() else { return };
-    let mut blocks = Vec::with_capacity(visible.len());
-    for slot in visible {
-        let Some(view) = viewport.get(slot.index) else {
-            continue;
-        };
-        let (width, metrics) =
-            grind_text::Faces::of(&faces, slot.index, &view.kind, view.style.as_deref());
-        let Ok(layout) = state.app.layout_block(slot.index, width, metrics) else {
-            continue;
-        };
-        blocks.push(text::draw::Painted {
-            slot: *slot,
-            view,
-            layout,
-        });
+    let blocks = shown.blocks().unwrap_or(0..0);
+    // The word still being typed is not underlined: the caret at its end with nothing selected
+    // is somebody halfway through it, and every word processor waits.
+    let at = |block: usize, offset: usize| Caret { block, offset };
+    let misspelt: Vec<Rect> = state
+        .app
+        .misspellings(blocks.clone())
+        .into_iter()
+        .filter(|m| from != to || !m.being_typed(state.caret))
+        .flat_map(|m| shown.bands(at(m.block, m.offset), at(m.block, m.offset + m.len)))
+        .collect();
+    let flagged: Vec<(Rect, bool)> = state
+        .grammar_flags(blocks.clone())
+        .into_iter()
+        .filter(|f| {
+            from != to
+                || !(f.block == state.caret.block && f.finding.range.end == state.caret.offset)
+        })
+        .flat_map(|f| {
+            let range = &f.finding.range;
+            // A finding covering nothing (a missing comma) is marked across its neighbours.
+            let (start, end) = if range.is_empty() {
+                (range.start.saturating_sub(1), range.end + 1)
+            } else {
+                (range.start, range.end)
+            };
+            let quiet = matches!(
+                f.finding.kind,
+                grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+            );
+            shown
+                .bands(at(f.block, start), at(f.block, end))
+                .into_iter()
+                .map(move |band| (band, quiet))
+        })
+        .collect();
+    let mut names = Vec::new();
+    if state.show_names {
+        let viewport = state.app.get_viewport(blocks.clone());
+        for index in blocks {
+            let Some(block) = viewport.get(index) else {
+                continue;
+            };
+            for (offset, name) in &block.marks {
+                let anchor = at(index, *offset);
+                let Some(tick) = shown.spot(anchor, 1.0) else {
+                    continue;
+                };
+                let end = grind_print::place::line_bounds(&shown.set, anchor)
+                    .and_then(|(_, end)| shown.spot(end, 1.0))
+                    .map_or(tick.x, |spot| spot.x);
+                names.push((tick, end, name.clone()));
+            }
+        }
     }
+    let caret = (state.caret_on && !system_caret && from == to)
+        .then(|| shown.spot(state.caret, scale(text::draw::CARET_W, state.page.dpi)))
+        .flatten();
+
     let here = state
         .app
         .get_viewport(state.caret.block..state.caret.block + 1)
         .get(state.caret.block)
         .map_or_default(|block| text::status::describe(&block.kind, block.style.as_deref()));
     // The language is the picker's to say, at the bar's end (`Page::status_picker`).
-    let status = text::status::status_line(&here, selected_chars(state), state.app.counts());
-    // The word still being typed is not underlined: the caret at its end with nothing selected
-    // is somebody halfway through it, and every word processor waits.
-    let (from, to) = state.range();
-    let misspelt: Vec<grind_text::Misspelling> = match (blocks.first(), blocks.last()) {
-        (Some(first), Some(last)) => state
-            .app
-            .misspellings(first.slot.index..last.slot.index + 1)
-            .into_iter()
-            .filter(|m| from != to || !m.being_typed(state.caret))
-            .collect(),
-        _ => Vec::new(),
-    };
-    let flagged: Vec<grind_text::grammar::Flag> = match (blocks.first(), blocks.last()) {
-        (Some(first), Some(last)) => state
-            .grammar_flags(first.slot.index..last.slot.index + 1)
-            .into_iter()
-            .filter(|f| {
-                from != to
-                    || !(f.block == state.caret.block && f.finding.range.end == state.caret.offset)
-            })
-            .collect(),
-        _ => Vec::new(),
-    };
+    let mut status = text::status::status_line(&here, selected_chars(state), state.app.counts());
+    if let Some(spot) = grind_print::place::locate(&shown.set, state.caret) {
+        status = format!(
+            "Page {} of {} \u{00b7} {}% \u{00b7} {status}",
+            spot.page + 1,
+            shown.set.pages.len(),
+            (state.zoom * 100.0).round()
+        );
+    }
     let style = text_style_here(state);
     text::draw::paint(
         dc,
         &text::draw::Frame {
             page: &state.page,
             theme: state.theme,
-            faces: &faces,
-            blocks: &blocks,
-            cells: state.flow.cells(),
-            height: state.flow.height(),
-            selection: state.range(),
-            caret: state.caret,
-            caret_on: state.caret_on && !system_caret,
+            sheets: &sheets,
+            selected: &selected,
+            caret,
             status: &status,
             status_picker: state.spelling.chip(false),
             banner: state.banner.as_deref(),
@@ -9334,11 +9352,59 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
             size: style.font_size.as_deref(),
             color: style.color.as_deref(),
             highlight: style.background.as_deref(),
-            names: state.show_names,
+            names: &names,
             misspelt: &misspelt,
             flagged: &flagged,
         },
     );
+}
+
+/// The rasters of the pages in `visible`, each drawn again only when its page or the scale
+/// changed; the rest are dropped but for the neighbours either side.
+fn text_tiles<'a>(
+    state: &'a Text,
+    shown: &text::pages::Shown,
+    visible: std::ops::Range<usize>,
+    scale: f64,
+) -> std::cell::Ref<'a, HashMap<usize, Tile>> {
+    {
+        let setter = state.session.typesetter(&state.app);
+        let mut rasteriser = state.rasteriser.borrow_mut();
+        if !rasteriser
+            .as_ref()
+            .is_some_and(|(kept, _)| Rc::ptr_eq(kept, &setter))
+        {
+            *rasteriser = Some((setter.clone(), grind_print::raster::Rasteriser::default()));
+            state.tiles.borrow_mut().clear();
+        }
+        let mut tiles = state.tiles.borrow_mut();
+        let keep = visible.start.saturating_sub(1)..visible.end + 1;
+        tiles.retain(|number, _| keep.contains(number));
+        if let Some((_, rasteriser)) = rasteriser.as_mut() {
+            for number in visible {
+                let Some(page) = shown.set.pages.get(number) else {
+                    continue;
+                };
+                let kept = tiles
+                    .get(&number)
+                    .is_some_and(|tile| tile.scale == scale.to_bits() && tile.page == *page);
+                if kept {
+                    continue;
+                }
+                let raster = rasteriser.render(page, setter.fonts(), scale as f32);
+                tiles.insert(
+                    number,
+                    Tile {
+                        page: page.clone(),
+                        scale: scale.to_bits(),
+                        size: (raster.width, raster.height),
+                        bgra: text::paper::bgra(&raster.rgba),
+                    },
+                );
+            }
+        }
+    }
+    state.tiles.borrow()
 }
 
 /// How many characters the selection covers, for the status bar — counted, since a selection

@@ -41,6 +41,10 @@ grind-core = { path = "../core" }
 grind-open = { path = "../open", default-features = false }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
+# The pages a document prints on, which the text pane shows and edits (doc/page-model.md), and
+# Export PDF: the bundled faces, and the machine's for a family a document names, which fontdb
+# finds in Windows' own font directory. Portable, so `text::pages` is tested off Windows.
+grind-print = { path = "../print" }
 
 # Target-gated on purpose, and this is the design rather than a tidy-up.
 #
@@ -58,9 +62,6 @@ grind-text = { path = "../text" }
 grind-spell = { path = "../spell" }
 # The built-in grammar checker, and the remembered grammar setting (doc/grammar.md).
 grind-grammar = { path = "../grammar" }
-# Export PDF (doc/pdf-export.md): the bundled faces, and the machine's for a family a document
-# names, which fontdb finds in Windows' own font directory.
-grind-print = { path = "../print" }
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

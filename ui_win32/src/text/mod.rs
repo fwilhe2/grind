@@ -2,16 +2,17 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The word processor's pane: the first place `grind_core::layout::Metrics` meets a proportional
-//! font with no shaping engine behind it, which is `crate::metrics`' bet (decision 3).
+//! The word processor's pane: the document's printed pages, set by `grind_print` and drawn from its
+//! raster (`doc/page-model.md` PM7).
 //!
-//! None of its files holds state: [`geom`] answers where a block is, [`draw`] what it looks like,
-//! [`keymap`] what a keystroke means to a caret, [`status`] what the status bar says — all from
-//! arguments. The document lives in `grind_text::App` and the window in `win.rs`; every paint
-//! reads a viewport and a layout and throws both away. Only [`draw`] has a Windows half.
+//! None of its files holds state: [`geom`] answers where the window's bands are, [`pages`] where
+//! each page and each caret is, [`draw`] what it looks like, [`keymap`] what a keystroke means to a
+//! caret, [`status`] what the status bar says — all from arguments. The document lives in
+//! `grind_text::App` and the window in `win.rs`. Only [`draw`] has a Windows half.
 
 pub mod draw;
 pub mod geom;
 pub mod keymap;
+pub mod pages;
 pub mod paper;
 pub mod status;

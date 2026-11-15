@@ -14,7 +14,7 @@
 //! `doc/windows-shell.md` is normative.
 //!
 //! This file owns the process. The window is `win.rs`'s; the grid's arithmetic `sheet/geom.rs`'s
-//! and drawing `sheet/draw.rs`'s; the text pane's `text/`'s and `metrics.rs`'s.
+//! and drawing `sheet/draw.rs`'s; the text pane's `text/`'s.
 
 // A GUI application, not a console one: otherwise launching from Explorer leaves a console window
 // behind the shell. So there is no stderr, and the paths below end in a message box.
@@ -34,8 +34,6 @@ mod menu;
 // The drawn menu bar's layout, hit-testing and keyboard walk.
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod menubar;
-#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
-mod metrics;
 // The modals' geometry — ContentDialog's anatomy, and fitting one to the screen.
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod modal;

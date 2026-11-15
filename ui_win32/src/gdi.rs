@@ -74,8 +74,8 @@ impl Drop for Pen {
     }
 }
 
-/// A font that deletes itself, built from a face name, a pixel height and a weight; mapping a
-/// `TextStyle` onto those is `metrics.rs`' job.
+/// A font that deletes itself, built from a face name, a pixel height and a weight — the chrome's,
+/// since a document's text is drawn by `grind_print`.
 pub struct Font(HFONT);
 
 impl Font {
@@ -920,6 +920,16 @@ pub fn blit_image(
         let _ = DeleteDC(mem_dc);
         ok
     }
+}
+
+/// Lay `colour` over `dest` at `alpha` (0 to 1), what is under it showing through: a selection or
+/// a find hit over a page's raster. One premultiplied pixel, stretched by `AlphaBlend`.
+pub fn wash(dc: HDC, dest: crate::sheet::geom::Rect, colour: Rgb, alpha: f64) {
+    let a = (alpha.clamp(0.0, 1.0) * 255.0).round();
+    let channel = |value: u8| (f64::from(value) * a / 255.0).round() as u8;
+    let Rgb(r, g, b) = colour;
+    let pixel = [channel(b), channel(g), channel(r), a as u8];
+    blit_image(dc, dest, (1, 1), &pixel);
 }
 
 /// Put an opaque picture onto a **printer's** `dc`, scaled into `dest` (left, top, width, height

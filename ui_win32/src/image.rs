@@ -56,17 +56,6 @@ fn factory() -> Option<IWICImagingFactory> {
     unsafe { CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER).ok() }
 }
 
-/// A picture's natural size in pixels, without paying for the pixels themselves — what
-/// `text::geom::flow_of`'s picture hook needs to measure a block, and nothing more.
-pub fn size(data: &[u8]) -> Option<(u32, u32)> {
-    let factory = factory()?;
-    let frame = frame(&factory, data)?;
-    let (mut w, mut h) = (0u32, 0u32);
-    // SAFETY: `frame` is live; `w`/`h` are valid out-parameters for the length of the call.
-    unsafe { frame.GetSize(&raw mut w, &raw mut h).ok()? };
-    (w > 0 && h > 0).then_some((w, h))
-}
-
 /// Decode `data` to premultiplied BGRA. WIC's format converter turns any native format — a
 /// paletted GIF, a CMYK JPEG, an indexed PNG — into the one `AlphaBlend` wants, so nothing above
 /// reads a format tag.

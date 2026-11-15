@@ -49,6 +49,14 @@ than a second one — File ▸ Open on a `.fodt` replaces the grid with it. What
 listed with the milestone: the IME path, `App::type_markdown`, the format strip, and the outline
 and go-to answers.
 
+**The page model replaced decision 3's answer for the document** (`doc/page-model.md` PM7,
+2026-11-15). The pane shows the document's printed pages, set by `grind_print` and blitted from
+its raster with `AlphaBlend`; caret, selection, squiggles and bookmark names are drawn over them
+from `grind_print::place`, and a click, an arrow key, Home and End are answered there too
+(`text/pages.rs`, portable and tested on Linux). `metrics.rs` and the pane's own flow are gone;
+GDI text is the chrome's alone. The pages zoom (View ▸ Zoom, Ctrl+wheel about the caret) and
+scroll both ways, and the status bar says the caret's page.
+
 ## In one line
 
 **A Win32 window over `grind-core`, hosting both document types, whose `.exe` depends on
