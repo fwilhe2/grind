@@ -465,10 +465,11 @@ pub fn lay_out(
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
 ) -> Flow {
     let viewport = app.get_viewport(0..app.block_count());
-    lay_out_over(app, &viewport, faces, column, spacing, picture)
+    lay_out_over(app, &viewport, faces, column, spacing, picture).0
 }
 
-/// [`lay_out`] over the whole document's `viewport`, already read.
+/// [`lay_out`] over the whole document's `viewport`, already read, with the layout of every
+/// block it laid out as text, by index.
 pub(crate) fn lay_out_over(
     app: &App,
     viewport: &Viewport,
@@ -476,16 +477,23 @@ pub(crate) fn lay_out_over(
     column: f64,
     spacing: &Spacing,
     picture: &dyn Fn(&BlockView, f64) -> Option<f64>,
-) -> Flow {
+) -> (Flow, Vec<Option<grind_core::layout::Layout>>) {
     let count = app.block_count();
     let mut flow = Flow::new(spacing.top, column);
+    let layouts = std::cell::RefCell::new(vec![None; count]);
     let height_of = |index: usize, view: &BlockView| -> (f64, f64) {
         let (width, metrics) = faces.of(index, &view.kind, view.style.as_deref());
         let height = match picture(view, f64::from(width)) {
             Some(height) => height,
             None => app
                 .layout_block_set(index, width, metrics, &faces.setting(index))
-                .map_or(0.0, |layout| f64::from(layout.height())),
+                .map_or(0.0, |layout| {
+                    let height = f64::from(layout.height());
+                    if let Some(slot) = layouts.borrow_mut().get_mut(index) {
+                        *slot = Some(layout);
+                    }
+                    height
+                }),
         };
         (height, f64::from(width))
     };
@@ -522,7 +530,7 @@ pub(crate) fn lay_out_over(
         }
         index += 1;
     }
-    flow
+    (flow, layouts.into_inner())
 }
 
 /// One cell of a table and the blocks in it, in the order they appear.

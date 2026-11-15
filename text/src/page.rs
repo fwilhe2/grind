@@ -215,8 +215,15 @@ pub fn paginate_slots(
         (start, starts),
     );
     let column = measures.first().map_or(0.0, |&(_, column)| column);
-    let laid = flow::lay_out_over(app, viewport, &mixed, column, &spacing, picture);
-    let units = units(app, &mixed, &laid, viewport, picture, spacing.cell_pad);
+    let (laid, layouts) = flow::lay_out_over(app, viewport, &mixed, column, &spacing, picture);
+    let units = units(
+        (app, &layouts),
+        &mixed,
+        &laid,
+        viewport,
+        picture,
+        spacing.cell_pad,
+    );
     let mut cut = Cut {
         pages: vec![Page {
             slot: start,
@@ -564,7 +571,7 @@ impl Unit {
 
 /// The flow as units, in order: every stacked block with its lines, and every table row whole.
 fn units(
-    app: &App,
+    (app, layouts): (&App, &[Option<grind_core::layout::Layout>]),
     faces: &dyn Faces,
     laid: &flow::Flow,
     viewport: &crate::Viewport,
@@ -578,11 +585,16 @@ fn units(
             top: slot.top,
             height: slot.height,
         }];
-        if picture(view, slot.width).is_some() {
-            return whole;
-        }
-        let (width, metrics) = faces.of(slot.index, &view.kind, view.style.as_deref());
-        match app.layout_block_set(slot.index, width, metrics, &faces.setting(slot.index)) {
+        // The flow's own layout of the block; asked again only for one it did not lay out.
+        let layout = match layouts.get(slot.index) {
+            Some(Some(layout)) => Ok(layout.clone()),
+            _ if picture(view, slot.width).is_some() => return whole,
+            _ => {
+                let (width, metrics) = faces.of(slot.index, &view.kind, view.style.as_deref());
+                app.layout_block_set(slot.index, width, metrics, &faces.setting(slot.index))
+            }
+        };
+        match layout {
             Ok(layout) if !layout.lines().is_empty() => layout
                 .lines()
                 .iter()
