@@ -122,6 +122,10 @@ run join "$doc" "$(text find "$doc" 'Proof: ' | cut -f1)"
 say "break: Ctrl+Enter — the addresses start a page of their own, as LibreOffice writes it"
 run break "$doc" "$(text find "$doc" 'Addresses' | head -n1 | cut -f1 | cut -d+ -f1)"
 
+say "page-setup: the page itself — A5 on its side, 15 mm margins — and as it is, printed"
+run page-setup "$doc" --paper a5 --landscape --margins 15mm
+text page-setup "$doc"
+
 say "erase: characters rather than blocks, so the block itself stays behind"
 run erase "$doc" '#typed+0:#typed+7'
 

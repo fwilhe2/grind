@@ -22,6 +22,10 @@ pub enum Action {
     RemoveBlock { index: usize },
     /// Several changes that undo as one step.
     Batch(Vec<Action>),
+    /// The page the document is set on (`doc/page-model.md` PM8).
+    SetPage {
+        page: Option<grind_core::page::PageGeometry>,
+    },
 }
 
 impl Document {
@@ -61,6 +65,11 @@ impl Document {
                     index,
                     block: Box::new(old),
                 }
+            }
+            Action::SetPage { page } => {
+                self.edits.page = true;
+                let old = std::mem::replace(&mut self.page, page);
+                Action::SetPage { page: old }
             }
             Action::Batch(actions) => {
                 // A batch undoes in reverse: each edit was made against what the one before

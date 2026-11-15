@@ -1057,6 +1057,14 @@ oracle turned out to be unable to answer the font questions (fact 4).
    heading both halves stay headings of its level, the second's style parented on
    `Heading_20_1`. **Backspace at the front of that paragraph** joins the two again, the first
    one's style kept, and the break is gone with the join.
+59. **What a page setup writes** — `MEASURED` (2026-11-15, 26.8.2.2, over UNO: the `Standard`
+   page style of a saved document set to A5 landscape with 1.5 cm margins, saved again as Flat
+   XML). Writer rewrites the attributes of the master page's own `style:page-layout-properties`
+   (rng:12791) **in place** and nothing else: `fo:page-width` and `fo:page-height` are the page
+   as it lies — landscape is the wider one first (`8.2681in` × `5.8272in`) —
+   `style:print-orientation` says `landscape`, and the four `fo:margin-*` are the new margins.
+   `style:num-format`, `style:writing-mode`, the footnote settings and `loext:margin-gutter` are
+   kept as they were, and so is the layout's name.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

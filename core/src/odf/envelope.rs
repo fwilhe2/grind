@@ -567,6 +567,26 @@ pub fn automatic_style_range(bytes: &[u8], family: &str, name: &str) -> Option<R
         .map(|n| n.range.clone())
 }
 
+/// The `style:page-layout` named `name` among `bytes`' automatic styles — a flat document's, or a
+/// package's `styles.xml`, where a master page's layout lives.
+#[must_use]
+pub fn page_layout_range(bytes: &[u8], name: &str) -> Option<Range<usize>> {
+    let tree = scan(bytes)?;
+    let (index, _) = tree.find_top("automatic-styles")?;
+    tree.children(index)
+        .find(|n| n.is(Ns::Style, "page-layout") && n.name.as_deref() == Some(name))
+        .map(|n| n.range.clone())
+}
+
+/// The `office:` child of the root named `local` — `office:body`, `office:master-styles` —
+/// start tag through end tag, and the root's own start tag.
+#[must_use]
+pub fn top_element(bytes: &[u8], local: &str) -> Option<(Range<usize>, Range<usize>)> {
+    let tree = scan(bytes)?;
+    let (_, node) = tree.find_top(local)?;
+    Some((node.range.clone(), tree.root_start.clone()))
+}
+
 /// Where a new automatic style can go in `bytes` without touching anything else: the start of
 /// `office:automatic-styles`' end tag. `None` when the document has no such element, or it is
 /// self-closed — a splice then has nowhere to put a declaration and the writer regenerates.
@@ -1218,6 +1238,18 @@ fn rewrite_manifest(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_page_layout_and_the_body_are_found_by_name() {
+        let doc = br#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties/></style:page-layout></office:automatic-styles><office:body/></office:document>"#;
+        let layout = page_layout_range(doc, "pm1").unwrap();
+        assert!(doc[layout].starts_with(b"<style:page-layout style:name=\"pm1\">"));
+        assert_eq!(page_layout_range(doc, "pm2"), None);
+        let (body, root) = top_element(doc, "body").unwrap();
+        assert_eq!(&doc[body], b"<office:body/>");
+        assert!(doc[root].starts_with(b"<office:document "));
+        assert_eq!(top_element(doc, "master-styles"), None);
+    }
+
     use super::*;
 
     // A made-up body vocabulary (`x:`), as everywhere in this crate: R8 keeps document types out.

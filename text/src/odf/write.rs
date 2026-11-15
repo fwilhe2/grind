@@ -18,7 +18,7 @@ use std::fmt::Write as _;
 use grind_core::Result;
 use grind_core::odf::envelope;
 use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
-use grind_core::odf::package::{VERSION, write_package};
+use grind_core::odf::package::{VERSION, write_package_with};
 use grind_core::odf::xml::esc;
 
 use crate::model::{Block, BlockKind, Document, Run};
@@ -64,6 +64,23 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             None => content(doc, form, None, &reserved).into_bytes(),
         }
     };
+    // A page set here is written into the part its layout lives in: the document itself when it
+    // is flat, `styles.xml` in a package.
+    let content = if doc.edits.page && form == Form::Flat {
+        with_page(&content, doc)?
+    } else {
+        content
+    };
+    let styles = if doc.edits.page && form == Form::Package {
+        let original = source
+            .and_then(|source| source.package.as_deref())
+            .and_then(|package| grind_core::odf::package::part(package, "styles.xml"));
+        let added = original.is_none();
+        let part = original.unwrap_or_else(|| page_styles_part().into_bytes());
+        Some((with_page(&part, doc)?, added))
+    } else {
+        None
+    };
     // Check whatever touched somebody's file before it replaces it: unreadable output, or output
     // that drops what the model never read, is refused.
     if let Some(source) = source {
@@ -74,8 +91,29 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         }
     }
     let bytes = match (form, source.and_then(|source| source.package.as_deref())) {
-        (Form::Package, Some(original)) => envelope::repackage(original, &content, &[], &[], &[])?,
-        (Form::Package, None) => write_package(MIMETYPE, &String::from_utf8_lossy(&content))?,
+        (Form::Package, Some(original)) => match styles {
+            Some((styles, added)) => {
+                let entry = "<manifest:file-entry manifest:full-path=\"styles.xml\" manifest:media-type=\"text/xml\"/>".to_owned();
+                let entries = if added { vec![entry] } else { Vec::new() };
+                envelope::repackage(
+                    original,
+                    &content,
+                    &[("styles.xml".to_owned(), styles)],
+                    &[],
+                    &entries,
+                )?
+            }
+            None => envelope::repackage(original, &content, &[], &[], &[])?,
+        },
+        (Form::Package, None) => write_package_with(
+            MIMETYPE,
+            &String::from_utf8_lossy(&content),
+            styles
+                .as_ref()
+                .map(|(styles, _)| String::from_utf8_lossy(styles))
+                .as_deref(),
+            &[],
+        )?,
         _ => content,
     };
     // Check the bytes that will be written, package and all: a picture's `xlink:href` names a
@@ -116,6 +154,147 @@ fn verify(doc: &Document, content: &[u8]) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The page's attributes on `style:page-layout-properties`, as Writer writes them
+/// (`doc/odt-format.md` §5c fact 59): the page as it lies, its orientation, the four margins.
+fn page_attributes(page: &grind_core::page::PageGeometry) -> Vec<(String, Option<String>)> {
+    let cm = |mm: f64| format!("{}cm", (mm / 10.0 * 1000.0).round() / 1000.0);
+    let orientation = if page.width > page.height {
+        "landscape"
+    } else {
+        "portrait"
+    };
+    [
+        ("fo:page-width", cm(page.width)),
+        ("fo:page-height", cm(page.height)),
+        ("style:print-orientation", orientation.to_owned()),
+        ("fo:margin-top", cm(page.top)),
+        ("fo:margin-bottom", cm(page.bottom)),
+        ("fo:margin-left", cm(page.left)),
+        ("fo:margin-right", cm(page.right)),
+    ]
+    .into_iter()
+    .map(|(name, value)| (name.to_owned(), Some(value)))
+    .collect()
+}
+
+/// `bytes` — a flat document, or a package's `styles.xml` — with `doc`'s page in it: written over
+/// its layout's attributes where it has one, and changing nothing else (R6); else, in a file that
+/// states no page at all, a layout and a `Standard` master page wearing it added.
+fn with_page(bytes: &[u8], doc: &Document) -> Result<Vec<u8>> {
+    let refuse = |why: &str| {
+        Err(grind_core::Error::Xml(format!(
+            "the page was not set: {why}"
+        )))
+    };
+    let Some(page) = doc.page else {
+        return Ok(bytes.to_vec());
+    };
+    let attributes = page_attributes(&page);
+    let order = [
+        "style:page-layout-properties",
+        "style:header-style",
+        "style:footer-style",
+    ];
+    if let Some(range) = doc
+        .page_layout
+        .as_deref()
+        .and_then(|name| envelope::page_layout_range(bytes, name))
+    {
+        let Some(element) = std::str::from_utf8(&bytes[range.clone()])
+            .ok()
+            .and_then(|element| {
+                envelope::patch_style(
+                    element,
+                    &[],
+                    &[("style:page-layout-properties", attributes.clone())],
+                    &order,
+                )
+            })
+        else {
+            return refuse("its page layout could not be read");
+        };
+        let mut out = bytes.to_vec();
+        out.splice(range, element.into_bytes());
+        return Ok(out);
+    }
+    if envelope::top_element(bytes, "master-styles").is_some() {
+        return refuse("its master pages name a page layout that is not there");
+    }
+    let taken = envelope::automatic_style_names(bytes);
+    // One more name than there are taken ones is enough for one of them to be free.
+    let name = (1..=taken.len() + 1)
+        .map(|n| format!("pm{n}"))
+        .find(|name| !taken.contains(name))
+        .unwrap_or_default();
+    let properties: String = attributes
+        .iter()
+        .filter_map(|(key, value)| Some(format!(" {key}=\"{}\"", esc(value.as_deref()?))))
+        .collect();
+    let layout = format!(
+        "<style:page-layout style:name=\"{name}\"><style:page-layout-properties{properties}/></style:page-layout>"
+    );
+    let master = format!(
+        "<office:master-styles><style:master-page style:name=\"Standard\" style:page-layout-name=\"{name}\"/></office:master-styles>"
+    );
+    let text = String::from_utf8_lossy(bytes);
+    let master_at = match envelope::top_element(bytes, "body") {
+        Some((body, _)) => body.start,
+        None => match text.rfind("</office:document-styles>") {
+            Some(at) => at,
+            None => return refuse("there is nowhere to put a master page"),
+        },
+    };
+    // Each insertion at a position after the next one's, so none moves another.
+    let mut inserts: Vec<(std::ops::Range<usize>, String)> = vec![(master_at..master_at, master)];
+    match (
+        envelope::automatic_styles_end(bytes),
+        envelope::top_element(bytes, "automatic-styles"),
+    ) {
+        (Some(end), _) => inserts.push((end..end, layout)),
+        (None, Some((empty, _))) => inserts.push((
+            empty,
+            format!("<office:automatic-styles>{layout}</office:automatic-styles>"),
+        )),
+        (None, None) => inserts.push((
+            master_at..master_at,
+            format!("<office:automatic-styles>{layout}</office:automatic-styles>"),
+        )),
+    }
+    let mut declare = Vec::new();
+    for (uri, prefix) in [(STYLE, "style"), (FO, "fo")] {
+        match envelope::prefix_for(bytes, uri).as_deref() {
+            Some(found) if found == prefix => {}
+            Some(_) => return refuse("it spells the style namespaces with other prefixes"),
+            None => declare.push((format!("xmlns:{prefix}"), uri)),
+        }
+    }
+    if !declare.is_empty()
+        && let Some((_, root)) = envelope::top_element(bytes, "body")
+            .or_else(|| envelope::top_element(bytes, "master-styles"))
+            .or_else(|| envelope::top_element(bytes, "automatic-styles"))
+    {
+        let tag = String::from_utf8_lossy(&bytes[root.clone()]).into_owned();
+        let changes: Vec<(&str, Option<&str>)> = declare
+            .iter()
+            .map(|(name, uri)| (name.as_str(), Some(*uri)))
+            .collect();
+        inserts.push((root, envelope::set_attributes(&tag, &changes)));
+    }
+    inserts.sort_by_key(|(range, _)| std::cmp::Reverse((range.start, range.end)));
+    let mut out = bytes.to_vec();
+    for (range, xml) in inserts {
+        out.splice(range, xml.into_bytes());
+    }
+    Ok(out)
+}
+
+/// A `styles.xml` stating only the page, for a package that has none.
+fn page_styles_part() -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<office:document-styles xmlns:office=\"{OFFICE}\" xmlns:style=\"{STYLE}\" xmlns:fo=\"{FO}\" office:version=\"{VERSION}\"></office:document-styles>\n"
+    )
 }
 
 /// Whether a body key ([`envelope::body_vocabulary`]) is this writer's to change: an element of

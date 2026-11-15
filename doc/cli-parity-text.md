@@ -236,6 +236,9 @@ had no width and therefore no lines.
 - `rest_master` — the name of the master the body's pages are set on, read by the same three verbs
 - `paragraph` — `grind text pages` and `export-pdf`, which lay every block out by its resolved paragraph style (`doc/pdf-export.md` P5); no verb prints a style's resolution on its own yet
 - `paragraph_defaults` — `grind text pages` and `export-pdf`, whose page breaks honour the default paragraph style's widows and orphans (`doc/odt-format.md` §5c); no verb prints them on their own, since they mean nothing apart from a page
+- `set_page` — `grind text page-setup <file> --paper a5 --landscape --margins 15mm`, and with
+  nothing to set it prints the page; written over the master page's layout and nothing else
+  (`doc/odt-format.md` §5c fact 59)
 - `page` — `grind info`, whose `page` line (and JSON `page` object) is the page the master page names, or the A4 a document stating none prints on (`doc/pdf-export.md` P2)
 - `bookmarks` — `grind text name` with no name, which lists them all; and `grind text name
   <name>` prints where one is

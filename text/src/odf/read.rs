@@ -378,6 +378,10 @@ impl Builder {
         self.doc.page = rest
             .as_ref()
             .and_then(|(_, layout)| self.page_layouts.get(layout).copied());
+        self.doc.page_layout = rest
+            .as_ref()
+            .filter(|(_, layout)| self.page_layouts.contains_key(layout))
+            .map(|(_, layout)| layout.clone());
         let marginals_of = |master: &(String, String)| {
             let marginals = self
                 .master_marginals
@@ -1644,7 +1648,9 @@ impl Context<Builder> for PageLayout {
         if name.is(Ns::Style, "page-layout-properties") && b.page_layouts.len() < MAX_STYLES {
             let page =
                 grind_core::page::PageGeometry::from_properties(|local| attrs.get(Ns::Fo, local));
-            b.page_layouts.insert(self.name.clone(), page);
+            // The first of a name is the one master pages name: `styles.xml`'s, read first, and
+            // not a copy `content.xml` may carry unused.
+            b.page_layouts.entry(self.name.clone()).or_insert(page);
             if attrs.get(Ns::Draw, "fill") == Some("bitmap") {
                 let length = |local| {
                     attrs

@@ -558,6 +558,9 @@ pub struct Document {
     /// page, or of its first. Read, never written (the envelope carries the page layouts byte for
     /// byte). `None` means no page was stated, and printing uses A4.
     pub page: Option<grind_core::page::PageGeometry>,
+    /// The name of the `style:page-layout` [`Document::page`] was read from — what a page setup
+    /// writes over.
+    pub page_layout: Option<String>,
     /// The default paragraph style (`style:default-style style:family="paragraph"`), the root of
     /// every paragraph style chain, read and never written ([`crate::paragraph`]). Boxed, as a
     /// large value read once per print.
@@ -646,6 +649,7 @@ impl Document {
             bookmarks: BTreeMap::new(),
             styles: std::collections::BTreeSet::new(),
             page: None,
+            page_layout: None,
             default_paragraph: Box::default(),
             paragraph_styles: std::collections::HashMap::new(),
             list_styles: std::collections::HashMap::new(),

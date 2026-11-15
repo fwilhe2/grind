@@ -34,6 +34,26 @@ fn caret_at(app: &TextApp, address: &str) -> Result<grind_text::Caret, String> {
     app.resolve_caret(&loc).map_err(|e| e.to_string())
 }
 
+/// A page in a line: its paper by name where it has one, how it lies, and its margins.
+fn describe_page(page: &grind_core::page::PageGeometry) -> String {
+    let mm = |value: f64| format!("{}", (value * 10.0).round() / 10.0);
+    let paper = page
+        .iso_name()
+        .unwrap_or_else(|| format!("{} × {} mm", mm(page.width), mm(page.height)));
+    let lies = if page.width > page.height {
+        "landscape"
+    } else {
+        "portrait"
+    };
+    format!(
+        "{paper} {lies}, margins {} {} {} {} mm (top, right, bottom, left)",
+        mm(page.top),
+        mm(page.right),
+        mm(page.bottom),
+        mm(page.left)
+    )
+}
+
 /// Resolve a range of **characters**, as `erase` takes it.
 ///
 /// Deliberately not [`span`]: there, a bare heading address means the heading's whole *section*,
@@ -298,6 +318,64 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
                 }
             };
             done.map_err(|e| e.to_string())?;
+            finish_text(&app, cli, file, true)
+        }
+
+        TextCommand::PageSetup {
+            file,
+            paper,
+            landscape,
+            portrait,
+            margins,
+            top,
+            bottom,
+            left,
+            right,
+        } => {
+            let app = open_text(file)?;
+            let before = app.page().unwrap_or_default();
+            let mut page = before;
+            if let Some(paper) = paper {
+                page.width = paper.width;
+                page.height = paper.height;
+            }
+            if *landscape && page.width < page.height || *portrait && page.width > page.height {
+                std::mem::swap(&mut page.width, &mut page.height);
+            }
+            let length = |value: &str| {
+                grind_core::style::length_mm(value)
+                    .filter(|mm| *mm >= 0.0)
+                    .ok_or_else(|| format!("{value} is not a length, e.g. 2cm or 15mm"))
+            };
+            if let Some(all) = margins {
+                let mm = length(all)?;
+                (page.top, page.bottom, page.left, page.right) = (mm, mm, mm, mm);
+            }
+            for (side, value) in [
+                (&mut page.top, top),
+                (&mut page.bottom, bottom),
+                (&mut page.left, left),
+                (&mut page.right, right),
+            ] {
+                if let Some(value) = value {
+                    *side = length(value)?;
+                }
+            }
+            if page.left + page.right >= page.width || page.top + page.bottom >= page.height {
+                return Err("the margins leave no room on the page".into());
+            }
+            let asked = paper.is_some()
+                || *landscape
+                || *portrait
+                || [margins, top, bottom, left, right]
+                    .iter()
+                    .any(|value| value.is_some());
+            if !asked || page == before && app.page().is_some() {
+                return Ok(Report::Text(report::TextReport {
+                    lines: vec![describe_page(&page)],
+                }));
+            }
+            app.set_page(page).map_err(|e| e.to_string())?;
             finish_text(&app, cli, file, true)
         }
 

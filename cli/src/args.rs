@@ -835,6 +835,35 @@ pub(crate) enum TextCommand {
         remove: bool,
     },
 
+    /// Set the page the document is set on: paper, orientation and margins
+    ///
+    /// With nothing to set, prints the page as it is. The paper's size replaces the page's and
+    /// keeps its margins; lengths take a unit, e.g. 2cm or 15mm. Written where LibreOffice keeps
+    /// the page, changing nothing else there.
+    PageSetup {
+        file: PathBuf,
+        /// The paper, e.g. a4 or a5-landscape
+        #[arg(long, value_parser = paper)]
+        paper: Option<grind_core::page::PageGeometry>,
+        /// The longer edge across
+        #[arg(long, conflicts_with = "portrait")]
+        landscape: bool,
+        /// The longer edge down
+        #[arg(long)]
+        portrait: bool,
+        /// All four margins, e.g. 2cm
+        #[arg(long)]
+        margins: Option<String>,
+        #[arg(long)]
+        top: Option<String>,
+        #[arg(long)]
+        bottom: Option<String>,
+        #[arg(long)]
+        left: Option<String>,
+        #[arg(long)]
+        right: Option<String>,
+    },
+
     /// Join a block with the one after it
     ///
     /// The Backspace key, seen from the block above it. The first block's kind and style are

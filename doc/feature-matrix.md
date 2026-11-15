@@ -488,6 +488,7 @@ There is no dialog.
 | Where each page begins | ● | ● | ● | — | — | — |
 | Edit on the pages as they print (`doc/page-model.md`) | ● ᵖᵐ | ● ᵖᵐ | ◐ ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ |
 | Zoom | — | ● ᵖᵐ | — | ○ | ● ᵖᵐ | ● ᵖᵐ |
+| Page setup — paper, orientation, margins (fact 59) | ● | ○ | ○ | ○ | ○ | ○ |
 | Start a page — a page break (`doc/odt-format.md` §5c fact 58) | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ | ● ᵖᵇ |
 | Print preview | ● ᵖᵖ | ● | ○ | ● | ● | ● ᵖᵖ |
 | Print | — | ● | ● ˡᵖ | ● ᵖᵖ | ● ᵖᵖ | ● |

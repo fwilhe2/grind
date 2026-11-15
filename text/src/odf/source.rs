@@ -203,4 +203,7 @@ pub struct Edits {
     /// Whether the block sequence changed — an insertion, a deletion, a move. Sticky: once the
     /// sequence has moved, a patch list over the original bytes no longer describes the document.
     pub structural: bool,
+    /// Whether the page was set ([`crate::App::set_page`]): its layout's attributes are written
+    /// over the file's own (`doc/odt-format.md` §5c fact 59).
+    pub page: bool,
 }
