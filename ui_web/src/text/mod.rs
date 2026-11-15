@@ -11,6 +11,9 @@
 //! would break lines where the core does not, and Down-arrow would land elsewhere than the caret
 //! appears. The core breaks the lines in this shell's units (`doc/text-layout.md`); `Face` is the
 //! browser's whole contribution — how wide is this text, in CSS pixels.
+//!
+//! That is the view until the print module has loaded; from then the document is drawn as its
+//! printed pages ([`paged`], `doc/page-model.md` PM7), and the lines are where it cannot load.
 
 pub mod keymap;
 mod paged;
