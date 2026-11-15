@@ -60,7 +60,7 @@ use crate::watch::Turn;
 
 /// One page's raster as last drawn: kept until the page or the scale it is seen at changes.
 struct Tile {
-    page: grind_print::ops::Page,
+    page: Arc<grind_print::ops::Page>,
     scale: u64,
     raster: Raster,
 }
@@ -237,7 +237,7 @@ impl TextPane {
         let page_ops = set.pages.get(page)?;
         if let Some(tile) = self.tiles.borrow().get(&page)
             && tile.scale == scale.to_bits()
-            && tile.page == *page_ops
+            && (Arc::ptr_eq(&tile.page, page_ops) || tile.page == *page_ops)
         {
             return Some(tile.raster.clone());
         }
@@ -260,7 +260,7 @@ impl TextPane {
         self.tiles.borrow_mut().insert(
             page,
             Tile {
-                page: page_ops.clone(),
+                page: Arc::clone(page_ops),
                 scale: scale.to_bits(),
                 raster: raster.clone(),
             },

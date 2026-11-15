@@ -322,7 +322,7 @@ pub fn typeset_after(
         }
         hasher.finish()
     };
-    let kept: HashMap<u64, &Page> = previous
+    let kept: HashMap<u64, &std::sync::Arc<Page>> = previous
         .map_or_default(|previous| previous.keys.iter().copied().zip(&previous.pages).collect());
     let keys: Vec<u64> = pages
         .iter()
@@ -361,7 +361,7 @@ pub fn typeset_after(
                         });
                     }
                 }
-                return (*same).clone();
+                return std::sync::Arc::clone(same);
             }
             let mut ops = Vec::new();
             let mut placed: Vec<LineBox> = Vec::new();
@@ -484,14 +484,14 @@ pub fn typeset_after(
                     &boxes,
                 );
             }
-            Page {
+            std::sync::Arc::new(Page {
                 width: pt(geometry.width) as f32,
                 height: pt(geometry.height) as f32,
                 ops,
                 lines: placed,
                 start: span.map(|(start, _)| start),
                 end: span.map(|(_, end)| end),
-            }
+            })
         })
         .collect();
     let structure = viewport
@@ -2397,7 +2397,7 @@ mod tests {
         let printed: String = typeset
             .pages
             .iter()
-            .flat_map(texts)
+            .flat_map(|page| texts(page))
             .map(|(_, _, t)| t)
             .collect();
         let expected: String = (0..30).map(|_| paragraph.as_str()).collect();

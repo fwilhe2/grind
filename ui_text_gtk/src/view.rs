@@ -1071,9 +1071,10 @@ mod imp {
                     0.0,
                     4.0,
                 );
-                let kept = tiles
-                    .get(&number)
-                    .is_some_and(|tile| tile.scale == scale.to_bits() && tile.page == *page);
+                let kept = tiles.get(&number).is_some_and(|tile| {
+                    tile.scale == scale.to_bits()
+                        && (std::sync::Arc::ptr_eq(&tile.page, page) || tile.page == *page)
+                });
                 if !kept {
                     let raster = rasteriser.render(page, setter.fonts(), scale);
                     let texture = gdk::MemoryTexture::new(
@@ -1086,7 +1087,7 @@ mod imp {
                     tiles.insert(
                         number,
                         Tile {
-                            page: page.clone(),
+                            page: std::sync::Arc::clone(page),
                             scale: scale.to_bits(),
                             texture: texture.upcast(),
                         },
@@ -2080,7 +2081,7 @@ mod imp {
 
     /// One page's pixels, and the page and scale they were drawn from.
     pub struct Tile {
-        page: grind_print::ops::Page,
+        page: std::sync::Arc<grind_print::ops::Page>,
         scale: u32,
         texture: gdk::Texture,
     }

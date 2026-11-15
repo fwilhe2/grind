@@ -675,7 +675,7 @@ mod tests {
         assert_eq!(raster.pixel(5, 5), [255, 255, 255, 255]);
 
         let doc = crate::ops::Document {
-            pages: vec![page],
+            pages: vec![page.into()],
             outline: vec![],
             structure: vec![],
             keys: vec![],

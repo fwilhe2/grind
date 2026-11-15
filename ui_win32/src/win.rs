@@ -824,7 +824,7 @@ impl Sheet {
 /// One page's raster as drawn: kept while the page is in view or next to it, and drawn again only
 /// when the page or the scale changed.
 struct Tile {
-    page: grind_print::ops::Page,
+    page: Arc<grind_print::ops::Page>,
     scale: u64,
     size: (u32, u32),
     bgra: Vec<u8>,
@@ -9455,9 +9455,10 @@ fn text_tiles<'a>(
                 let Some(page) = shown.set().pages.get(number) else {
                     continue;
                 };
-                let kept = tiles
-                    .get(&number)
-                    .is_some_and(|tile| tile.scale == scale.to_bits() && tile.page == *page);
+                let kept = tiles.get(&number).is_some_and(|tile| {
+                    tile.scale == scale.to_bits()
+                        && (Arc::ptr_eq(&tile.page, page) || tile.page == *page)
+                });
                 if kept {
                     continue;
                 }
@@ -9465,7 +9466,7 @@ fn text_tiles<'a>(
                 tiles.insert(
                     number,
                     Tile {
-                        page: page.clone(),
+                        page: Arc::clone(page),
                         scale: scale.to_bits(),
                         size: (raster.width, raster.height),
                         bgra: text::paper::bgra(&raster.rgba),

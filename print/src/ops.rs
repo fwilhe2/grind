@@ -155,7 +155,8 @@ pub struct Heading {
 /// A whole document, typeset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Document {
-    pub pages: Vec<Page>,
+    /// Shared, so a page a later setting finds unchanged is that page again, not a copy.
+    pub pages: Vec<std::sync::Arc<Page>>,
     pub outline: Vec<Heading>,
     /// Every block that printed, in document order, as what it is.
     pub structure: Vec<Element>,
