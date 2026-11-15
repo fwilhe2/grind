@@ -170,6 +170,38 @@ impl App {
         self.state.read().unwrap().doc.font_generics.clone()
     }
 
+    /// Every font family the document names, each distinct name once: the runs' own first, in
+    /// document order, then the default paragraph style's and each paragraph style's in use.
+    /// Read in place, since a window asks after every change.
+    pub fn font_families(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut add = |family: &str| {
+            if !out.iter().any(|seen| seen == family) {
+                out.push(family.to_owned());
+            }
+        };
+        let styles: Vec<Option<String>> = {
+            let state = self.state.read().unwrap();
+            let runs = state.doc.blocks.iter().flat_map(|block| &block.runs);
+            for family in runs.filter_map(|run| run.props()?.font_family.as_deref()) {
+                add(family);
+            }
+            let mut styles = vec![None];
+            for block in &state.doc.blocks {
+                if block.style.is_some() && !styles.contains(&block.style) {
+                    styles.push(block.style.clone());
+                }
+            }
+            styles
+        };
+        for style in &styles {
+            if let Some(family) = self.resolve_style(style.as_deref()).props.font_family {
+                add(&family);
+            }
+        }
+        out
+    }
+
     /// The block at `index`'s paragraph style, resolved down its chain to the default style
     /// ([`paragraph::resolve`]), with a page break made here over it; `None` for no such block.
     pub fn paragraph(&self, index: usize) -> Option<paragraph::Resolved> {

@@ -21,6 +21,9 @@ pub struct Session {
     bundled: bool,
     /// The typesetter, and the families the document named when its fonts were looked up.
     setter: RefCell<Option<(Vec<String>, Rc<Typesetter>)>>,
+    /// The families the document names, read again after a change: reading them walks every
+    /// paragraph, and a window asks on every paint.
+    named: RefCell<Option<Rc<[String]>>>,
     set: RefCell<Option<Rc<Document>>>,
     /// The pages as they were before the last change, whose unchanged pages the next setting
     /// copies rather than draws ([`crate::text::typeset_after`]).
@@ -36,6 +39,7 @@ impl Session {
         Session {
             bundled,
             setter: RefCell::new(None),
+            named: RefCell::new(None),
             set: RefCell::new(None),
             previous: RefCell::new(None),
             sought: RefCell::default(),
@@ -47,6 +51,7 @@ impl Session {
     // paragraph's layout kept and only changed pages drawn. Re-cut from the first changed block
     // when a document of hundreds of pages is typed in (`doc/page-model.md` PM3 item 3).
     pub fn changed(&self) {
+        self.named.replace(None);
         if let Some(set) = self.set.take() {
             self.previous.replace(Some(set));
         }
@@ -55,11 +60,7 @@ impl Session {
     /// The typesetter for `app`'s document: a new one when the document names a family its
     /// fonts were not looked up for.
     pub fn typesetter(&self, app: &App) -> Rc<Typesetter> {
-        let named = if self.bundled {
-            Vec::new()
-        } else {
-            crate::families(app)
-        };
+        let named = self.named(app);
         if let Some((known, setter)) = self.setter.borrow().as_ref()
             && named.iter().all(|family| known.contains(family))
         {
@@ -73,11 +74,21 @@ impl Session {
             crate::fonts_for(app)
         };
         let setter = Rc::new(Typesetter::new(fonts));
-        self.setter.replace(Some((named, setter.clone())));
+        self.setter.replace(Some((named.to_vec(), setter.clone())));
         self.set.replace(None);
         // Pages drawn in other faces are no pages to copy.
         self.previous.replace(None);
         setter
+    }
+
+    fn named(&self, app: &App) -> Rc<[String]> {
+        if self.bundled {
+            return Rc::new([]);
+        }
+        self.named
+            .borrow_mut()
+            .get_or_insert_with(|| crate::families(app).into())
+            .clone()
     }
 
     /// The document's pages as they are now.
@@ -89,8 +100,19 @@ impl Session {
         let previous = self.previous.take();
         let mut set =
             text::typeset_after(app, &setter, &text::Options::default(), previous.as_deref());
-        // A character no face had, not looked for since the fonts were: look again, once.
-        let new: Vec<char> = missing(&set)
+        // A character no face had, not looked for since the fonts were: look again, once. A page
+        // copied from the setting before was looked at when it was drawn.
+        let copied: std::collections::HashSet<u64> = previous
+            .iter()
+            .flat_map(|p| p.keys.iter().copied())
+            .collect();
+        let drawn = set
+            .pages
+            .iter()
+            .zip(&set.keys)
+            .filter(|(_, key)| !copied.contains(key))
+            .map(|(page, _)| &**page);
+        let new: Vec<char> = missing(drawn)
             .into_iter()
             .filter(|&c| self.sought.borrow_mut().insert(c))
             .collect();
@@ -99,7 +121,7 @@ impl Session {
             self.sought.borrow_mut().extend(crate::characters(app));
             let setter = Rc::new(Typesetter::new(crate::fonts_for(app)));
             self.setter
-                .replace(Some((crate::families(app), setter.clone())));
+                .replace(Some((self.named(app).to_vec(), setter.clone())));
             set = text::typeset(app, &setter, &text::Options::default());
         }
         let set = Rc::new(set);
@@ -109,9 +131,8 @@ impl Session {
 }
 
 /// The characters drawn as a face's empty box, `.notdef`.
-fn missing(set: &Document) -> Vec<char> {
-    set.pages
-        .iter()
+fn missing<'a>(pages: impl Iterator<Item = &'a crate::ops::Page>) -> Vec<char> {
+    pages
         .flat_map(|page| &page.ops)
         .filter_map(|op| match op {
             crate::ops::Op::Text { glyphs, text, .. } => Some(
@@ -140,7 +161,7 @@ mod tests {
         app.insert(0, BlockKind::Paragraph, "a\u{E000}b ☿").unwrap();
         let session = Session::new(true);
         assert_eq!(
-            missing(&session.document(&app)),
+            missing(session.document(&app).pages.iter().map(|page| &**page)),
             ['\u{E000}'],
             "☿ has a fallback"
         );

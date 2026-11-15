@@ -90,19 +90,7 @@ impl Report {
 /// first appear. The markdown marker for code (`monospace`) is a generic, not a family to look for.
 pub fn families(app: &App) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    let viewport = app.get_viewport(0..app.block_count());
-    let styled = std::iter::once(app.resolve_style(None).props.font_family)
-        .chain(viewport.iter().map(|view| {
-            app.paragraph(view.index)
-                .and_then(|resolved| resolved.props.font_family)
-        }))
-        .flatten()
-        .collect::<Vec<_>>();
-    let runs = viewport
-        .iter()
-        .flat_map(|block| &block.runs)
-        .filter_map(|run| run.props.font_family.as_deref());
-    for family in runs.chain(styled.iter().map(String::as_str)) {
+    for family in app.font_families() {
         let family = family.trim();
         if family.is_empty()
             || family == grind_text::markdown::MONOSPACE
