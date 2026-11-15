@@ -2,27 +2,19 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which font a piece of the page is set in, and how wide each block is measured — the page's
-//! [`grind_text::Faces`]. The **block's** face is its [`Role`] (`grind_text::look`), so a heading
-//! is the same size as in every other window; the **run's** direct formatting goes over it —
-//! `**bold**` in a heading is bold *and* a heading, a run's family and size replace the face's.
-//! The answer is a [`Font`], which measures and draws (decision 4).
+//! Which font a run is shown in where the page names one — the font panel's reading of the
+//! selection. The **block's** face is its [`Role`] (`grind_text::look`); the **run's** direct
+//! formatting goes over it — `**bold**` in a heading is bold *and* a heading, a run's family and
+//! size replace the face's. The document itself is set by `grind_print`.
 //!
 //! **Sizes are points**, honoured as written: `14pt` is fourteen points, `120%` a fifth bigger
 //! than the block. The body is [`BODY_PT`], LibreOffice's default, so a document stating no sizes
 //! looks as one stating LibreOffice's does.
 
-use std::collections::HashMap;
-
-use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
 use grind_sheet::look::{bold_weight, italic_style};
-use grind_text::flow::{Across, Flow, Spacing};
 use grind_text::look::Role;
-use grind_text::{App, BlockKind};
 
-use super::geom;
-use super::picture::{self, Decoder};
 use crate::metrics::{Family, Font};
 
 /// The body's size, in points — `metrics::BASE_PT`, the grid's, and LibreOffice's default.
@@ -64,93 +56,6 @@ pub fn font(role: Role, run: &TextStyle) -> Font {
         family,
         tabular: false,
     }
-}
-
-/// Which of [`Role::ALL`] a role is — the index a shell's face per role is kept at.
-pub fn slot(role: Role) -> usize {
-    Role::ALL
-        .iter()
-        .position(|each| *each == role)
-        .expect("Role::ALL lists every role")
-}
-
-/// The page's [`grind_text::Faces`]: each block measured in its role's face, at its cell's width
-/// inside a table and the column less its indent elsewhere. Generic over the face so it tests
-/// against [`grind_text::Fixed`]. The cell map is built first, since `Faces::of` runs under
-/// `App`'s read lock and must not ask the document anything (`grind_text::flow::across`).
-pub struct Column<'a, M> {
-    /// One face per role, in [`Role::ALL`]'s order.
-    pub faces: &'a [M],
-    pub width: f64,
-    pub spacing: Spacing,
-    pub across: &'a HashMap<usize, Across>,
-}
-
-impl<M: Metrics> Column<'_, M> {
-    /// The face a block of `kind` and `style` is set in.
-    pub fn face(&self, kind: &BlockKind, style: Option<&str>) -> &M {
-        &self.faces[slot(Role::of(kind, style))]
-    }
-}
-
-impl<M: Metrics> grind_text::Faces for Column<'_, M> {
-    fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
-        let width = match self.across.get(&index) {
-            Some(cell) => cell.width,
-            None => self.spacing.measure(kind, self.width),
-        };
-        ((width as f32).max(1.0), self.face(kind, style))
-    }
-}
-
-/// A document laid out on a page: the flow, the cell map the page's [`Column`] reads, and where
-/// the text column is — one answer for the view and for `--render-to`, so a frame is the window's.
-pub struct Laid {
-    pub flow: Flow,
-    pub across: HashMap<usize, Across>,
-    /// Where the text column starts on the page, and how wide it is (`geom::column`).
-    pub column: (f64, f64),
-}
-
-impl Laid {
-    /// Nothing laid out yet — a page with no width.
-    pub fn empty() -> Laid {
-        Laid {
-            flow: Flow::new(geom::TOP, 0.0),
-            across: HashMap::new(),
-            column: (0.0, 0.0),
-        }
-    }
-
-    /// The page's `Faces` for this layout, over one face per role.
-    pub fn faces<'a, M>(&'a self, faces: &'a [M]) -> Column<'a, M> {
-        Column {
-            faces,
-            width: self.column.1,
-            spacing: geom::spacing(),
-            across: &self.across,
-        }
-    }
-}
-
-/// Lay `app` out on a page `width` wide, with one face per role in [`Role::ALL`]'s order, a
-/// picture block as tall as `decoder` says its picture and caption are (`text/picture.rs`).
-pub fn lay_out<M: Metrics>(app: &App, faces: &[M], width: f64, decoder: &dyn Decoder) -> Laid {
-    let column = geom::column(width);
-    let spacing = geom::spacing();
-    let mut laid = Laid {
-        flow: Flow::new(geom::TOP, column.1),
-        across: grind_text::flow::across(app, column.1, &spacing),
-        column,
-    };
-    let body = &faces[slot(Role::Body)];
-    let picture = |view: &grind_text::BlockView, width: f64| {
-        picture::height(view, width, decoder, |text, width| {
-            picture::caption_lines(text, width, body).1
-        })
-    };
-    laid.flow = grind_text::flow::lay_out(app, &laid.faces(faces), column.1, &spacing, &picture);
-    laid
 }
 
 #[cfg(test)]
@@ -212,83 +117,5 @@ mod tests {
         assert_eq!(size(Some("0.5cm"), 12.0), 12.0, "a length is left alone");
         assert_eq!(size(Some("-3pt"), 12.0), 12.0, "and so is nonsense");
         assert_eq!(size(None, 21.6), 21.6);
-    }
-
-    #[test]
-    fn every_role_has_a_slot_of_its_own() {
-        let mut slots: Vec<usize> = Role::ALL.iter().map(|role| slot(*role)).collect();
-        slots.dedup();
-        assert_eq!(slots, (0..Role::ALL.len()).collect::<Vec<_>>());
-    }
-
-    /// A list item is measured narrower by its indent and a cell's block at its cell's width —
-    /// the same numbers `grind_text::flow` places them with.
-    #[test]
-    fn a_block_is_measured_at_the_width_it_is_set() {
-        use grind_text::Faces as _;
-        let faces = vec![grind_text::Fixed; Role::ALL.len()];
-        let spacing = crate::text::geom::spacing();
-        let mut across = HashMap::new();
-        across.insert(
-            3,
-            Across {
-                left: 10.0,
-                width: 100.0,
-            },
-        );
-        let column = Column {
-            faces: &faces,
-            width: 400.0,
-            spacing,
-            across: &across,
-        };
-        assert_eq!(column.of(0, &BlockKind::Paragraph, None).0, 400.0);
-        let item = column.of(1, &BlockKind::ListItem { depth: 2 }, None).0;
-        assert_eq!(f64::from(item), 400.0 - 2.0 * spacing.indent);
-        assert_eq!(column.of(3, &BlockKind::Paragraph, None).0, 100.0);
-    }
-
-    /// With every face `Fixed`, a paragraph breaks where `grind text view --width` breaks it, and
-    /// its slot is as tall as its lines.
-    #[test]
-    fn the_page_breaks_where_the_cli_does() {
-        let app = App::new();
-        app.set_text(
-            0,
-            "the quick brown fox jumps over the lazy dog, and then over it again and again",
-        )
-        .unwrap();
-        app.insert(
-            1,
-            BlockKind::ListItem { depth: 1 },
-            "a list item long enough to wrap at a measure less its indent",
-        )
-        .unwrap();
-        let faces = vec![grind_text::Fixed; Role::ALL.len()];
-        let width = 60.0 + 2.0 * geom::MARGIN;
-        let laid = lay_out(&app, &faces, width, &picture::Undecoded);
-        assert_eq!(laid.column, (geom::MARGIN, 60.0));
-        let column = laid.faces(&faces);
-        for block in 0..2 {
-            let view = app.get_viewport(block..block + 1);
-            let view = view.get(block).unwrap();
-            use grind_text::Faces as _;
-            let (measure, metrics) = column.of(block, &view.kind, view.style.as_deref());
-            let page = app.layout_block(block, measure, metrics).unwrap();
-            let cli = app
-                .layout_block(block, measure, &grind_text::Fixed)
-                .unwrap();
-            let breaks = |layout: &grind_core::layout::Layout| {
-                layout
-                    .lines()
-                    .iter()
-                    .map(|line| (line.start, line.end))
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(breaks(&page), breaks(&cli), "block {block}");
-            assert!(breaks(&page).len() > 1, "block {block} wraps");
-            let slot = laid.flow.slot(block).unwrap();
-            assert_eq!(slot.height, f64::from(page.height()));
-        }
     }
 }

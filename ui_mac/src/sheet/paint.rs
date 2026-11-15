@@ -20,7 +20,7 @@ use grind_sheet::{App, Pos, look, numfmt};
 
 use super::geom::{self, Grid, HEADER_H, HEADER_W, Rect};
 pub use crate::ops::Op;
-use crate::text::paint::SPELL_DOT;
+use crate::text::pages::SPELL_DOT;
 
 /// How far a cell's text stands off its edges, across and down.
 pub const PAD_X: f64 = 4.0;
@@ -1098,7 +1098,7 @@ mod tests {
                 | Op::Wash { .. }
                 | Op::Turned { .. }
                 | Op::Run { .. }
-                | Op::Image { .. }
+                | Op::Pixels { .. }
                 | Op::Path { .. } => None,
             })
             .collect()

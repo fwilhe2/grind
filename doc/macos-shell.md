@@ -298,6 +298,19 @@ costs no code**: a certificate and a notary key as CI secrets, and two more step
 The day they are added, the `spctl` assertion in M10 flips from "rejected, as expected" to
 "accepted", and the test says so.
 
+## The page model (2026-11-15)
+
+The page view shows the document's **printed pages** (`doc/page-model.md` PM7): `grind_print`
+sets them, each is drawn from its raster as an `Op::Pixels` (`render.rs` makes a `CGImage` over
+the pixels), and the selection, the dots, bookmark names, marked text and the caret go over them
+from `grind_print::view`. A view point is a page's point; the scroll view's magnification is the
+zoom, and a page is rasterised at the screen's pixels times it, so it stays sharp. Motions by lines
+are the pages' (`text/state.rs`'s `Lines`), a click is `view::Shown::hit`, and
+`firstRectForCharacterRange:` is the caret's stroke on its page. CoreText `Metrics`, the flow and
+the inline composition are gone; marked text is drawn over the page at the caret until committed
+(a `ponytail:`). `--render-to` draws the same frame. Type-checked and linted here; the runner's
+frames and drives are what show it.
+
 ## The crate
 
 `*` compiles and runs its tests on any host. `[M]` needs macOS. `[~]` is portable with an `[M]`
@@ -512,12 +525,12 @@ input method's composition, laid out as if typed).
 | File | Half | What it is |
 |---|---|---|
 | `ops.rs` | portable | The one drawing vocabulary for both panes — `Op` left `sheet/paint.rs` and gained `Run`, a piece of a line in a resolved `Font`, with its underline and strike |
-| `metrics.rs` | both | `Font`, the one currency between measuring and drawing; `Face`, the page's `Metrics` per role; CoreText's user fixed-pitch face and a family the document names; and Mac-only tests holding the shaping answers |
-| `text/geom.rs` | portable | The page's numbers: a `Spacing`, a column centred at a readable measure, a bullet hung in its indent |
-| `text/face.rs` | portable | A block's role and a run's own formatting resolved into one `Font`; `Column`, the page's `Faces`; `lay_out`, one layout for the view and for `--render-to` |
+| `metrics.rs` | both | `Font`, the one currency between measuring and drawing; CoreText's user fixed-pitch face and a family the document names; and Mac-only tests holding the shaping answers |
+| `text/geom.rs` | portable | The caret's width, and how tall the page view is |
+| `text/face.rs` | portable | A block's role and a run's own formatting resolved into one `Font` — the font panel's reading of the selection |
 | `text/state.rs` | portable | The caret, the selection and the composition; every motion and edit the page makes, over a real `grind_text::App` |
 | `text/input.rs` | portable | `NSTextInputClient`'s arithmetic: the caret's block as the string an input method sees, and every UTF-16 range converted once |
-| `text/paint.rs` | portable | A frame of the page as `Op`s: runs in their fonts, the selection, the caret, a table's rules, a bullet, and marked text **inline and underlined** — ahead of the Windows pane, whose composition is the system's floating box |
+| `text/pages.rs` | portable | A frame of the page view as `Op`s (`doc/page-model.md` PM7): each printed page in view as its raster from `grind_print`, on a desk, and over them the selection, the spelling and grammar dots, bookmark names, marked text at the caret and the caret, placed by `grind_print::view` |
 | `keys.rs` | portable | The page's selector table beside the grid's, and `PAGE_UNANSWERED` with its reasons |
 | `page_view.rs` | Mac | The page in its scroll view, the input client, clicks by the count, the standard Edit selectors, and the core's notification held back while the view's own edit runs |
 | `watch.rs` | Mac | The observer registry `grid_view.rs` had, behind a trait, for both panes |
@@ -572,7 +585,7 @@ table `ui_sheet_gtk` and `ui_win32` each carried.
 | `sheet/assist.rs` | portable | Which selectors steer a list of offers — `insertTab:` takes one, the vertical arrows step, Esc closes it for the word, and Return still commits — and what the formula read-out shows at rest and while typing |
 | `editor.rs` | Mac | A one-line band under the cell editor with the offers or the signature, the accent where the core says `Strong`; an accepted offer goes in through the field editor, so it is one step of the field's own undo |
 | `app.rs` `menu.rs` | both | View ▸ Friendly Formulas (on by default) and Explain Formula, Insert ▸ Function… (every function, by name and plain-English name), View ▸ Cell Roles, Names and Show Source (⌥⌘U) |
-| `sheet/paint.rs` `text/paint.rs` | portable | The role marker in a margin reserved at a cell's leading edge and a muted outline round each defined name; on a page, each bookmark named in the margin beside its line, never over the ink |
+| `sheet/paint.rs` `text/pages.rs` | portable | The role marker in a margin reserved at a cell's leading edge and a muted outline round each defined name; on a page, each bookmark named in the margin beside its line, never over the ink |
 | `places.rs` | portable | The sidebar's rows for either document — sheets, names and Problems; outline, bookmarks and Problems — and where each goes, a Problems row to another sheet if that is where the finding is |
 | `sidebar.rs` | Mac | One source list over those rows for both panes, so a page has a sidebar too; re-read when the document changes and not when the cursor moves |
 | `code.rs` | portable | The source pane's lines in UTF-16 and its colours, from the projection's own token map |

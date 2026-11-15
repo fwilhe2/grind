@@ -241,8 +241,8 @@ fn render_to(opening: &Opening) -> Result<(), String> {
                 .map_err(|error| format!("{}: {error}", target.display()))
         }
         Some(DocumentKind::Text) => {
-            use grind_text::look::Role;
-            use text::paint::{Frame, Palette};
+            use text::pages::Palette;
+            use text::pages::{Frame, Raster};
 
             let app = grind_text::App::new();
             if let Some((name, bytes)) = &file {
@@ -251,28 +251,34 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             }
             grind_spell::ensure(&app);
             let fonts = metrics::CoreText::new(metrics::BASE_PT);
-            let faces: Vec<metrics::Face> = Role::ALL
-                .iter()
-                .map(|role| metrics::Face {
-                    text: &fonts,
-                    role: *role,
+            // The pages placed across the frame's width, as a window that size places them.
+            let session = grind_print::session::Session::new(false);
+            let shown = grind_print::view::Shown::new(session.document(&app), 1.0, FRAME.0);
+            let setter = session.typesetter(&app);
+            let rasteriser = std::cell::RefCell::new(grind_print::raster::Rasteriser::default());
+            let raster = |page: usize| {
+                let drawn = rasteriser.borrow_mut().render(
+                    shown.set.pages.get(page)?,
+                    setter.fonts(),
+                    SCALE as f32,
+                );
+                Some(Raster {
+                    width: drawn.width,
+                    height: drawn.height,
+                    rgba: std::rc::Rc::from(drawn.rgba),
                 })
-                .collect();
-            // Laid out at the frame's width, as a window that size lays it out.
-            let laid = text::face::lay_out(&app, &faces, FRAME.0, &render::ImageDecoder);
+            };
             let palette = if *dark { Palette::DARK } else { Palette::LIGHT };
             // The caret where a window opens with it, at the top, and drawn: the page has the
             // keyboard in a new window.
             let state = text::state::Page::default();
-            let ops = text::paint::frame(&Frame {
+            let ops = text::pages::frame(&Frame {
                 app: &app,
-                flow: &laid.flow,
-                faces: &laid.faces(&faces),
-                column_x: laid.column.0,
+                shown: &shown,
                 view: sheet::geom::Rect::new(0.0, 0.0, FRAME.0, FRAME.1),
+                raster: &raster,
                 state: &state,
                 caret: true,
-                decoder: &render::ImageDecoder,
                 names: false,
                 palette: &palette,
                 ignored: &[],

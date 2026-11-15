@@ -9,8 +9,8 @@
 //! when something is done to it. So is a **composition**: the marked text is held here and drawn
 //! through `App::layout_composing`; the document learns of it only on commit.
 //!
-//! Motions about lines are the core's (`App::caret_line`, `caret_line_bounds`, through the page's
-//! `Faces`); about characters and words, `grind_text::caret`'s. What is this shell's is the Mac's
+//! Motions about lines are the printed pages' ([`Lines`], `grind_print::place` over the page's set
+//! document); about characters and words, `grind_text::caret`'s. What is this shell's is the Mac's
 //! reading of the keys (`keys.rs`): ⌥→ to a word's end, ← with a selection collapses it to its
 //! start, ⌃K kills to the paragraph's end.
 
@@ -18,7 +18,7 @@ use std::ops::Range;
 
 use grind_text::caret::{self, START};
 use grind_text::style::CharStyle;
-use grind_text::{App, Caret, Faces};
+use grind_text::{App, Caret};
 
 /// What a motion moves by.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +88,51 @@ impl Default for Page {
     }
 }
 
+/// Where the lines are: the page's answers to a motion by lines. The pages' in the window
+/// (`grind_print::place`); the core's over `Faces` in a test.
+pub trait Lines {
+    /// The caret's x on its line — what a run of vertical motions aims for.
+    fn x(&self, at: Caret) -> Option<f32>;
+    /// `delta` lines from `at`, as near `goal` as each line allows.
+    fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret;
+    /// The two ends of the caret's own line.
+    fn bounds(&self, at: Caret) -> Option<(Caret, Caret)>;
+}
+
+/// The core's lines, through a `Faces` — what the tests move over.
+#[cfg(test)]
+pub struct Core<'a>(pub &'a App, pub &'a dyn grind_text::Faces);
+
+#[cfg(test)]
+impl Lines for Core<'_> {
+    fn x(&self, at: Caret) -> Option<f32> {
+        self.0.caret_x(at, self.1).ok()
+    }
+
+    fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret {
+        self.0.caret_line(at, delta, goal, self.1).unwrap_or(at)
+    }
+
+    fn bounds(&self, at: Caret) -> Option<(Caret, Caret)> {
+        self.0.caret_line_bounds(at, self.1).ok()
+    }
+}
+
+/// The printed pages' lines.
+impl Lines for grind_print::ops::Document {
+    fn x(&self, at: Caret) -> Option<f32> {
+        grind_print::place::locate(self, at).map(|spot| spot.x)
+    }
+
+    fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret {
+        grind_print::place::step(self, at, delta, goal)
+    }
+
+    fn bounds(&self, at: Caret) -> Option<(Caret, Caret)> {
+        grind_print::place::line_bounds(self, at)
+    }
+}
+
 /// An edit the core refused, in its own words — the banner's sentence.
 pub type Refused = String;
 
@@ -126,25 +171,22 @@ impl Page {
 
     /// Where `motion` from the caret lands, without moving anything. `page` is how many lines a
     /// page is, which the view knows and this does not.
-    pub fn moved(&self, app: &App, faces: &dyn Faces, motion: Motion, page: isize) -> Caret {
+    pub fn moved(&self, app: &App, lines: &dyn Lines, motion: Motion, page: isize) -> Caret {
         let at = self.caret;
         let len = |block| caret::block_len(app, block);
-        let vertical = |lines: isize| {
-            let goal = self
-                .goal_x
-                .or_else(|| app.caret_x(at, faces).ok())
-                .unwrap_or(0.0);
-            app.caret_line(at, lines, goal, faces).unwrap_or(at)
+        let vertical = |count: isize| {
+            let goal = self.goal_x.or_else(|| lines.x(at)).unwrap_or(0.0);
+            lines.step(at, count, goal)
         };
         match motion {
             Motion::Char(step) => caret::step(app, at, i32::from(step)),
             Motion::Word(step) => caret::word(app, at, i32::from(step)),
             Motion::Line(lines) => vertical(lines),
             Motion::Page(pages) => vertical(pages * page.max(1)),
-            Motion::LineStart | Motion::LineEnd => match app.caret_line_bounds(at, faces) {
-                Ok((start, _)) if motion == Motion::LineStart => start,
-                Ok((_, end)) => end,
-                Err(_) => at,
+            Motion::LineStart | Motion::LineEnd => match lines.bounds(at) {
+                Some((start, _)) if motion == Motion::LineStart => start,
+                Some((_, end)) => end,
+                None => at,
             },
             Motion::ParagraphStart => Caret { offset: 0, ..at },
             Motion::ParagraphEnd => Caret {
@@ -184,7 +226,7 @@ impl Page {
     pub fn navigate(
         &mut self,
         app: &App,
-        faces: &dyn Faces,
+        lines: &dyn Lines,
         motion: Motion,
         extend: bool,
         page: isize,
@@ -195,11 +237,11 @@ impl Page {
         }
         let vertical = matches!(motion, Motion::Line(_) | Motion::Page(_));
         let goal = if vertical {
-            self.goal_x.or_else(|| app.caret_x(self.caret, faces).ok())
+            self.goal_x.or_else(|| lines.x(self.caret))
         } else {
             None
         };
-        let to = self.moved(app, faces, motion, page);
+        let to = self.moved(app, lines, motion, page);
         self.place(to, extend);
         self.goal_x = goal;
     }
@@ -315,7 +357,7 @@ impl Page {
     pub fn erase(
         &mut self,
         app: &App,
-        faces: &dyn Faces,
+        lines: &dyn Lines,
         unit: Unit,
         forward: bool,
     ) -> Result<(), Refused> {
@@ -327,8 +369,8 @@ impl Page {
         let other = match unit {
             Unit::Char => caret::step(app, at, step),
             Unit::Word => caret::word(app, at, step),
-            Unit::Line => match app.caret_line_bounds(at, faces) {
-                Ok((start, end)) => {
+            Unit::Line => match lines.bounds(at) {
+                Some((start, end)) => {
                     let edge = if forward { end } else { start };
                     // At the line's own edge already: the break before or after it, which is
                     // what a second ⌘⌫ at the front of a line does.
@@ -338,7 +380,7 @@ impl Page {
                         edge
                     }
                 }
-                Err(_) => at,
+                None => at,
             },
             Unit::Paragraph => {
                 let edge = Caret {
@@ -567,13 +609,13 @@ mod tests {
         let app = app(&["hello world"]);
         let mut page = Page::default();
         page.place(at(0, 2), false);
-        page.navigate(&app, &faces(), Motion::Char(1), true, 5);
-        page.navigate(&app, &faces(), Motion::Char(1), true, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Char(1), true, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Char(1), true, 5);
         assert_eq!(page.selection(), Some((at(0, 2), at(0, 4))));
         let mut left = page.clone();
-        left.navigate(&app, &faces(), Motion::Char(-1), false, 5);
+        left.navigate(&app, &Core(&app, &faces()), Motion::Char(-1), false, 5);
         assert_eq!((left.caret, left.selection()), (at(0, 2), None));
-        page.navigate(&app, &faces(), Motion::Char(1), false, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Char(1), false, 5);
         assert_eq!((page.caret, page.selection()), (at(0, 4), None));
     }
 
@@ -584,11 +626,11 @@ mod tests {
         let app = app(&["the cat sat", "ab", "0123456789"]);
         let mut page = Page::default();
         page.place(at(0, 6), false);
-        page.navigate(&app, &faces(), Motion::Line(1), false, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Line(1), false, 5);
         assert_eq!(page.caret, at(0, 11), "the short second line's end");
-        page.navigate(&app, &faces(), Motion::Line(1), false, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Line(1), false, 5);
         assert_eq!(page.caret, at(1, 2));
-        page.navigate(&app, &faces(), Motion::Line(1), false, 5);
+        page.navigate(&app, &Core(&app, &faces()), Motion::Line(1), false, 5);
         assert_eq!(page.caret, at(2, 6), "back in the column it started in");
     }
 
@@ -598,32 +640,41 @@ mod tests {
         let mut page = Page::default();
         page.place(at(1, 2), false);
         assert_eq!(
-            page.moved(&app, &faces(), Motion::ParagraphStart, 5),
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphStart, 5),
             at(1, 0)
         );
         assert_eq!(
-            page.moved(&app, &faces(), Motion::ParagraphEnd, 5),
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphEnd, 5),
             at(1, 3)
         );
         assert_eq!(
-            page.moved(&app, &faces(), Motion::ParagraphBack, 5),
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphBack, 5),
             at(1, 0)
         );
         page.place(at(1, 0), false);
         assert_eq!(
-            page.moved(&app, &faces(), Motion::ParagraphStart, 5),
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphStart, 5),
             at(1, 0),
             "stays"
         );
         assert_eq!(
-            page.moved(&app, &faces(), Motion::ParagraphBack, 5),
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphBack, 5),
             at(0, 0),
             "crosses"
         );
         page.place(at(0, 3), false);
-        assert_eq!(page.moved(&app, &faces(), Motion::ParagraphOn, 5), at(1, 3));
-        assert_eq!(page.moved(&app, &faces(), Motion::DocEnd, 5), at(1, 3));
-        assert_eq!(page.moved(&app, &faces(), Motion::DocStart, 5), START);
+        assert_eq!(
+            page.moved(&app, &Core(&app, &faces()), Motion::ParagraphOn, 5),
+            at(1, 3)
+        );
+        assert_eq!(
+            page.moved(&app, &Core(&app, &faces()), Motion::DocEnd, 5),
+            at(1, 3)
+        );
+        assert_eq!(
+            page.moved(&app, &Core(&app, &faces()), Motion::DocStart, 5),
+            START
+        );
     }
 
     /// `**bold**` typed a character at a time is bold, its markers gone, and what follows is
@@ -657,15 +708,19 @@ mod tests {
         let app = app(&["one two", "three"]);
         let mut page = Page::default();
         page.place(at(1, 0), false);
-        page.erase(&app, &faces(), Unit::Char, false).unwrap();
+        page.erase(&app, &Core(&app, &faces()), Unit::Char, false)
+            .unwrap();
         assert_eq!(texts(&app), ["one twothree"], "the break between them");
         assert_eq!(page.caret, at(0, 7));
-        page.erase(&app, &faces(), Unit::Word, false).unwrap();
+        page.erase(&app, &Core(&app, &faces()), Unit::Word, false)
+            .unwrap();
         assert_eq!(texts(&app), ["one three"]);
-        page.erase(&app, &faces(), Unit::Paragraph, true).unwrap();
+        page.erase(&app, &Core(&app, &faces()), Unit::Paragraph, true)
+            .unwrap();
         assert_eq!(texts(&app), ["one "], "⌃K to the end");
         page.place(START, false);
-        page.erase(&app, &faces(), Unit::Char, false).unwrap();
+        page.erase(&app, &Core(&app, &faces()), Unit::Char, false)
+            .unwrap();
         assert_eq!(texts(&app), ["one "], "nothing before the start");
     }
 

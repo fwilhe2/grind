@@ -28,19 +28,21 @@ grind-core = { path = "../core" }
 grind-open = { path = "../open", default-features = false }
 grind-sheet = { path = "../sheet" }
 grind-text = { path = "../text" }
-# Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
-grind-spell = { path = "../spell" }
-# The built-in grammar checker, and the remembered grammar setting (doc/grammar.md).
-grind-grammar = { path = "../grammar" }
+# The pages a document prints on, which the page view shows and edits (doc/page-model.md), and
+# File ▸ Export as PDF… and Print…: the bundled faces, and the Mac's own for a family a document
+# names, which fontdb finds in the system's font directories. Portable, so the page's frame is
+# tested off a Mac.
+grind-print = { path = "../print" }
 # `--render-to`'s PNG (`png.rs`): both already in the workspace through `zip`, with the backend
 # `zip` asks for, so this adds no crate.
 crc32fast = "1"
 flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# File ▸ Export as PDF… and Print… (doc/pdf-export.md): the bundled faces, and the Mac's own for a
-# family a document names, which fontdb finds in the system's font directories.
-grind-print = { path = "../print" }
+# Spelling (doc/spelling.md): the dictionaries, attached before Check Document runs.
+grind-spell = { path = "../spell" }
+# The built-in grammar checker, and the remembered grammar setting (doc/grammar.md).
+grind-grammar = { path = "../grammar" }
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",

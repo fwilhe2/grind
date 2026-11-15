@@ -22,8 +22,8 @@ use crate::sheet::chart;
 use crate::sheet::filter;
 use crate::sheet::geom::{HEADER_H, HEADER_W, PT_PER_MM};
 use crate::sheet::verbs;
-use crate::text::picture;
 use crate::text::state::table_size;
+use grind_text::picture;
 
 impl Pane {
     /// One of the grid's structural verbs.

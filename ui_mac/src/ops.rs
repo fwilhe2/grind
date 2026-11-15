@@ -61,10 +61,15 @@ pub enum Op {
         strike: bool,
         clip: Rect,
     },
-    /// A picture's bytes — a PNG, a JPEG, whatever the document holds — drawn to fill `rect`,
-    /// decoded by the renderer, which on a Mac is `NSImage`. Shared rather than copied, since a
-    /// frame may draw one picture in several places and every paint makes a frame.
-    Image { rect: Rect, data: Rc<[u8]> },
+    /// Pixels already drawn — a printed page's raster, premultiplied RGBA `width` by `height`,
+    /// top row first — scaled to fill `rect`. Shared, since a page is drawn again from the same
+    /// raster on every paint until it changes.
+    Pixels {
+        rect: Rect,
+        width: u32,
+        height: u32,
+        rgba: Rc<[u8]>,
+    },
     /// A polygon through `points` — a chart's line or one slice of its pie — filled in `fill`
     /// when there is one, and stroked with `stroke`'s colour and width when there is one. Open
     /// when only stroked, closed when filled.
@@ -155,9 +160,16 @@ impl Op {
                 strike,
                 clip: clip.offset(dx, dy),
             },
-            Op::Image { rect, data } => Op::Image {
+            Op::Pixels {
+                rect,
+                width,
+                height,
+                rgba,
+            } => Op::Pixels {
                 rect: rect.offset(dx, dy),
-                data,
+                width,
+                height,
+                rgba,
             },
             Op::Path {
                 points,
@@ -245,11 +257,21 @@ impl Op {
                     clip,
                 })
             }
-            // A picture is drawn whole or not at all: cutting one would need the renderer to
-            // clip, and a picture straddling a band's edge is not a case any frame has.
-            Op::Image { rect, data } => {
+            // A page is drawn whole or not at all: cutting one would need the renderer to
+            // clip, and a page straddling a band's edge is not a case any frame has.
+            Op::Pixels {
+                rect,
+                width,
+                height,
+                rgba,
+            } => {
                 let rect = rect.offset(dx, dy);
-                (!rect.intersection(clip).is_empty()).then_some(Op::Image { rect, data })
+                (!rect.intersection(clip).is_empty()).then_some(Op::Pixels {
+                    rect,
+                    width,
+                    height,
+                    rgba,
+                })
             }
             // A path is the same: whole, when any of it is inside, and the band clips it in the
             // renderer the way a chart frame straddling the header band needs.

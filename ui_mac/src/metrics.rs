@@ -78,7 +78,7 @@ impl Font {
 }
 
 #[cfg(target_os = "macos")]
-pub use mac::{CoreText, Face};
+pub use mac::CoreText;
 
 #[cfg(target_os = "macos")]
 mod mac {
@@ -88,10 +88,8 @@ mod mac {
 
     use grind_core::layout::Metrics;
     use grind_core::style::TextStyle;
-    use grind_text::look::Role;
 
     use super::{Family, Font};
-    use crate::text::face;
     use objc2_core_foundation::{
         CFArray, CFAttributedString, CFBoolean, CFDictionary, CFIndex, CFNumber, CFRetained,
         CFString, CFType, CGFloat,
@@ -287,32 +285,6 @@ mod mac {
         unsafe { base.copy_with_symbolic_traits(0.0, null(), traits, traits) }.unwrap_or(base)
     }
 
-    /// A page's block face — the [`Metrics`] one block is laid out with. Each run's own
-    /// formatting is layered over the block's role by `text::face::font`, which is also what
-    /// `text/paint.rs` hands the renderer, so a run is measured and drawn in one font.
-    pub struct Face<'a> {
-        pub text: &'a CoreText,
-        pub role: Role,
-    }
-
-    impl Metrics for Face<'_> {
-        fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-            let line = self.text.line_of(text, &face::font(self.role, style));
-            super::fold(
-                text,
-                // SAFETY: a null secondary offset is documented as allowed.
-                |units| unsafe {
-                    line.offset_for_string_index(units as CFIndex, std::ptr::null_mut())
-                },
-                out,
-            );
-        }
-
-        fn line_height(&self, style: &TextStyle) -> f32 {
-            self.text.height_of(&face::font(self.role, style))
-        }
-    }
-
     impl Metrics for CoreText {
         fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
             let line = self.line(text, style);
@@ -375,18 +347,13 @@ mod tests {
 mod coretext {
     use grind_core::layout::Metrics;
     use grind_core::style::TextStyle;
-    use grind_text::look::Role;
 
-    use super::{BASE_PT, CoreText, Face};
+    use super::{BASE_PT, CoreText};
 
     fn advances(text: &str) -> Vec<f32> {
         let fonts = CoreText::new(BASE_PT);
-        let face = Face {
-            text: &fonts,
-            role: Role::Body,
-        };
         let mut out = Vec::new();
-        face.advances(text, &TextStyle::default(), &mut out);
+        fonts.advances(text, &TextStyle::default(), &mut out);
         assert_eq!(out.len(), text.chars().count(), "one advance per char");
         assert!(
             out.array_windows().all(|[prev, next]| prev <= next),

@@ -18,67 +18,14 @@
 use grind_core::color::Rgb;
 use objc2_core_foundation::{CGAffineTransform, CGFloat, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
-    CGBitmapContextCreate, CGBitmapContextGetBytesPerRow, CGBitmapContextGetData, CGColorSpace,
-    CGContext, CGImageAlphaInfo, CGLineCap, CGLineJoin, kCGColorSpaceSRGB,
+    CGBitmapContextCreate, CGBitmapContextCreateImage, CGBitmapContextGetBytesPerRow,
+    CGBitmapContextGetData, CGColorSpace, CGContext, CGImageAlphaInfo, CGLineCap, CGLineJoin,
+    kCGColorSpaceSRGB,
 };
-
-use std::cell::RefCell;
-use std::hash::{Hash, Hasher};
-use std::ptr::null_mut;
-
-use grind_text::ImageView;
-use objc2::AllocAnyThread;
-use objc2::rc::Retained;
-use objc2_app_kit::NSImage;
-use objc2_foundation::NSData;
 
 use crate::metrics::CoreText;
 use crate::ops::{Op, WASH};
 use crate::sheet::geom::Rect;
-use crate::text::picture::Decoder;
-
-/// How many decoded pictures are kept — enough for every picture a page shows at once.
-const DECODED: usize = 32;
-
-/// One decoded picture: the hash and length of its bytes, and what `NSImage` made of them.
-type Decoded = (u64, usize, Option<Retained<NSImage>>);
-
-thread_local! {
-    /// Pictures already decoded, by a hash of their bytes, oldest first. The page is laid out
-    /// again on every keystroke and asks each picture's size each time; decoding a photograph
-    /// that often is what this saves. A picture nothing can read is remembered as `None`.
-    static PICTURES: RefCell<Vec<Decoded>> = const { RefCell::new(Vec::new()) };
-}
-
-/// A picture's bytes as an `NSImage` — every format the system reads — or `None` when nothing
-/// here can read them; decoded once, and found again by its bytes.
-fn decode(data: &[u8]) -> Option<Retained<NSImage>> {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    data.hash(&mut hasher);
-    let key = (hasher.finish(), data.len());
-    PICTURES.with_borrow_mut(|pictures| {
-        if let Some((.., image)) = pictures.iter().find(|(hash, len, _)| (*hash, *len) == key) {
-            return image.clone();
-        }
-        let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(data));
-        if pictures.len() == DECODED {
-            pictures.remove(0);
-        }
-        pictures.push((key.0, key.1, image.clone()));
-        image
-    })
-}
-
-/// What decodes a page's pictures for the layout — their natural size, in points, which is
-/// `NSImage`'s own reading of a picture's pixels and resolution.
-pub struct ImageDecoder;
-
-impl Decoder for ImageDecoder {
-    fn size(&self, image: &ImageView) -> Option<(f64, f64)> {
-        let size = decode(&image.data)?.size();
-        (size.width > 0.0 && size.height > 0.0).then_some((size.width, size.height))
-    }
-}
 
 fn cg_rect(rect: &Rect) -> CGRect {
     CGRect::new(CGPoint::new(rect.x, rect.y), CGSize::new(rect.w, rect.h))
@@ -107,26 +54,12 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
     );
     for op in ops {
         match op {
-            Op::Image { rect, data } => {
-                let Some(image) = decode(data).and_then(|image| {
-                    // SAFETY: a null proposed rectangle and no context or hints ask for the
-                    // image at its own size, all documented as allowed.
-                    unsafe { image.CGImageForProposedRect_context_hints(null_mut(), None, None) }
-                }) else {
-                    continue;
-                };
-                // A CGImage is drawn the right way up in an unflipped space; this one is
-                // flipped, so the picture's own rectangle is flipped back around its middle.
-                CGContext::save_g_state(context_ref);
-                CGContext::translate_ctm(context_ref, rect.x, rect.y + rect.h);
-                CGContext::scale_ctm(context_ref, 1.0, -1.0);
-                CGContext::draw_image(
-                    context_ref,
-                    cg_rect(&Rect::new(0.0, 0.0, rect.w, rect.h)),
-                    Some(&image),
-                );
-                CGContext::restore_g_state(context_ref);
-            }
+            Op::Pixels {
+                rect,
+                width,
+                height,
+                rgba,
+            } => draw_pixels(context, rect, (*width, *height), rgba),
             Op::Path {
                 points,
                 fill,
@@ -265,6 +198,48 @@ pub fn draw(context: &CGContext, ops: &[Op], text: &CoreText) {
             }
         }
     }
+}
+
+/// Premultiplied RGBA `size` pixels, top row first, scaled into `rect` — a printed page's raster.
+/// A bitmap context over a copy of the pixels makes the `CGImage`; drawn as a picture is.
+fn draw_pixels(context: &CGContext, rect: &Rect, (width, height): (u32, u32), rgba: &[u8]) {
+    let (w, h) = (width as usize, height as usize);
+    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+        return;
+    }
+    let mut pixels = rgba[..w * h * 4].to_vec();
+    // SAFETY: the name is one of CoreGraphics' own exported constants.
+    let Some(space) = CGColorSpace::with_name(Some(unsafe { kCGColorSpaceSRGB })) else {
+        return;
+    };
+    // SAFETY: `pixels` is `w * h * 4` bytes, rows of `w * 4`, and outlives the context, which is
+    // dropped at the end of this function after the image is made from it.
+    let Some(bitmap) = (unsafe {
+        CGBitmapContextCreate(
+            pixels.as_mut_ptr().cast(),
+            w,
+            h,
+            8,
+            w * 4,
+            Some(&space),
+            CGImageAlphaInfo::PremultipliedLast.0,
+        )
+    }) else {
+        return;
+    };
+    let Some(image) = CGBitmapContextCreateImage(Some(&bitmap)) else {
+        return;
+    };
+    let context_ref = Some(context);
+    CGContext::save_g_state(context_ref);
+    CGContext::translate_ctm(context_ref, rect.x, rect.y + rect.h);
+    CGContext::scale_ctm(context_ref, 1.0, -1.0);
+    CGContext::draw_image(
+        context_ref,
+        cg_rect(&Rect::new(0.0, 0.0, rect.w, rect.h)),
+        Some(&image),
+    );
+    CGContext::restore_g_state(context_ref);
 }
 
 /// A frame `width` by `height` points at `scale` device pixels a point, as RGBA bytes, top row

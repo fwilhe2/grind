@@ -3,30 +3,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The page inside an `NSScrollView` — the word processor's document view, the one place this
-//! shell draws a text document (decision 3). One flipped view over one [`TextPane`], as tall as
-//! the document; the scroll view scrolls. It draws through `text::paint` and
-//! [`crate::render::draw`], as `--render-to` does.
+//! shell draws a text document. One flipped view over one [`TextPane`]: the document's printed
+//! pages as `grind_print` sets them (`doc/page-model.md` PM7), placed in a strip as wide as the
+//! scroll view and as tall as the pages; the scroll view scrolls and magnifies. It draws through
+//! `text::pages` and [`crate::render::draw`], as `--render-to` does.
 //!
 //! **Keys arrive as an input method's**: the view is an `NSTextInputClient`, so a key goes to
 //! `interpretKeyEvents:` and comes back as `insertText:replacementRange:`, as a selector through
 //! `doCommandBySelector:` (read by `keys.rs`'s page table, so a `DefaultKeyBinding.dict` works as
-//! in TextEdit), or as **marked text**, which `text/state.rs` holds and `text/paint.rs` draws in
-//! the line until committed. Every range an input method names is converted in `text/input.rs`.
+//! in TextEdit), or as **marked text**, which `text/state.rs` holds and `text/pages.rs` draws at
+//! the caret until committed. Every range an input method names is converted in `text/input.rs`.
 //!
 //! **The core pushes** (rule 3): an edit's notification lays the document out again, and an edit
 //! the view makes itself runs with the pane busy, so the notification arriving mid-edit waits
 //! rather than borrowing the state the edit holds.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use grind_core::color;
-use grind_core::style::TextStyle;
-use grind_text::look::Role;
-use grind_text::{App, Caret, Faces};
+use grind_print::view::Shown;
+use grind_text::{App, Caret};
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObjectProtocol, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
@@ -46,27 +47,36 @@ use crate::a11y;
 use crate::clipboard;
 use crate::grid_view::{located, ns_rect, rect, rgb, shifted};
 use crate::keys::{self, PageAction, Scroll};
-use crate::metrics::{BASE_PT, CoreText, Face};
+use crate::metrics::{BASE_PT, CoreText};
 use crate::render;
 use crate::sheet::geom::Rect;
 use crate::text::blink::{Blink, PERIOD};
-use crate::text::face::{self, Column, Laid};
 use crate::text::geom;
 use crate::text::input::{self, NOT_FOUND};
-use crate::text::paint::{self, Frame, Palette};
-use crate::text::state::{Page, Refused};
+use crate::text::pages::Palette;
+use crate::text::pages::{self, Frame, Raster};
+use crate::text::state::{Lines, Page, Refused};
 use crate::watch::Turn;
 
-/// What the page view draws from and answers to: the document, its layout, the fonts it is
-/// measured in, and the caret.
+/// One page's raster as last drawn: kept until the page or the scale it is seen at changes.
+struct Tile {
+    page: grind_print::ops::Page,
+    scale: u64,
+    raster: Raster,
+}
+
+/// What the page view draws from and answers to: the document, its pages as set and drawn, the
+/// fonts the chrome's labels are set in, and the caret.
 pub struct TextPane {
     pub app: Arc<App>,
     pub text: CoreText,
     pub state: RefCell<Page>,
-    /// The document laid out: its flow, and the cell map the page's `Faces` reads, which may not
-    /// ask the document (`grind_text::flow::across`).
-    laid: RefCell<Laid>,
-    /// The page's width, which it was laid out for.
+    /// The document's pages, set again when the core says it changed.
+    session: grind_print::session::Session,
+    /// Each page's raster as last drawn, and the rasteriser that keeps glyphs between them.
+    tiles: RefCell<HashMap<usize, Tile>>,
+    rasteriser: RefCell<Option<(Rc<grind_print::Typesetter>, grind_print::raster::Rasteriser)>>,
+    /// The width the pages are placed across — what the scroll view shows.
     width: Cell<f64>,
     view: RefCell<Option<Weak<PageView>>>,
     /// Told that the document changed — what marks it edited.
@@ -125,7 +135,9 @@ impl TextPane {
             app,
             text: CoreText::new(BASE_PT),
             state: RefCell::new(Page::default()),
-            laid: RefCell::new(Laid::empty()),
+            session: grind_print::session::Session::new(false),
+            tiles: RefCell::default(),
+            rasteriser: RefCell::default(),
             width: Cell::new(0.0),
             view: RefCell::new(None),
             on_change: RefCell::new(None),
@@ -193,38 +205,14 @@ impl TextPane {
         self.view.borrow().as_ref().and_then(Weak::load)
     }
 
-    /// One CoreText face per role, in `Role::ALL`'s order.
-    fn faces(&self) -> Vec<Face<'_>> {
-        Role::ALL
-            .iter()
-            .map(|role| Face {
-                text: &self.text,
-                role: *role,
-            })
-            .collect()
+    /// The pages as they are now, placed across the view: a view point is a page's point, and
+    /// the scroll view's magnification is the zoom.
+    pub fn shown(&self) -> Shown {
+        Shown::new(self.session.document(&self.app), 1.0, self.width.get())
     }
 
-    /// Run `f` with the layout and the page's `Faces` over it: each block measured in its role's
-    /// face at the width it is set.
-    fn measured<R>(&self, f: impl FnOnce(&Laid, &Column<'_, Face<'_>>) -> R) -> R {
-        let faces = self.faces();
-        let laid = self.laid.borrow();
-        f(&laid, &laid.faces(&faces))
-    }
-
-    /// Lay the whole document out again at the page's width.
-    fn reflow(&self) {
-        let laid = face::lay_out(
-            &self.app,
-            &self.faces(),
-            self.width.get(),
-            &render::ImageDecoder,
-        );
-        *self.laid.borrow_mut() = laid;
-    }
-
-    /// Size the page to its scroll view: as wide as what shows — laid out again when that
-    /// changed — and as tall as the document, or the view when the document is shorter.
+    /// Size the page to its scroll view: as wide as what shows, and as tall as the pages, or
+    /// the view when they are shorter.
     pub fn fit(&self) {
         let Some(view) = self.view() else {
             return;
@@ -232,22 +220,58 @@ impl TextPane {
         // SAFETY: `superview` is an ordinary read of the view hierarchy.
         let visible =
             unsafe { view.superview() }.map_or(view.frame().size, |clip| clip.bounds().size);
-        if visible.width != self.width.get() {
-            self.width.set(visible.width);
-            self.reflow();
-        }
-        let height = geom::page_height(self.laid.borrow().flow.height(), visible.height);
-        let size = NSSize::new(visible.width, height);
+        self.width.set(visible.width);
+        let (width, height) = self.shown().strip.size();
+        let size = NSSize::new(
+            width.max(visible.width),
+            geom::page_height(height, visible.height),
+        );
         if view.frame().size != size {
             view.setFrameSize(size);
         }
+    }
+
+    /// Page `page`'s raster at `scale` device pixels a point: kept, or drawn and kept.
+    fn raster(&self, page: usize, scale: f64) -> Option<Raster> {
+        let set = self.session.document(&self.app);
+        let page_ops = set.pages.get(page)?;
+        if let Some(tile) = self.tiles.borrow().get(&page)
+            && tile.scale == scale.to_bits()
+            && tile.page == *page_ops
+        {
+            return Some(tile.raster.clone());
+        }
+        let setter = self.session.typesetter(&self.app);
+        let mut rasteriser = self.rasteriser.borrow_mut();
+        if !rasteriser
+            .as_ref()
+            .is_some_and(|(kept, _)| Rc::ptr_eq(kept, &setter))
+        {
+            *rasteriser = Some((setter.clone(), grind_print::raster::Rasteriser::default()));
+            self.tiles.borrow_mut().clear();
+        }
+        let (_, rasteriser) = rasteriser.as_mut()?;
+        let drawn = rasteriser.render(page_ops, setter.fonts(), scale as f32);
+        let raster = Raster {
+            width: drawn.width,
+            height: drawn.height,
+            rgba: Rc::from(drawn.rgba),
+        };
+        self.tiles.borrow_mut().insert(
+            page,
+            Tile {
+                page: page_ops.clone(),
+                scale: scale.to_bits(),
+                raster: raster.clone(),
+            },
+        );
+        Some(raster)
     }
 
     /// The document changed and nothing is holding the state: put the caret somewhere real, lay
     /// out, resize, redraw, and mark the document edited.
     fn settle(&self) {
         self.state.borrow_mut().clamp(&self.app);
-        self.reflow();
         self.fit();
         self.redraw();
         if let Some(callback) = self.on_change.borrow().as_ref() {
@@ -341,9 +365,7 @@ impl TextPane {
 
     /// Where the caret is drawn, in the page's own coordinates.
     fn caret_rect(&self, state: &Page) -> Option<Rect> {
-        self.measured(|laid, faces| {
-            paint::caret_rect(&self.app, &laid.flow, faces, laid.column.0, state)
-        })
+        pages::caret_rect(&self.shown(), state)
     }
 
     /// The caret scrolled into sight, and the input method told its characters may have moved.
@@ -362,13 +384,13 @@ impl TextPane {
         }
     }
 
-    /// How many lines a page is: what shows, in body lines, less one kept for context.
+    /// How many lines a page is: what shows, in the caret's lines, less one kept for context.
     fn page_lines(&self) -> isize {
-        let line = f64::from(
-            self.text
-                .height_of(&face::font(Role::Body, &TextStyle::default())),
-        )
-        .max(1.0);
+        let line = self
+            .shown()
+            .stroke(self.state.borrow().caret)
+            .map_or(16.0, |stroke| stroke.height)
+            .max(1.0);
         let shown = self
             .view()
             .map_or(0.0, |view| view.visibleRect().size.height);
@@ -379,12 +401,13 @@ impl TextPane {
     /// the caret went. The core's notification of an edit waits until `f` is done.
     pub(crate) fn act_on(
         &self,
-        f: impl FnOnce(&mut Page, &App, &dyn Faces) -> Result<(), Refused>,
+        f: impl FnOnce(&mut Page, &App, &dyn Lines) -> Result<(), Refused>,
     ) {
         self.busy.set(true);
         let done = {
+            let set = self.session.document(&self.app);
             let mut state = self.state.borrow_mut();
-            self.measured(|_, faces| f(&mut state, &self.app, faces))
+            f(&mut state, &self.app, &*set)
         };
         self.busy.set(false);
         if self.stale.replace(false) {
@@ -464,14 +487,7 @@ impl TextPane {
 
     /// The caret a point on the page lands on — nearest, never nothing.
     fn hit(&self, at: NSPoint) -> Option<Caret> {
-        self.measured(|laid, column| {
-            grind_text::caret::hit(&laid.flow, at.x - laid.column.0, at.y, |block| {
-                let viewport = self.app.get_viewport(block..block + 1);
-                let view = viewport.get(block)?;
-                let (width, metrics) = column.of(block, &view.kind, view.style.as_deref());
-                self.app.layout_block(block, width, metrics).ok()
-            })
-        })
+        self.shown().hit(at.x, at.y)
     }
 
     /// A click: the caret there, a word on a double-click, the block on a triple — and marked
@@ -524,6 +540,7 @@ impl TextPane {
 
 impl crate::watch::Watched for TextPane {
     fn document_changed(&self) {
+        self.session.changed();
         if self.busy.get() {
             self.stale.set(true);
         } else {
@@ -636,20 +653,24 @@ define_class!(
                     })
             });
             let state = pane.state.borrow();
-            let ops = pane.measured(|laid, faces| {
-                paint::frame(&Frame {
-                    app: &pane.app,
-                    flow: &laid.flow,
-                    faces,
-                    column_x: laid.column.0,
-                    view: rect(dirty),
-                    state: &state,
-                    caret: focused && pane.blink.get().lit,
-                    decoder: &render::ImageDecoder,
-                    names: pane.names.get(),
-                    palette: &palette,
-                    ignored: &pane.grammar.borrow().ignored,
-                })
+            // The pages as sharp as they are seen: the screen's own pixels, times the zoom.
+            let backing = window.as_ref().map_or(1.0, |window| window.backingScaleFactor());
+            let magnified = self
+                .enclosingScrollView()
+                .map_or(1.0, |scroll| scroll.magnification());
+            let scale = backing * magnified;
+            let shown = pane.shown();
+            let raster = |page: usize| pane.raster(page, scale);
+            let ops = pages::frame(&Frame {
+                app: &pane.app,
+                shown: &shown,
+                view: rect(dirty),
+                raster: &raster,
+                state: &state,
+                caret: focused && pane.blink.get().lit,
+                names: pane.names.get(),
+                palette: &palette,
+                ignored: &pane.grammar.borrow().ignored,
             });
             let Some(context) = NSGraphicsContext::currentContext() else {
                 return;

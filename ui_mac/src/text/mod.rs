@@ -10,7 +10,6 @@ pub mod face;
 pub mod format;
 pub mod geom;
 pub mod input;
-pub mod paint;
-pub mod picture;
+pub mod pages;
 pub mod search;
 pub mod state;
