@@ -17,7 +17,7 @@
 //! Nothing here understands a master page; the only vocabulary it knows is the document envelope
 //! (`office:`) and a style's identity (`style:name`, `style:family`).
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{Cursor, Write};
 use std::ops::Range;
@@ -845,10 +845,44 @@ fn vocabulary_within(
     ranges: Option<&[Range<usize>]>,
     whole: bool,
 ) -> Option<BTreeMap<String, usize>> {
+    // Sorted and merged once, then searched: one range per edited cell is tens of thousands of
+    // them, and testing each element against all of them was the bulk of a large sheet's save.
+    let ranges = ranges.map(|ranges| {
+        let mut sorted = ranges.to_vec();
+        sorted.sort_by_key(|r| r.start);
+        let mut merged: Vec<Range<usize>> = Vec::with_capacity(sorted.len());
+        for r in sorted {
+            match merged.last_mut() {
+                Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+                _ => merged.push(r),
+            }
+        }
+        merged
+    });
+    let within = |at: usize| {
+        ranges.as_deref().is_none_or(|ranges| {
+            let next = ranges.partition_point(|r| r.start <= at);
+            next > 0 && ranges[next - 1].contains(&at)
+        })
+    };
     let mut reader = NsReader::from_reader(document);
     let mut buf = Vec::new();
     let shift = super::xml::bom_len(document);
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    // Keyed by `&str` lookups into one reused buffer: a key is allocated once, on first sight,
+    // rather than once per element — the difference is seconds on a large sheet's save.
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut key = String::new();
+    let mut bump = |key: &str| {
+        if let Some(count) = counts.get_mut(key) {
+            *count += 1;
+        } else {
+            counts.insert(key.to_owned(), 1);
+        }
+    };
+    let uri_of = |ns: ResolveResult<'_>| match ns {
+        ResolveResult::Bound(n) => n.as_ref().to_owned(),
+        _ => String::new(),
+    };
     // Depth inside `office:body`, 0 when outside it.
     let mut inside = 0usize;
     loop {
@@ -858,44 +892,44 @@ fn vocabulary_within(
             Event::Start(ref e) | Event::Empty(ref e) => {
                 let empty = matches!(event, Event::Empty(_));
                 let (ns, local) = reader.resolver().resolve_element(e.name());
-                let uri = match ns {
-                    ResolveResult::Bound(n) => n.as_ref().to_owned(),
-                    _ => String::new(),
-                };
-                let element = format!("{{{uri}}}{}", local.as_ref());
-                let counted = ranges.is_none_or(|ranges| ranges.iter().any(|r| r.contains(&from)));
                 if inside == 0 {
-                    let opens = if whole {
-                        true
-                    } else {
-                        Ns::from_uri(&uri) == Ns::Office && local.as_ref() == "body"
-                    };
+                    let opens = whole
+                        || (local.as_ref() == "body" && Ns::from_uri(&uri_of(ns)) == Ns::Office);
                     if opens && !empty {
                         inside = 1;
                     }
                     buf.clear();
                     continue;
                 }
-                if !counted {
+                if !within(from) {
                     if !empty {
                         inside += 1;
                     }
                     buf.clear();
                     continue;
                 }
-                *counts.entry(element.clone()).or_default() += 1;
+                key.clear();
+                key.push('{');
+                if let ResolveResult::Bound(n) = ns {
+                    key.push_str(n.as_ref());
+                }
+                key.push('}');
+                key.push_str(local.as_ref());
+                bump(&key);
+                let element = key.len();
                 for attr in e.attributes().flatten() {
                     if attr.key.as_ref().starts_with("xmlns") {
                         continue;
                     }
                     let (ns, local) = reader.resolver().resolve_attribute(attr.key);
-                    let uri = match ns {
-                        ResolveResult::Bound(n) => n.as_ref().to_owned(),
-                        _ => String::new(),
-                    };
-                    *counts
-                        .entry(format!("{element}@{{{uri}}}{}", local.as_ref()))
-                        .or_default() += 1;
+                    key.truncate(element);
+                    key.push_str("@{");
+                    if let ResolveResult::Bound(n) = ns {
+                        key.push_str(n.as_ref());
+                    }
+                    key.push('}');
+                    key.push_str(local.as_ref());
+                    bump(&key);
                 }
                 if !empty {
                     inside += 1;
@@ -909,7 +943,7 @@ fn vocabulary_within(
         }
         buf.clear();
     }
-    Some(counts)
+    Some(counts.into_iter().collect())
 }
 
 /// What `output`'s body has fewer of than `original`'s, among the keys `owned` does not claim
