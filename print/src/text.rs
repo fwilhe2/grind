@@ -1097,7 +1097,8 @@ impl Frame {
 /// first-line indent as its level places them (`doc/odt-format.md` §5c facts 20 and 22,
 /// [`App::level_indent`]). The label sits at the margin plus the first-line indent; the text
 /// follows at the level's tab stop — or, past it, at the next default stop counted from the
-/// margin — or after a space, or straight after, as `text:label-followed-by` says. A block the
+/// margin — or after a space, or straight after, as `text:label-followed-by` says; a level in the
+/// older mode adds its room to the paragraph's own margins instead (fact 60). A block the
 /// level gives no label — an unnumbered heading, a list header, an item's second paragraph —
 /// starts at the margin. A block whose style is not declared keeps the page's own margin, and
 /// its label moves with it; a list naming no style keeps the shell's bullet where it was.
@@ -1109,7 +1110,7 @@ fn level_labels(
     indents: &mut HashMap<usize, f32>,
 ) -> HashMap<usize, Label> {
     let mut labels = HashMap::new();
-    for view in viewport.iter().filter(|view| view.cell.is_none()) {
+    for view in viewport.iter() {
         let label = match view.kind {
             BlockKind::Heading { .. } if view.number().is_some() || view.unnumbered() => {
                 view.number()
@@ -1121,8 +1122,27 @@ fn level_labels(
             continue;
         };
         let length = |value: &Option<String>| value.as_deref().and_then(length_mm).map(pt);
-        let margin = length(&level.margin_left).unwrap_or(0.0);
-        let indent = length(&level.text_indent).unwrap_or(0.0);
+        // The older mode adds the level's room to the paragraph's own margins (§5c fact 60):
+        // the margin is where the later lines start, the label `width` before it.
+        let older = level.width_and_position.as_ref().map(|place| {
+            let own = app.paragraph_shared(view.index);
+            let props = own.as_ref().map(|resolved| &resolved.props);
+            let of = |value: Option<&Option<String>>| value.and_then(length).unwrap_or(0.0);
+            let width = of(Some(&place.min_label_width));
+            (
+                of(props.map(|p| &p.margin_left)) + of(Some(&place.space_before)) + width,
+                of(props.map(|p| &p.text_indent)),
+                width,
+                of(Some(&place.min_label_distance)),
+            )
+        });
+        let (margin, indent) = match older {
+            Some((margin, indent, ..)) => (margin, indent),
+            None => (
+                length(&level.margin_left).unwrap_or(0.0),
+                length(&level.text_indent).unwrap_or(0.0),
+            ),
+        };
         // The flow sets a list item in by its depth before a style's own margin; the level's
         // margin replaces both.
         let role = SPACING.indent_of(&view.kind);
@@ -1134,6 +1154,7 @@ fn level_labels(
             None => role,
         };
         let first = match label {
+            None if older.is_some() => margin + indent - applied,
             None => margin - applied,
             Some(label) => {
                 let face = crate::faces::face_for(
@@ -1173,28 +1194,36 @@ fn level_labels(
                     .map_or_else(|| wide(label), |bullet| bullet.width);
                 // Placed at the indent by the level's alignment, and its tab to the stop past it,
                 // else the margin past it, else a default stop (§5c fact 48).
-                let start = margin + indent
-                    - match level.label_align.as_deref() {
-                        Some("end") => label_wide,
-                        Some("center") => label_wide / 2.0,
-                        _ => 0.0,
-                    };
+                let start = match older {
+                    Some((_, _, width, _)) => margin - width + indent,
+                    None => {
+                        margin + indent
+                            - match level.label_align.as_deref() {
+                                Some("end") => label_wide,
+                                Some("center") => label_wide / 2.0,
+                                _ => 0.0,
+                            }
+                    }
+                };
                 let end = start + label_wide;
-                let text = match level.followed_by.as_deref() {
-                    Some("space") => end + wide(" "),
-                    Some("nothing") => end,
-                    _ => match length(&level.tab) {
-                        Some(tab) if tab > end => tab,
-                        _ if margin > end => margin,
-                        _ => {
-                            let interval = app
-                                .paragraph_shared(view.index)
-                                .map(|resolved| f64::from(resolved.props.tabs().interval))
-                                .filter(|interval| *interval > 0.0)
-                                .unwrap_or(pt(12.5));
-                            let past = ((end - margin) / interval).floor() + 1.0;
-                            margin + interval * past.max(0.0)
-                        }
+                let text = match (older, level.followed_by.as_deref()) {
+                    (Some((_, _, width, distance)), _) => (start + width).max(end + distance),
+                    (None, followed_by) => match followed_by {
+                        Some("space") => end + wide(" "),
+                        Some("nothing") => end,
+                        _ => match length(&level.tab) {
+                            Some(tab) if tab > end => tab,
+                            _ if margin > end => margin,
+                            _ => {
+                                let interval = app
+                                    .paragraph_shared(view.index)
+                                    .map(|resolved| f64::from(resolved.props.tabs().interval))
+                                    .filter(|interval| *interval > 0.0)
+                                    .unwrap_or(pt(12.5));
+                                let past = ((end - margin) / interval).floor() + 1.0;
+                                margin + interval * past.max(0.0)
+                            }
+                        },
                     },
                 };
                 labels.insert(
@@ -4301,6 +4330,65 @@ let _ = write!(joined, r#"<table:table-row><table:table-cell table:style-name="B
         assert_eq!(labels.len(), 2);
         assert!((labels[0] - cm(5.0)).abs() < 0.05, "{labels:?}");
         assert!((labels[1] - cm(1.0)).abs() < 0.05, "{labels:?}");
+    }
+
+    /// `doc/odt-format.md` §5c fact 60: in the older mode the level's room adds to the
+    /// paragraph's own margin and first-line indent, and a wide label pushes the text along.
+    #[test]
+    fn an_older_level_adds_to_the_paragraphs_margins() {
+        let level = |name: &str, prefix: &str| {
+            format!(
+                r#"<text:list-style style:name="{name}"><text:list-level-style-number text:level="1" style:num-prefix="{prefix}" style:num-suffix="." style:num-format="1"><style:list-level-properties text:space-before="1cm" text:min-label-width="0.8cm" text:min-label-distance="0.3cm"/></text:list-level-style-number></text:list-style>"#
+            )
+        };
+        let words = "words enough to wrap onto a second line of the paragraph and further on, and on and on again until it wraps";
+        let item = |list: &str, style: &str, first: &str| {
+            format!(
+                r#"<text:list text:style-name="{list}"><text:list-item><text:p text:style-name="{style}">{first} {words}</text:p></text:list-item></text:list>"#
+            )
+        };
+        let app = styled_with(
+            &format!("{}{}", level("L", ""), level("W", "Article ")),
+            r#"<style:style style:name="P" style:family="paragraph" style:parent-style-name="Standard"><style:paragraph-properties fo:margin-left="1cm" fo:text-indent="-0.5cm"/></style:style>"#,
+            &[
+                item("L", "Standard", "Alpha"),
+                item("L", "P", "Charlie"),
+                item("W", "Standard", "Delta"),
+            ]
+            .concat(),
+        );
+        let doc = typeset(&app, &setter(), &Options::default());
+        let margin = 72.0 * 2.0 / 2.54;
+        let cm = |at: f32| (at - margin) * 2.54 / 72.0;
+        let texts = texts(&doc.pages[0]);
+        let at = |start: &str| {
+            texts
+                .iter()
+                .filter(|t| t.2.starts_with(start))
+                .map(|t| cm(t.0))
+                .collect::<Vec<_>>()
+        };
+        let near = |got: &[f32], want: &[f32]| {
+            got.len() == want.len() && got.iter().zip(want).all(|(a, b)| (a - b).abs() < 0.05)
+        };
+        assert!(near(&at("1."), &[1.0, 1.5]), "{texts:?}");
+        assert!(near(&at("Alpha"), &[1.8]), "{:?}", at("Alpha"));
+        assert!(near(&at("Charlie"), &[2.3]), "{:?}", at("Charlie"));
+        assert!(near(&at("Article"), &[1.0]), "{:?}", at("Article"));
+        // The label ends 0.3 cm short of where the text starts.
+        let delta = at("Delta")[0];
+        assert!(delta > 2.6 && delta < 3.2, "{delta}");
+        // Every later line at the margin plus the level's room.
+        let later: Vec<f32> = texts
+            .iter()
+            .filter(|t| {
+                !["1.", "Alpha", "Charlie", "Article", "Delta"]
+                    .iter()
+                    .any(|s| t.2.starts_with(s))
+            })
+            .map(|t| cm(t.0))
+            .collect();
+        assert!(near(&later, &[1.8, 2.8, 1.8]), "{later:?}");
     }
 
     /// `doc/odt-format.md` §5c fact 48: a label aligned to its end or centre at the indent, and

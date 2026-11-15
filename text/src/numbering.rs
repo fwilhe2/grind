@@ -44,6 +44,18 @@ pub struct LevelIndent {
     /// `fo:text-align` on `style:list-level-properties`: how the label sits at its place —
     /// `start`, `end` or `center` (`doc/odt-format.md` §5c fact 48).
     pub label_align: Option<String>,
+    /// The level's place in the older `label-width-and-position` mode, where the fields above
+    /// are all `None` and the paragraph's own margins stay in force (§5c fact 60).
+    pub width_and_position: Option<WidthAndPosition>,
+}
+
+/// `text:space-before`, `text:min-label-width` and `text:min-label-distance` on
+/// `style:list-level-properties` (rng:13238), verbatim.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WidthAndPosition {
+    pub space_before: Option<String>,
+    pub min_label_width: Option<String>,
+    pub min_label_distance: Option<String>,
 }
 
 /// A picture bullet (`text:list-level-style-image`, rng:17675): its bytes, sniffed type, and

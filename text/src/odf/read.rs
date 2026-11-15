@@ -1931,6 +1931,22 @@ impl Context<Builder> for LevelProps {
                 picture.width = attrs.get(Ns::Fo, "width").map(str::to_owned);
                 picture.height = attrs.get(Ns::Fo, "height").map(str::to_owned);
             }
+            // The older mode, ODF's default; a `style:list-level-label-alignment` replaces it.
+            if attrs.get(Ns::Text, "list-level-position-and-space-mode") != Some("label-alignment")
+            {
+                let get = |local| attrs.get(Ns::Text, local).map(str::to_owned);
+                b.list_indents.insert(
+                    self.level,
+                    crate::numbering::LevelIndent {
+                        width_and_position: Some(crate::numbering::WidthAndPosition {
+                            space_before: get("space-before"),
+                            min_label_width: get("min-label-width"),
+                            min_label_distance: get("min-label-distance"),
+                        }),
+                        ..Default::default()
+                    },
+                );
+            }
             return Some(Box::new(LevelProps {
                 level: self.level,
                 outer: false,
@@ -1947,6 +1963,7 @@ impl Context<Builder> for LevelProps {
                     tab: get(Ns::Text, "list-tab-stop-position"),
                     followed_by: get(Ns::Text, "label-followed-by"),
                     label_align: self.align.clone(),
+                    width_and_position: None,
                 },
             );
         }

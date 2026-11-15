@@ -1065,6 +1065,19 @@ oracle turned out to be unable to answer the font questions (fact 4).
    `style:print-orientation` says `landscape`, and the four `fo:margin-*` are the new margins.
    `style:num-format`, `style:writing-mode`, the footnote settings and `loext:margin-gutter` are
    kept as they were, and so is the layout's name.
+60. **Where a list label goes in `label-width-and-position` mode** — `MEASURED` (2026-11-15,
+   26.8.2.2, one-level numbered lists whose `style:list-level-properties` states no
+   `text:list-level-position-and-space-mode` and `text:space-before="1cm"
+   text:min-label-width="0.8cm"`, Liberation Serif 12 pt, positions from the text area's left
+   edge). The paragraph's own `fo:margin-left` and `fo:text-indent` stay in force, and the level
+   adds to them: the label starts at margin plus first-line indent plus `text:space-before` (no
+   margin: 1 cm; a 1 cm margin: 2 cm; a 1 cm margin and −0.5 cm indent: 1.5 cm). The first
+   line's text starts `text:min-label-width` past the label's start (1.8, 2.8 and 2.3 cm), or
+   `text:min-label-distance` past its end where that is further (`Article 1.` from 1 cm, ending
+   at 2.6 cm, with a 0.3 cm distance: 2.9 cm). Every later line starts at the margin plus
+   `text:space-before` plus `text:min-label-width` (1.8, 2.8 and 2.8 cm), the first-line indent
+   not applying to it. Word documents converted by LibreOffice and older Writer files are in
+   this mode.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
