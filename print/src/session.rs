@@ -70,9 +70,7 @@ impl Session {
         let fonts = if self.bundled {
             Fonts::bundled()
         } else {
-            #[cfg(feature = "system-fonts")]
-            self.sought.borrow_mut().extend(crate::characters(app));
-            crate::fonts_for(app)
+            self.looked_up(app)
         };
         let setter = Rc::new(Typesetter::new(fonts));
         self.setter.replace(Some((named.to_vec(), setter.clone())));
@@ -90,6 +88,18 @@ impl Session {
             .borrow_mut()
             .get_or_insert_with(|| crate::families(app).into())
             .clone()
+    }
+
+    /// The fonts for `app` on this machine, every character it uses marked as looked for.
+    fn looked_up(&self, app: &App) -> Fonts {
+        #[cfg(feature = "system-fonts")]
+        {
+            let used = crate::characters(app);
+            self.sought.borrow_mut().extend(used.iter().copied());
+            crate::fonts_using(app, &used)
+        }
+        #[cfg(not(feature = "system-fonts"))]
+        crate::fonts_for(app)
     }
 
     /// The document's pages as they are now.
@@ -118,9 +128,7 @@ impl Session {
             .filter(|&c| self.sought.borrow_mut().insert(c))
             .collect();
         if !self.bundled && !new.is_empty() {
-            #[cfg(feature = "system-fonts")]
-            self.sought.borrow_mut().extend(crate::characters(app));
-            let setter = Rc::new(Typesetter::new(crate::fonts_for(app)));
+            let setter = Rc::new(Typesetter::new(self.looked_up(app)));
             self.setter
                 .replace(Some((self.named(app).to_vec(), setter.clone())));
             set = text::typeset(app, &setter, &text::Options::default());

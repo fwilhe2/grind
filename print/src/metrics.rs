@@ -59,6 +59,16 @@ pub struct Substitution {
     pub compatible: bool,
 }
 
+/// What a [`harfrust::ShapePlan`] is made for: a face, a direction, script and language, and
+/// whether kerning is on.
+type Plan = (
+    FaceId,
+    harfrust::Direction,
+    Option<harfrust::Script>,
+    Option<harfrust::Language>,
+    bool,
+);
+
 /// A family as a run asks for it: the name, bold, italic.
 type Asked = (Option<String>, bool, bool);
 
@@ -70,6 +80,9 @@ pub struct Typesetter {
     generics: RefCell<HashMap<String, String>>,
     /// Each face as harfrust reads it, with its layout tables cached; `None` when it cannot.
     shapers: RefCell<HashMap<FaceId, Option<harfrust::Font>>>,
+    /// What harfrust compiles from a face's layout tables for a run's direction, script and
+    /// language and whether it is kerned — the same for every run that shares them.
+    plans: RefCell<HashMap<Plan, Rc<harfrust::ShapePlan>>>,
     resolved: RefCell<BTreeMap<Asked, Resolved>>,
     measured: RefCell<Measured>,
     /// What [`Typesetter::shape`] returned, by face, size and text: a page drawn again after
@@ -248,6 +261,7 @@ impl Typesetter {
             fonts,
             generics: RefCell::new(HashMap::new()),
             shapers: RefCell::new(HashMap::new()),
+            plans: RefCell::new(HashMap::new()),
             resolved: RefCell::new(BTreeMap::new()),
             measured: RefCell::default(),
             shaped: RefCell::default(),
@@ -370,7 +384,26 @@ impl Typesetter {
             let shaper = harfrust::ShaperFont::new(font);
             let unkerned = [harfrust::Feature::new(harfrust::Tag::new(b"kern"), 0, ..)];
             let features: &[harfrust::Feature] = if kern { &[] } else { &unkerned };
-            let options = harfrust::ShapeOptions::new().features(features);
+            let (direction, script) = (out.direction(), out.script());
+            let language = out.language().cloned();
+            let plan = Rc::clone(
+                self.plans
+                    .borrow_mut()
+                    .entry((face, direction, script, language.clone(), kern))
+                    .or_insert_with(|| {
+                        let plan = harfrust::ShapePlan::new(
+                            font,
+                            direction,
+                            script,
+                            language.as_ref(),
+                            features,
+                        );
+                        Rc::new(plan)
+                    }),
+            );
+            let options = harfrust::ShapeOptions::new()
+                .features(features)
+                .plan(Some(&plan));
             if harfrust::shape(&shaper, &mut out, options).is_err() {
                 return Shaped { face, size, glyphs };
             }
@@ -691,23 +724,31 @@ impl Metrics for Typesetter {
         let from = out.len();
         let shaped = self.shape(text, style);
         let mut per_byte = vec![0.0_f32; text.len() + 1];
-        let mut ends: BTreeMap<usize, usize> = BTreeMap::new();
+        let mut starts: Vec<usize> = Vec::with_capacity(shaped.glyphs.len());
         for glyph in &shaped.glyphs {
             per_byte[glyph.text.start] += glyph.x_advance;
-            ends.insert(glyph.text.start, glyph.text.end);
+            starts.push(glyph.text.start);
         }
-        // Each character belongs to the cluster starting at or before it; one pass to count
-        // the characters per cluster, one to hand each its share.
+        starts.sort_unstable();
+        starts.dedup();
+        // Each character belongs to the cluster starting at or before it, by its place in
+        // `starts`; one pass to count the characters per cluster, one to hand each its share.
+        let mut next = 0;
         let cluster_of: Vec<Option<usize>> = text
             .char_indices()
-            .map(|(at, _)| ends.range(..=at).next_back().map(|(&start, _)| start))
+            .map(|(at, _)| {
+                while starts.get(next).is_some_and(|&start| start <= at) {
+                    next += 1;
+                }
+                next.checked_sub(1)
+            })
             .collect();
-        let mut count: HashMap<usize, usize> = HashMap::new();
-        for start in cluster_of.iter().flatten() {
-            *count.entry(*start).or_default() += 1;
+        let mut count = vec![0_usize; starts.len()];
+        for &cluster in cluster_of.iter().flatten() {
+            count[cluster] += 1;
         }
         let each = cluster_of.iter().map(|cluster| match cluster {
-            Some(start) => per_byte[*start] / count[start] as f32,
+            Some(cluster) => per_byte[starts[*cluster]] / count[*cluster] as f32,
             None => 0.0,
         });
         let mut sum = 0.0;

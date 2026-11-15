@@ -106,43 +106,51 @@ pub fn families(app: &App) -> Vec<String> {
 /// The fonts to set this document in: the bundled faces, and — where the build can look —
 /// every installed face of a family the document names or of its metric-compatible twin.
 pub fn fonts_for(app: &App) -> Fonts {
-    let fonts = Fonts::bundled();
     #[cfg(feature = "system-fonts")]
-    let fonts = {
-        let mut fonts = fonts;
-        let named = families(app);
-        let wanted = fonts::wanted(named.iter().map(String::as_str));
-        let db = std::cell::OnceCell::new();
-        let db = || db.get_or_init(Fonts::system_database);
-        if !wanted.is_empty() {
-            fonts.add_families(db(), &wanted);
-        }
-        // Then a face for each character none of those has, when the machine has one.
-        let used = characters(app);
-        if used
-            .iter()
-            .any(|&c| !(0..fonts.len()).any(|face| fonts.covers(fonts::FaceId(face), c)))
-        {
-            fonts.add_fallbacks(db(), &used);
-        }
-        fonts
-    };
+    return fonts_using(app, &characters(app));
     #[cfg(not(feature = "system-fonts"))]
-    let _ = app;
+    {
+        let _ = app;
+        Fonts::bundled()
+    }
+}
+
+/// [`fonts_for`], given the characters the document uses ([`characters`]).
+#[cfg(feature = "system-fonts")]
+pub(crate) fn fonts_using(app: &App, used: &[char]) -> Fonts {
+    let mut fonts = Fonts::bundled();
+    let named = families(app);
+    let wanted = fonts::wanted(named.iter().map(String::as_str));
+    let db = std::cell::OnceCell::new();
+    let db = || db.get_or_init(Fonts::system_database);
+    if !wanted.is_empty() {
+        fonts.add_families(db(), &wanted);
+    }
+    // Then a face for each character none of those has, when the machine has one.
+    if used
+        .iter()
+        .any(|&c| !(0..fonts.len()).any(|face| fonts.covers(fonts::FaceId(face), c)))
+    {
+        fonts.add_fallbacks(db(), used);
+    }
     fonts
 }
 
 /// Every character the document's text and list labels use, once each, in order.
 #[cfg(feature = "system-fonts")]
 pub(crate) fn characters(app: &App) -> Vec<char> {
-    let mut used = std::collections::BTreeSet::new();
+    let mut used: std::collections::HashSet<char, foldhash::fast::FixedState> =
+        std::collections::HashSet::default();
     for view in app.get_viewport(0..app.block_count()).iter() {
         used.extend(view.text.chars());
         used.extend(view.mark().into_iter().flat_map(str::chars));
     }
-    used.into_iter()
+    let mut used: Vec<char> = used
+        .into_iter()
         .filter(|c| !c.is_whitespace() && !c.is_control())
-        .collect()
+        .collect();
+    used.sort_unstable();
+    used
 }
 
 /// Where each page begins and ends: the first character on it and one past the last, `None` for a
