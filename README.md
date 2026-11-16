@@ -2,9 +2,9 @@
 
 grind is an office suite written from scratch. It is 100% written using AI agents. Uses OpenDocument (odf) as its native format.
 
-![](README.images/img-3354e90f4a100edf.png)
+![](README.images/img-22ab4340147932d5.png)
 
-![](README.images/img-30dea95ebcde7e73.png)
+![](README.images/img-1d885cb694c634d7.png)
 
 # Why this project exists?
 
