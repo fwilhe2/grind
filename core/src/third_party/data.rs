@@ -1096,7 +1096,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "harfrust",
-        version: "0.15.0",
+        version: "0.16.0",
         licence: "MIT",
         copyright: "Copyright (c) HarfBuzz developers",
         source: "https://github.com/harfbuzz/harfrust",
@@ -2087,6 +2087,15 @@ pub(super) const COMPONENTS: &[Component] = &[
     Component {
         name: "read-fonts",
         version: "0.46.0",
+        licence: "MIT OR Apache-2.0",
+        copyright: "Copyright 2019 Fontations Developers",
+        source: "https://github.com/googlefonts/fontations",
+        kind: Kind::Crate,
+        notices: &[81, 82],
+    },
+    Component {
+        name: "read-fonts",
+        version: "0.47.0",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
