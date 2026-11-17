@@ -2094,6 +2094,15 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[81, 82],
     },
     Component {
+        name: "read-fonts",
+        version: "0.47.0",
+        licence: "MIT OR Apache-2.0",
+        copyright: "Copyright 2019 Fontations Developers",
+        source: "https://github.com/googlefonts/fontations",
+        kind: Kind::Crate,
+        notices: &[81, 82],
+    },
+    Component {
         name: "redox_syscall",
         version: "0.5.18",
         licence: "MIT",
@@ -2392,7 +2401,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "skrifa",
-        version: "0.49.0",
+        version: "0.50.0",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
