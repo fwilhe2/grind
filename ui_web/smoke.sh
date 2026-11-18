@@ -39,6 +39,9 @@ if [ ! -d "$root/ui_web/node_modules/jsdom" ]; then
 fi
 
 node "$root/ui_web/smoke.js"
+# The page in a frame with `?doc=`, as an embedding page opens it: once arriving, once not.
+node "$root/ui_web/smoke-embed.js" opens
+node "$root/ui_web/smoke-embed.js" fails
 
 # The same page with `grind serve` behind it (doc/server.md), over a git repository so its
 # history is exercised too.

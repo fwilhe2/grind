@@ -10,6 +10,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>grind</title>
     <link rel="stylesheet" href="style.css" />
+    <script>
+      // A document named in the URL (`?doc=`) is on its way: the welcome pane stays hidden while
+      // the module and the document load, and "Opening …" says which. The shell takes the mark
+      // off once the document is open, or shows the pane with the reason when it is not.
+      {
+        const doc = new URLSearchParams(location.search).get("doc");
+        if (doc) {
+          document.documentElement.dataset.opening = "";
+          const name = doc.split("/").pop();
+          document.addEventListener("DOMContentLoaded", () => {
+            const opening = document.getElementById("opening");
+            if (opening) opening.textContent = `Opening ${name}…`;
+          });
+        }
+      }
+    </script>
   </head>
   <body>
     <!--
@@ -332,6 +348,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       Every button names a command id, exactly like the toolbar's (wire_toolbar's BUTTONS),
       so a card and a palette row run the one implementation.
     -->
+    <p id="opening" class="opening" role="status">Opening…</p>
+
     <main id="welcome" class="welcome" tabindex="-1">
       <div class="welcome-inner">
         <h1 class="welcome-title">grind</h1>

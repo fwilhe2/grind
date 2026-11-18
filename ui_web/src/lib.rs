@@ -106,6 +106,15 @@ impl Mode {
             Mode::Text => Some(DocumentKind::Text),
         }
     }
+
+    /// The word an embedding page is told the document is: `sheet` or `text`.
+    fn kind_name(self) -> &'static str {
+        match self {
+            Mode::Welcome => "",
+            Mode::Sheet => "sheet",
+            Mode::Text => "text",
+        }
+    }
 }
 
 /// Called by the generated glue as soon as the module is instantiated.
@@ -138,6 +147,7 @@ pub fn start() -> Result<(), JsValue> {
         swatches: Rc::new(swatch::Swatches::find(&document)?),
         pending,
         mode: Cell::new(Mode::Welcome),
+        dirty_told: Cell::new(false),
         name: RefCell::new(String::new()),
         source: RefCell::new(None),
         problems: RefCell::new(None),
@@ -169,9 +179,9 @@ pub fn start() -> Result<(), JsValue> {
 
     SHELL.with(|slot| *slot.borrow_mut() = Some(shell.clone()));
 
-    // The welcome pane, which is what a page with no document shows. `?doc=` below replaces it
-    // as soon as the bytes arrive — a fetch is asynchronous, so this is on screen for the length
-    // of it either way, which is the honest thing for it to be.
+    // The welcome pane, which is what a page with no document shows. With `?doc=` it stays
+    // hidden while the document loads (`index.html`'s `data-opening`), and shows only when that
+    // fails.
     shell.show(Mode::Welcome)?;
 
     // A server is asked for, never assumed: with none this is the static page it always was.
@@ -179,14 +189,59 @@ pub fn start() -> Result<(), JsValue> {
 
     // `?doc=<url>` opens that document at startup — the page's own address is the only way
     // to point this shell at a file without a picker.
-    if let Ok(search) = window.location().search()
-        && let Some(url) = doc_param(&search)
+    match window
+        .location()
+        .search()
+        .ok()
+        .as_deref()
+        .and_then(doc_param)
     {
-        spawn_local(shell.clone().fetch(url));
+        Some(url) => spawn_local(shell.clone().fetch(url)),
+        // `index.html` hid the welcome pane for any `doc` in the URL; one this will not fetch
+        // shows it after all.
+        None => {
+            if let Some(root) = document.document_element() {
+                let _ = root.remove_attribute("data-opening");
+            }
+        }
     }
 
     shell.refresh();
     Ok(())
+}
+
+/// The document a `?doc=` URL names: its last path segment, percent-decoded for the header, the
+/// tab and a download — `My%20budget.ods` is *My budget.ods* — or as it is when it does not
+/// decode. The URL itself is fetched as it is.
+fn document_name(url: &str) -> String {
+    let segment = url.rsplit('/').next().unwrap_or(url);
+    js_sys::decode_uri_component(segment)
+        .ok()
+        .and_then(|name| name.as_string())
+        .unwrap_or_else(|| segment.to_owned())
+}
+
+/// Tell the page this one is embedded in what happened (`doc/web-shell.md`, "Embedded"): a
+/// `postMessage` to the parent, at this page's own origin so nothing reaches another site, and
+/// nothing at all when the page is not embedded.
+fn tell_parent(fields: &[(&str, JsValue)]) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Ok(Some(parent)) = window.parent() else {
+        return;
+    };
+    if js_sys::Object::is(&parent, &window) {
+        return;
+    }
+    let Ok(origin) = window.location().origin() else {
+        return;
+    };
+    let message = js_sys::Object::new();
+    for (key, value) in fields {
+        let _ = js_sys::Reflect::set(&message, &JsValue::from_str(key), value);
+    }
+    let _ = parent.post_message(&message, &origin);
 }
 
 /// The `doc` parameter of a query string, still percent-encoded — which is the form `fetch`
@@ -309,6 +364,9 @@ struct Shell {
     /// Set by either observer, cleared by the repaint it asked for.
     pending: Arc<AtomicBool>,
     mode: Cell<Mode>,
+    /// Whether there was something to undo when an embedding page was last told
+    /// (`grind:dirty`, [`tell_parent`]).
+    dirty_told: Cell<bool>,
     /// The name the document arrived under, so a download has something to be called. Not a
     /// path — there are none here.
     name: RefCell<String>,
@@ -408,7 +466,11 @@ impl Shell {
     fn refresh_chrome(&self) -> Result<(), JsValue> {
         let name = self.document_name();
         self.dom.name.set_text_content(Some(&name));
-        self.dom.undo.set_disabled(!self.can_undo());
+        let dirty = self.can_undo();
+        self.dom.undo.set_disabled(!dirty);
+        if self.dirty_told.replace(dirty) != dirty {
+            tell_parent(&[("type", "grind:dirty".into()), ("dirty", dirty.into())]);
+        }
         self.dom.redo.set_disabled(!self.can_redo());
         let what = match self.mode.get() {
             Mode::Sheet => "sheet",
@@ -590,7 +652,9 @@ impl Shell {
                     .ok()
                     .and_then(recent::bytes)
                 {
-                    Some((name, bytes)) => self.open(name, &bytes),
+                    Some((name, bytes)) => {
+                        let _ = self.open(name, &bytes);
+                    }
                     None => self.set_message("That document is no longer kept".to_owned()),
                 }
             }
@@ -963,7 +1027,7 @@ impl Shell {
         let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
             return self.set_message(format!("Could not read {name}"));
         };
-        self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
+        let _ = self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
     }
 
     /// The same read for a data file, decoded by the core (`csv::decode`): "this file is not
@@ -1266,45 +1330,76 @@ impl Shell {
     /// A page cannot preload the file picker, so a document served beside the page has no other
     /// way in; `scripts/run.sh web` puts a sample in `dist/` and prints the URL. Either way the
     /// bytes reach `App::open_bytes`.
+    ///
+    /// While it loads the page shows no welcome pane (`index.html` marks it as opening before any
+    /// script runs); once it is open or has failed, the mark comes off, and a page this one is
+    /// embedded in is told which ([`tell_parent`]).
     async fn fetch(self: Rc<Self>, url: String) {
-        let Some(window) = web_sys::window() else {
-            return;
-        };
+        let opened = self.fetch_and_open(&url).await;
+        if let Some(root) = web_sys::window()
+            .and_then(|window| window.document())
+            .and_then(|document| document.document_element())
+        {
+            let _ = root.remove_attribute("data-opening");
+        }
+        match opened {
+            Ok(mode) => tell_parent(&[
+                ("type", "grind:opened".into()),
+                ("name", self.name.borrow().as_str().into()),
+                ("kind", mode.kind_name().into()),
+            ]),
+            Err(message) => {
+                self.set_message(message.clone());
+                tell_parent(&[("type", "grind:failed".into()), ("message", message.into())]);
+            }
+        }
+    }
+
+    /// [`Shell::fetch`]'s fetching and opening, and why it did not.
+    async fn fetch_and_open(&self, url: &str) -> Result<Mode, String> {
+        let window = web_sys::window().ok_or_else(|| "No window".to_owned())?;
         let failed = || format!("Could not load {url}");
-        let response = match JsFuture::from(window.fetch_with_str(&url)).await {
+        let response = match JsFuture::from(window.fetch_with_str(url)).await {
             Ok(response) => web_sys::Response::from(response),
-            Err(_) => return self.set_message(failed()),
+            Err(_) => return Err(failed()),
         };
         if !response.ok() {
-            return self.set_message(format!("{url}: {} {}", response.status(), failed()));
+            return Err(format!("{url}: {} {}", response.status(), failed()));
         }
         let buffer = match response.array_buffer() {
             Ok(promise) => JsFuture::from(promise).await,
             Err(error) => Err(error),
         };
-        let Ok(buffer) = buffer else {
-            return self.set_message(failed());
-        };
-        // The last path segment is the document's name — all a download needs, and the only
-        // thing a name is used for here.
-        let name = url.rsplit('/').next().unwrap_or(&url).to_owned();
-        self.open(name, &js_sys::Uint8Array::new(&buffer).to_vec());
+        let buffer = buffer.map_err(|_| failed())?;
+        self.open(
+            document_name(url),
+            &js_sys::Uint8Array::new(&buffer).to_vec(),
+        )
     }
 
     /// Bytes in, and the pane that can show them. **The kind decides, not the extension**
     /// (`grind_core::kind`): both readers are tolerant, and a spreadsheet handed to the text
     /// reader would be an empty document rather than an error.
-    fn open(&self, name: String, bytes: &[u8]) {
-        self.open_from(name, bytes, server::Backend::Local);
+    fn open(&self, name: String, bytes: &[u8]) -> Result<Mode, String> {
+        self.open_from(name, bytes, server::Backend::Local)
     }
 
-    /// [`Shell::open`], saying where Save will put it.
-    fn open_from(&self, name: String, bytes: &[u8], backend: server::Backend) {
+    /// [`Shell::open`], saying where Save will put it. Answers the pane it opened in, or why it
+    /// did not, which the status bar says either way.
+    fn open_from(
+        &self,
+        name: String,
+        bytes: &[u8],
+        backend: server::Backend,
+    ) -> Result<Mode, String> {
         // An import arrives as the flat ODF document it became, under the name it will
         // download as.
         let (name, bytes, summary) = match grind_open::import(&name, bytes, &grind_open::nowhere) {
             Some(Ok(imported)) => (imported.name, imported.odf, Some(imported.summary)),
-            Some(Err(error)) => return self.set_message(error),
+            Some(Err(error)) => {
+                self.set_message(error.clone());
+                return Err(error);
+            }
             None => (name, bytes.to_vec(), None),
         };
         let bytes = bytes.as_slice();
@@ -1339,10 +1434,14 @@ impl Shell {
                 // The language is the person's remembered choice, or the document's own — and
                 // its dictionary is fetched the first time it is wanted.
                 spelling::spawn(mode.kind(), false);
+                Ok(mode)
             }
             // Tolerance is the reader's job, not the shell's: if the core will not take it,
             // saying why is all there is to do.
-            Err(error) => self.set_message(error),
+            Err(error) => {
+                self.set_message(error.clone());
+                Err(error)
+            }
         }
     }
 
@@ -1623,11 +1722,13 @@ impl Shell {
             return;
         }
         match server::get(&doc.id).await {
-            Ok((bytes, etag)) => self.open_from(
-                doc.name.clone(),
-                &bytes,
-                server::Backend::Remote { id: doc.id, etag },
-            ),
+            Ok((bytes, etag)) => {
+                let _ = self.open_from(
+                    doc.name.clone(),
+                    &bytes,
+                    server::Backend::Remote { id: doc.id, etag },
+                );
+            }
             Err(error) => self.set_message(format!("{}: {error}", doc.name)),
         }
     }
@@ -1770,7 +1871,9 @@ impl Shell {
         };
         let name = server::version_name(&self.document_name(), &version.rev);
         match server::at(&id, &version.rev).await {
-            Ok(bytes) => self.open_from(name, &bytes, server::Backend::Local),
+            Ok(bytes) => {
+                let _ = self.open_from(name, &bytes, server::Backend::Local);
+            }
             Err(why) => self.set_message(format!("{name}: {why}")),
         }
     }
@@ -1800,7 +1903,7 @@ impl Shell {
         self.refresh_library().await;
         match server::get(&restored.id).await {
             Ok((bytes, etag)) => {
-                self.open_from(
+                let _ = self.open_from(
                     restored.name.clone(),
                     &bytes,
                     server::Backend::Remote {

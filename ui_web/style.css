@@ -1533,6 +1533,24 @@ input[type="text"] {
   outline: none;
 }
 
+/* While a `?doc=` document loads, no welcome pane: a line saying what is on its way. */
+.opening {
+  display: none;
+}
+
+[data-opening] .opening {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  color: color-mix(in srgb, CanvasText 60%, Canvas);
+}
+
+[data-opening] #welcome {
+  display: none;
+}
+
 .welcome-inner {
   width: min(34rem, 100%);
   text-align: center;

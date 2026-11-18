@@ -243,6 +243,36 @@ finds the server, and the page gains a library, Save that writes back, and histo
 about one is shown (`smoke.js` checks that; `smoke-server.js` drives the page against a real
 `grind serve`). `doc/server.md` is the design and the protocol.
 
+## Embedded
+
+Another page on the same site may show this one in an `<iframe>` and point it at a document
+with `?doc=<path beside the page>` — shelf, a home NAS, opens office files so. Three things
+make that seamless:
+
+- **The name is decoded.** `?doc=../dav/files/My%20budget.ods` is fetched as it is, still
+  encoded, and shown, titled and saved as *My budget.ods*.
+- **No welcome pane while it loads.** An inline script in `index.html`'s `<head>` marks the
+  page (`<html data-opening>`) before the module is there, and the stylesheet then hides
+  `#welcome` and shows "Opening *name*…" instead. The shell takes the mark off once the
+  document is open, or, when fetching or opening it fails, shows the welcome pane with the
+  reason in `#message`.
+- **The parent is told what happened**, by `postMessage` to `window.parent` — only when the page
+  is in a frame, and only at the page's own origin, so nothing reaches another site:
+
+  | When | Message |
+  |---|---|
+  | the `?doc=` document is open | `{ type: "grind:opened", name, kind: "sheet" \| "text" }` |
+  | fetching or opening it failed | `{ type: "grind:failed", message }` |
+  | whether there is something to undo changes | `{ type: "grind:dirty", dirty }` |
+
+  `grind:dirty` lets the parent ask "discard your changes?" before it removes the frame, which
+  runs no `beforeunload`.
+
+An embedding page may also read the frame's DOM, and these stay as they are: `#welcome` gets
+`hidden` once a document is open, `#message` holds the reason when `?doc=` fails, and `#undo` is
+`disabled` exactly when there is nothing to undo. Nothing in the page needs a parent on another
+origin. `smoke-embed.js` opens the page as a frame does, once arriving and once not.
+
 ## How to see it
 
 ```sh
@@ -257,7 +287,8 @@ cargo test -p grind-web                              # the palette, the keymaps,
 lot: the command table and its fuzzy match (`command.rs`), both keymaps, the viewport and track
 arithmetic (`sheet/layout.rs`), the chart's own geometry and escaping (`sheet/chart.rs`), and
 the line-cutting that turns formatting, a selection and a caret into `<span>`s
-(`text/runs.rs`). Everything a browser is actually needed for is in `smoke.js`.
+(`text/runs.rs`). Everything a browser is actually needed for is in `smoke.js` and
+`smoke-embed.js`.
 
 ## Deployment
 
