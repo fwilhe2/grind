@@ -1546,7 +1546,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "nix",
-        version: "0.31.3",
+        version: "0.32.0",
         licence: "MIT",
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
@@ -2109,7 +2109,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2019 Fontations Developers",
         source: "https://github.com/googlefonts/fontations",
         kind: Kind::Crate,
-        notices: &[81, 82],
+        notices: &[83, 84],
     },
     Component {
         name: "redox_syscall",
@@ -3427,7 +3427,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.5.1",
+        version: "9.6.0",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
