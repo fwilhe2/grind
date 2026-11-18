@@ -22,9 +22,11 @@ use super::source;
 /// The sheet limits, which are also the clamp for every repeat count (§9).
 use crate::{MAX_COLS, MAX_ROWS};
 
-/// Ceiling on non-empty cells written across the whole document. Clamping each repeat count (§9)
-/// bounds the counts but not their product: a row repeated 1 048 576 times holding a cell repeated
-/// 16 384 times is legal under both clamps and asks for seventeen billion writes.
+/// Ceiling on cells written across the whole document, counted twice over: once for cells holding
+/// a value or formula and once for blanks kept for their style, so styling can never spend what the
+/// values need. Clamping each repeat count (§9) bounds the counts but not their product: a row
+/// repeated 1 048 576 times holding a cell repeated 16 384 times is legal under both clamps and
+/// asks for seventeen billion writes.
 const MAX_MATERIALISED_CELLS: u64 = 4_000_000;
 
 /// How long a run of equally sized columns or rows is still *layout* rather than the
@@ -50,8 +52,10 @@ pub struct Builder {
     row_spans: Vec<super::source::Cell>,
     /// Text accumulated by the paragraph contexts under the current cell.
     text: String,
-    /// Cells left in the materialisation budget. See [`MAX_MATERIALISED_CELLS`].
+    /// Value and formula cells left in the materialisation budget ([`MAX_MATERIALISED_CELLS`]).
     budget: u64,
+    /// Styled blanks left in theirs.
+    blank_budget: u64,
 
     // --- styles (§5) ---
     /// `number:*-style` by `style:name`.
@@ -206,6 +210,13 @@ struct RowCell {
     style: Option<std::sync::Arc<CellStyle>>,
 }
 
+impl RowCell {
+    /// Kept only for its style.
+    fn is_blank(&self) -> bool {
+        self.value.is_empty() && self.formula.is_none()
+    }
+}
+
 /// A style name's resolved format and look, shared by every cell that names it.
 type Look = (
     Option<std::sync::Arc<Format>>,
@@ -238,6 +249,7 @@ impl Builder {
             row_spans: Vec::new(),
             text: String::new(),
             budget: MAX_MATERIALISED_CELLS,
+            blank_budget: MAX_MATERIALISED_CELLS,
             number_styles: HashMap::new(),
             cell_styles: HashMap::new(),
             style_props: HashMap::new(),
@@ -605,17 +617,29 @@ impl Builder {
             return;
         };
 
-        // How many copies of this row the budget allows. The cursor still advances by the full
+        // How many copies of this row each budget allows. The cursor still advances by the full
         // repeat, so the rest of the sheet keeps its addresses.
-        let per_row = self.row_cells.len() as u64;
-        let affordable = (self.budget / per_row.max(1)).min(u64::from(repeat)) as u32;
+        let blanks = self.row_cells.iter().filter(|c| c.is_blank()).count() as u64;
+        let values = self.row_cells.len() as u64 - blanks;
+        let fits = |budget: u64, per_row: u64| match per_row {
+            0 => 0,
+            _ => (budget / per_row).min(u64::from(repeat)) as u32,
+        };
+        let (value_rows, blank_rows) = (fits(self.budget, values), fits(self.blank_budget, blanks));
 
-        for r in 0..affordable {
+        for r in 0..value_rows.max(blank_rows) {
             let row = self.row.saturating_add(r);
             if row >= MAX_ROWS {
                 break;
             }
             for cell in &self.row_cells {
+                if r >= if cell.is_blank() {
+                    blank_rows
+                } else {
+                    value_rows
+                } {
+                    continue;
+                }
                 let pos = Pos::new(row, cell.col);
                 if !cell.value.is_empty() {
                     sheet.set(pos, cell.value.clone());
@@ -633,8 +657,11 @@ impl Builder {
                     sheet.set_style_shared(pos, s.clone());
                 }
             }
-            self.budget = self.budget.saturating_sub(per_row);
         }
+        self.budget = self.budget.saturating_sub(values * u64::from(value_rows));
+        self.blank_budget = self
+            .blank_budget
+            .saturating_sub(blanks * u64::from(blank_rows));
 
         self.row_cells.clear();
         self.row = self.row.saturating_add(repeat).min(MAX_ROWS);

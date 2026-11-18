@@ -667,3 +667,47 @@ fn a_number_style_naming_no_decimals_is_general() {
         "2019.0"
     );
 }
+
+/// Styled blanks cannot crowd values out of the reader's cell budget. A UK government workbook
+/// filled its first sheets to 1000 × 1000 with bordered blanks, and every sheet after them came
+/// back with its values gone.
+#[test]
+fn styling_never_spends_the_budget_values_need() {
+    let blanks = r#"<table:table-row table:number-rows-repeated="1000">
+             <table:table-cell table:style-name="ce1" table:number-columns-repeated="1000"/>
+           </table:table-row>"#;
+    let sheet = format!(r#"<table:table table:name="Blank">{blanks}</table:table>"#);
+    let sheets = sheet.repeat(5);
+    let xml = format!(
+        r##"<?xml version="1.0" encoding="UTF-8"?>
+<office:document
+  xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"
+  xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+  office:mimetype="application/vnd.oasis.opendocument.spreadsheet"
+  office:version="1.4">
+ <office:automatic-styles>
+  <style:style style:name="ce1" style:family="table-cell">
+   <style:table-cell-properties fo:background-color="#ffff00"/>
+  </style:style>
+ </office:automatic-styles>
+ <office:body><office:spreadsheet>{sheets}
+  <table:table table:name="Data">
+   <table:table-row><table:table-cell office:value-type="string"><text:p>kept</text:p></table:table-cell></table:table-row>
+  </table:table>
+ </office:spreadsheet></office:body>
+</office:document>"##
+    );
+    let d = grind_sheet::read_bytes("budget.fods", xml.as_bytes()).expect("a flat ODS document");
+    assert_eq!(
+        d.sheet(5).expect("the data sheet").get(Pos::new(0, 0)),
+        text("kept")
+    );
+    let first = d.sheet(0).expect("the first sheet");
+    assert!(
+        first.style(Pos::new(999, 999)).is_some(),
+        "the first million blanks keep their look"
+    );
+}
