@@ -108,6 +108,10 @@ pub struct Line {
     /// The width of the hyphen drawn at its end when it breaks at a soft hyphen (U+00AD), which
     /// is otherwise invisible; zero for any other line. Past `width`, and no caret's.
     pub hyphen: f32,
+    /// How much further down its baseline is than [`Layout::baseline`] says — the paragraph's
+    /// tallest ascent — for its own text and any [`Object`] on it reaching higher; negative for
+    /// a line of smaller text.
+    pub raise: f32,
 }
 
 impl Line {
@@ -148,6 +152,13 @@ impl Layout {
     #[must_use]
     pub fn baseline(&self) -> f32 {
         self.baseline
+    }
+
+    /// Distance from `line`'s top to its own baseline: [`Layout::baseline`], lowered for an
+    /// [`Object`] on it.
+    #[must_use]
+    pub fn baseline_of(&self, line: &Line) -> f32 {
+        self.baseline + line.raise
     }
 
     #[must_use]
@@ -326,6 +337,18 @@ pub struct Setting {
     /// Whether words may be hyphenated at the end of a line, and how (`fo:hyphenate`,
     /// `doc/odt-format.md` §5c fact 55).
     pub hyphenate: Option<Hyphenate>,
+    /// The objects set at their own size rather than measured — a picture set as a character —
+    /// each by the character offset of the fragment it is.
+    pub objects: Vec<(usize, Object)>,
+}
+
+/// Something set as a character of its line: as wide as it is, reaching `above` the baseline
+/// and `below` it. A line holding one grows to hold it, the rest of the paragraph's do not.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Object {
+    pub width: f32,
+    pub above: f32,
+    pub below: f32,
 }
 
 /// Hyphenation as a paragraph asks for it: its language, and the fewest letters a break leaves
@@ -403,6 +426,12 @@ impl Tabs {
 /// §5c fact 32).
 const RIGHT_STOP_REACH: f32 = 16.8;
 
+/// How much wider than its room a line may come out and still fit: LibreOffice measures in whole
+/// twips, so text exactly as wide as a cell rounded up to them fits where the exact sum is a
+/// hair short (`doc/odt-format.md` §5c fact 72) — a twentieth of a point, in the unit points
+/// are measured in, and nothing visible in any other.
+const FIT_SLACK: f32 = 0.05;
+
 /// Everything that decides a layout, the floats by their bits.
 impl std::hash::Hash for Setting {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -414,8 +443,15 @@ impl std::hash::Hash for Setting {
             last,
             single_word,
             hyphenate,
+            objects,
         } = self;
         first.to_bits().hash(state);
+        for (at, object) in objects {
+            at.hash(state);
+            [object.width, object.above, object.below]
+                .map(f32::to_bits)
+                .hash(state);
+        }
         align.hash(state);
         last.hash(state);
         single_word.hash(state);
@@ -431,6 +467,25 @@ impl std::hash::Hash for Setting {
 
 /// U+00AD: where a word may break, shown as a hyphen only when it does.
 pub const SOFT_HYPHEN: char = '\u{AD}';
+
+/// U+200B: where a line may break, with no width whatever a face gives it — a face without the
+/// character would measure its missing-glyph box.
+pub const ZERO_WIDTH_SPACE: char = '\u{200B}';
+
+/// Take every [`ZERO_WIDTH_SPACE`]'s width out of `advances`, one cumulative advance per character
+/// of `text`.
+fn without_zero_widths(text: &str, advances: &mut [f32]) {
+    let mut removed = 0.0;
+    let mut before = 0.0;
+    for (c, advance) in text.chars().zip(advances.iter_mut()) {
+        let own = *advance - before;
+        before = *advance;
+        if c == ZERO_WIDTH_SPACE {
+            removed += own;
+        }
+        *advance -= removed;
+    }
+}
 
 /// Where a line may end, by byte: UAX #14 as Writer tailors it (`doc/odt-format.md` §5c fact
 /// 57). An en dash is read as an em dash, the same length in UTF-8; nothing breaks right after
@@ -503,11 +558,32 @@ pub fn wrap_set(
     let mut hyphens: Vec<(usize, f32)> = Vec::new();
     // Where each fragment starts, in characters, for finding the style a hyphen is set in.
     let mut starts: Vec<usize> = Vec::with_capacity(fragments.len());
+    // Each object, by the character offset it is at.
+    let mut objects: Vec<(usize, Object)> = Vec::new();
+    // Each fragment's ascent and what its line has below the baseline, `None` for an object.
+    let mut vertical: Vec<Option<(f32, f32)>> = Vec::with_capacity(fragments.len());
     for fragment in fragments {
         starts.push(xs.len() - 1);
         let origin = *xs.last().expect("xs starts with one element");
         fragment_advances.clear();
+        let object = setting
+            .objects
+            .iter()
+            .find(|(at, _)| *at == xs.len() - 1 && !fragment.text.is_empty());
+        if let Some(&(_, object)) = object {
+            objects.push((xs.len() - 1, object));
+            let count = fragment.text.chars().count().max(1) as f32;
+            for (at, _) in fragment.text.chars().enumerate() {
+                xs.push(origin + object.width * (at + 1) as f32 / count);
+            }
+            text.push_str(fragment.text);
+            vertical.push(None);
+            continue;
+        }
         metrics.advances(fragment.text, fragment.style, &mut fragment_advances);
+        if fragment.text.contains(ZERO_WIDTH_SPACE) {
+            without_zero_widths(fragment.text, &mut fragment_advances);
+        }
         for advance in &fragment_advances {
             xs.push(origin + advance);
         }
@@ -523,16 +599,27 @@ pub fn wrap_set(
             }
         }
         text.push_str(fragment.text);
-        heights.push(metrics.line_height(fragment.style));
-        ascents.push(metrics.ascent(fragment.style));
+        let (line, ascent) = (
+            metrics.line_height(fragment.style),
+            metrics.ascent(fragment.style),
+        );
+        heights.push(line);
+        ascents.push(ascent);
+        vertical.push(Some((ascent, line - ascent)));
     }
     let len = xs.len() - 1;
-    // A line is as tall as the tallest fragment in the paragraph. Per-line height would need the
-    // breaks first, and mixed sizes within one paragraph are rare.
-    let height = heights.iter().copied().fold(0.0_f32, f32::max).max(1.0);
-    // An empty paragraph has no fragment to ask, and still has a line to sit on.
+    // What a line is set by when it has nothing to say: the tallest fragment of the paragraph.
+    let only_objects = !objects.is_empty() && heights.is_empty();
+    let height = if only_objects {
+        0.0
+    } else {
+        heights.iter().copied().fold(0.0_f32, f32::max).max(1.0)
+    };
+    // An empty paragraph has no fragment to ask, and still has a line to sit on; one of objects
+    // alone is only as tall as they are (`doc/odt-format.md` §5c fact 29).
     let baseline = match ascents.iter().copied().reduce(f32::max) {
         Some(ascent) => ascent,
+        None if only_objects => 0.0,
         None => metrics.ascent(&TextStyle::default()),
     };
 
@@ -603,7 +690,52 @@ pub fn wrap_set(
     let mut start = 0usize;
     let mut last_fit: Option<usize> = None;
     let mut top = 0.0;
+    // A line's ascent and what it has below its baseline: the largest of the fragments it shows
+    // characters of, a line break aside — a 12 pt break ending a line of 8 pt words does not
+    // make it a 12 pt line (`doc/odt-format.md` §5c fact 70) — or, showing none, of those it
+    // touches.
+    let extents = |start: usize, end: usize| -> (f32, f32) {
+        let wider = |a: Option<(f32, f32)>, (ascent, descent): (f32, f32)| {
+            Some(a.map_or((ascent, descent), |(x, y)| (x.max(ascent), y.max(descent))))
+        };
+        let (mut shown, mut touched) = (None, None);
+        for (index, extent) in vertical.iter().enumerate() {
+            let Some(extent) = *extent else {
+                continue;
+            };
+            let from = starts[index];
+            let to = starts.get(index + 1).copied().unwrap_or(len);
+            if from == to {
+                if from == start {
+                    touched = wider(touched, extent);
+                }
+                continue;
+            }
+            let (lo, hi) = (from.max(start), to.min(end));
+            if lo >= hi {
+                continue;
+            }
+            if (lo..hi).any(|c| chars[c] != '\n') {
+                shown = wider(shown, extent);
+            } else {
+                touched = wider(touched, extent);
+            }
+        }
+        shown.or(touched).unwrap_or((baseline, height - baseline))
+    };
     let push = |start: usize, end: usize, top: &mut f32, lines: &mut Vec<Line>| {
+        let (ascent, descent) = extents(start, end);
+        // Taller where an object on it reaches past its text.
+        let (up, down) = objects
+            .iter()
+            .filter(|(at, _)| (start..end).contains(at))
+            .fold((0.0_f32, 0.0_f32), |(up, down), (_, object)| {
+                (
+                    up.max(object.above - ascent),
+                    down.max(object.below - descent),
+                )
+            });
+        let height = (ascent + descent + up + down).max(1.0);
         lines.push(Line {
             start,
             end,
@@ -614,6 +746,7 @@ pub fn wrap_set(
             stretch: 0.0,
             letters: 0.0,
             hyphen: hyphen_at(end),
+            raise: ascent + up - baseline,
         });
         *top += height;
     };
@@ -708,7 +841,7 @@ pub fn wrap_set(
             .rev()
             .find(|&i| !text_chars[i].is_whitespace())
             .map_or(from, |i| i + 1);
-        width <= 0.0 || span(from, visible, first_line) + hyphen_at(to) <= room
+        width <= 0.0 || span(from, visible, first_line) + hyphen_at(to) <= room + FIT_SLACK
     };
 
     // After a run of spaces where UAX #14 has no opportunity: a break there only when one of the
@@ -741,7 +874,7 @@ pub fn wrap_set(
             let room = width - if first_line { first } else { 0.0 };
             let from = *start;
             let end = (from + 2..at)
-                .take_while(|&end| span(from, end, first_line) <= room)
+                .take_while(|&end| span(from, end, first_line) <= room + FIT_SLACK)
                 .filter(|&end| !joins(chars[end]))
                 .last()
                 .unwrap_or(from + 1);
@@ -921,6 +1054,59 @@ impl Layout {
 mod tests {
     use super::*;
 
+    /// An object is as wide as it says and makes only its own line taller, lowering that line's
+    /// baseline by what it reaches above the text; a paragraph of objects alone is only as tall
+    /// as they are (`doc/odt-format.md` §5c facts 29 and 66).
+    #[test]
+    fn an_object_takes_its_own_room_on_its_own_line() {
+        let style = TextStyle::default();
+        let fragments = [
+            Fragment {
+                text: "ab ",
+                style: &style,
+            },
+            Fragment {
+                text: "\u{fffc}",
+                style: &style,
+            },
+            Fragment {
+                text: " cd ef gh",
+                style: &style,
+            },
+        ];
+        let object = Object {
+            width: 3.0,
+            above: 2.0,
+            below: 0.5,
+        };
+        let setting = Setting {
+            objects: vec![(3, object)],
+            ..Setting::default()
+        };
+        let layout = wrap_set(&fragments, 9.0, &Fixed, &setting);
+        let lines = layout.lines();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(layout.x_at(4) - layout.x_at(3), 3.0);
+        // Fixed's lines are 1 tall with the baseline 0.8 down: 1.2 more above, 0.3 more below.
+        assert!((lines[0].height - 2.5).abs() < 1e-5, "{}", lines[0].height);
+        assert!((layout.baseline_of(&lines[0]) - 2.0).abs() < 1e-5);
+        assert!((lines[1].height - 1.0).abs() < 1e-5);
+        assert!((lines[1].top - 2.5).abs() < 1e-5);
+        assert_eq!(layout.baseline_of(&lines[1]), layout.baseline());
+
+        let alone = [Fragment {
+            text: "\u{fffc}",
+            style: &style,
+        }];
+        let setting = Setting {
+            objects: vec![(0, object)],
+            ..Setting::default()
+        };
+        let layout = wrap_set(&alone, 9.0, &Fixed, &setting);
+        assert!((layout.lines()[0].height - 2.5).abs() < 1e-5);
+        assert!((layout.baseline_of(&layout.lines()[0]) - 2.0).abs() < 1e-5);
+    }
+
     fn plain(text: &str) -> Layout {
         let style = TextStyle::default();
         let fragments = [Fragment {
@@ -950,6 +1136,19 @@ mod tests {
             ..Setting::default()
         };
         wrap_set(&fragments, width, &Fixed, &setting)
+    }
+
+    #[test]
+    fn a_zero_width_space_takes_no_room_and_keeps_its_place() {
+        let layout = plain("a\u{200B}b");
+        assert_eq!(layout.x_at(1), 1.0);
+        assert_eq!(layout.x_at(2), 1.0, "after it is where before it was");
+        assert_eq!(layout.x_at(3), 2.0);
+        assert_eq!(
+            plain("\u{200B}").lines().len(),
+            1,
+            "alone it is still a line"
+        );
     }
 
     #[test]
@@ -1112,6 +1311,54 @@ mod tests {
         if style.font_size.is_some() { 2.0 } else { 1.0 }
     }
 
+    /// `doc/odt-format.md` §5c fact 72: text a hair wider than its room still fits.
+    #[test]
+    fn text_a_hair_too_wide_still_fits() {
+        assert_eq!(at("abc", 2.98).lines().len(), 1);
+        assert_eq!(
+            at("abc", 2.9).lines().len(),
+            2,
+            "more than a hair is too wide"
+        );
+    }
+
+    /// `doc/odt-format.md` §5c fact 70: small words, a big break ending their line, then big
+    /// words — the first line is as tall as its small words, the second as its big ones.
+    #[test]
+    fn each_line_is_as_tall_as_what_it_shows() {
+        let small = TextStyle::default();
+        let big = TextStyle {
+            font_size: Some("24pt".into()),
+            ..TextStyle::default()
+        };
+        let layout = wrap(
+            &[
+                Fragment {
+                    text: "ab",
+                    style: &small,
+                },
+                Fragment {
+                    text: "\n",
+                    style: &big,
+                },
+                Fragment {
+                    text: "CD",
+                    style: &big,
+                },
+            ],
+            0.0,
+            &Tall,
+        );
+        let lines = layout.lines();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(
+            (lines[0].height, layout.baseline_of(&lines[0])),
+            (10.0, 7.0)
+        );
+        assert_eq!((lines[1].top, lines[1].height), (10.0, 20.0));
+        assert_eq!(layout.baseline_of(&lines[1]), 14.0);
+    }
+
     #[test]
     fn a_line_sits_on_the_largest_ascent_in_it() {
         let small = TextStyle::default();
@@ -1209,6 +1456,7 @@ mod tests {
                 stretch: 0.0,
                 letters: 0.0,
                 hyphen: 0.0,
+                raise: 0.0,
             }
         );
     }

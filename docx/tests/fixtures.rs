@@ -751,6 +751,27 @@ fn notes_count_in_the_format_the_settings_state() {
     assert_eq!(citations(&stated), ["1", "2"]);
 }
 
+/// `doc/docx-format.md` §2.9: a document with an endnote sets them after its text, as Word does;
+/// one with none says nothing about it.
+#[test]
+fn endnotes_follow_the_text_as_word_sets_them() {
+    let notes = (
+        "word/endnotes.xml",
+        "endnotes",
+        format!(
+            r#"<w:endnotes xmlns:w="{W}"><w:endnote w:id="1"><w:p><w:r><w:t>one</w:t></w:r></w:p></w:endnote></w:endnotes>"#
+        )
+        .into_bytes(),
+    );
+    let cited = r#"<w:p><w:r><w:t>text</w:t></w:r><w:r><w:endnoteReference w:id="1"/></w:r></w:p>"#;
+    let (fodt, _) = grind_docx::convert(&docx(cited, &[notes])).expect("a document");
+    let app = grind_text::App::new();
+    app.open_bytes("end.fodt", &fodt).unwrap();
+    assert!(app.note_look().continuous);
+    let (plain, _) = grind_docx::convert(&docx("<w:p/>", &[])).expect("a document");
+    assert!(!String::from_utf8_lossy(&plain).contains("ContinuousEndnotes"));
+}
+
 #[test]
 fn a_page_break_starts_a_paragraph_on_a_new_page() {
     let body = r#"<w:p><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>"#;
@@ -808,6 +829,79 @@ fn an_inline_picture_is_a_picture_at_its_size() {
     assert_eq!(image.2.as_deref(), Some("72pt"));
     assert_eq!(image.3.as_deref(), Some("36pt"));
     assert_eq!(image.4.as_deref(), Some("as-char"));
+}
+
+/// `doc/docx-format.md` §7: a `wrapNone` picture floats where Word puts it, and a cropped one
+/// is cut, as grind-text reads the result; a picture the text wraps round stays in the line.
+#[test]
+fn a_floating_picture_keeps_its_place_and_a_cropped_one_its_cut() {
+    let graphic = |src: &str| {
+        format!(
+            r#"<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rId1"/>{src}</pic:blipFill></pic:pic></a:graphicData></a:graphic>"#
+        )
+    };
+    let paragraph = |drawing: String| {
+        format!(
+            r"<w:p><w:r><w:drawing>{drawing}</w:drawing></w:r><w:r><w:t>words</w:t></w:r></w:p>"
+        )
+    };
+    let anchored = |wrap: &str| {
+        paragraph(format!(
+            r#"<wp:anchor><wp:positionH relativeFrom="margin"><wp:posOffset>360000</wp:posOffset></wp:positionH><wp:positionV relativeFrom="page"><wp:align>bottom</wp:align></wp:positionV><wp:extent cx="720000" cy="360000"/>{wrap}{}</wp:anchor>"#,
+            graphic("")
+        ))
+    };
+    let cropped = paragraph(format!(
+        r#"<wp:inline><wp:extent cx="720000" cy="360000"/>{}</wp:inline>"#,
+        graphic(r#"<a:srcRect l="25000" t="10%"/>"#)
+    ));
+    let body = [
+        anchored("<wp:wrapNone/>"),
+        anchored("<wp:wrapSquare/>"),
+        cropped,
+    ]
+    .concat();
+    let media = ("word/media/image1.png", "image", PNG.to_vec());
+    let (fodt, report) = grind_docx::convert(&docx(&body, &[media])).expect("a document");
+    assert_eq!(
+        report.dropped.get(&Dropped::FloatingPosition),
+        Some(&1),
+        "the wrapped one"
+    );
+    let app = grind_text::App::new();
+    app.open_bytes("floats.fodt", &fodt).unwrap();
+    let viewport = app.get_viewport(0..app.block_count());
+    let image = |index: usize| {
+        viewport.get(index).expect("a block").runs[0]
+            .image
+            .clone()
+            .expect("a picture")
+    };
+    let floating = image(0).floating.expect("it floats");
+    assert_eq!(floating.across.0, "from-left");
+    assert_eq!(floating.across.1, "paragraph");
+    let offset = floating
+        .across
+        .2
+        .as_deref()
+        .and_then(grind_core::style::length_mm);
+    assert!(
+        offset.is_some_and(|mm| (mm - 10.0).abs() < 0.01),
+        "{offset:?}"
+    );
+    assert_eq!(floating.down, ("bottom".into(), "page".into(), None));
+    assert_eq!(
+        image(1).floating,
+        None,
+        "the text wraps round it: in the line"
+    );
+    let crop = image(2).crop.expect("it is cut");
+    let [top, right, bottom, left] = crop.fractions(PNG).expect("its own size");
+    assert!(
+        (top - 0.1).abs() < 1e-4 && (left - 0.25).abs() < 1e-4,
+        "{crop:?}"
+    );
+    assert!(right.abs() < 1e-9 && bottom.abs() < 1e-9);
 }
 
 /// A text box's story follows the paragraph that anchors it — from the VML fallback Word

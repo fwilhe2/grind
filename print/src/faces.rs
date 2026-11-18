@@ -81,6 +81,18 @@ impl<'a> RoleFace<'a> {
         self
     }
 
+    /// What a proportional line rule above 100% adds below each line, in points; nothing for
+    /// any other.
+    #[must_use]
+    pub fn extra_below(&self) -> f32 {
+        match self.line {
+            Some(LineRule::Proportional(share)) if share > 1.0 => {
+                self.setter.line_height(&self.style(&TextStyle::default())) * (share - 1.0)
+            }
+            _ => 0.0,
+        }
+    }
+
     pub fn new(setter: &'a Typesetter, role: Role) -> Self {
         RoleFace::stating(setter, role, TextStyle::default())
     }
@@ -277,8 +289,14 @@ impl grind_text::Faces for TableLooks<'_> {
     /// (`doc/odt-format.md` §5c fact 18).
     fn cell_pad(&self, table: &str, row: u32, column: u32) -> Option<[f64; 4]> {
         let look = self.0.get(table)?;
-        let cell = look.cell(row, column)?;
-        let [top, right, bottom, left] = cell.padding.map(|mm| mm * 72.0 / 25.4);
+        // A cell with no style of its own in a table whose document styles its cells has no
+        // padding, as Writer sets one (`doc/odt-format.md` §5c fact 73).
+        let padding = match look.cell(row, column) {
+            Some(cell) => cell.padding,
+            None if !look.cells.is_empty() => [0.0; 4],
+            None => return None,
+        };
+        let [top, right, bottom, left] = padding.map(|mm| mm * 72.0 / 25.4);
         Some([
             top + look.band_above(row, column),
             right,
@@ -372,6 +390,12 @@ pub struct Column<'a> {
     pub aligns: &'a HashMap<usize, Aligned>,
     /// Each block's hyphenation, where its paragraph style asks for it.
     pub hyphenations: &'a HashMap<usize, grind_core::layout::Hyphenate>,
+    /// Each block's pictures set as characters, by character offset.
+    pub objects: &'a HashMap<usize, Vec<(usize, grind_core::layout::Object)>>,
+    /// The footnotes each block cites — the character each is cited at and its height, in
+    /// points — and the height of the rule over a page's.
+    pub notes: &'a HashMap<usize, Vec<(usize, f64)>>,
+    pub rule: f64,
     /// Each table's look, by name ([`grind_text::table_look`]).
     pub looks: &'a HashMap<String, TableLook>,
     /// The text area's width, in points.
@@ -423,11 +447,20 @@ impl grind_text::Faces for Column<'_> {
             last: self.aligns.get(&index).map_or_default(|a| a.1),
             single_word: self.aligns.get(&index).is_some_and(|a| a.2),
             hyphenate: self.hyphenations.get(&index).cloned(),
+            objects: self.objects.get(&index).cloned().unwrap_or_default(),
         }
     }
 
     fn columns(&self, table: &str) -> Option<Vec<Option<f64>>> {
         TableLooks(self.looks).columns(table)
+    }
+
+    fn footnotes(&self, index: usize) -> Vec<(usize, f64)> {
+        self.notes.get(&index).cloned().unwrap_or_default()
+    }
+
+    fn footnote_rule(&self) -> f64 {
+        self.rule
     }
 
     fn table_span(&self, table: &str, column: f64) -> Option<(f64, f64)> {
@@ -561,6 +594,8 @@ mod tests {
         let tabs = HashMap::new();
         let aligns = HashMap::new();
         let hyphenations = HashMap::new();
+        let objects = HashMap::new();
+        let notes = HashMap::new();
         let looks = HashMap::new();
         let insets = HashMap::new();
         let column = Column {
@@ -569,6 +604,9 @@ mod tests {
             tabs: &tabs,
             aligns: &aligns,
             hyphenations: &hyphenations,
+            objects: &objects,
+            notes: &notes,
+            rule: 0.0,
             looks: &looks,
             faces: &faces,
             blocks: &blocks,

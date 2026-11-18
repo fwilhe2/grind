@@ -2724,6 +2724,27 @@ fn an_imported_word_document_arrives_with_its_structure() {
     assert!(!again.status.success());
 }
 
+/// `grind text notes`: every footnote and endnote, where it is cited, its class, its mark and
+/// its text.
+#[test]
+fn notes_lists_every_footnote_and_endnote() {
+    let dir = Sandbox::new("notes");
+    let doc = dir.path("notes.fodt");
+    std::fs::write(
+        &doc,
+        r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:mimetype="application/vnd.oasis.opendocument.text"><office:body><office:text><text:p>intro</text:p><text:p>cited<text:note text:id="n1" text:note-class="footnote"><text:note-citation>1</text:note-citation><text:note-body><text:p>The source.</text:p></text:note-body></text:note> and<text:note text:id="e1" text:note-class="endnote"><text:note-citation>i</text:note-citation><text:note-body><text:p>Later.</text:p></text:note-body></text:note></text:p></office:text></office:body></office:document>"#,
+    )
+    .unwrap();
+    let listed = ok_top(&["text", "notes", &s(&doc)]);
+    assert_eq!(
+        listed.lines().collect::<Vec<_>>(),
+        [
+            "p2+5\tfootnote\t1\tThe source.",
+            "p2+10\tendnote\ti\tLater."
+        ]
+    );
+}
+
 /// A spreadsheet is not a Word document, and the import says so rather than writing an empty one.
 #[cfg(all(feature = "docx", feature = "xlsx"))]
 #[test]

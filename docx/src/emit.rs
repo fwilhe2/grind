@@ -19,7 +19,7 @@ use std::fmt::Write as _;
 
 use grind_core::odf::xml::esc;
 
-use crate::body::{Block, Image, Inline, Para, Run, Table, VMerge};
+use crate::body::{At, Axis, Block, Image, Inline, Para, Run, Table, VMerge};
 use crate::numbering::{self, Numbering};
 use crate::props::{self, ParaProps, Props, Tab};
 use crate::report::{Dropped, Report};
@@ -104,6 +104,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
         tables: Vec::new(),
         cell_styles: BTreeMap::new(),
         row_styles: BTreeMap::new(),
+        graphic_styles: BTreeMap::new(),
         lists_seen: HashSet::new(),
         outline_list: None,
         outline_levels: BTreeSet::new(),
@@ -213,6 +214,11 @@ pub fn write(input: Input, report: &mut Report) -> String {
 
     let mut out = String::new();
     out.push_str(PROLOG);
+    // Word sets endnotes straight after the text, which LibreOffice's own import says so
+    // (`doc/docx-format.md` §2.9).
+    if w.endnotes > 0 {
+        out.push_str(" <office:settings><config:config-item-set config:name=\"ooo:configuration-settings\"><config:config-item config:name=\"ContinuousEndnotes\" config:type=\"boolean\">true</config:config-item></config:config-item-set></office:settings>\n");
+    }
     if !input.fonts.is_empty() {
         out.push_str(" <office:font-face-decls>\n");
         for (name, generic) in &input.fonts {
@@ -300,7 +306,7 @@ pub fn write(input: Input, report: &mut Report) -> String {
 }
 
 const PROLOG: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
-<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.text">
 "#;
 
 /// The `n`th master page's name: `Standard` first, as every ODF producer names the default one.
@@ -386,6 +392,8 @@ struct Writer<'i, 'r> {
     tables: Vec<String>,
     cell_styles: BTreeMap<Props, String>,
     row_styles: BTreeMap<Props, String>,
+    /// Automatic graphic styles: their properties' attributes → name.
+    graphic_styles: BTreeMap<String, String>,
     /// The list that numbers the headings ([`Writer::find_outline_list`]).
     outline_list: Option<i64>,
     /// The outline levels it numbers a heading at: only these place a label, so a heading Word
@@ -988,8 +996,57 @@ impl Writer<'_, '_> {
         use base64::Engine as _;
         self.images += 1;
         self.report.images += 1;
-        let anchor = if image.inline { "as-char" } else { "char" };
+        let mut graphic = String::new();
+        let mut offsets = String::new();
+        let placed = image
+            .place
+            .as_ref()
+            .and_then(|(across, down)| Some((odf_axis(across, true)?, odf_axis(down, false)?)));
+        let anchor = match placed {
+            Some((across, down)) => {
+                let _ = write!(
+                    graphic,
+                    " style:wrap=\"run-through\" style:run-through=\"foreground\" style:horizontal-pos=\"{}\" style:horizontal-rel=\"{}\" style:vertical-pos=\"{}\" style:vertical-rel=\"{}\"",
+                    across.1, across.0, down.1, down.0
+                );
+                for (name, offset) in [("x", across.2), ("y", down.2)] {
+                    if let Some(offset) = offset {
+                        let _ = write!(offsets, " svg:{name}=\"{}\"", props::emu(offset));
+                    }
+                }
+                "paragraph"
+            }
+            None if image.inline => "as-char",
+            None => "char",
+        };
+        if let Some(crop) = image.crop {
+            match grind_text::picture::own_mm(&image.data) {
+                Some((width, height)) => {
+                    let mm = |thousandths: i64, of: f64| {
+                        format!("{:.6}mm", thousandths as f64 / 100_000.0 * of)
+                    };
+                    let [top, right, bottom, left] = crop;
+                    let _ = write!(
+                        graphic,
+                        " fo:clip=\"rect({}, {}, {}, {})\"",
+                        mm(top, height),
+                        mm(right, width),
+                        mm(bottom, height),
+                        mm(left, width)
+                    );
+                }
+                None => self.report.drop_one(Dropped::PictureCrop),
+            }
+        }
         let _ = write!(out, "<draw:frame text:anchor-type=\"{anchor}\"");
+        if !graphic.is_empty() {
+            let next = self.graphic_styles.len() + 1;
+            let name = self
+                .graphic_styles
+                .entry(graphic)
+                .or_insert_with(|| format!("fr{next}"));
+            let _ = write!(out, " draw:style-name=\"{name}\"{offsets}");
+        }
         if let Some(width) = image.width.filter(|w| *w > 0) {
             let _ = write!(out, " svg:width=\"{}\"", props::emu(width));
         }
@@ -1466,6 +1523,12 @@ impl Writer<'_, '_> {
                 props.attributes()
             );
         }
+        for (attributes, name) in by_name(&self.graphic_styles) {
+            let _ = writeln!(
+                out,
+                "  <style:style style:name=\"{name}\" style:family=\"graphic\"><style:graphic-properties{attributes}/></style:style>"
+            );
+        }
     }
 
     /// `text:outline-style` from the list that numbers the headings — nothing when none does.
@@ -1614,6 +1677,41 @@ fn close_lists(out: &mut String, open: &mut Vec<i64>, keep: usize, depth: usize)
 
 /// A pool's entries in the order their names were handed out — `P1`, `P2`, … — so the styles
 /// are written in a stable order that reads like the document.
+/// Whether ODF can say where a Word picture the text runs through goes (`doc/docx-format.md`
+/// §7.2).
+pub(crate) fn placeable(across: &Axis, down: &Axis) -> bool {
+    odf_axis(across, true).is_some() && odf_axis(down, false).is_some()
+}
+
+/// A Word axis as ODF's `-rel` and `-pos`, and the offset in EMU for `from-left`/`from-top`.
+fn odf_axis(axis: &Axis, across: bool) -> Option<(&'static str, &'static str, Option<i64>)> {
+    let rel = match (axis.from.as_str(), across) {
+        ("page", _) => "page",
+        ("margin" | "column", true) | ("paragraph", false) => "paragraph",
+        ("margin", false) => "page-content",
+        _ => return None,
+    };
+    let (pos, offset) = match (&axis.at, across) {
+        (At::Offset(emu), true) => ("from-left", Some(*emu)),
+        (At::Offset(emu), false) => ("from-top", Some(*emu)),
+        (At::Align(align), true) => match align.as_str() {
+            "left" => ("left", None),
+            "center" => ("center", None),
+            "right" => ("right", None),
+            _ => return None,
+        },
+        // A paragraph has no height to align in until it is set.
+        (At::Align(_), false) if rel == "paragraph" => return None,
+        (At::Align(align), false) => match align.as_str() {
+            "top" => ("top", None),
+            "center" => ("middle", None),
+            "bottom" => ("bottom", None),
+            _ => return None,
+        },
+    };
+    Some((rel, pos, offset))
+}
+
 fn by_name<K>(pool: &BTreeMap<K, String>) -> Vec<(&K, &String)> {
     let mut entries: Vec<_> = pool.iter().collect();
     entries.sort_by_key(|(_, name)| {

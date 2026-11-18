@@ -960,6 +960,9 @@ pub(crate) enum TextCommand {
         list: Option<u32>,
     },
 
+    /// Print every footnote and endnote: where it is cited, its class, its mark and its text
+    Notes { file: PathBuf },
+
     /// Print every heading, its level and the address that finds it again
     Outline {
         file: PathBuf,

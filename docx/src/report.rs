@@ -35,8 +35,10 @@ pub enum Dropped {
     /// A picture linked to a file or a URL rather than held in the document. **Never fetched.**
     LinkedPicture,
     /// A floating picture's position: it is kept, anchored to its paragraph, but not where on
-    /// the page it floated.
+    /// the page it floated. A picture the text runs through is carried where it floats.
     FloatingPosition,
+    /// A picture's crop, for a picture whose own size is not known: it is shown whole.
+    PictureCrop,
     /// A field other than a page number, a page count or a hyperlink — a date, a reference, a
     /// table of contents. Its last computed text is kept; it no longer updates.
     Field,
@@ -78,6 +80,7 @@ impl Dropped {
             Dropped::EmbeddedObject => "embedded object",
             Dropped::LinkedPicture => "linked picture",
             Dropped::FloatingPosition => "floating picture's position",
+            Dropped::PictureCrop => "picture's crop",
             Dropped::Field => "field (kept as its text)",
             Dropped::FormField => "form field (kept as its text)",
             Dropped::ContentControl => "content control (kept as its text)",

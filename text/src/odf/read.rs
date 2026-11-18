@@ -69,6 +69,8 @@ pub struct Builder {
     package: Option<std::cell::RefCell<grind_core::odf::package::Parts>>,
     /// Every `style:page-layout` read so far, by name.
     page_layouts: HashMap<String, grind_core::page::PageGeometry>,
+    /// Each page layout's rule over its footnotes, where it states one.
+    footnote_rules: HashMap<String, crate::marginal::Rule>,
     /// Each page layout's `style:page-usage`, where it states one.
     page_usage: HashMap<String, crate::model::PageUsage>,
     /// Each page layout's background picture, and the one being read.
@@ -210,6 +212,8 @@ struct PendingImage {
     caption: String,
     /// The outermost frame's start tag in the source, for [`super::source::Source::frames`].
     start: Option<std::ops::Range<usize>>,
+    /// Where the outermost frame floats and what it cuts from its picture.
+    look: crate::picture::Look,
 }
 
 /// One `style:style` of family `text`, as the document declared it.
@@ -244,6 +248,7 @@ impl Builder {
             frame_depth: 0,
             package: None,
             page_layouts: HashMap::new(),
+            footnote_rules: HashMap::new(),
             page_usage: HashMap::new(),
             page_backgrounds: HashMap::new(),
             page_background: None,
@@ -382,6 +387,12 @@ impl Builder {
             .as_ref()
             .filter(|(_, layout)| self.page_layouts.contains_key(layout))
             .map(|(_, layout)| layout.clone());
+        if let Some(rule) = rest
+            .as_ref()
+            .and_then(|(_, layout)| self.footnote_rules.get(layout))
+        {
+            self.doc.note_look.rule = rule.clone();
+        }
         let marginals_of = |master: &(String, String)| {
             let marginals = self
                 .master_marginals
@@ -647,13 +658,23 @@ impl Builder {
 
     /// Remember where a picture's outermost frame is, so a regenerated paragraph writes the file's
     /// own frame back.
-    fn record_frame(&mut self, image: &Run, start_tag: Option<std::ops::Range<usize>>) {
+    fn record_frame(
+        &mut self,
+        image: &Run,
+        start_tag: Option<std::ops::Range<usize>>,
+        look: crate::picture::Look,
+    ) {
         let (Some(key), Some(start_tag)) = (super::source::image_key(image), start_tag) else {
             return;
         };
         let Some(source) = self.doc.source.as_deref_mut() else {
             return;
         };
+        if let Some(block) = self.doc.blocks.last()
+            && look != crate::picture::Look::default()
+        {
+            source.looks.push((block.id, key, look));
+        }
         if let Some(range) = element_extent(&source.bytes, start_tag) {
             source.frames.push((key, range));
         }
@@ -873,11 +894,12 @@ impl Context<Builder> for Root {
     }
 }
 
-/// `office:settings` (`settings.xml`, or the flat form's): only `AddParaTableSpacing` in
-/// `ooo:configuration-settings` is read (`doc/odt-format.md` §5c fact 46).
+/// `office:settings` (`settings.xml`, or the flat form's): only `AddParaTableSpacing` and
+/// `ContinuousEndnotes` in `ooo:configuration-settings` are read (`doc/odt-format.md` §5c facts
+/// 46 and 69).
 struct Settings {
-    /// Whether this is that `config:config-item`, gathering its text.
-    item: Option<String>,
+    /// Which of those this `config:config-item` is, and its text so far.
+    item: Option<(&'static str, String)>,
 }
 
 impl Context<Builder> for Settings {
@@ -888,11 +910,14 @@ impl Context<Builder> for Settings {
             {
                 Some(Box::new(Settings { item: None }))
             }
-            (Ns::Config, "config-item")
-                if attrs.get(Ns::Config, "name") == Some("AddParaTableSpacing") =>
-            {
+            (Ns::Config, "config-item") => {
+                let name = match attrs.get(Ns::Config, "name")? {
+                    "AddParaTableSpacing" => "AddParaTableSpacing",
+                    "ContinuousEndnotes" => "ContinuousEndnotes",
+                    _ => return None,
+                };
                 Some(Box::new(Settings {
-                    item: Some(String::new()),
+                    item: Some((name, String::new())),
                 }))
             }
             _ => None,
@@ -900,14 +925,18 @@ impl Context<Builder> for Settings {
     }
 
     fn text(&mut self, text: &str, _b: &mut Builder) {
-        if let Some(item) = &mut self.item {
+        if let Some((_, item)) = &mut self.item {
             item.push_str(text);
         }
     }
 
     fn end(&mut self, b: &mut Builder) {
-        if let Some(item) = &self.item {
-            b.doc.paragraph_spaces_add = item.trim() != "false";
+        match &self.item {
+            Some(("AddParaTableSpacing", item)) => {
+                b.doc.paragraph_spaces_add = item.trim() != "false";
+            }
+            Some((_, item)) => b.doc.note_look.continuous = item.trim() == "true",
+            None => {}
         }
     }
 }
@@ -1238,6 +1267,7 @@ impl MarginalFrame {
             across: placed(field(1), field(2), "x"),
             down: placed(field(3), field(4), "y"),
             inline,
+            crop: crop(attrs, b),
         };
         b.marginal_picture = Some(picture);
         Some(MarginalFrame)
@@ -1280,11 +1310,12 @@ struct GraphicStyleDef {
 }
 
 /// What a graphic style says about where its frame goes, as spelled: `style:wrap`, then
-/// `style:horizontal-pos`, `-rel`, `style:vertical-pos` and `-rel`.
+/// `style:horizontal-pos`, `-rel`, `style:vertical-pos` and `-rel`, then what it cuts from its
+/// picture (`fo:clip`).
 #[derive(Clone, Default)]
 struct GraphicPlace {
     parent: Option<String>,
-    fields: [Option<String>; 5],
+    fields: [Option<String>; 6],
 }
 
 impl Builder {
@@ -1332,6 +1363,7 @@ impl Context<Builder> for GraphicStyleDef {
                     get("horizontal-rel"),
                     get("vertical-pos"),
                     get("vertical-rel"),
+                    attrs.get(Ns::Fo, "clip").map(str::to_owned),
                 ],
             };
             b.graphic_places.insert(self.name.clone(), place);
@@ -1652,7 +1684,12 @@ impl Context<Builder> for PageLayout {
             // The first of a name is the one master pages name: `styles.xml`'s, read first, and
             // not a copy `content.xml` may carry unused.
             b.page_layouts.entry(self.name.clone()).or_insert(page);
-            if attrs.get(Ns::Draw, "fill") == Some("bitmap") {
+            if attrs.get(Ns::Draw, "fill") != Some("bitmap") {
+                return Some(Box::new(PageLayoutProps {
+                    layout: self.name.clone(),
+                }));
+            }
+            {
                 let length = |local| {
                     attrs
                         .get(Ns::Draw, local)
@@ -1687,15 +1724,49 @@ impl Context<Builder> for PageLayout {
     }
 }
 
-/// A bitmap-filled `style:page-layout-properties`, for its `style:background-image`: an
-/// `xlink:href` into the package or inline `office:binary-data`.
+/// `style:footnote-sep` (rng:12543), each attribute it leaves out at LibreOffice's default
+/// (`doc/odt-format.md` §5c fact 67).
+fn footnote_rule(attrs: &Attrs) -> crate::marginal::Rule {
+    let mut rule = crate::marginal::Rule::default();
+    let length = |local| {
+        attrs
+            .get(Ns::Style, local)
+            .and_then(grind_core::style::length_mm)
+    };
+    rule.width = length("width").unwrap_or(rule.width);
+    rule.before = length("distance-before-sep").unwrap_or(rule.before);
+    rule.after = length("distance-after-sep").unwrap_or(rule.after);
+    if let Some(share) = attrs
+        .get(Ns::Style, "rel-width")
+        .and_then(|value| value.trim().strip_suffix('%')?.trim().parse::<f64>().ok())
+    {
+        rule.share = share / 100.0;
+    }
+    if let Some(align) = attrs.get(Ns::Style, "adjustment") {
+        align.clone_into(&mut rule.align);
+    }
+    if let Some(color) = attrs.get(Ns::Style, "color") {
+        color.clone_into(&mut rule.color);
+    }
+    rule.drawn = attrs.get(Ns::Style, "line-style") != Some("none");
+    rule
+}
+
+/// A `style:page-layout-properties`, for its `style:footnote-sep` and, when bitmap-filled, its
+/// `style:background-image`: an `xlink:href` into the package or inline `office:binary-data`.
 struct PageLayoutProps {
     layout: String,
 }
 
 impl Context<Builder> for PageLayoutProps {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
-        if !name.is(Ns::Style, "background-image") {
+        if name.is(Ns::Style, "footnote-sep") && b.footnote_rules.len() < MAX_STYLES {
+            b.footnote_rules
+                .entry(self.layout.clone())
+                .or_insert_with(|| footnote_rule(attrs));
+            return None;
+        }
+        if !name.is(Ns::Style, "background-image") || b.page_background.is_none() {
             return None;
         }
         match attrs.get(Ns::Xlink, "href") {
@@ -1764,6 +1835,18 @@ impl Context<Builder> for Styles {
                 automatic: self.automatic,
                 outline: false,
             }));
+        }
+        if name.is(Ns::Text, "notes-configuration") {
+            let style = |local| attrs.get(Ns::Text, local).map(str::to_owned);
+            let citations = crate::marginal::Citations {
+                body: style("citation-body-style-name"),
+                note: style("citation-style-name"),
+            };
+            match attrs.get(Ns::Text, "note-class") {
+                Some("endnote") => b.doc.note_look.endnote = citations,
+                _ => b.doc.note_look.footnote = citations,
+            }
+            return None;
         }
         if name.is(Ns::Text, "outline-style") {
             b.list_levels.clear();
@@ -2935,9 +3018,15 @@ impl Context<Builder> for FieldText {
 /// size is kept unless it gave none, and only the outermost [`Frame::end`] makes a run.
 fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
     let outermost = b.frame_depth == 0;
+    let look = outermost.then(|| crate::picture::Look {
+        floating: floating(attrs, b),
+        crop: crop(attrs, b),
+        seat: seat(attrs, b),
+    });
     let pending = b.image.get_or_insert_with(PendingImage::default);
-    if outermost {
+    if let Some(look) = look {
         pending.start = Some(attrs.span());
+        pending.look = look;
     }
     if pending.width.is_none() {
         pending.width = attrs.get(Ns::Svg, "width").map(str::to_owned);
@@ -2950,6 +3039,41 @@ fn open_frame(attrs: &Attrs, b: &mut Builder) -> Ctx {
     }
     b.frame_depth += 1;
     Box::new(Frame)
+}
+
+/// Where a frame anchored to its paragraph floats, when its graphic style lets the text run
+/// through it (`doc/odt-format.md` §5c fact 63). A picture anchored otherwise, or one the text
+/// makes room for, sits in its line.
+fn floating(attrs: &Attrs, b: &Builder) -> Option<crate::picture::Floating> {
+    if attrs.get(Ns::Text, "anchor-type") != Some("paragraph") {
+        return None;
+    }
+    let style = attrs.get(Ns::Draw, "style-name");
+    let field = |at| b.graphic_place(style, at).unwrap_or_default();
+    if field(0) != "run-through" {
+        return None;
+    }
+    let offset = |local| attrs.get(Ns::Svg, local).map(str::to_owned);
+    Some(crate::picture::Floating {
+        across: (field(1), field(2), offset("x")),
+        down: (field(3), field(4), offset("y")),
+    })
+}
+
+/// How a frame set as a character sits on its line (`doc/odt-format.md` §5c fact 66).
+fn seat(attrs: &Attrs, b: &Builder) -> crate::picture::Seat {
+    if attrs.get(Ns::Text, "anchor-type") != Some("as-char") {
+        return crate::picture::Seat::default();
+    }
+    let style = attrs.get(Ns::Draw, "style-name");
+    let (pos, rel) = (b.graphic_place(style, 3), b.graphic_place(style, 4));
+    crate::picture::Seat::of(pos.as_deref(), rel.as_deref())
+}
+
+/// What a frame's graphic style cuts from its picture (`doc/odt-format.md` §5c fact 64).
+fn crop(attrs: &Attrs, b: &Builder) -> Option<crate::picture::Crop> {
+    let style = attrs.get(Ns::Draw, "style-name");
+    crate::picture::Crop::parse(&b.graphic_place(style, 5)?)
 }
 
 /// `draw:frame` (rng:5089) — a picture; anything else a frame holds (`draw:object`, a shape) is
@@ -3012,7 +3136,7 @@ impl Context<Builder> for Frame {
                 title: pending.title,
                 description: pending.description,
             };
-            b.record_frame(&image, pending.start);
+            b.record_frame(&image, pending.start, pending.look);
             b.push_run(image);
             // The caption after the image, whatever order its parts arrived in.
             if !pending.caption.is_empty() {

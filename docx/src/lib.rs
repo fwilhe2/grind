@@ -169,7 +169,7 @@ pub fn convert(bytes: &[u8]) -> Result<(Vec<u8>, Report)> {
     ctx.report
         .must_understand
         .append(&mut reader.must_understand);
-    let body = body::page_breaks(body);
+    let body = body::body_page_breaks(body);
     let sections = std::mem::take(&mut ctx.sections);
 
     // Every section's page is carried, each distinct one a master page of its own (`emit::write`);

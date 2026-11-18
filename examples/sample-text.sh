@@ -172,6 +172,9 @@ text view "$doc" --marks | grep '!r0c'
 say "table --show: which table a block is in, and how big it is"
 text table "$doc" "$first" --show
 
+say "notes: every footnote and endnote and where it is cited — none here, so nothing"
+text notes "$doc"
+
 say "name: a bookmark, which is the named-range analogue"
 run name "$doc" addresses '§1.2'
 

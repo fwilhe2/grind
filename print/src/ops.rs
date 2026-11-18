@@ -145,6 +145,9 @@ pub enum Op {
         height: f32,
         mime: String,
         data: Arc<Vec<u8>>,
+        /// The fractions of its height and width cut from its top, right, bottom and left, what
+        /// is left stretched to the box; a negative one is empty room on that side.
+        crop: [f32; 4],
         mark: Mark,
     },
 }

@@ -710,6 +710,29 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             finish_text(&app, cli, file, true)
         }
 
+        TextCommand::Notes { file } => {
+            let app = open_text(file)?;
+            text_lines(
+                app.notes()
+                    .into_iter()
+                    .map(|(index, note)| {
+                        let text: Vec<String> = note
+                            .paragraphs
+                            .iter()
+                            .map(|paragraph| paragraph.text(1, 1))
+                            .collect();
+                        format!(
+                            "{}\t{}\t{}\t{}",
+                            grind_text::loc::format_offset(index, note.offset),
+                            if note.endnote { "endnote" } else { "footnote" },
+                            note.citation,
+                            text.join(" ")
+                        )
+                    })
+                    .collect(),
+            )
+        }
+
         TextCommand::Outline { file, filter } => {
             let app = open_text(file)?;
             let needle = filter.as_deref().unwrap_or("").to_lowercase();

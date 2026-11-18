@@ -9,6 +9,7 @@
 pub mod faces;
 pub mod fonts;
 pub mod hyphen;
+mod metafile;
 pub mod metrics;
 pub mod ops;
 pub mod pdf;
@@ -86,11 +87,18 @@ impl Report {
     }
 }
 
-/// Every font family the document's runs and paragraph styles name, once each, in the order they
-/// first appear. The markdown marker for code (`monospace`) is a generic, not a family to look for.
+/// Every font family the document's runs and paragraph styles name, and its metafile pictures'
+/// text, once each, in the order they first appear. The markdown marker for code (`monospace`)
+/// is a generic, not a family to look for.
 pub fn families(app: &App) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
-    for family in app.font_families() {
+    let mut named = app.font_families();
+    app.visit_pictures(&mut |mime, data| {
+        if metafile::is_metafile(mime) {
+            named.extend(metafile::wants(data).0);
+        }
+    });
+    for family in named {
         let family = family.trim();
         if family.is_empty()
             || family == grind_text::markdown::MONOSPACE
@@ -145,6 +153,11 @@ pub(crate) fn characters(app: &App) -> Vec<char> {
         used.extend(view.text.chars());
         used.extend(view.mark().into_iter().flat_map(str::chars));
     }
+    app.visit_pictures(&mut |mime, data| {
+        if metafile::is_metafile(mime) {
+            used.extend(metafile::wants(data).1);
+        }
+    });
     let mut used: Vec<char> = used
         .into_iter()
         .filter(|c| !c.is_whitespace() && !c.is_control())

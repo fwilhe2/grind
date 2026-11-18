@@ -128,6 +128,13 @@ Four `.docx` in `sw/qa` are ODF text packages wearing the extension (`file` says
 break element inside a paragraph — a page starts at a paragraph, `fo:break-before="page"` — so
 this filter splits the paragraph at the break.
 
+**A break after everything else — `MEASURED`.** A gov.uk letter template (2026-11-17, not
+vendored) ends its body with `<w:r><w:t/></w:r><w:r><w:br w:type="page"/></w:r>`: nothing
+visible follows the break, and no block either. The oracle prints two pages, the second holding
+only the paragraph mark. This filter likewise gives the body an empty paragraph after such a
+break, with the same paragraph properties, starting a page. A header, a note or a comment has
+no page to start, and gets none.
+
 ### 2.5 Footnote marks — `MEASURED`
 
 `ooxmlimport/data/tdf129912.docx`: a reference with `w:customMarkFollows="1"` is followed by
@@ -174,6 +181,13 @@ with every change accepted, and a save keeps the history. `office:change-info` r
 `dc:date` (rng:7652); a change Word did not date gets the epoch.
 
 ---
+
+### 2.9 Endnotes follow the text — `MEASURED`
+
+Word sets endnotes after the last line of the document, not on a page of their own, and
+LibreOffice's import says so: the ODT it writes of a Word document carries `ContinuousEndnotes`
+true (`doc/odt-format.md` §5c fact 69). This filter writes the same item when the document has
+an endnote.
 
 ## 3. Paragraphs and styles
 
@@ -352,3 +366,35 @@ holds rows or cells, and can hold further `w:sdt`. A repeating section does this
 `ooxmlimport/data/tdf168567.docx`, a `w15:repeatingSection` control holds a
 `w15:repeatingSectionItem` control, which holds the row. This filter reads the rows and cells
 through any depth of them.
+
+## 7. Pictures
+
+### 7.1 A cropped picture — `SPEC`, `MEASURED`
+
+`a:srcRect` in a picture's `a:blipFill` (ECMA-376 Part 1 §20.1.8.55) gives each edge of the part
+shown as an offset from the picture's own edge, as a fraction of its width or height: positive
+cuts, negative adds room. Strict spells the fraction `12.5%` (`ST_Percentage`, §22.9.2.9);
+every cropped picture in the corpus spells it as Transitional does, an integer in thousandths
+of a percent (`l="18918"`), and an empty `<a:srcRect/>` (143 of the 146 seen) cuts nothing.
+LibreOffice 26.8.2.2 drew `l="25000" r="25000"` on a picture striped blue, red and green in
+quarters, half and quarter as the red alone across the 4 cm frame, and `r="-25000"` as the
+whole picture in 3.2 cm of it — four fifths — with the rest empty. ODF's `fo:clip` says the
+same in lengths of the picture's own size (`doc/odt-format.md` §5c fact 64), so the fraction
+is written as that length; a picture whose own size is not known there is written uncut.
+
+### 7.2 A picture the text runs through — `SPEC`, `MEASURED`
+
+A `wp:anchor` (§20.4.2.3) with `wp:wrapNone` (§20.4.2.15) takes no room; `wp:positionH` and
+`wp:positionV` (§20.4.2.10, §20.4.2.11) place it from the box `relativeFrom` names
+(`ST_RelFromH`, `ST_RelFromV`, §20.4.3.4–5) by a `wp:posOffset` in EMU or a `wp:align`.
+Measured in LibreOffice 26.8.2.2 with a 2 × 1 cm picture on A4 with 2 cm margins: across,
+`margin` and `column` are the text area (`posOffset` 1 cm at 3.01 cm, `center` at 9.50, `right`
+ending at 19.00) and `page` the paper (3 cm at 3.01, `left` at 0); down, `paragraph` is the top
+of the paragraph holding the anchor (0.5 cm under its top, at 2.97), `margin` the top margin
+(`top` at 1.99, 2 cm at 3.99) and `page` the paper (5 cm at 4.99, `bottom` ending at 29.71); the
+paragraphs around stood where they would without it. In a header, `page` both ways put it at
+1.00, 0.99 cm. These are ODF's `paragraph`, `page-content` and `page` relations of a
+`style:wrap="run-through"` frame anchored to its paragraph (`doc/odt-format.md` §5c fact 63).
+Not carried: any other wrap — the text flows round those, which the text model cannot — and
+the other boxes (`character`, `line`, `leftMargin`, `insideMargin`, …), each still counted as
+a floating picture's position.

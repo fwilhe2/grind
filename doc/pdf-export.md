@@ -287,7 +287,7 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 | | Why out | Gate |
 |---|---|---|
 | A paginated **editing** view | §1. Continuous editing was the product, and the preview covered "what will print" | **opened 2026-11-14**: `doc/page-model.md` |
-| Footnotes and endnotes | Placement is the hard half of pagination (space reserved at the bottom of each page, splitting across pages). Content models fine | after loop G is green on documents without notes |
+| Footnotes and endnotes | **Printed since 2026-11-17** (`doc/odt-format.md` §5c fact 67): a page's footnotes at its foot under their rule, their room taken from its body, endnotes on pages after it. Still out: a note cited in a table cell, and one split across pages | a document that needs either |
 | Hyphenation | Needs dictionaries per language. `fo:hyphenate` is read and ignored | a request; `hyphenation` crate + TeX patterns, both licence-checked |
 | RTL, vertical writing | inherited exclusion, `doc/text-layout.md` decision 1 | that document's gate |
 | Sections, columns, frames that text flows around | `doc/not-doing.md` §1, unchanged | unchanged |

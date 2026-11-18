@@ -99,6 +99,12 @@ impl App {
             .collect()
     }
 
+    /// How the notes look: their citations' styles and the rule over the footnotes
+    /// ([`Document::note_look`]).
+    pub fn note_look(&self) -> marginal::NoteLook {
+        self.state.read().unwrap().doc.note_look.clone()
+    }
+
     /// The look of the table named `name` — widths, cell styles, heading rows
     /// ([`Document::table_looks`]) — read for showing and printing.
     pub fn table_look(&self, name: &str) -> Option<table_look::TableLook> {
@@ -168,6 +174,16 @@ impl App {
     /// What kind of face each declared font family is ([`Document::font_generics`]).
     pub fn font_generics(&self) -> std::collections::HashMap<String, String> {
         self.state.read().unwrap().doc.font_generics.clone()
+    }
+
+    /// Hand `visit` every picture in the body, its MIME type and bytes, without copying them.
+    pub fn visit_pictures(&self, visit: &mut dyn FnMut(&str, &[u8])) {
+        let state = self.state.read().unwrap();
+        for run in state.doc.blocks.iter().flat_map(|block| &block.runs) {
+            if let crate::model::Run::Image { mime, data, .. } = run {
+                visit(mime, data);
+            }
+        }
     }
 
     /// Every font family the document names, each distinct name once: the runs' own first, in

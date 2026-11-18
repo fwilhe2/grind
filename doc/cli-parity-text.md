@@ -226,7 +226,8 @@ had no width and therefore no lines.
 - `level_picture` — the same three verbs, which draw a picture bullet where its level puts the label (`doc/odt-format.md` §5c fact 41); nothing prints the picture on its own
 - `paragraph_spaces_add` — the same three verbs, which keep the larger of two paragraphs' spaces where the document's settings say so (fact 46); nothing prints the setting on its own
 - `table_look` — `grind text export-pdf`, `pages` and `preview`, which draw a table at its own column widths with its cells' fills, borders and padding and repeat its heading rows; `grind text table --show` prints its shape, not its look
-- `notes` — `grind text export-pdf` and `preview`, which set every footnote at the foot of the page its citation is on; `grind text view` shows a citation's mark in its paragraph
+- `notes` — `grind text notes <file>` lists each one: where it is cited, its class, its mark and its text; `grind text export-pdf` and `preview` set every footnote at the foot of the page its citation is on
+- `note_look` — the same two verbs, which draw the rule over a page's footnotes and set each citation in its configured style (`doc/odt-format.md` §5c fact 67); nothing prints the configuration on its own
 - `marginals` — `grind text export-pdf` and `preview`, which draw the header and footer on every page; nothing prints them on their own
 - `resolve_style` — the same, for a header or footer paragraph's style
 - `shown` — the same, for how each piece of a header or footer paragraph looks
@@ -241,6 +242,8 @@ had no width and therefore no lines.
 - `changed_since` — the same, for which blocks changed since a revision
 - `font_families` — `grind text export-pdf`, `pages` and `preview`, which look on the machine for
   every family the document names; `export-pdf` says what each one was set in
+- `visit_pictures` — the same three verbs, which look on the machine for the families a metafile
+  picture's text names too (`doc/metafile-format.md`); nothing prints the pictures' bytes on their own
 - `paragraph` — `grind text pages` and `export-pdf`, which lay every block out by its resolved paragraph style (`doc/pdf-export.md` P5); no verb prints a style's resolution on its own yet
 - `paragraph_defaults` — `grind text pages` and `export-pdf`, whose page breaks honour the default paragraph style's widows and orphans (`doc/odt-format.md` §5c); no verb prints them on their own, since they mean nothing apart from a page
 - `set_page` — `grind text page-setup <file> --paper a5 --landscape --margins 15mm`, and with

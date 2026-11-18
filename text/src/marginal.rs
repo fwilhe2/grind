@@ -61,6 +61,7 @@ pub struct Picture {
     /// Set as a character of its line (`text:anchor-type="as-char"`), where `across` and `down`
     /// say nothing.
     pub inline: bool,
+    pub crop: Option<crate::picture::Crop>,
 }
 
 /// Where a picture goes along one axis: `style:horizontal-pos` or `style:vertical-pos`, the
@@ -180,6 +181,62 @@ pub struct Note {
     /// `text:note-class="endnote"`: set at the end rather than at the foot of the page.
     pub endnote: bool,
     pub paragraphs: Vec<Paragraph>,
+}
+
+/// How a document's notes look (`doc/odt-format.md` §5c fact 67): each class's citation styles,
+/// and the rule drawn over a page's footnotes.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NoteLook {
+    pub footnote: Citations,
+    pub endnote: Citations,
+    pub rule: Rule,
+    /// `ContinuousEndnotes`: endnotes follow the body's last line rather than a page of their
+    /// own, as Word sets them (`doc/odt-format.md` §5c fact 69).
+    pub continuous: bool,
+}
+
+/// `text:notes-configuration`'s character styles for a citation: where it is cited
+/// (`text:citation-body-style-name`) and in front of the note (`text:citation-style-name`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Citations {
+    pub body: Option<String>,
+    pub note: Option<String>,
+}
+
+/// `style:footnote-sep` (rng:12543), in millimetres: the rule's thickness, the room above and
+/// below it, its share of the text area's width and where it stands in it, its colour, and
+/// whether it is drawn at all. The default is LibreOffice's when a page states none.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rule {
+    pub width: f64,
+    pub before: f64,
+    pub after: f64,
+    pub share: f64,
+    pub align: String,
+    pub color: String,
+    pub drawn: bool,
+}
+
+impl Default for Rule {
+    fn default() -> Self {
+        Rule {
+            width: 0.18,
+            before: 1.01,
+            after: 1.01,
+            share: 0.25,
+            align: "left".into(),
+            color: "#000000".into(),
+            drawn: true,
+        }
+    }
+}
+
+impl Rule {
+    /// The room it takes above a page's footnotes.
+    #[must_use]
+    pub fn room(&self) -> f64 {
+        self.before + self.width + self.after
+    }
 }
 
 #[cfg(test)]

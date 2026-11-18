@@ -180,8 +180,73 @@ fn draw(surface: &mut Surface<'_>, op: &Op, fonts: &Fonts, faces: &mut HashMap<F
             height,
             mime,
             data,
+            crop,
             ..
         } => {
+            if *crop != [0.0; 4] {
+                // Clipped to its box, the whole picture so much bigger and so far up and left
+                // that what is left of it fills the box.
+                let [top, right, bottom, left] = *crop;
+                let w = *width / (1.0 - left - right).max(0.01);
+                let h = *height / (1.0 - top - bottom).max(0.01);
+                let mut path = PathBuilder::new();
+                let Some(rect) = krilla::geom::Rect::from_xywh(*x, *y, *width, *height) else {
+                    return;
+                };
+                path.push_rect(rect);
+                let Some(path) = path.finish() else {
+                    return;
+                };
+                surface.push_clip_path(&path, &krilla::paint::FillRule::NonZero);
+                let whole = Op::Image {
+                    x: x - left * w,
+                    y: y - top * h,
+                    width: w,
+                    height: h,
+                    mime: mime.clone(),
+                    data: data.clone(),
+                    crop: [0.0; 4],
+                    mark: Mark::Decoration,
+                };
+                draw(surface, &whole, fonts, faces);
+                surface.pop();
+                return;
+            }
+            if crate::metafile::is_metafile(mime)
+                && let Some(metafile) = crate::metafile::read(data, fonts)
+            {
+                // Its layers in order, each scaled into the box.
+                let (sx, sy) = (
+                    *width / metafile.width as f32,
+                    *height / metafile.height as f32,
+                );
+                let pieces = metafile.layers.into_iter().map(|layer| match layer {
+                    crate::metafile::Layer::Bitmap(bitmap) => Op::Image {
+                        x: x + bitmap.x as f32 * sx,
+                        y: y + bitmap.y as f32 * sy,
+                        width: bitmap.width as f32 * sx,
+                        height: bitmap.height as f32 * sy,
+                        mime: bitmap.mime.to_owned(),
+                        data: std::sync::Arc::new(bitmap.data),
+                        crop: [0.0; 4],
+                        mark: Mark::Decoration,
+                    },
+                    crate::metafile::Layer::Svg(svg) => Op::Image {
+                        x: *x,
+                        y: *y,
+                        width: *width,
+                        height: *height,
+                        mime: "image/svg+xml".to_owned(),
+                        data: std::sync::Arc::new(svg),
+                        crop: [0.0; 4],
+                        mark: Mark::Decoration,
+                    },
+                });
+                for piece in pieces {
+                    draw(surface, &piece, fonts, faces);
+                }
+                return;
+            }
             if mime == "image/svg+xml" {
                 use krilla_svg::{SurfaceExt, SvgSettings};
                 if let (Some(tree), Some(size)) = (

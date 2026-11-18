@@ -203,7 +203,7 @@ the argument that reopened it.
 
 | Not yet | Gate |
 |---|---|
-| **`text:note` — footnotes and endnotes** | When there is somewhere to put one. A footnote's *content* is ordinary blocks and models fine; a footnote's *placement* is the page model, which is gated. A continuous view can still show one — inline, or at the end of the flow — so this waits for a shell rather than for pages |
+| **`text:note` — footnotes and endnotes** | Read and kept, and **printed** where LibreOffice puts them (`doc/odt-format.md` §5c fact 67). Authoring and editing one waits for a request |
 | **Fields** (`text:page-number`, `text:date`, `text:title`, `text:file-name`) | A small named set, when something can display one. `text:page-number` is the one that needs a page model specifically, and it stays out with the rest of pagination |
 | **`text:table-of-content`** | Read and preserved from the start (R6). *Authoring* one needs heading numbering and an update policy |
 | **`office:annotation` — comments** | Genuinely used, and arguably in. Decided with evidence rather than now: it needs an author, a date and a threading model, and guessing which of those matter is how a feature arrives half-built |

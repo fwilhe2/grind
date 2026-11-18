@@ -1098,6 +1098,147 @@ oracle turned out to be unable to answer the font questions (fact 4).
    not start another (`hel<span>lo</span>` shows `Hello`). `none` in a style undoes its
    parent's. A run in `fo:font-variant="small-caps"` as well shows small capitals: every letter
    of `small caps upper` came out at the small size.
+63. **A picture the body's text runs through** — `MEASURED` (2026-11-17, 26.8.2.2, Liberation
+   Sans 12 pt, a 4 × 2 cm picture anchored `paragraph` with `style:wrap="run-through"`, page
+   margins 2 cm; the picture's place read off a 200 dpi raster of the PDF). As in a header
+   (fact 27) it **takes no room**: a paragraph holding only the picture was one empty line tall,
+   and with words beside it the words stood where they would without it (5.00 cm in, for a
+   3 cm left margin). Across, `style:horizontal-rel="paragraph"` measures from the **text
+   area's** edge — the paragraph's 3 cm margin did not move it — and `page` from the paper's:
+   `svg:x="1cm"` put it at 3.00 and 0.99 cm. Down, `paragraph` measures from the paragraph's
+   top **before its space above**: with 1 cm of `fo:margin-top`, `svg:y="0.5cm"` put the
+   picture 0.5 cm below where the margin began (2.98 cm, the paragraph's text at 3.49), and a
+   negative `svg:y` raised it above the paragraph. `page` measured from the paper's top. 33 of
+   257 gov.uk documents carry such a picture in their body, nearly always the department's
+   logo; drawn in the line, it pushed every page of them down. Not measured: one in a table
+   cell, one anchored `char`, `style:wrap="parallel"` in the body, and the `middle` and `bottom`
+   of a paragraph — each of those stays in its line.
+64. **A cropped picture** (`fo:clip` on the frame's graphic style) — `MEASURED` (2026-11-17,
+   26.8.2.2; a 400 × 200 px picture striped blue, red and green in 100, 200 and 100 px, set
+   `as-char`, each stripe's extent read off a 200 dpi raster of the PDF). `rect(top, right,
+   bottom, left)`, spelled with commas or, as older files do, with spaces only, gives four
+   lengths **cut from the picture's own edges**, not the coordinates CSS 2 means: at 100 dpi,
+   `rect(0in, 1in, 0in, 1in)` showed the red stripe alone, and `rect(0cm, 0cm, 0cm, 2.54cm)`
+   red and green. What is left is **stretched to the frame**: the same cut in a 4 × 1 in frame
+   drew red 3.96 × 1.00 in. The lengths are in the picture's **own size**: its pixels at the
+   density it states — a PNG's `pHYs` per metre, a JPEG's JFIF per inch or per centimetre (40
+   per cm cut as 101.6 dpi) — and at **96 to the inch** when it states none or only an aspect
+   ratio (`pHYs` or JFIF unit 0), which held for PNG, JPEG and GIF: a 1 in cut left 4 px of
+   blue each side. The g1 logo checks it: 680 × 386 px at 220 dpi less its four cuts is
+   exactly the frame's `svg:width` and `svg:height`. A **negative** length adds empty room on
+   that side (`rect(0in, -1in, 0in, 0in)` in a 5 in frame drew the picture at its 4 in and
+   nothing beside it), and a rect with **any `auto`** is ignored whole — the picture showed
+   uncut. Of the 84 corpus documents with a cut, 562 of the 621 pictures are `as-char`, and
+   the rest anchored to a paragraph, character or page. Not measured: a JPEG without a JFIF
+   segment, and the other formats, which stay uncut. Both offsets and size follow the frame's
+   graphic style down its parents, as every graphic property does.
+65. **A picture the text runs through, in a table cell** — `MEASURED` (2026-11-17, 26.8.2.2,
+   fact 63's set-up in the first cell of a two-column table at the left margin, cells padded
+   0.5 cm). It is fact 63 with the **cell's box inside its padding** for the text area: the
+   picture takes no room (the cell's next paragraph stood one empty line down, and words beside
+   it stood at the cell's 2.50 cm edge), `svg:x="1cm"` from `paragraph` put it at 3.50 cm, and
+   `svg:y="0.5cm"` 0.5 cm below the paragraph's top before its space above — a paragraph
+   indented 1 cm with 0.5 cm above did not move it. It is **not held to the cell**: `-1cm` and
+   `-1.5cm` put it over the cell's top-left corner, and `svg:x="7cm"` past the cell's right
+   edge into the next. `page` measured from the paper as in the body.
+66. **A picture set as a character among words** — `MEASURED` (2026-11-17, 26.8.2.2, Liberation
+   Sans 12 pt, `aaa ` + a 2 × 1 cm `as-char` picture + ` bbb` in the body). Fact 29's rule holds
+   in the body, and the graphic style's `style:vertical-pos` and `-rel` move it: with neither,
+   or `top` of `baseline`, the picture's **foot is on the baseline**, its top the line's, and
+   the line is the picture and the font's descent (1.09 cm); `middle` of `text` **centres it on
+   the text's height** — ascent and descent — and the line is the picture's 1.01 cm;
+   `middle` of `baseline` centres it on the baseline, the line again the picture's height. Only
+   **its own line** grows: the words before and after stood on the same baseline, and the next
+   paragraph followed the taller line. 218 of the 529 such pictures in the corpus are `middle`
+   of `text`, 215 state nothing and 81 `top` of `baseline`. Not built: `from-top` (11, its top
+   on the baseline with no `svg:y`, other offsets not measured) and every other pairing, each
+   still drawn as the placeholder character; and a paragraph that *starts* with the picture,
+   which reads as a picture with a caption.
+67. **Footnotes and endnotes on paper** — `MEASURED` (2026-11-17, 26.8.2.2, Liberation Sans 12 pt
+   body, a `Footnote` style of 10 pt with a 0.598 cm hanging indent, A4 with 2 cm margins). A
+   page's footnotes stand at the **foot of its body**, stacked up from it with nothing between
+   them: the last line of two notes ended at 27.70 cm, the bottom margin. Over them is the
+   page layout's `style:footnote-sep`: a rule `style:width` thick, `style:rel-width` of the text
+   area long, placed by `style:adjustment`, in `style:color`, `style:distance-after-sep` above the
+   first note (0.018 cm at 26.365 cm, 2.00–6.25 cm, for 0.101 cm, 25%, `left`); 0.1 cm, 50%,
+   `center`, red and 0.3 cm drew a red rule from 6.25 to 14.75 cm ending 0.3 cm above the
+   notes. A page layout stating none drew exactly the first, which is LibreOffice's default.
+   The rule and its distances before and after are room the page's body gives up once; a
+   note stands on the page of the **line that cites it**, not of its paragraph's first line (a
+   list item begun on one page and citing on the next put its note on the next), and a line
+   whose note did not fit moved to the next page with it. Between two notes both their spaces
+   count (0.5 cm below and 0.3 cm above made 0.8 cm), but **no space below the page's last
+   note** is given: its last line ended at the foot of the body still.
+   In front of a note's first paragraph is its **citation**, in the class's
+   `text:citation-style-name` (plain, at the note's size, when none is stated), at the start of
+   the first line; with a hanging indent the note's text starts at the indent (2.60 cm, as do
+   its later lines), without one straight after the number (`1Firstnote`). Where it is cited,
+   the citation is in `text:citation-body-style-name`, and **raised to 58%** when the
+   configuration states none — the same with no `text:notes-configuration` at all, and with a
+   superscript `text:span` around the note, which does not raise it twice. **Endnotes** go on a
+   page of their own after the body, with no header though the body's pages had one, from the
+   top margin and one after another; a note's later paragraph starts at its line's start. Not
+   built: a footnote cited in a table cell, which the cut gives no room and which is not drawn;
+   a note longer than the room left, which LibreOffice continues on the next page;
+   `text:footnotes-position="document"`; and endnote citations numbered by the configuration
+   rather than as the file spells them (LibreOffice wrote `i` for a stored `1`).
+68. **Nothing is given below a header's or footer's last paragraph** — `MEASURED` (2026-11-18,
+   26.8.2.2, Liberation Sans 12 pt, no spacing to the body). Proportional spacing goes below a
+   line — a header's first line stood at the top margin — and every line of a header got it but
+   the **last**: one paragraph `A` at 150% put the body one plain line (0.487 cm) under it, two
+   put the second 0.73 cm under the first and the body 0.487 cm under the second, and an empty
+   third paragraph took the plain line in turn. Nor is the last paragraph's **margin below**
+   given: an empty header paragraph with `fo:margin-bottom="9pt"` put the body one line under
+   the top margin, two paragraphs with it on the second the same, while 9 pt below the first or
+   above the only one counted; a footer paragraph with 9 pt below sat that much lower, its own
+   foot at the page's bottom margin. The corpus's g137 has a 150% header on every page, the body
+   0.24 cm lower than LibreOffice's for want of this; Word documents' empty header paragraphs
+   with space after are the common case. Its border and padding below still count. Not
+   measured: a note, and the last line of the body or of a table cell.
+69. **Endnotes after the text: `ContinuousEndnotes`** — `MEASURED` (2026-11-18, 26.8.2.2). The
+   `ooo:configuration-settings` item LibreOffice writes `true` when it saves a Word document as
+   ODT; flipping it to `false` in its own ODT of the corpus's x15 took that document from 9
+   pages to 10. With it, the endnotes **follow the body's last line** on its page: fact 67's
+   two-endnote document, its body three 12 pt lines, came out on one page, a rule 0.289 cm under
+   the last line — **5.08 cm long** (two inches, not the separator's 25%), the separator's
+   thickness and colour — and the first note's line 0.18 cm under the rule, the notes one after
+   another as on a page of their own. Not measured: what does not fit, taken to go on as fact 67's
+   pages do, and other distances or line sizes — one document's figures are the rule here.
+70. **Each line is as tall as what is on it** — `MEASURED` (2026-11-18, 26.8.2.2, the corpus's
+   g4: a table cell's paragraph of 8 pt bold words, a `text:line-break` in a 12 pt span, then
+   24 pt *Rule 1.38*, at a 1 cm top margin). The first line's words stood at 1.01 cm, their
+   8 pt ascent under the margin — neither the 24 pt line after it nor the 12 pt break ending it
+   made the line taller. A line's ascent and descent are the largest of the runs it shows
+   characters of; a line showing none — an empty paragraph, a line of a break alone — is set by
+   the runs it touches. Every paragraph of one size is as before.
+71. **A cell spanning rows grows the last of them** — `MEASURED` (2026-11-18, 26.8.2.2, a cell
+   spanning three rows beside three one-line cells, Liberation Sans 12 pt, no padding). The
+   rows were as tall as their own cells — the one-line cells at 2.03, 2.54 and 3.04 cm — and
+   the spanning cell's ten lines took what they needed beyond that from the **last** row: the
+   paragraph after the table stood under its tenth line. Two lines needed nothing more. The
+   corpus's gov.uk forms span their side notes over several rows this way; five more of them
+   came out at LibreOffice's page count.
+72. **Text exactly as wide as its cell fits** — `MEASURED` (2026-11-18, 26.8.2.2, the corpus's g4).
+   A cell three columns wide — 0.0645, 0.2208 and 0.1423 in — with 0.075 in of padding each
+   side leaves 19.987 pt by exact sums, and *No:* in Liberation Sans Bold 12 pt is 19.992 pt;
+   LibreOffice set it on one line. In whole twips the columns are 93, 318 and 205, the room
+   400 twips — 20 pt — and the text fits; so a line here may come out a twentieth of a point
+   over its room rather than break, the most such rounding can give.
+73. **A cell with no style has no padding** — `MEASURED` (2026-11-18, 26.8.2.2). A
+   `table:table-cell` naming no style, beside one styled with `fo:padding="0in"`, set its text
+   at the column's very edge (10.504 cm for a column starting at 10.5) and its row exactly its
+   lines tall, top and bottom; the document's default cell style stated no padding. Word-made
+   ODTs leave a table's last cells unstyled: g4's rows each grew a line for the 4 pt a side a
+   screen gives such a cell, and the form went onto a second page. The page counts of g46 and
+   g220, which matched with that padding, now come out one page short; their other difference
+   is not yet found.
+74. **A tab is set in its span's font** — `MEASURED` (2026-11-18, 26.8.2.2, the corpus's g135
+   table of contents: entries of 11 pt runs in a 12 pt, 120% paragraph style, each `Entry` then
+   `<text:tab/>4` in an 11 pt span). The entries stood 0.746 cm apart with the tab and without
+   it — an 11 pt line at 120% and the space below — where a tab measured in the paragraph's
+   12 pt made each 0.796. The model keeps no formatting on a tab or a field kept as its text,
+   so either takes the nearest text run's look, the one after it first: the tab opens the span
+   the text after it is in, as this one does.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

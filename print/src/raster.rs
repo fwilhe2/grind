@@ -111,48 +111,104 @@ impl Rasteriser {
         }
     }
 
-    /// A picture drawn `size` pixels wide and tall, made the first time it is asked for.
+    /// A picture drawn `size` pixels wide and tall, less what `crop` cuts ([`Op::Image`]), made
+    /// the first time it is asked for.
     fn picture(
         &mut self,
         data: &[u8],
         mime: &str,
         (width, height): (u32, u32),
+        crop: [f32; 4],
         fonts: &Fonts,
     ) -> Option<&Pixmap> {
         let key = {
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             data.hash(&mut hasher);
+            crop.map(f32::to_bits).hash(&mut hasher);
             (hasher.finish(), width, height)
         };
         if !self.pictures.contains_key(&key) {
             let made = Pixmap::new(width, height).map(|mut out| {
-                let (w, h) = (width as f32, height as f32);
+                // The whole picture, so much bigger and so far up and left that what is left
+                // of it fills the box.
+                let [top, right, bottom, left] = crop;
+                let w = width as f32 / (1.0 - left - right).max(0.01);
+                let h = height as f32 / (1.0 - top - bottom).max(0.01);
+                let (dx, dy) = (-left * w, -top * h);
+                let whole = ((w.round() as u32).max(1), (h.round() as u32).max(1));
+                let fit =
+                    |iw: f32, ih: f32| Transform::from_scale(w / iw, h / ih).post_translate(dx, dy);
                 match mime {
                     "image/svg+xml" => {
                         if let Some(tree) = crate::svg::tree(data, fonts) {
                             let size = tree.size();
-                            let at = Transform::from_scale(w / size.width(), h / size.height());
+                            let at = fit(size.width(), size.height());
                             resvg::render(&tree, at, &mut out.as_mut());
                         }
                     }
                     "image/png" => {
                         if let Ok(image) = Pixmap::decode_png(data) {
-                            let image = shrunk(image, (width, height));
-                            let at = Transform::from_scale(
-                                w / image.width() as f32,
-                                h / image.height() as f32,
-                            );
+                            let image = shrunk(image, whole);
+                            let at = fit(image.width() as f32, image.height() as f32);
                             out.draw_pixmap(0, 0, image.as_ref(), &smooth(), at, None);
+                        }
+                    }
+                    mime if crate::metafile::is_metafile(mime) => {
+                        match crate::metafile::read(data, fonts) {
+                            Some(metafile) => {
+                                let (sx, sy) =
+                                    (w / metafile.width as f32, h / metafile.height as f32);
+                                for layer in &metafile.layers {
+                                    match layer {
+                                        crate::metafile::Layer::Svg(svg) => {
+                                            if let Some(tree) = crate::svg::tree(svg, fonts) {
+                                                let size = tree.size();
+                                                let at = fit(size.width(), size.height());
+                                                resvg::render(&tree, at, &mut out.as_mut());
+                                            }
+                                        }
+                                        crate::metafile::Layer::Bitmap(bitmap) => {
+                                            let image = match bitmap.mime {
+                                                "image/png" => {
+                                                    Pixmap::decode_png(&bitmap.data).ok()
+                                                }
+                                                mime => decoded(mime, &bitmap.data),
+                                            };
+                                            let Some(image) = image else {
+                                                continue;
+                                            };
+                                            let (bw, bh) = (
+                                                bitmap.width as f32 * sx,
+                                                bitmap.height as f32 * sy,
+                                            );
+                                            let at = Transform::from_scale(
+                                                bw / image.width() as f32,
+                                                bh / image.height() as f32,
+                                            )
+                                            .post_translate(
+                                                dx + bitmap.x as f32 * sx,
+                                                dy + bitmap.y as f32 * sy,
+                                            );
+                                            out.draw_pixmap(
+                                                0,
+                                                0,
+                                                image.as_ref(),
+                                                &smooth(),
+                                                at,
+                                                None,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            None => out.fill(placeholder()),
                         }
                     }
                     "image/jpeg" | "image/jpg" | "image/gif" => match decoded(mime, data) {
                         Some(image) => {
-                            let image = shrunk(image, (width, height));
-                            let at = Transform::from_scale(
-                                w / image.width() as f32,
-                                h / image.height() as f32,
-                            );
+                            let image = shrunk(image, whole);
+                            let at = fit(image.width() as f32, image.height() as f32);
                             out.draw_pixmap(0, 0, image.as_ref(), &smooth(), at, None);
                         }
                         None => out.fill(placeholder()),
@@ -302,6 +358,7 @@ impl Rasteriser {
                 height,
                 mime,
                 data,
+                crop,
                 ..
             } => {
                 // On whole pixels, at the size it is drawn: a picture is kept drawn, and placed
@@ -312,7 +369,7 @@ impl Rasteriser {
                     (*width * scaled.sx).round().max(1.0) as u32,
                     (*height * scaled.sy).round().max(1.0) as u32,
                 );
-                if let Some(drawn) = self.picture(data, mime, size, fonts) {
+                if let Some(drawn) = self.picture(data, mime, size, *crop, fonts) {
                     pixmap.draw_pixmap(
                         left,
                         top,
@@ -667,6 +724,7 @@ mod tests {
             height: 30.0,
             mime: "image/svg+xml".into(),
             data: std::sync::Arc::new(svg.to_vec()),
+            crop: [0.0; 4],
             mark: crate::ops::Mark::Decoration,
         });
         let fonts = Fonts::bundled();
@@ -699,6 +757,86 @@ mod tests {
         };
         assert_eq!(at(35, 25), vec![255, 0, 0]);
         assert_eq!(at(5, 5), vec![255, 255, 255]);
+    }
+
+    /// A picture cut to its middle, red between blue and green: its box is red alone, edge to
+    /// edge, in the preview and in the PDF a renderer reads back; a negative cut leaves the
+    /// picture smaller and room beside it.
+    #[test]
+    fn a_cropped_picture_shows_what_is_left_in_its_box_in_the_preview_and_the_pdf() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="10" height="20" fill="#0000ff"/><rect x="10" width="20" height="20" fill="#ff0000"/><rect x="30" width="10" height="20" fill="#00ff00"/></svg>"##;
+        let picture = |x: f32, width: f32, crop: [f32; 4]| Op::Image {
+            x,
+            y: 10.0,
+            width,
+            height: 20.0,
+            mime: "image/svg+xml".into(),
+            data: std::sync::Arc::new(svg.to_vec()),
+            crop,
+            mark: crate::ops::Mark::Decoration,
+        };
+        let mut page = blank();
+        page.ops.push(picture(10.0, 40.0, [0.0, 0.25, 0.0, 0.25]));
+        page.ops.push(picture(60.0, 50.0, [0.0, -0.25, 0.0, 0.0]));
+        let fonts = Fonts::bundled();
+        let raster = render(&page, &fonts, 1.0);
+        let red = [255, 0, 0, 255];
+        for x in [11, 30, 48] {
+            assert_eq!(raster.pixel(x, 20), red, "at {x}");
+        }
+        assert_eq!(
+            raster.pixel(8, 20),
+            [255, 255, 255, 255],
+            "nothing outside the box"
+        );
+        assert_eq!(
+            raster.pixel(52, 20),
+            [255, 255, 255, 255],
+            "nothing outside the box"
+        );
+        assert_eq!(
+            raster.pixel(65, 20),
+            [0, 0, 255, 255],
+            "uncut, at its scale"
+        );
+        assert_eq!(raster.pixel(98, 20), [0, 255, 0, 255]);
+        assert_eq!(
+            raster.pixel(105, 20),
+            [255, 255, 255, 255],
+            "the room it adds"
+        );
+
+        let doc = crate::ops::Document {
+            pages: vec![page.into()],
+            outline: vec![],
+            structure: vec![],
+            keys: vec![],
+            cut: None,
+        };
+        let bytes = crate::pdf::write(&doc, &fonts, &crate::pdf::Metadata::default()).unwrap();
+        let pdf = hayro::hayro_syntax::Pdf::new(bytes).unwrap();
+        let theirs = hayro::render(
+            &pdf.pages()[0],
+            &hayro::RenderCache::new(),
+            &hayro::hayro_interpret::InterpreterSettings::default(),
+            &hayro::RenderSettings::default(),
+            &hayro::PixmapSettings {
+                bg_color: hayro::vello_cpu::color::palette::css::WHITE,
+                ..hayro::PixmapSettings::default()
+            },
+        );
+        let at = |x: usize, y: usize| {
+            let i = (y * theirs.width() as usize + x) * 4;
+            theirs.data_as_u8_slice()[i..i + 3].to_vec()
+        };
+        for x in [11, 30, 48] {
+            assert_eq!(at(x, 20), vec![255, 0, 0], "at {x}");
+        }
+        assert_eq!(at(8, 20), vec![255, 255, 255]);
+        assert_eq!(at(52, 20), vec![255, 255, 255]);
+        assert_eq!(at(65, 20), vec![0, 0, 255]);
+        assert_eq!(at(98, 20), vec![0, 255, 0]);
+        assert_eq!(at(105, 20), vec![255, 255, 255]);
     }
 
     /// The preview is the PDF: our raster of a page against `hayro`'s raster of the PDF we

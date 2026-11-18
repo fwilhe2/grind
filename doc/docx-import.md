@@ -111,7 +111,7 @@ over XML.
 Every loss is a `Dropped` kind (`docx/src/report.rs`), counted, summed in `Report::summary` and
 fatal under `--strict`: a comment with no text or on a footnote's, tracked changes around whole
 paragraphs or rows (applied), a text box's position (its text follows the paragraph
-that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, a floating picture's position, fields
+that anchors it), drawings that are not pictures, equations, embedded objects, linked pictures, the position of a floating picture the text wraps round (one it runs through keeps its place, `doc/docx-format.md` §7.2), the crop of a picture whose own size is unknown, fields
 and form fields and content controls (kept as their text), sections whose page differs,
 multi-column sections, table-style
 banding, positioned paragraphs and tables (kept in the flow), macros (never executed), and the

@@ -17,7 +17,7 @@ impl App {
             .doc
             .block(index)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(index))))?;
-        Ok(lay_out(block, width, metrics, &state.doc.char_styles))
+        Ok(lay_out(block, width, metrics, &state.doc))
     }
 
     /// [`App::layout_block`], set as the block's paragraph style says ([`Faces::setting`]).
@@ -38,7 +38,7 @@ impl App {
             width,
             metrics,
             setting,
-            &state.doc.char_styles,
+            &state.doc,
             &self.layouts,
         ))
     }
@@ -87,14 +87,7 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        Ok(set_out(
-            block,
-            at.block,
-            faces,
-            &state.doc.char_styles,
-            &self.layouts,
-        )
-        .x_at(at.offset))
+        Ok(set_out(block, at.block, faces, &state.doc, &self.layouts).x_at(at.offset))
     }
 
     /// Move a caret `delta` lines — Down and Up, and Page Down with a bigger number. Crosses block
@@ -118,7 +111,7 @@ impl App {
                 .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(block))))?,
             block,
             faces,
-            &state.doc.char_styles,
+            &state.doc,
             &self.layouts,
         );
         let mut offset = at.offset.min(layout.len());
@@ -141,7 +134,7 @@ impl App {
                 &state.doc.blocks[block],
                 block,
                 faces,
-                &state.doc.char_styles,
+                &state.doc,
                 &self.layouts,
             );
             let line = if step > 0 {
@@ -161,13 +154,7 @@ impl App {
             .doc
             .block(at.block)
             .ok_or_else(|| Error::Xml(format!("no block {}", loc::format(at.block))))?;
-        let layout = set_out(
-            block,
-            at.block,
-            faces,
-            &state.doc.char_styles,
-            &self.layouts,
-        );
+        let layout = set_out(block, at.block, faces, &state.doc, &self.layouts);
         let line = layout.lines()[layout.line_at(at.offset)];
         Ok((
             Caret {

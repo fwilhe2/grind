@@ -46,6 +46,27 @@ pub struct Image {
     pub height: Option<i64>,
     /// `wp:inline` — in the line, as a character — rather than `wp:anchor`, floating.
     pub inline: bool,
+    /// `a:srcRect`: what is cut from its top, right, bottom and left, in thousandths of a percent
+    /// of its height or width; negative adds room (`doc/docx-format.md` §7.1).
+    pub crop: Option<[i64; 4]>,
+    /// Where a `wrapNone` picture goes, across and down (§7.2); `None` in the line.
+    pub place: Option<(Axis, Axis)>,
+}
+
+/// One axis of a floating picture's place: the box `relativeFrom` names, as spelled, and how
+/// far into it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Axis {
+    pub from: String,
+    pub at: At,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum At {
+    /// `wp:posOffset`, in EMU.
+    Offset(i64),
+    /// `wp:align`, as spelled.
+    Align(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -846,6 +867,44 @@ struct Found {
     linked: bool,
     text_box: bool,
     picture: bool,
+    crop: Option<[i64; 4]>,
+    wrap: Option<String>,
+    across: Option<Axis>,
+    down: Option<Axis>,
+}
+
+/// `wp:positionH` or `wp:positionV`: its box and its offset or alignment.
+fn axis(r: &mut Reader, attrs: &Attrs) -> grind_ooxml::Result<Option<Axis>> {
+    let from = attrs.plain("relativeFrom").unwrap_or_default().to_owned();
+    let mut at = None;
+    r.children(|r, name, _| {
+        match (name.ns, name.local.as_str()) {
+            (Ns::WordDrawing, "posOffset") => {
+                at = r.text()?.trim().parse().ok().map(At::Offset);
+            }
+            (Ns::WordDrawing, "align") => at = Some(At::Align(r.text()?.trim().to_owned())),
+            _ => return Ok(Handled::No),
+        }
+        Ok(Handled::Yes)
+    })?;
+    Ok(at.map(|at| Axis { from, at }))
+}
+
+/// `a:srcRect`'s four edges — top, right, bottom, left — in thousandths of a percent, Strict's
+/// `12.5%` or Transitional's `12500`; `None` when it cuts nothing.
+fn crop(attrs: &Attrs) -> Option<[i64; 4]> {
+    let edge = |local| {
+        let value = attrs.plain(local)?.trim();
+        match value.strip_suffix('%') {
+            Some(percent) => percent
+                .parse::<f64>()
+                .ok()
+                .map(|p| (p * 1000.0).round() as i64),
+            None => value.parse().ok(),
+        }
+    };
+    let edges = ["t", "r", "b", "l"].map(|local| edge(local).unwrap_or(0));
+    (edges != [0; 4]).then_some(edges)
 }
 
 /// `w:txbxContent` — a text box's story, read as blocks of their own and set **after the
@@ -877,6 +936,20 @@ fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Ima
                     found.height = attrs.plain("cy").and_then(|v| v.parse().ok());
                 }
                 (Ns::Picture, "pic") => found.picture = true,
+                (Ns::Drawing, "srcRect") => found.crop = crop(attrs),
+                (
+                    Ns::WordDrawing,
+                    local @ ("wrapNone" | "wrapSquare" | "wrapTight" | "wrapThrough"
+                    | "wrapTopAndBottom"),
+                ) => found.wrap = Some(local.to_owned()),
+                (Ns::WordDrawing, "positionH") => {
+                    found.across = axis(r, attrs)?;
+                    return Ok(Handled::Yes);
+                }
+                (Ns::WordDrawing, "positionV") => {
+                    found.down = axis(r, attrs)?;
+                    return Ok(Handled::Yes);
+                }
                 (Ns::Drawing, "blip") => {
                     if let Some(id) = attrs.get(Ns::Relationships, "embed") {
                         found.embed.get_or_insert_with(|| id.to_owned());
@@ -912,7 +985,20 @@ fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Ima
         }
         return Ok(None);
     };
-    if !found.inline {
+    let place = match (
+        found.inline,
+        found.wrap.as_deref(),
+        found.across,
+        found.down,
+    ) {
+        (false, Some("wrapNone"), Some(across), Some(down))
+            if crate::emit::placeable(&across, &down) =>
+        {
+            Some((across, down))
+        }
+        _ => None,
+    };
+    if !found.inline && place.is_none() {
         ctx.report.drop_one(Dropped::FloatingPosition);
     }
     Ok(Some(Image {
@@ -921,6 +1007,8 @@ fn read_drawing(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Ima
         width: found.width,
         height: found.height,
         inline: found.inline,
+        crop: found.crop,
+        place,
     }))
 }
 
@@ -992,6 +1080,8 @@ fn read_vml(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Option<Image>>
         width: size.0,
         height: size.1,
         inline: !floating,
+        crop: None,
+        place: None,
     }))
 }
 
@@ -1257,6 +1347,31 @@ fn read_cell(r: &mut Reader, ctx: &mut Ctx) -> grind_ooxml::Result<Cell> {
 /// end starts the *next* block on a page; one at its very start, the paragraph itself.
 #[must_use]
 pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
+    split_at_breaks(blocks).0
+}
+
+/// [`page_breaks`] for the document body, where a break after everything else still starts a
+/// page: the paragraph mark goes on to it, as an empty paragraph with the same properties
+/// (`doc/docx-format.md` §2.4).
+#[must_use]
+pub fn body_page_breaks(blocks: Vec<Block>) -> Vec<Block> {
+    let (mut out, carry) = split_at_breaks(blocks);
+    if carry && let Some(Block::Para(last)) = out.last_mut() {
+        let mark = Para {
+            facts: last.facts.clone(),
+            inlines: Vec::new(),
+            page_break_before: true,
+            master_page: None,
+        };
+        last.facts.section = None;
+        out.push(Block::Para(mark));
+    }
+    out
+}
+
+/// The blocks split at their breaks, and whether a break at the very end is still waiting for
+/// a block to start the page.
+fn split_at_breaks(blocks: Vec<Block>) -> (Vec<Block>, bool) {
     let mut out: Vec<Block> = Vec::with_capacity(blocks.len());
     let mut carry = false;
     for block in blocks {
@@ -1356,7 +1471,7 @@ pub fn page_breaks(blocks: Vec<Block>) -> Vec<Block> {
             }
         }
     }
-    out
+    (out, carry)
 }
 
 #[cfg(test)]
@@ -1434,6 +1549,20 @@ mod tests {
     fn a_page_break_at_the_start_is_the_paragraphs_own() {
         let got = page_breaks(vec![para(vec![Inline::PageBreak, text("b")])]);
         assert_eq!(shape(&got), [("b".into(), true)]);
+    }
+
+    #[test]
+    fn a_break_after_the_last_paragraph_still_starts_a_page() {
+        let blocks = || vec![para(vec![text("a"), Inline::PageBreak])];
+        assert_eq!(
+            shape(&body_page_breaks(blocks())),
+            [("a".into(), false), (String::new(), true)]
+        );
+        assert_eq!(
+            shape(&page_breaks(blocks())),
+            [("a".into(), false)],
+            "a header or a note has no page to start"
+        );
     }
 
     #[test]

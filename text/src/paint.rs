@@ -24,11 +24,16 @@ pub struct Piece<'a> {
 }
 
 /// Cut `from..to` characters of a block into the runs it crosses: in order, none empty, together
-/// exactly the block's characters in that range.
+/// exactly the block's characters in that range but a picture the text runs through.
 #[must_use]
 pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
     let mut out = Vec::new();
-    for run in runs {
+    // A picture the text runs through is drawn where it floats, not in the line.
+    for run in runs.iter().filter(|run| {
+        run.image
+            .as_ref()
+            .is_none_or(|image| image.floating.is_none())
+    }) {
         let start = run.start.max(from);
         let end = run.end().min(to);
         if start >= end {
@@ -54,14 +59,15 @@ pub fn pieces(runs: &[RunView], from: usize, to: usize) -> Vec<Piece<'_>> {
     out
 }
 
-/// One piece's text split at the characters that are in the model and never drawn — `text:tab` and
-/// `text:line-break`, which a font would draw as a box — each segment with its starting offset, so
-/// each side is placed where the core measured it. Empty segments are dropped.
+/// One piece's text split at the characters that are in the model and never drawn — `text:tab`,
+/// `text:line-break` and a zero-width space, which a font would draw as a box — each segment with
+/// its starting offset, so each side is placed where the core measured it. Empty segments are
+/// dropped.
 #[must_use]
 pub fn drawable(start: usize, text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut at = start;
-    for segment in text.split(['\t', '\n']) {
+    for segment in text.split(['\t', '\n', grind_core::layout::ZERO_WIDTH_SPACE]) {
         if !segment.is_empty() {
             out.push((at, segment));
         }

@@ -64,7 +64,7 @@ semantics never are.
 |---|---|
 | ODF itself | `doc/OpenDocument-v1.4-schema.rng` (Part 3), `doc/OpenDocument-v1.4-os-part4-formula.html` (Part 4) |
 | Scope lines | `doc/small-group.md` (functions), `doc/function-coverage.md` (the evidence for going past it), `doc/text-core.md` (text elements), `doc/not-doing.md` (the product line) |
-| Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md` |
+| Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md`, `doc/metafile-format.md` |
 | Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
 | Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
 | Import filters | `doc/xlsx-import.md`, `doc/docx-import.md`, `doc/craft-corpus.md` (the compatibility matrix and import timings) |

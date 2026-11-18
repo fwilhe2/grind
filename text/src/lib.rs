@@ -252,6 +252,13 @@ pub struct ImageView {
     /// Its alternative text, short and long (`svg:title`, `svg:desc`) — [`App::set_image_alt`].
     pub title: Option<String>,
     pub description: Option<String>,
+    /// Where it floats, for a picture the file let the text run through.
+    pub floating: Option<picture::Floating>,
+    /// What its frame cuts from it.
+    pub crop: Option<picture::Crop>,
+    /// How it sits on its line, for a picture set as a character with no figure of its own;
+    /// `None` for any other.
+    pub seat: Option<picture::Seat>,
 }
 
 /// Whether a block is a picture, optionally followed by its caption's text — the shape
@@ -263,6 +270,14 @@ pub struct ImageView {
 /// text after the picture.
 #[must_use]
 pub fn picture_of(block: &BlockView) -> Option<(&ImageView, Option<&str>)> {
+    if block
+        .runs
+        .iter()
+        .any(|run| run.image.as_ref().is_some_and(|i| i.floating.is_some()))
+    {
+        // Its paragraph is laid out as the text it holds, the picture drawn over it.
+        return None;
+    }
     match block.runs.as_slice() {
         [run] => run.image.as_ref().map(|image| (image, None)),
         [run, rest @ ..] if rest.iter().all(|run| run.image.is_none()) => {
@@ -456,9 +471,15 @@ pub trait Faces {
         (0.0, 0.0)
     }
 
-    /// How much room the footnotes cited in the block take at the foot of its page, in the face's
-    /// unit; zero on screen.
-    fn footnote_room(&self, _index: usize) -> f64 {
+    /// The footnotes cited in the block: the character each is cited at, and the room it takes
+    /// at the foot of the page that line is on, in the face's unit. None on screen.
+    fn footnotes(&self, _index: usize) -> Vec<(usize, f64)> {
+        Vec::new()
+    }
+
+    /// The room the rule over a page's footnotes takes, once on a page that has any; zero on
+    /// screen.
+    fn footnote_rule(&self) -> f64 {
         0.0
     }
 
@@ -696,7 +717,7 @@ impl App {
                 kind: block.kind.clone(),
                 style: block.style.clone(),
                 text: block.text(),
-                runs: run_views(block, &state.doc.char_styles),
+                runs: run_views(block, &state.doc),
                 styled: block.is_styled(),
                 marks: marks(block),
                 cell: block.cell.clone(),
@@ -1567,11 +1588,11 @@ fn set_out(
     block: &Block,
     index: usize,
     faces: &dyn Faces,
-    named: &Named,
+    doc: &model::Document,
     layouts: &std::sync::Mutex<Layouts>,
 ) -> Layout {
     let (width, metrics) = faces.of(index, &block.kind, block.style.as_deref());
-    lay_out_kept(block, width, metrics, &faces.setting(index), named, layouts)
+    lay_out_kept(block, width, metrics, &faces.setting(index), doc, layouts)
 }
 
 /// [`lay_out_set`], or the layout the same question got before.
@@ -1580,60 +1601,161 @@ fn lay_out_kept(
     width: f32,
     metrics: &dyn Metrics,
     setting: &layout::Setting,
-    named: &Named,
+    doc: &model::Document,
     layouts: &std::sync::Mutex<Layouts>,
 ) -> Layout {
     use std::hash::{Hash, Hasher};
     let Some(identity) = metrics.identity() else {
-        return lay_out_set(block, width, metrics, setting, named);
+        return lay_out_set(block, width, metrics, setting, doc);
     };
     let mut key = std::collections::hash_map::DefaultHasher::new();
     identity.hash(&mut key);
     width.to_bits().hash(&mut key);
     setting.hash(&mut key);
     // Each run as `lay_out_set` measures it.
-    for (run, shown) in block.runs.iter().zip(measured(block, named)) {
-        (run.text(), shown).hash(&mut key);
+    for (run, shown) in block.runs.iter().zip(measured(block, doc)) {
+        (laid_out(block, run, doc), shown).hash(&mut key);
     }
     let key = key.finish();
     if let Some(made) = layouts.lock().unwrap().made.get(&key) {
         return made.clone();
     }
-    let layout = lay_out_set(block, width, metrics, setting, named);
+    let layout = lay_out_set(block, width, metrics, setting, doc);
     layouts.lock().unwrap().keep(key, &layout);
     layout
 }
 
 /// What each of `block`'s runs is measured as: its named style under its direct formatting, and
 /// whether it carries on the word the run before it ended in.
-fn measured(block: &Block, named: &Named) -> Vec<grind_core::style::TextStyle> {
+fn measured(block: &Block, doc: &model::Document) -> Vec<grind_core::style::TextStyle> {
+    let named = &doc.char_styles;
     let mut last: Option<char> = None;
+    let mut at = 0;
     block
         .runs
         .iter()
-        .map(|run| {
-            let mut metrics = match run {
-                Run::Text { style, props, .. } => {
+        .enumerate()
+        .map(|(index, run)| {
+            let mut metrics = match (run, citation(block, at, run, doc)) {
+                (Run::Text { style, props, .. }, _) => {
                     paragraph::shown(named, style.as_deref(), props).metrics()
                 }
-                _ => run.props().map_or_default(CharStyle::metrics),
+                (_, Some((style, props))) => {
+                    paragraph::shown(named, style.as_deref(), &props).metrics()
+                }
+                _ => match borrowed_look(block, index) {
+                    Some((style, props)) => paragraph::shown(named, style, props).metrics(),
+                    None => CharStyle::default().metrics(),
+                },
             };
             metrics.mid_word = last.is_some_and(|c| !c.is_whitespace());
             last = run.text().chars().next_back().or(last);
+            at += run.len();
             metrics
         })
         .collect()
 }
 
-/// The named character styles a layout measures runs by ([`paragraph::shown`]).
-type Named = std::collections::HashMap<String, paragraph::NamedChar>;
+/// The look a run with none of its own — a tab, a field kept as its text — is set in: the
+/// nearest text run's, the one after it first, as a tab opening a span takes the span's font
+/// (`doc/odt-format.md` §5c fact 74). `None` in a paragraph with no text run.
+fn borrowed_look(block: &Block, index: usize) -> Option<(Option<&str>, &CharStyle)> {
+    fn look(run: &Run) -> Option<(Option<&str>, &CharStyle)> {
+        match run {
+            Run::Text { style, props, .. } => Some((style.as_deref(), props)),
+            _ => None,
+        }
+    }
+    let after = block
+        .runs
+        .get(index + 1..)
+        .and_then(|after| after.iter().find_map(look));
+    after.or_else(|| block.runs.get(..index)?.iter().rev().find_map(look))
+}
+
+/// A note's citation where it is cited: its class's configured character style, or raised to
+/// 58% where none is configured or the style is not declared, as LibreOffice sets it
+/// (`doc/odt-format.md` §5c fact 67). `None` for any other run.
+fn citation(
+    block: &Block,
+    at: usize,
+    run: &Run,
+    doc: &model::Document,
+) -> Option<(Option<String>, CharStyle)> {
+    if !matches!(run, Run::Kept { .. }) || doc.notes.is_empty() {
+        return None;
+    }
+    let note = doc
+        .notes
+        .iter()
+        .find(|note| note.block == block.id && note.offset == at)?;
+    let citations = if note.endnote {
+        &doc.note_look.endnote
+    } else {
+        &doc.note_look.footnote
+    };
+    Some(match &citations.body {
+        Some(style) if doc.char_styles.contains_key(style) => {
+            (Some(style.clone()), CharStyle::default())
+        }
+        _ => (
+            None,
+            CharStyle {
+                text_position: Some("super 58%".into()),
+                ..CharStyle::default()
+            },
+        ),
+    })
+}
 
 /// Break one block into lines: runs become [`layout::Fragment`]s, one per run, so caret offsets
 /// and layout offsets are the same numbers (a bookmark is an empty fragment). Each run measures
 /// with what it looks like — its named character style under its direct formatting
 /// ([`paragraph::shown`]) — so a bold word is measured bold.
-fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, named: &Named) -> Layout {
-    lay_out_set(block, width, metrics, &layout::Setting::default(), named)
+fn lay_out(block: &Block, width: f32, metrics: &dyn Metrics, doc: &model::Document) -> Layout {
+    lay_out_set(block, width, metrics, &layout::Setting::default(), doc)
+}
+
+/// Where the file let the text run through a picture of `block` (`doc/odt-format.md` §5c fact
+/// 63) — never in a table cell, where it was not measured.
+fn look<'a>(block: &Block, run: &Run, doc: &'a model::Document) -> Option<&'a picture::Look> {
+    let source = doc.source.as_deref()?;
+    if source.looks.is_empty() || !matches!(run, Run::Image { .. }) {
+        return None;
+    }
+    let key = odf::source::image_key(run)?;
+    source
+        .looks
+        .iter()
+        .find(|(id, k, _)| *id == block.id && *k == key)
+        .map(|(_, _, look)| look)
+}
+
+/// How a picture set as a character sits in its line ([`ImageView::seat`]).
+fn seat(block: &Block, run: &Run, doc: &model::Document) -> Option<picture::Seat> {
+    let Run::Image { anchor, .. } = run else {
+        return None;
+    };
+    if anchor.as_deref() != Some("as-char") {
+        return None;
+    }
+    let seat = look(block, run, doc).map_or_default(|look| look.seat);
+    (seat != picture::Seat::Unmeasured).then_some(seat)
+}
+
+/// Where a picture floats.
+fn floating(block: &Block, run: &Run, doc: &model::Document) -> Option<picture::Floating> {
+    look(block, run, doc)?.floating.clone()
+}
+
+/// The characters a run is laid out as: its own, but a picture the text runs through takes its
+/// place and no room ([`layout::ZERO_WIDTH_SPACE`]).
+fn laid_out<'a>(block: &Block, run: &'a Run, doc: &model::Document) -> &'a str {
+    const NO_ROOM: &str = "\u{200B}";
+    match floating(block, run, doc) {
+        Some(_) => NO_ROOM,
+        None => run.text(),
+    }
 }
 
 fn lay_out_set(
@@ -1641,16 +1763,16 @@ fn lay_out_set(
     width: f32,
     metrics: &dyn Metrics,
     setting: &layout::Setting,
-    named: &Named,
+    doc: &model::Document,
 ) -> Layout {
     let default = grind_core::style::TextStyle::default();
-    let styles = measured(block, named);
+    let styles = measured(block, doc);
     let mut fragments: Vec<layout::Fragment<'_>> = block
         .runs
         .iter()
         .zip(&styles)
         .map(|(run, style)| layout::Fragment {
-            text: run.text(),
+            text: laid_out(block, run, doc),
             style,
         })
         .collect();
@@ -1737,13 +1859,11 @@ fn marks(block: &Block) -> Vec<(usize, String)> {
 }
 
 /// One block's runs as a reader sees them. Bookmarks are dropped: they contribute no characters.
-fn run_views(
-    block: &Block,
-    named: &std::collections::HashMap<String, paragraph::NamedChar>,
-) -> Vec<RunView> {
+fn run_views(block: &Block, doc: &model::Document) -> Vec<RunView> {
+    let named = &doc.char_styles;
     let mut out = Vec::new();
     let mut start = 0usize;
-    for run in &block.runs {
+    for (index, run) in block.runs.iter().enumerate() {
         let len = run.len();
         if len == 0 {
             continue;
@@ -1768,14 +1888,25 @@ fn run_views(
                 height: height.clone(),
                 title: title.clone(),
                 description: description.clone(),
+                floating: floating(block, run, doc),
+                crop: look(block, run, doc).and_then(|look| look.crop.clone()),
+                seat: seat(block, run, doc),
             }),
             _ => None,
         };
         let props = run.props().cloned().unwrap_or_default();
+        let shown = match (citation(block, start, run, doc), run) {
+            (Some((style, props)), _) => paragraph::shown(named, style.as_deref(), &props),
+            (None, Run::Kept { .. } | Run::Tab) => match borrowed_look(block, index) {
+                Some((style, props)) => paragraph::shown(named, style, props),
+                None => paragraph::shown(named, None, &props),
+            },
+            (None, _) => paragraph::shown(named, style.as_deref(), &props),
+        };
         out.push(RunView {
             start,
             text: run.text().to_owned(),
-            shown: paragraph::shown(named, style.as_deref(), &props),
+            shown,
             props,
             style,
             href,
@@ -1855,6 +1986,9 @@ mod tests {
                 height: None,
                 title: None,
                 description: None,
+                floating: None,
+                crop: None,
+                seat: None,
             }),
         }
     }
@@ -2085,5 +2219,90 @@ mod tests {
             err.to_string().contains("grind sheet"),
             "the error names the app that does open it: {err}"
         );
+    }
+
+    /// §5c facts 63 and 65: a picture the text runs through is not a figure, in the body or in
+    /// a table cell.
+    #[test]
+    fn a_picture_the_text_runs_through_is_no_figure_in_the_body_or_a_cell() {
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let frame = format!(
+            r#"<draw:frame draw:style-name="fr" text:anchor-type="paragraph" svg:x="1cm" svg:y="-1cm" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>{png}</office:binary-data></draw:image></draw:frame>"#
+        );
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:automatic-styles>
+              <style:style style:name="fr" style:family="graphic"><style:graphic-properties style:wrap="run-through" style:horizontal-pos="from-left" style:horizontal-rel="paragraph" style:vertical-pos="from-top" style:vertical-rel="paragraph"/></style:style>
+            </office:automatic-styles>
+            <office:body><office:text>
+              <text:p>{frame}</text:p>
+              <table:table><table:table-column/><table:table-row><table:table-cell><text:p>{frame}</text:p></table:table-cell></table:table-row></table:table>
+            </office:text></office:body></office:document>"#
+        );
+        let app = App::new();
+        app.open_bytes("float.fodt", bytes.as_bytes()).unwrap();
+        let viewport = app.get_viewport(0..app.block_count());
+        let floating = |index: usize| {
+            let view = viewport.get(index).expect("a block");
+            let image = view.runs[0].image.as_ref().expect("a picture");
+            (image.floating.clone(), picture_of(view).is_some())
+        };
+        let (body, figure) = floating(0);
+        let body = body.expect("the body's floats");
+        assert_eq!(
+            body.across,
+            ("from-left".into(), "paragraph".into(), Some("1cm".into()))
+        );
+        assert_eq!(body.down.2.as_deref(), Some("-1cm"));
+        assert!(!figure, "laid out as its paragraph, not as a picture block");
+        let (cell, figure) = floating(1);
+        assert_eq!(cell, Some(body), "in a table cell as well (§5c fact 65)");
+        assert!(!figure);
+    }
+
+    /// §5c fact 64: a frame's graphic style cuts its picture, down the style's parents, in the
+    /// body, in a table cell and in a header.
+    #[test]
+    fn a_frame_crops_its_picture_wherever_it_is() {
+        let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let frame = |style: &str| {
+            format!(
+                r#"<draw:frame draw:style-name="{style}" text:anchor-type="as-char" svg:width="4cm" svg:height="2cm"><draw:image><office:binary-data>{png}</office:binary-data></draw:image></draw:frame>"#
+            )
+        };
+        let bytes = format!(
+            r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+            <office:styles>
+              <style:style style:name="Cut" style:family="graphic"><style:graphic-properties fo:clip="rect(0cm, 1cm, 0cm, 1cm)"/></style:style>
+            </office:styles>
+            <office:automatic-styles>
+              <style:style style:name="fr" style:family="graphic" style:parent-style-name="Cut"><style:graphic-properties style:wrap="none"/></style:style>
+              <style:style style:name="whole" style:family="graphic"><style:graphic-properties fo:clip="rect(auto, 1cm, auto, 1cm)"/></style:style>
+              <style:page-layout style:name="pm"/>
+            </office:automatic-styles>
+            <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:header><text:p>{header}</text:p></style:header></style:master-page></office:master-styles>
+            <office:body><office:text>
+              <text:p>{body}</text:p>
+              <table:table><table:table-column/><table:table-row><table:table-cell><text:p>{body}</text:p></table:table-cell></table:table-row></table:table>
+              <text:p>{whole}</text:p>
+            </office:text></office:body></office:document>"#,
+            header = frame("Cut"),
+            body = frame("fr"),
+            whole = frame("whole"),
+        );
+        let app = App::new();
+        app.open_bytes("crop.fodt", bytes.as_bytes()).unwrap();
+        let viewport = app.get_viewport(0..app.block_count());
+        let crop = |index: usize| {
+            let view = viewport.get(index).expect("a block");
+            view.runs[0].image.as_ref().expect("a picture").crop.clone()
+        };
+        let cut = picture::Crop::parse("rect(0cm, 1cm, 0cm, 1cm)");
+        assert!(cut.is_some());
+        assert_eq!(crop(0), cut);
+        assert_eq!(crop(1), cut, "in a table cell too");
+        assert_eq!(crop(2), None, "a rect with auto in it cuts nothing");
+        let header = app.marginals().0.expect("a header");
+        assert_eq!(header.paragraphs[0].pictures[0].crop, cut);
     }
 }

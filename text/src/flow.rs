@@ -629,12 +629,27 @@ fn lay_out_table(
             }
         }
     }
-    for run in &cells {
-        let over = run.cell.rows_spanned.max(1) as usize;
+    // Each row as tall as its own cells; then a cell spanning rows, shorter spans first, adds
+    // what it still needs to the last of them (`doc/odt-format.md` §5c fact 71).
+    for run in cells.iter().filter(|run| run.cell.rows_spanned <= 1) {
+        if let Some(height) = heights.get_mut(run.cell.row as usize) {
+            *height = height.max(content(run));
+        }
+    }
+    let mut spanning: Vec<&CellRun> = cells
+        .iter()
+        .filter(|run| run.cell.rows_spanned > 1)
+        .collect();
+    spanning.sort_by_key(|run| run.cell.rows_spanned);
+    for run in spanning {
         let first = run.cell.row as usize;
-        let share = content(run) / over as f64;
-        for height in heights.iter_mut().skip(first).take(over) {
-            *height = height.max(share);
+        let last = (first + run.cell.rows_spanned as usize).min(rows) - 1;
+        let Some(spanned) = heights.get(first..=last) else {
+            continue;
+        };
+        let short = content(run) - spanned.iter().sum::<f64>();
+        if short > 0.0 {
+            heights[last] += short;
         }
     }
     let tops: Vec<f64> = heights

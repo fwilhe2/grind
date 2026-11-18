@@ -12,9 +12,189 @@
 
 use crate::{App, BlockKind, BlockView, Caret, ImageView, Result};
 
+/// A picture anchored to its paragraph that takes no room: `style:wrap="run-through"`, drawn over
+/// the text where its graphic style puts it (`doc/odt-format.md` §5c fact 63). Each axis as the
+/// file spelled it: `style:horizontal-pos`/`-rel` and `svg:x`, `style:vertical-pos`/`-rel` and
+/// `svg:y`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Floating {
+    pub across: (String, String, Option<String>),
+    pub down: (String, String, Option<String>),
+}
+
+impl Floating {
+    /// Each axis as a placement in millimetres: across, then down.
+    #[must_use]
+    pub fn placed(&self) -> (crate::marginal::Placed, crate::marginal::Placed) {
+        let placed =
+            |(pos, rel, offset): &(String, String, Option<String>)| crate::marginal::Placed {
+                pos: pos.clone(),
+                rel: rel.clone(),
+                offset: offset
+                    .as_deref()
+                    .and_then(grind_core::style::length_mm)
+                    .unwrap_or(0.0),
+            };
+        (placed(&self.across), placed(&self.down))
+    }
+}
+
+/// How a frame the file spelled shows its picture, besides its size: where it floats and what
+/// it cuts away.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Look {
+    pub floating: Option<Floating>,
+    pub crop: Option<Crop>,
+    pub seat: Seat,
+}
+
+/// How a picture set as a character sits on its line, by its graphic style's
+/// `style:vertical-pos` and `-rel` (`doc/odt-format.md` §5c fact 66).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum Seat {
+    /// Its foot on the baseline: neither said, or `top` of `baseline`.
+    #[default]
+    Baseline,
+    /// Centred on the text's height: `middle` of `text`.
+    MiddleOfText,
+    /// Centred on the baseline: `middle` of `baseline`.
+    MiddleOfBaseline,
+    /// Any other, not measured: drawn as the placeholder character.
+    Unmeasured,
+}
+
+impl Seat {
+    /// From `style:vertical-pos` and `style:vertical-rel`, as spelled.
+    #[must_use]
+    pub fn of(pos: Option<&str>, rel: Option<&str>) -> Self {
+        match (pos, rel) {
+            (None, None) | (Some("top"), Some("baseline")) => Seat::Baseline,
+            (Some("middle"), Some("text")) => Seat::MiddleOfText,
+            (Some("middle"), Some("baseline")) => Seat::MiddleOfBaseline,
+            _ => Seat::Unmeasured,
+        }
+    }
+}
+
+/// What a frame cuts from its picture (`fo:clip`, `doc/odt-format.md` §5c fact 64): ODF lengths
+/// off its top, right, bottom and left edges, as spelled. A negative one adds empty room.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Crop(pub [String; 4]);
+
+impl Crop {
+    /// `rect(top, right, bottom, left)`, commas optional; `None` for `auto`, a rect with any
+    /// `auto` in it, or one cutting nothing.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        let inner = value.trim().strip_prefix("rect(")?.strip_suffix(')')?;
+        let edges: Vec<&str> = inner
+            .split([',', ' '])
+            .filter(|edge| !edge.is_empty())
+            .collect();
+        let edges: [&str; 4] = edges.try_into().ok()?;
+        let mm = edges.map(grind_core::style::length_mm);
+        if mm.iter().any(Option::is_none) || mm.iter().all(|edge| *edge == Some(0.0)) {
+            return None;
+        }
+        Some(Self(edges.map(str::to_owned)))
+    }
+
+    /// The cuts as fractions of the picture's height and width — top, right, bottom, left —
+    /// or `None` when the picture's own size is not known here.
+    #[must_use]
+    pub fn fractions(&self, data: &[u8]) -> Option<[f64; 4]> {
+        let (width, height) = own_mm(data)?;
+        let mm = |at: usize| grind_core::style::length_mm(&self.0[at]).unwrap_or(0.0);
+        Some([mm(0) / height, mm(1) / width, mm(2) / height, mm(3) / width])
+    }
+}
+
+/// A picture's own size in millimetres: its pixels at the density it states, or at 96 to the
+/// inch when it states none or only an aspect ratio; a WMF's placeable bounds at its units to the
+/// inch, an EMF's frame (`doc/odt-format.md` §5c fact 64). `None` for a JPEG without a JFIF
+/// segment and any other format, whose size LibreOffice was not measured on.
+#[must_use]
+pub fn own_mm(data: &[u8]) -> Option<(f64, f64)> {
+    const DEFAULT: f64 = 96.0 / 25.4;
+    if let Some(size) = metafile_mm(data) {
+        return Some(size);
+    }
+    let (width, height) = pixels(data)?;
+    let per_mm = if data.starts_with(b"\x89PNG") {
+        png_density(data).unwrap_or((DEFAULT, DEFAULT))
+    } else if data.starts_with(&[0xFF, 0xD8]) {
+        if data.get(6..11) != Some(b"JFIF\0") {
+            return None;
+        }
+        let at = |i: usize| f64::from(u16::from_be_bytes([data[i], data[i + 1]]));
+        match data.get(13..18).map(|_| data[13]) {
+            Some(1) => (at(14) / 25.4, at(16) / 25.4),
+            Some(2) => (at(14) / 10.0, at(16) / 10.0),
+            _ => (DEFAULT, DEFAULT),
+        }
+    } else {
+        (DEFAULT, DEFAULT)
+    };
+    let (x, y) = (
+        per_mm.0.max(f64::MIN_POSITIVE),
+        per_mm.1.max(f64::MIN_POSITIVE),
+    );
+    Some((f64::from(width) / x, f64::from(height) / y))
+}
+
+/// A placeable WMF's or an EMF's own size in millimetres.
+fn metafile_mm(data: &[u8]) -> Option<(f64, f64)> {
+    let i16_at = |at: usize| {
+        Some(f64::from(i16::from_le_bytes(
+            data.get(at..at + 2)?.try_into().ok()?,
+        )))
+    };
+    let i32_at = |at: usize| {
+        Some(f64::from(i32::from_le_bytes(
+            data.get(at..at + 4)?.try_into().ok()?,
+        )))
+    };
+    if data.starts_with(b"\xd7\xcd\xc6\x9a") {
+        let inch = f64::from(u16::from_le_bytes(data.get(14..16)?.try_into().ok()?));
+        let (width, height) = (
+            (i16_at(10)? - i16_at(6)?).abs(),
+            (i16_at(12)? - i16_at(8)?).abs(),
+        );
+        return (inch > 0.0 && width > 0.0 && height > 0.0)
+            .then(|| (width / inch * 25.4, height / inch * 25.4));
+    }
+    if data.starts_with(&[1, 0, 0, 0]) && data.get(40..44) == Some(b" EMF") {
+        let (width, height) = (i32_at(32)? - i32_at(24)?, i32_at(36)? - i32_at(28)?);
+        return (width > 0.0 && height > 0.0).then(|| (width / 100.0, height / 100.0));
+    }
+    None
+}
+
+/// A PNG's `pHYs` density in pixels per millimetre, when it is in metres.
+fn png_density(data: &[u8]) -> Option<(f64, f64)> {
+    let mut at = 8;
+    while let Some(head) = data.get(at..at + 8) {
+        let length = u32::from_be_bytes(head[..4].try_into().ok()?) as usize;
+        match &head[4..] {
+            b"pHYs" => {
+                let body = data.get(at + 8..at + 17)?;
+                let per_metre = |i: usize| {
+                    f64::from(u32::from_be_bytes(
+                        body[i..i + 4].try_into().unwrap_or_default(),
+                    ))
+                };
+                return (body[8] == 1).then(|| (per_metre(0) / 1000.0, per_metre(4) / 1000.0));
+            }
+            b"IDAT" | b"IEND" => return None,
+            _ => at = at.checked_add(12 + length)?,
+        }
+    }
+    None
+}
+
 /// The MIME type of a picture's bytes, from their signature rather than a name, or `None` for
 /// bytes that are no picture known here — the formats `NSImage` reads and an ODF consumer can be
-/// expected to.
+/// expected to, and Windows' metafiles.
 #[must_use]
 pub fn mime(bytes: &[u8]) -> Option<&'static str> {
     let at = |offset: usize, magic: &[u8]| bytes.get(offset..offset + magic.len()) == Some(magic);
@@ -27,6 +207,9 @@ pub fn mime(bytes: &[u8]) -> Option<&'static str> {
         () if at(0, b"BM") => "image/bmp",
         () if at(4, b"ftypheic") || at(4, b"ftypheix") || at(4, b"ftypmif1") => "image/heic",
         () if svg(bytes) => "image/svg+xml",
+        () if at(0, b"\xd7\xcd\xc6\x9a") || at(0, b"\x01\x00\x09\x00\x00\x03") => "image/x-wmf",
+        () if at(0, b"\x02\x00\x09\x00\x00\x03") => "image/x-wmf",
+        () if at(0, b"\x01\x00\x00\x00") && at(40, b" EMF") => "image/x-emf",
         () => return None,
     })
 }
@@ -194,9 +377,102 @@ mod tests {
             mime(b"<?xml version=\"1.0\"?>\n<!-- drawn -->\n<svg xmlns=\"...\">"),
             Some("image/svg+xml")
         );
+        assert_eq!(mime(b"\xd7\xcd\xc6\x9a\0\0"), Some("image/x-wmf"));
+        let mut emf = vec![1, 0, 0, 0];
+        emf.resize(40, 0);
+        emf.extend(b" EMF");
+        assert_eq!(mime(&emf), Some("image/x-emf"));
         assert_eq!(mime(b"<html>"), None);
         assert_eq!(mime(b"PK\x03\x04"), None, "a document is not a picture");
         assert_eq!(mime(b""), None);
+    }
+
+    /// A PNG's header, 400 × 200 px, with a `pHYs` chunk when `phys` gives one.
+    fn png(phys: Option<(u32, u8)>) -> Vec<u8> {
+        let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
+        bytes.extend(400u32.to_be_bytes());
+        bytes.extend(200u32.to_be_bytes());
+        bytes.extend([8, 2, 0, 0, 0, 0, 0, 0, 0]);
+        if let Some((per_metre, unit)) = phys {
+            bytes.extend(b"\0\0\0\x09pHYs");
+            bytes.extend(per_metre.to_be_bytes());
+            bytes.extend(per_metre.to_be_bytes());
+            bytes.extend([unit, 0, 0, 0, 0]);
+        }
+        bytes.extend(b"\0\0\0\0IDAT");
+        bytes
+    }
+
+    /// A JPEG's header, 400 × 200 px, with a JFIF segment when `jfif` gives one.
+    fn jpeg(jfif: Option<(u8, u16)>) -> Vec<u8> {
+        let mut bytes = vec![0xFF, 0xD8];
+        if let Some((unit, density)) = jfif {
+            bytes.extend([0xFF, 0xE0, 0, 16]);
+            bytes.extend(b"JFIF\0\x01\x01");
+            bytes.push(unit);
+            bytes.extend(density.to_be_bytes());
+            bytes.extend(density.to_be_bytes());
+            bytes.extend([0, 0]);
+        }
+        bytes.extend([0xFF, 0xC0, 0, 17, 8, 0, 200, 1, 144, 3, 0, 0, 0, 0, 0, 0]);
+        bytes
+    }
+
+    #[test]
+    fn a_crop_is_four_lengths_with_or_without_commas_and_never_auto() {
+        let crop = |edges: [&str; 4]| Some(Crop(edges.map(str::to_owned)));
+        assert_eq!(
+            Crop::parse("rect(0.3967in 0.95623in 0.56605in 0.92727in)"),
+            crop(["0.3967in", "0.95623in", "0.56605in", "0.92727in"])
+        );
+        assert_eq!(
+            Crop::parse("rect(0cm, -1cm,0cm , 2.54cm)"),
+            crop(["0cm", "-1cm", "0cm", "2.54cm"])
+        );
+        assert_eq!(Crop::parse("auto"), None);
+        assert_eq!(Crop::parse("rect(auto, 1in, auto, 1in)"), None);
+        assert_eq!(
+            Crop::parse("rect(0in, 0in, 0in, 0in)"),
+            None,
+            "it cuts nothing"
+        );
+        assert_eq!(Crop::parse("rect(1in, 1in, 1in)"), None);
+    }
+
+    /// `doc/odt-format.md` §5c fact 64: a picture's own size is its pixels at the density it
+    /// states, at 96 to the inch when it states none or only an aspect ratio.
+    #[test]
+    fn a_pictures_own_size_is_its_pixels_at_its_density() {
+        let close = |got: Option<(f64, f64)>, inches: (f64, f64)| {
+            let (w, h) = got.unwrap();
+            assert!((w - inches.0 * 25.4).abs() < 0.01, "{w}");
+            assert!((h - inches.1 * 25.4).abs() < 0.01, "{h}");
+        };
+        close(own_mm(&png(Some((3937, 1)))), (4.0, 2.0));
+        close(own_mm(&png(None)), (400.0 / 96.0, 200.0 / 96.0));
+        close(own_mm(&png(Some((1, 0)))), (400.0 / 96.0, 200.0 / 96.0));
+        close(own_mm(&jpeg(Some((1, 100)))), (4.0, 2.0));
+        close(own_mm(&jpeg(Some((2, 40)))), (400.0 / 101.6, 200.0 / 101.6));
+        close(own_mm(&jpeg(Some((0, 1)))), (400.0 / 96.0, 200.0 / 96.0));
+        assert_eq!(own_mm(&jpeg(None)), None, "not measured");
+        // A placeable WMF two inches by one at 500 units to the inch, and an EMF 76.49 mm wide.
+        let mut wmf = b"\xd7\xcd\xc6\x9a\0\0".to_vec();
+        for value in [0i16, 0, 1000, 500] {
+            wmf.extend(value.to_le_bytes());
+        }
+        wmf.extend(500u16.to_le_bytes());
+        close(own_mm(&wmf), (2.0, 1.0));
+        let mut emf = vec![1, 0, 0, 0];
+        emf.resize(24, 0);
+        for value in [0i32, 0, 7649, 580] {
+            emf.extend(value.to_le_bytes());
+        }
+        emf.extend(b" EMF");
+        close(own_mm(&emf), (76.49 / 25.4, 5.8 / 25.4));
+        let cut = Crop::parse("rect(0.5in, 1in, 0in, 25.4mm)").unwrap();
+        let [top, right, bottom, left] = cut.fractions(&png(Some((3937, 1)))).unwrap();
+        assert!((top - 0.25).abs() < 0.001 && (right - 0.25).abs() < 0.001);
+        assert!(bottom.abs() < 0.001 && (left - 0.25).abs() < 0.001);
     }
 
     #[test]

@@ -594,6 +594,8 @@ pub struct Document {
     pub sections: Vec<crate::model::Section>,
     /// Every footnote and endnote, in the order they are cited (`crate::marginal::Note`).
     pub notes: Vec<crate::marginal::Note>,
+    /// How they look: their citations' styles and the rule over the footnotes.
+    pub note_look: crate::marginal::NoteLook,
     /// The page's header and footer, from [`Document::page`]'s master page; read for printing
     /// (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
@@ -667,6 +669,7 @@ impl Document {
             table_looks: std::collections::HashMap::new(),
             sections: Vec::new(),
             notes: Vec::new(),
+            note_look: crate::marginal::NoteLook::default(),
             header: None,
             first_page: None,
             masters: BTreeMap::new(),

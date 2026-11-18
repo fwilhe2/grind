@@ -70,6 +70,10 @@ pub struct Source {
     /// paragraph writes the file's own frame for a picture that is unchanged — its name, style,
     /// nested resizing frame and caption, `Pictures/` reference — wherever the edit moved it.
     pub frames: Vec<(u64, Range<usize>)>,
+    /// The pictures among them that float or are cut ([`crate::picture::Look`]), by the block
+    /// each was read in and the same key, since one logo may float in two places. Read for
+    /// layout and drawing only: the model's picture is the same either way.
+    pub looks: Vec<(BlockId, u64, crate::picture::Look)>,
     /// Every top-level `table:table` by name, as the file spelled it, so a regenerated body writes
     /// an untouched table as its own bytes and an edited one with its own styles.
     pub tables: HashMap<String, TableSource>,
@@ -190,6 +194,7 @@ impl Source {
             siblings: Vec::new(),
             lists: HashMap::new(),
             frames: Vec::new(),
+            looks: Vec::new(),
             tables: HashMap::new(),
         }
     }
