@@ -171,7 +171,9 @@ impl<'a> Package<'a> {
         // Bounded whatever the header claimed, and never allocated from a claim. Not `?`: a
         // corrupt deflate stream is a damaged part, and losing one optional part is no reason to
         // refuse the file.
-        grind_core::odf::package::read_entry(&mut file).ok()
+        grind_core::odf::package::read_entry(&mut file)
+            .ok()
+            .map(utf8)
     }
 
     /// The relationships declared *by* a part, already resolved to part names.
@@ -200,6 +202,30 @@ impl<'a> Package<'a> {
 }
 
 /// `_rels/*.rels` — Part 2's own tiny vocabulary, in its own namespace.
+/// A part's XML as UTF-8. OPC allows UTF-16 as well (`doc/xlsx-format.md` §1.5), told by its
+/// byte-order mark or, without one, by how `<` is spelled (XML 1.0 Appendix F); every parser
+/// here reads UTF-8 only. Anything else is handed back as it came.
+fn utf8(bytes: Vec<u8>) -> Vec<u8> {
+    let (big, body) = match bytes.as_slice() {
+        [0xFE, 0xFF, rest @ ..] => (true, rest),
+        [0xFF, 0xFE, rest @ ..] => (false, rest),
+        all @ [0x00, b'<', 0x00, _, ..] => (true, all),
+        all @ [b'<', 0x00, _, 0x00, ..] => (false, all),
+        _ => return bytes,
+    };
+    let units = body.as_chunks::<2>().0.iter().map(|&pair| {
+        if big {
+            u16::from_be_bytes(pair)
+        } else {
+            u16::from_le_bytes(pair)
+        }
+    });
+    let text: String = char::decode_utf16(units)
+        .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect();
+    text.into_bytes()
+}
+
 fn parse_rels(bytes: &[u8], base: &str, seen: &mut Seen) -> Vec<Rel> {
     use crate::xml::{Handled, Reader};
 
@@ -349,5 +375,49 @@ mod tests {
         let rels = parse_rels(xml, "xl/workbook.xml", &mut Seen::default());
         assert!(rels[0].external);
         assert_eq!(rels[0].target, "https://example.invalid/book.xlsx");
+    }
+
+    fn utf16(text: &str, big: bool) -> Vec<u8> {
+        text.encode_utf16()
+            .flat_map(|u| {
+                if big {
+                    u.to_be_bytes()
+                } else {
+                    u.to_le_bytes()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_utf16_part_is_read_as_utf8_with_or_without_its_mark() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-16"?><a b="Ärger 😀"/>"#;
+        for big in [true, false] {
+            let bare = utf16(xml, big);
+            let mut marked = if big {
+                vec![0xFE, 0xFF]
+            } else {
+                vec![0xFF, 0xFE]
+            };
+            marked.extend_from_slice(&bare);
+            assert_eq!(utf8(bare), xml.as_bytes());
+            assert_eq!(utf8(marked), xml.as_bytes());
+        }
+    }
+
+    #[test]
+    fn utf8_and_what_is_not_xml_pass_through_untouched() {
+        for bytes in [&b"<a/>"[..], b"\xEF\xBB\xBF<a/>", b"\x00\x01", b""] {
+            assert_eq!(utf8(bytes.to_vec()), bytes);
+        }
+    }
+
+    #[test]
+    fn a_lone_surrogate_becomes_a_replacement_character() {
+        let bytes = [0x00, b'<', 0x00, b'a', 0xD8, 0x00, 0x00, b'>'];
+        assert_eq!(
+            String::from_utf8(utf8(bytes.to_vec())).unwrap(),
+            "<a\u{FFFD}>"
+        );
     }
 }

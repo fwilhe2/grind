@@ -36,6 +36,11 @@ const MCE: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 
 /// Assemble a zip from `(part name, content)` pairs.
 fn package(parts: &[(&str, String)]) -> Vec<u8> {
+    let parts: Vec<(&str, &[u8])> = parts.iter().map(|(n, c)| (*n, c.as_bytes())).collect();
+    package_bytes(&parts)
+}
+
+fn package_bytes(parts: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     {
         let mut zip = zip::ZipWriter::new(Cursor::new(&mut out));
@@ -43,7 +48,7 @@ fn package(parts: &[(&str, String)]) -> Vec<u8> {
             zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for (name, content) in parts {
             zip.start_file(*name, options).expect("a zip entry");
-            zip.write_all(content.as_bytes()).expect("writing an entry");
+            zip.write_all(content).expect("writing an entry");
         }
         zip.finish().expect("a finished zip");
     }
@@ -283,4 +288,27 @@ fn a_workbook_part_that_will_not_parse_is_an_error() {
     ]);
     let err = grind_xlsx::import_bytes(&bytes).expect_err("truncated XML");
     assert_matches!(err, grind_xlsx::Error::Xml(_), "{err}");
+}
+
+/// OPC allows a part in UTF-16 (`doc/xlsx-format.md` §1.5); `PhpSpreadsheet`'s test suite carries
+/// one, and LibreOffice opens it.
+#[test]
+fn a_workbook_part_in_utf16_imports() {
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>{}"#,
+        workbook(r#"<sheet name="Übersicht" sheetId="1"/>"#)
+    );
+    for (mark, big) in [(&[0xFE, 0xFF][..], true), (&[][..], false)] {
+        let mut part = mark.to_vec();
+        part.extend(xml.encode_utf16().flat_map(|u| {
+            if big {
+                u.to_be_bytes()
+            } else {
+                u.to_le_bytes()
+            }
+        }));
+        let rels = root_rels("xl/workbook.xml");
+        let bytes = package_bytes(&[("_rels/.rels", rels.as_bytes()), ("xl/workbook.xml", &part)]);
+        assert_eq!(sheet_names(&bytes), ["Übersicht"]);
+    }
 }

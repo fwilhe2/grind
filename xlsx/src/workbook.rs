@@ -98,10 +98,11 @@ pub fn read(bytes: &[u8], report: &mut Report) -> Result<Workbook> {
         return Err(Error::Xml("workbook part has no elements".into()));
     };
     if !root.is("workbook") {
-        return Err(Error::Xml(format!(
-            "workbook part is a <{}>, not a <workbook>",
-            root.local
-        )));
+        return Err(Error::Xml(if root.local == "workbook" {
+            "workbook part's <workbook> is not in SpreadsheetML's namespace".to_owned()
+        } else {
+            format!("workbook part is a <{}>, not a <workbook>", root.local)
+        }));
     }
     out.declares_strict = matches!(attrs.plain("conformance"), Some("strict"));
 

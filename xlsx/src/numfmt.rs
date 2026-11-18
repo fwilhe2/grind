@@ -44,8 +44,8 @@ pub enum Unspellable {
     /// A built-in currency id (5–8, 41–44), whose symbol is the *user's* locale and appears
     /// nowhere in the file. Putting a `$` on it would put dollars on euros.
     LocaleCurrency,
-    /// A built-in id §18.8.30 does not define — the East Asian ones, and anything else below 164.
-    /// Unverified, so not implemented (`doc/xlsx-format.md` §3.1).
+    /// A built-in id with no meaning to carry: one §18.8.30 does not list, or an East Asian id
+    /// that is a date in one UI language and a time in another (`doc/xlsx-format.md` §3.1).
     UnknownBuiltin,
     /// A section with no branch left for it — a condition past the two-plus-default shape, or a
     /// fifth section.
@@ -145,14 +145,24 @@ impl Translation {
 ///   in time.
 /// - 18–21 and 45–47 are clock and elapsed times — a duration.
 ///
-/// Every other id is a number, text or currency format. The East Asian date ids (27–36, 50–58) are
-/// not here: §18.8.30 does not define them and they are locale-dependent, so a cell using one
-/// shows its serial — visible and recoverable, rather than a wrong date.
+/// The East Asian ids (27–36, 50–58) are listed once per UI language: those that are a date, or a
+/// time, in all four count so (`doc/xlsx-format.md` §3.1). Every other id is a number, text or
+/// currency format.
 #[must_use]
 pub fn builtin(id: u32) -> Option<NumberKind> {
     match id {
         14..=17 | 22 => Some(NumberKind::Date),
         18..=21 | 45..=47 => Some(NumberKind::Time),
+        _ => east_asian(id),
+    }
+}
+
+/// What an East Asian id (27–36, 50–58) is in all four of zh-TW, zh-CN, ja-JP and ko-KR
+/// (§18.8.30). 34, 35, 52, 53, 55 and 56 are a date in one and a time in another, so `None`.
+fn east_asian(id: u32) -> Option<NumberKind> {
+    match id {
+        27..=31 | 36 | 50 | 51 | 54 | 57 | 58 => Some(NumberKind::Date),
+        32 | 33 => Some(NumberKind::Time),
         _ => None,
     }
 }
@@ -162,38 +172,46 @@ pub fn builtin(id: u32) -> Option<NumberKind> {
 /// the ISO spelling `numfmt::preset` uses rather than putting an American date in a German
 /// document. 47 (`mmss.0`) gains the separator the oracle gives it.
 ///
+/// The East Asian ids [`east_asian`] can tell apart are spelled the same way: each locale words
+/// them differently, and the file does not say which.
+///
 /// The currency ids (5–8, 41–44) are absent on purpose, [`Unspellable::LocaleCurrency`]: their
 /// symbol is the reader's locale and appears nowhere in the file.
 fn builtin_code(id: u32) -> Option<&'static str> {
-    Some(match id {
-        1 => "0",
-        2 => "0.00",
-        3 => "#,##0",
-        4 => "#,##0.00",
-        9 => "0%",
-        10 => "0.00%",
-        11 => "0.00E+00",
-        12 => "# ?/?",
-        13 => "# ??/??",
-        14 => "yyyy-mm-dd",
-        15 => "d-mmm-yy",
-        16 => "d-mmm",
-        17 => "mmm-yy",
-        18 => "h:mm AM/PM",
-        19 => "h:mm:ss AM/PM",
-        20 => "h:mm",
-        21 => "h:mm:ss",
-        22 => "yyyy-mm-dd hh:mm",
-        37 => "#,##0 ;(#,##0)",
-        38 => "#,##0 ;[Red](#,##0)",
-        39 => "#,##0.00;(#,##0.00)",
-        40 => "#,##0.00;[Red](#,##0.00)",
-        45 => "mm:ss",
-        46 => "[h]:mm:ss",
-        47 => "mm:ss.0",
-        48 => "##0.0E+0",
-        49 => "@",
-        _ => return None,
+    Some(match (id, east_asian(id)) {
+        (_, Some(NumberKind::Date)) => "yyyy-mm-dd",
+        (32, _) => "h:mm",
+        (33, _) => "h:mm:ss",
+        _ => match id {
+            1 => "0",
+            2 => "0.00",
+            3 => "#,##0",
+            4 => "#,##0.00",
+            9 => "0%",
+            10 => "0.00%",
+            11 => "0.00E+00",
+            12 => "# ?/?",
+            13 => "# ??/??",
+            14 => "yyyy-mm-dd",
+            15 => "d-mmm-yy",
+            16 => "d-mmm",
+            17 => "mmm-yy",
+            18 => "h:mm AM/PM",
+            19 => "h:mm:ss AM/PM",
+            20 => "h:mm",
+            21 => "h:mm:ss",
+            22 => "yyyy-mm-dd hh:mm",
+            37 => "#,##0 ;(#,##0)",
+            38 => "#,##0 ;[Red](#,##0)",
+            39 => "#,##0.00;(#,##0.00)",
+            40 => "#,##0.00;[Red](#,##0.00)",
+            45 => "mm:ss",
+            46 => "[h]:mm:ss",
+            47 => "mm:ss.0",
+            48 => "##0.0E+0",
+            49 => "@",
+            _ => return None,
+        },
     })
 }
 
@@ -911,8 +929,14 @@ mod tests {
         assert_eq!(builtin(18), Some(NumberKind::Time));
         assert_eq!(builtin(46), Some(NumberKind::Time), "[h]:mm:ss");
         assert_eq!(builtin(49), None, "@");
-        // East Asian ids are not in §18.8.30 and are not guessed at.
-        assert_eq!(builtin(31), None);
+        // An East Asian id is what it is in all four of its UI languages, or nothing.
+        assert_eq!(
+            builtin(58),
+            Some(NumberKind::Date),
+            "ggge年m月d日, m月d日, mm-dd"
+        );
+        assert_eq!(builtin(33), Some(NumberKind::Time), "h時mm分ss秒");
+        assert_eq!(builtin(34), None, "a time in Chinese, a date in Japanese");
     }
 
     #[test]
@@ -1208,7 +1232,16 @@ mod tests {
         );
         // The currency ids and the undocumented ones are named losses, not guesses.
         assert_eq!(of_builtin(5).lost, once(Unspellable::LocaleCurrency));
-        assert_eq!(of_builtin(31).lost, once(Unspellable::UnknownBuiltin));
+        assert_eq!(of_builtin(34).lost, once(Unspellable::UnknownBuiltin));
+        assert_eq!(of_builtin(23).lost, once(Unspellable::UnknownBuiltin));
+        let shown = |id| {
+            of_builtin(id)
+                .format
+                .expect("a format")
+                .render(&CellValue::Number(45_368.75), EPOCH)
+        };
+        assert_eq!(shown(31), "2024-03-17", "yyyy年m月d日 in every locale");
+        assert_eq!(shown(32), "18:00");
         assert!(of_builtin(12).lost.contains(&Unspellable::Fraction));
     }
 

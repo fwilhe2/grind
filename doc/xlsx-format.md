@@ -144,6 +144,16 @@ corrupts a seventh of this corpus silently. `xlsx/src/xml.rs` turns quick-xml's 
 off for exactly that reason, which is a decision that would have looked like a detail without
 the number beside it.
 
+### 1.5 A part in UTF-16 — `SPEC`, `MEASURED`
+
+ECMA-376 Part 2 lets a package's XML parts be UTF-8 or UTF-16, and XML 1.0 (§4.3.3,
+Appendix F) tells the two apart by a byte-order mark (`FE FF`, `FF FE`) or, without one, by
+the zero byte beside each ASCII character of `<?xml`. PhpSpreadsheet's test suite carries two
+workbooks whose `xl/workbook.xml` alone is UTF-16BE, one with the mark and one without
+(`tests/data/Reader/XLSX/utf16be{,.bom}.xlsx`); the oracle opens both, and the import used to
+refuse them. `grind_ooxml::Package::part` turns such a part into UTF-8 before any parser sees
+it, so the transcoding is shared with the `.docx` filter. An unpaired surrogate becomes U+FFFD.
+
 ---
 
 ## 2. Values and dates
@@ -259,10 +269,27 @@ mapping this filter wants is **by meaning**, not by code.
 
 **Which ids make a number a date or a time** (X1's half): 14–17 and 22 are dates, 18–21 and
 45–47 are times, and every other id is a number. Measured by `numfmt/builtins.xlsx` (one cell
-per id) against both the manifest and the pinned oracle, 2026-09-19. The East Asian date ids
-(27–36, 50–58) are **not** counted: §18.8.30 does not define them, and a cell using one keeps
-its serial as a plain number, which is visible and recoverable rather than a wrong date.
-`UNVERIFIED` which of them Excel writes.
+per id) against both the manifest and the pinned oracle, 2026-09-19.
+
+**The East Asian ids (27–36, 50–58) — `SPEC`, and `MEASURED` in the wild.** §18.8.30 lists them
+once per UI language, in four tables: zh-TW, zh-CN, ja-JP, ko-KR. The code differs by language
+and the file does not say which one wrote it, but read side by side the four agree on what most
+of them *are*:
+
+| ids | zh-TW | zh-CN | ja-JP | ko-KR | counted as |
+|---|---|---|---|---|---|
+| 27–31, 36, 50, 51, 54, 57, 58 | date | date | date | date | a date, spelled `yyyy-mm-dd` |
+| 32 | `hh"時"mm"分"` | `h"时"mm"分"` | `h"時"mm"分"` | `h"시" mm"분"` | a time, `h:mm` |
+| 33 | the same with seconds | | | | a time, `h:mm:ss` |
+| 34, 35, 55, 56 | time | time | date | date | nothing: the serial shows |
+| 52, 53 | time | date | date | date | nothing |
+
+The spelling follows id 14's reason (below): ISO is the date every locale reads the same way.
+Where the four disagree, the cell keeps its serial as a plain number — visible and recoverable
+rather than a wrong date — and the import counts `UnknownBuiltin`. These ids are not only East
+Asian Excel's: PhpSpreadsheet's `issue.3654.xlsx`, a workbook in euros, puts id 58 on a column of
+dates, and the oracle shows them as dates; so does calamine's `date_east_asian.xlsx`, one cell
+per id (2026-11-17).
 
 **What each id becomes** (X3's half). Measured by converting `numfmt/builtins.xlsx` with the
 oracle and reading the `number:*-style` each cell's style points at, 2026-09-20. The oracle
