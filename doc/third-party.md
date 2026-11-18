@@ -80,6 +80,10 @@ the suite does that and how it is kept from going stale.
 
 - **A dependency added, removed or bumped**: run `cargo test -p grind-core --test third_party`,
   read the diff of `core/src/third_party/data.rs`, then commit it.
+- **A Dependabot pull request**: `dependabot-third-party.yml` commits the list on its branch. When
+  that failed, or after merging one of several open ones, run `scripts/third-party.sh`: it asks
+  Dependabot to recreate every PR that is behind main (it will not rebase a branch carrying
+  the workflow's commit) and regenerates and pushes the list on the rest.
 - **A crate under a licence not yet on `ALLOWED`**: decide whether it can be distributed in an
   AGPL program. If it can, add it, with the decision in the commit message.
 - **A vendored asset (font, image, text) under someone else's licence**: annotate it for REUSE as
