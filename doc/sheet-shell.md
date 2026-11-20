@@ -741,7 +741,7 @@ hidden run collapses its two neighbours' headers together, so `geom::Hit` gained
 there finds the right run from either side) — a thin accent bar, clickable to unhide the
 whole run in one step.
 
-**Inline name hints are built** (`doc/view-modes.md` V4, normative there): View → *Show Where
+**Inline name hints are built** (`doc/view-modes.md` §3.1–§3.2, normative there): View → *Show Where
 Names Live*, or
 Ctrl+Shift+N, draws each named expression inside the cell it is bound to, once per anchor, with a
 range outlined; and the formula bar gains a third stack page reading a formula through its names
@@ -749,7 +749,7 @@ range outlined; and the formula bar gains a third stack page reading a formula t
 them sit on a toolbar with no confirmation, no dirty flag and no undo entry. The arithmetic is in
 `geom.rs` (`hint_rect`, `GridGeom::hint_cell`) and tests with no display.
 
-**Role mode is built too** (V6): View → *Show What Each Cell Is*, or Ctrl+Shift+R, colours every
+**Role mode is built too**: View → *Show What Each Cell Is*, or Ctrl+Shift+R, colours every
 cell's text by what
 it is and suppresses the document's own colours while it is on — §4.5's decision, with a hairline
 under any cell whose styling is being hidden and a **Roles** button in the status bar, since the

@@ -6,18 +6,11 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # View modes — what a document *means*, drawn
 
-**Status: normative, and built — V0 to V7** — `sheet/src/graph.rs` is the reference index,
+**Status: normative, and built** — `sheet/src/graph.rs` is the reference index,
 `sheet/src/view.rs` the roles and the name anchors, `App::get_viewport_with` the read, and
 `grind sheet view --roles/--names/--formulas` the CLI. §4.2's rule was **tightened twice
-against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. V4 and V5 are
-built: `grind-sheet-gtk` draws the name hints and reads a formula through its names, and
-`view::Names` is the substitution both that and the CLI go through. V6 is built too — the window
-has both modes, on Ctrl+Shift+N and Ctrl+Shift+R, with §4.6's glyph channel and announcement in
-the same commit as the colours. V7 put both modes in `grind-tui` (`:roles`, `:names`) and in
-`ui_web` (Ctrl+K), and §3.6's bookmark anchors in all four of the word processor's surfaces —
-`grind text view --names`, `:names` in the terminal, Ctrl+K in the browser, and **Show
-Bookmarks** (Ctrl+Shift+N) in `grind-text-gtk`, which is the only one that can put a mark at the
-exact offset an anchor sits at. Two features, written as one document
+against `examples/sample-sheet.sh`**; §4.2 below records what it is now and why. Every shell
+draws both modes, and the word processor's bookmark anchors (§3.6). Two features, written as one document
 because they are one mechanism, one core API, one CLI shape and one verification story:
 
 - **Part I — inline names.** A cell that a name is bound to shows that name, so a model does
@@ -29,7 +22,7 @@ because they are one mechanism, one core API, one CLI shape and one verification
 Neither writes anything to the document. That is §1, and it is the decision the rest follows
 from.
 
-These are shell milestones rather than a phase: they attach to the shells that already exist,
+They attach to the shells that already exist,
 they do not depend on `doc/dsl.md`, and they compose with it — the projection's code view
 (`doc/dsl.md` §6) can carry the same overlay, because it reads the same core answer.
 
@@ -142,7 +135,7 @@ Two rules that keep it from becoming noise:
   marked for the rest — the same treatment a merged region gets. Forty-nine copies of `sales`
   is not a hint, it is a wallpaper.
 
-**As built** (V4), with the arithmetic in `ui_sheet_gtk/src/geom.rs` so it tests with no display:
+**As built**, with the arithmetic in `ui_sheet_gtk/src/geom.rs` so it tests with no display:
 `hint_rect` gives the hint what the value leaves and returns `None` — dropped, not elided — when
 that is below a pixel floor *or* below half the name's own width, because a name elided to a stub
 is punctuation standing where a reader expects a word. `GridGeom::hint_cell` picks the cell that
@@ -168,7 +161,7 @@ cell-shaped as a name, so the reverse direction exists.
 The check falls out of loop B for free: `display` round-trips 75845 corpus formulas today, and
 the substituted form must round-trip through the same assertion.
 
-**As built** (`view::Names`, V5), with two things the corpus decided rather than this document:
+**As built** (`view::Names`), with two things the corpus decided rather than this document:
 
 * **"Exactly equals" is area equality, not text equality.** A name is stored fully qualified and
   absolute — `[$Sheet1.$B$2]` — while the formula reading it says `[.B2]`, so comparing the two
@@ -339,7 +332,7 @@ Colours come from `style::PALETTE` — the seventeen clrs.cc colours the project
 describes as *a default a shell offers and never a limit* — resolved against the theme, so the
 mode works on a dark ground.
 
-**As built** (V6, `ui_sheet_gtk/src/theme.rs`): a role is the cell's **text** colour rather than
+**As built** (`ui_sheet_gtk/src/theme.rs`): a role is the cell's **text** colour rather than
 a fill, which is the convention this borrows in the form the convention actually takes — a
 financial modeller colours the numbers, not the cells — and it leaves the fill free to keep
 meaning *selected*. Inputs are blue (named) and navy (unnamed), an unnamed constant is orange, a
@@ -366,7 +359,7 @@ courtesy:
   is why its `gtk4` feature is `v4_14`). Moving onto a cell in role mode announces the role.
 - **The CLI is the accessible surface of last resort**, and §5 is not optional for that reason.
 
-**As built** (V6, and all three in the commit that added the colours): each cell's leading edge
+**As built** (all three with the colours): each cell's leading edge
 carries one glyph — `◆` a named input, `◇` an unnamed one, `!` the constant nobody named, `=` a
 formula, `→` one reading another sheet, `T` a label, `✕` an error, `~` a stale value — with
 `draw_cells` leaving the room for it rather than the glyph overlapping the value. A test asserts
@@ -442,23 +435,9 @@ feature is: **nothing new is being represented, only read.**
 
 ---
 
-## 8. Milestones
+## 8. What building it settled
 
-| | What | Done when |
-|---|---|---|
-| **V0** | ✅ This document. The role set is fixed and the overlay API is designed | The names are settled |
-| **V1** | ✅ `sheet/src/graph.rs` — the forward and reverse reference index (§4.4), one walk of the parsed ASTs, built on demand | It resolves every reference through `Engine::area`, the function the evaluator itself calls, so it *cannot* disagree with `eval.rs` about what a formula reads |
-| **V2** | ✅ `sheet/src/view.rs` — `CellRole`, `NameAnchor`, the classifier, `Analysis` cached on `App` and dropped in `mutate`, `App::get_viewport_with(…, Overlays)` | `sheet/tests/view_modes.rs`: the writes-nothing test, totality over R7, and the role/index agreement check |
-| **V3** | ✅ `grind sheet view --roles` / `--names` / `--formulas`, `--format json`, the parity row | The CLI answers everything before any shell draws it (R9, and §4.6's accessibility floor), and `examples/sample-sheet.sh` shows all three |
-| **V4** | ✅ Name anchors — the grid hint and the range case (§3.1–3.2) | `geom.rs` covers the elision, the drop and the range anchor with no display; `--render-to --overlay names` draws them |
-| **V5** | ✅ Name substitution — `view::Names::display`, `App::named_formula`, `grind sheet view --formulas --names`, and the formula bar's third stack page | Loop B's display round-trip passes with the option on: 188 formulas mention a named place and all 188 come back |
-| **V6** | ✅ Role mode in `grind-sheet-gtk` — the mode, the palette, the corner marks, `announce` | `--render-to --overlay roles` draws a frame on both grounds; the glyph channel and the announcement landed in the same commit as the colours, not after |
-| **V7** | ✅ The other three shells, and `grind text view --names` for bookmarks (§3.6) | All five surfaces draw it — both `grind-tui` panes, both `ui_web` panes and `grind-text-gtk`. `CellRole::marker` is in the core, so no shell invented a glyph table; each shell's gap list says what its medium could not do |
-
-V1–V3 are the feature and they need no shell at all — **and they are done**. V4–V7 are four
-renderings of an answer already computed, **and all four are done**.
-
-What V7 proved is the thing §2 claimed: *one classifier, in the core; shells that choose colours
+Building the shells proved the thing §2 claimed: *one classifier, in the core; shells that choose colours
 and nothing else*. Three shells drew the roles and not one of them needed a core change — but
 one thing did move into the core on the way, and it is worth writing down. `CellRole::marker`,
 the one-glyph second channel, started as a table in `ui_sheet_gtk` and was **wrong there**: it
@@ -472,8 +451,7 @@ a ten-column terminal cell cannot hold a value *and* a hint, so the terminal und
 and spells the name out on the formula line; the browser has no measurement at render time, so
 it elides a hint with CSS where the window drops it; neither draws a range anchor's outline.
 
-Two decisions taken during V1–V3 that the plan had left open, recorded here rather than only
-in the code:
+Two decisions the plan had left open, recorded here rather than only in the code:
 
 * **`get_viewport` did not gain an argument; it gained a twin.** `get_viewport_with` takes the
   `Overlays`, and `get_viewport` is that call with `Overlays::NONE`. Rust has no default
@@ -507,7 +485,7 @@ call (§4.5) and it is still a surprise. The mode needs an obvious, always-visib
 that it is on — not a menu checkmark somewhere.
 
 **Colour-only meaning excludes people, and this feature is nothing but colour.** §4.6 is
-therefore load-bearing, and the marker glyphs have to ship in V6 rather than being scheduled
+therefore load-bearing, and the marker glyphs ship with the colours rather than being scheduled
 after it. A feature that is unusable without colour discrimination and ships anyway does not
 get fixed later.
 

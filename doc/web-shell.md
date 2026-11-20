@@ -155,7 +155,7 @@ character, and an image is fit to the column rather than to its own `svg:width` 
 `grind-text-gtk`'s gaps too. A named *character* style is kept and not interpreted
 (`doc/text-core.md`), so there is no style picker for one.
 
-**The view modes** (`doc/view-modes.md` V7). Drawn entirely in the stylesheet: `data-role`,
+**The view modes** (`doc/view-modes.md` §4.5). Drawn entirely in the stylesheet: `data-role`,
 `data-mark`, `data-name` and `data-anchor` on a cell, and `content: attr(…)` for the marker and
 the hint, so a mode costs one attribute per cell rather than a second element per cell. The hues
 are `style::PALETTE`'s, mixed towards `CanvasText` — the CSS form of `ui_sheet_gtk`'s

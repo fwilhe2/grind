@@ -163,7 +163,7 @@ put them. A named-style picker stays out: a run's *named* style (as opposed to i
 formatting) is a name this build keeps and does not interpret, and turning `Emphasis` into a set
 of checkboxes would throw that structure away to draw it (`doc/text-core.md`).
 
-**Bookmarks are visible now** (`doc/view-modes.md` §3.6, V7). A bookmark is the named-range
+**Bookmarks are visible now** (`doc/view-modes.md` §3.6). A bookmark is the named-range
 analogue and it contributes no characters, which made it the one part of a text document a reader
 could not see at all — a zero-width `Run` with nothing on screen to say it was there.
 `BlockView::marks` carries them, and every shell draws them: **Show Bookmarks** (Ctrl+Shift+N) in

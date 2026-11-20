@@ -214,7 +214,7 @@ map either side of following the caret. The upgrade is a flow over the whole doc
 what the GNOME window builds — and what a terminal showing thirty lines of a thousand-block
 report should not.
 
-**The view modes** (`doc/view-modes.md` V7). The role glyph takes a column of the cell's own
+**The view modes** (`doc/view-modes.md` §4.5). The role glyph takes a column of the cell's own
 width, which is the mode's price and is paid only while it is on — and a column clipped at the
 window's right-hand edge has none to give, so it keeps its text instead. A name is *not* drawn
 inside its cell — ten characters cannot hold a value and a hint, and §3.2 does not let the value

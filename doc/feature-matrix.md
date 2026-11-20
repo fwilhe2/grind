@@ -346,8 +346,8 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | An import's seven options (`--text`, `--locale`, …) | ● | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ | ● ʲʷ |
 | Open an Excel workbook (phase 11) | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● ᵏ | ● |
 | Open a CSV / TSV as a document of its own | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● ˡ | ● |
-| Cell roles overlay (V6) | ● | ● | ● | ● | ● | ● |
-| Name-anchor overlay (V4) | ● | ● | ● | ● | ● | ● |
+| Cell roles overlay | ● | ● | ● | ● | ● | ● |
+| Name-anchor overlay | ● | ● | ● | ● | ● | ● |
 | Every cell's formula at once | ● ᵍ | ● ᶠᵒ | ● ᶠᵒ | ● ᶠᵒ | ● ᶠᵒ | ● |
 
 ᵖᵃ Palette verbs, each a `prompt()` over the core's own call — *Row height…*, *Column width…*, *Define a name for the selection…*, *Rename a name…*, *Inline a name into its uses…*, *Delete a name…*, *Evaluate a formula…* — closed 2026-10-02; a typed name, not a picker.
@@ -471,7 +471,7 @@ There is no dialog.
 | `p12`, `p12+40`, `#bookmark`, `§2.1.3` | ● | ● | ● | ● | ● | ● ³ |
 | Outline, each row a jump | ● | ● | ● | ● | ● | ● ⁴ |
 | Create a bookmark | ● | ● ᵍᵖ | ● | ● ᶻ | ● ᶻ | ● |
-| Show where bookmarks anchor (V7) | ● | ● | ◐ ˡ | ● ˡ | ● | ● |
+| Show where bookmarks anchor | ● | ● | ◐ ˡ | ● ˡ | ● | ● |
 | **Pictures** | | | | | | |
 | Insert an image | ● | ● | ● ᵗⁱ | ● ᵖⁱ | ● | ● |
 | **Draws** an image | — | ● | ○ | ● | ● | ● |
