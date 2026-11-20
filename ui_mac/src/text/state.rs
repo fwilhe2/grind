@@ -140,8 +140,7 @@ pub type Refused = String;
 impl Page {
     /// The selection's two ends in document order, or `None` when nothing is selected.
     pub fn selection(&self) -> Option<(Caret, Caret)> {
-        (self.anchor != self.caret)
-            .then(|| (self.anchor.min(self.caret), self.anchor.max(self.caret)))
+        grind_text::caret::selection(Some(self.anchor), self.caret)
     }
 
     /// Put the caret at `at`, extending the selection or collapsing it, and forget the goal

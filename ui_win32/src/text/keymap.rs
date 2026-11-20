@@ -7,9 +7,7 @@
 //! and this starts there.
 //!
 //! The selection is presentation state: an anchor and an active caret, reaching `App` as two
-//! [`Caret`]s when something is done to it — copied, erased, formatted.
-
-use grind_text::Caret;
+//! [`Caret`](grind_text::Caret)s when something is done to it — copied, erased, formatted.
 
 use crate::sheet::keymap::{Key, Mods};
 
@@ -87,15 +85,6 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
         (Key::Return, true) => Some(Action::PageBreak),
         (Key::Tab, false) => Some(Action::Tab { back: mods.shift }),
         _ => None,
-    }
-}
-
-/// The two ends of a selection, in document order — a tuple comparison of block and offset.
-pub fn ordered(anchor: Caret, active: Caret) -> (Caret, Caret) {
-    if (anchor.block, anchor.offset) <= (active.block, active.offset) {
-        (anchor, active)
-    } else {
-        (active, anchor)
     }
 }
 
@@ -248,20 +237,6 @@ mod tests {
         assert_eq!(action_for(Key::Other, mods(false, false), 20), None);
         // Ctrl+C is the clipboard's, and the clipboard's verbs arrive as menu commands.
         assert_eq!(action_for(Key::Char('C'), mods(true, false), 20), None);
-    }
-
-    #[test]
-    fn a_selection_is_ordered_by_block_first() {
-        let a = Caret {
-            block: 1,
-            offset: 90,
-        };
-        let b = Caret {
-            block: 2,
-            offset: 0,
-        };
-        assert_eq!(ordered(a, b), (a, b));
-        assert_eq!(ordered(b, a), (a, b), "however long the earlier block is");
     }
 
     #[test]

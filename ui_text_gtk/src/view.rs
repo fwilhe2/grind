@@ -1678,9 +1678,7 @@ mod imp {
         /// The selected range in document order. `None` both when nothing was selected and when
         /// the anchor and caret coincide again.
         pub fn selection(&self) -> Option<(Caret, Caret)> {
-            let anchor = self.anchor.get()?;
-            let caret = self.caret.get();
-            (anchor != caret).then(|| (anchor.min(caret), anchor.max(caret)))
+            grind_text::caret::selection(self.anchor.get(), self.caret.get())
         }
 
         // --- the clipboard ---

@@ -619,17 +619,7 @@ impl App {
     /// The selection, in document order — `None` when the anchor is where the caret is, which
     /// is what "nothing selected" *is* rather than a second state to keep in step.
     pub fn selection(&self) -> Option<(Caret, Caret)> {
-        let anchor = self.anchor?;
-        if anchor == self.caret {
-            return None;
-        }
-        Some(
-            if (anchor.block, anchor.offset) <= (self.caret.block, self.caret.offset) {
-                (anchor, self.caret)
-            } else {
-                (self.caret, anchor)
-            },
-        )
+        grind_text::caret::selection(self.anchor, self.caret)
     }
 
     /// Erase whatever is selected, leaving the caret where the selection started. `false` when

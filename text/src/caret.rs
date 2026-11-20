@@ -35,6 +35,21 @@ pub fn end(app: &App) -> Caret {
     }
 }
 
+/// Two carets in document order.
+#[must_use]
+pub fn ordered(a: Caret, b: Caret) -> (Caret, Caret) {
+    (a.min(b), a.max(b))
+}
+
+/// The selection from `anchor` to `caret`, in document order — `None` with no anchor or one where
+/// the caret is, which is what "nothing selected" *is* rather than a second state to keep in step.
+#[must_use]
+pub fn selection(anchor: Option<Caret>, caret: Caret) -> Option<(Caret, Caret)> {
+    anchor
+        .filter(|&anchor| anchor != caret)
+        .map(|anchor| ordered(anchor, caret))
+}
+
 /// One character left (`delta` negative) or right from `at`, rolling onto the neighbouring block
 /// at either end, and staying put at the ends of the document.
 pub fn step(app: &App, at: Caret, delta: i32) -> Caret {
@@ -119,6 +134,27 @@ pub fn hit(
 mod tests {
     use super::*;
     use crate::{BlockKind, Fixed, Uniform};
+
+    #[test]
+    fn a_selection_is_ordered_by_block_first() {
+        let a = Caret {
+            block: 1,
+            offset: 90,
+        };
+        let b = Caret {
+            block: 2,
+            offset: 0,
+        };
+        assert_eq!(ordered(a, b), (a, b));
+        assert_eq!(ordered(b, a), (a, b), "however long the earlier block is");
+        assert_eq!(selection(Some(b), a), Some((a, b)));
+        assert_eq!(
+            selection(Some(a), a),
+            None,
+            "an anchor at the caret selects nothing"
+        );
+        assert_eq!(selection(None, a), None);
+    }
 
     fn app(blocks: &[&str]) -> App {
         let app = App::new();

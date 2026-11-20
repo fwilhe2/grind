@@ -1070,7 +1070,7 @@ impl Text {
 
     /// The selection's two ends in document order — what every verb over a range is given.
     fn range(&self) -> (Caret, Caret) {
-        text::keymap::ordered(self.anchor, self.caret)
+        grind_text::caret::ordered(self.anchor, self.caret)
     }
 
     /// How many characters a block holds. Asked of the viewport rather than remembered, because
@@ -5983,7 +5983,7 @@ fn text_next_misspelling(hwnd: HWND) {
             };
             let all = text.app.misspellings(0..usize::MAX);
             let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
-            let (_, at) = text::keymap::ordered(text.anchor, text.caret);
+            let (_, at) = grind_text::caret::ordered(text.anchor, text.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
                 text.say(Some(notice::none_misspelt(&choice.describe())));
@@ -6483,7 +6483,7 @@ fn text_next_grammar(hwnd: HWND) {
         with_text(hwnd, |text| {
             let all = text.grammar_flags(0..usize::MAX);
             let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
-            let (_, at) = text::keymap::ordered(text.anchor, text.caret);
+            let (_, at) = grind_text::caret::ordered(text.anchor, text.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
                 text.say(Some("No grammar findings".to_owned()));
@@ -8431,7 +8431,7 @@ fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
             let hits = find::hits(&text.app, &text.needle);
             // From the selection's start when there is one — usually the last hit — and the
             // caret otherwise.
-            let (at, _) = text::keymap::ordered(text.anchor, text.caret);
+            let (at, _) = grind_text::caret::ordered(text.anchor, text.caret);
             let said = match find::step(&hits, at, towards) {
                 Some(index) => {
                     let from = hits[index];
@@ -8926,7 +8926,7 @@ fn text_paragraph_style(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
     let Some(current) = (unsafe {
         with_text(hwnd, |text| {
-            let (from, _) = text::keymap::ordered(text.anchor, text.caret);
+            let (from, _) = grind_text::caret::ordered(text.anchor, text.caret);
             text.app
                 .get_viewport(from.block..from.block + 1)
                 .get(0)
@@ -8948,7 +8948,7 @@ fn text_paragraph_style(hwnd: HWND) {
     // SAFETY: a fresh borrow, after the dialog.
     let outcome = unsafe {
         with_text(hwnd, |text| {
-            let (from, to) = text::keymap::ordered(text.anchor, text.caret);
+            let (from, to) = grind_text::caret::ordered(text.anchor, text.caret);
             text.app.set_style(
                 from.block..to.block + 1,
                 (!name.is_empty()).then(|| name.clone()),
@@ -8964,7 +8964,7 @@ fn text_paragraph_style(hwnd: HWND) {
 
 /// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
 fn text_blocks(text: &Text) -> std::ops::RangeInclusive<usize> {
-    let (from, to) = text::keymap::ordered(text.anchor, text.caret);
+    let (from, to) = grind_text::caret::ordered(text.anchor, text.caret);
     from.block..=to.block
 }
 
