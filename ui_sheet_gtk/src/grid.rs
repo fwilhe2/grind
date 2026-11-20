@@ -683,6 +683,8 @@ pub fn spelling_menu_model(words: &[(String, Vec<String>)]) -> gio::Menu {
     model
 }
 
+pub(crate) use imp::SheetMetrics;
+
 mod imp {
     use super::*;
 
@@ -1626,10 +1628,10 @@ mod imp {
         }
     }
 
-    /// `grind_core::layout::Metrics` over Pango, for [`Grid::measure_rows`]: the same line breaker
-    /// the word processor uses. Built per `measure_rows` call, since a cell's weight, slant and
-    /// size vary cell to cell, so `font_desc_for` answers per fragment.
-    struct SheetMetrics {
+    /// `grind_core::layout::Metrics` over Pango, for [`Grid::measure_rows`] and a chart's text:
+    /// the same line breaker the word processor uses. Built per pass, since a cell's weight,
+    /// slant and size vary cell to cell, so `font_desc_for` answers per fragment.
+    pub(crate) struct SheetMetrics {
         context: pango::Context,
         /// A layout of this measurement pass's own — never the widget's shared, cached one,
         /// so a row-height pass needs no "what was set for a measurement has to be unset"
@@ -1643,7 +1645,7 @@ mod imp {
     /// One style's font as a whole `pango::FontDescription`, size included — a spreadsheet's
     /// oversized-font row is exactly this field. A free function over `base`, testable with no
     /// Pango context, like [`font`] and [`font_scale`].
-    pub(super) fn font_desc_for(
+    pub(crate) fn font_desc_for(
         base: &pango::FontDescription,
         style: &grind_core::style::TextStyle,
     ) -> pango::FontDescription {
@@ -1668,6 +1670,28 @@ mod imp {
             _ => {}
         }
         font
+    }
+
+    impl SheetMetrics {
+        /// Measuring in `widget`'s own font, at zoom 1.
+        pub(crate) fn of(widget: &impl IsA<gtk::Widget>) -> Self {
+            let context = widget.pango_context();
+            let base = context.font_description().unwrap_or_default();
+            SheetMetrics {
+                layout: {
+                    let layout = pango::Layout::new(&context);
+                    layout.set_attributes(Some(&tabular()));
+                    layout
+                },
+                context,
+                base,
+            }
+        }
+
+        /// The widget's font in `style`.
+        pub(crate) fn font(&self, style: &grind_core::style::TextStyle) -> pango::FontDescription {
+            font_desc_for(&self.base, style)
+        }
     }
 
     impl grind_core::layout::Metrics for SheetMetrics {
@@ -1855,17 +1879,7 @@ mod imp {
 
             let default = self.metrics.get().row_height;
             let cols = self.col_sizes();
-            let context = self.obj().pango_context();
-            let base = context.font_description().unwrap_or_default();
-            let metrics = SheetMetrics {
-                layout: {
-                    let layout = pango::Layout::new(&context);
-                    layout.set_attributes(Some(&tabular()));
-                    layout
-                },
-                context,
-                base,
-            };
+            let metrics = SheetMetrics::of(&*self.obj());
             let mut measured = Vec::new();
             for row in 0..used_rows {
                 let mut tallest: f32 = 0.0;
@@ -2919,26 +2933,7 @@ mod imp {
                 let Ok(data) = app.chart_data(sheet, index) else {
                     continue;
                 };
-                // Every mark's colour resolved as the writer resolves it
-                // (`grind_sheet::chart::effective_color`), so what is drawn is what is saved.
-                let color = |series: usize, point: Option<usize>| {
-                    crate::theme::color(&grind_sheet::effective_color(chart, series, point))
-                        .unwrap_or(f.palette.foreground)
-                };
-                crate::chart::draw(
-                    &*self.obj(),
-                    f.snapshot,
-                    at,
-                    chart,
-                    &data,
-                    &crate::chart::Painter {
-                        background: f.palette.background,
-                        border: f.palette.lines,
-                        foreground: f.palette.foreground,
-                        grid: f.palette.lines,
-                        color: &color,
-                    },
-                );
+                crate::chart::draw(&*self.obj(), f.snapshot, at, chart, &data, &f.palette);
                 // Selected or being dragged: an accent outline and all eight handles. Under the
                 // pointer and not selected: a faint outline, so it reads as something to pick up.
                 if dragging == Some(index) || selected == Some(index) {
@@ -3012,14 +3007,8 @@ mod imp {
             let sheet = self.sheet.get();
             let chart = app.charts(sheet).ok()?.get(index)?.clone();
             let data = app.chart_data(sheet, index).ok()?;
-            crate::chart::describe(
-                rect,
-                &chart,
-                &data,
-                x,
-                y,
-                &crate::chart::measurer(&*self.obj()),
-            )
+            let palette = self.palette();
+            crate::chart::describe(&*self.obj(), rect, &chart, &data, &palette, (x, y))
         }
 
         /// A click on a bar, a slice or a line: a palette popover at the click
@@ -3043,22 +3032,17 @@ mod imp {
             let Ok(data) = app.chart_data(sheet, chart_index) else {
                 return;
             };
-            let Some((series, point)) = crate::chart::mark_at(
-                rect,
-                chart,
-                &data,
-                x,
-                y,
-                &crate::chart::measurer(&*self.obj()),
-            ) else {
+            let palette = self.palette();
+            let Some((series, point)) =
+                crate::chart::mark_at(&*self.obj(), rect, chart, &data, &palette, (x, y))
+            else {
                 // A click on a chart's own background is not a click on anything — editing
                 // it is a double-click or the context menu, which is what a user who did not
                 // aim at a bar meant.
                 return;
             };
 
-            let shown = crate::theme::color(&grind_sheet::effective_color(chart, series, point))
-                .unwrap_or(gtk::gdk::RGBA::BLACK);
+            let shown = crate::chart::shown(chart, series, point);
             let chart = chart.clone();
             let x_axis = chart.x_axis.clone();
             let y_axis = chart.y_axis.clone();

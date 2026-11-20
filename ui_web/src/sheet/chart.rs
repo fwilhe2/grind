@@ -2,497 +2,160 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart, as SVG — drawn from [`grind_sheet::ChartData`] and [`grind_sheet::Chart`] like every
-//! other renderer, and scaled against [`grind_sheet::axis_ticks`] rather than the tallest bar, so
-//! a chart has the same axis everywhere.
-//!
-//! SVG rather than `<canvas>`: the marks are elements, so the browser's zoom, text, printing and
-//! copy-the-picture work for free, and a document's colour is an attribute. A mark's colour cannot
-//! be changed here (`doc/chart-format.md`).
+//! A chart, as SVG: [`grind_sheet::chart_paint`]'s marks as elements, so the browser's zoom, text,
+//! printing and copy-the-picture work for free. Where every mark goes is the core's; text is
+//! measured by estimate, since the markup is written before anything is laid out.
 
-use grind_sheet::{
-    Chart, ChartAxis, ChartData, ChartKind, ChartLegend, axis_ticks, effective_color,
-};
 use std::fmt::Write as _;
 
-/// How far the plot is inset from the frame, in the SVG's own units (which are CSS pixels,
-/// since the `<svg>` is sized in them and its `viewBox` matches).
-const INSET: f64 = 6.0;
-const GROUP_GAP: f64 = 0.2;
-/// Room for an axis title — one line of text, the same fixed band the GTK painter reserves.
-const TITLE_SPACE: f64 = 16.0;
-/// One line of tick text, and the gap between a tick label and the plot.
-const TICK_H: f64 = 12.0;
-const TICK_GAP: f64 = 4.0;
-/// How wide one character of tick text is taken to be — estimated, since nothing here hit-tests
-/// against the plot; a gutter a few pixels out costs a few pixels of plot.
-const TICK_CHAR_W: f64 = 6.2;
+use grind_core::color::Rgb;
+use grind_core::layout::Metrics;
+use grind_core::style::TextStyle;
+use grind_sheet::chart_paint::{self, Colours, Mark};
+use grind_sheet::{Chart, ChartData};
 
-/// The whole `<svg>` for one chart, as markup: written once per repaint and never edited, and
-/// every value reaching it is a number or a colour produced here.
+use crate::ink;
+
+/// The size chart text is set at, in CSS pixels, and how wide one character of it is taken to be.
+const FONT_PX: f64 = 12.0;
+const CHAR_W: f64 = 6.6;
+const LINE_H: f64 = 15.0;
+
+/// Chart text by estimate: every character [`CHAR_W`] wide, a bold one a little wider.
+struct Estimate;
+
+impl Metrics for Estimate {
+    fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
+        let bold = style.font_weight.as_deref() == Some("bold");
+        let w = if bold { CHAR_W * 1.08 } else { CHAR_W };
+        let mut x = 0.0;
+        for c in text.chars() {
+            x += crate::sheet::layout::text_cells(c.encode_utf8(&mut [0; 4])) as f64 * w;
+            out.push(x as f32);
+        }
+    }
+
+    fn line_height(&self, _: &TextStyle) -> f32 {
+        LINE_H as f32
+    }
+}
+
+/// `share` of `a` over `b` — the stylesheet's `color-mix(in srgb, …)`.
+fn mix(a: Rgb, b: Rgb, share: f64) -> Rgb {
+    let channel =
+        |x: u8, y: u8| (f64::from(x) * share + f64::from(y) * (1.0 - share)).round() as u8;
+    (channel(a.0, b.0), channel(a.1, b.1), channel(a.2, b.2))
+}
+
+/// The page's colours in the scheme the browser paints: the hairlines are the stylesheet's
+/// `--line`.
+fn colours(dark: bool) -> Colours {
+    let (page, text) = if dark { ink::DARK } else { ink::LIGHT };
+    Colours {
+        page,
+        ink: text,
+        grid: mix(text, page, 0.2),
+        accent: (0x1c, 0x71, 0xd8),
+        dark,
+    }
+}
+
+/// The whole `<svg>` for one chart, as markup: every value reaching it is a number, a colour or
+/// escaped text.
 pub fn svg(chart: &Chart, data: &ChartData, w: f64, h: f64) -> String {
+    svg_in(chart, data, w, h, ink::page_is_dark())
+}
+
+fn svg_in(chart: &Chart, data: &ChartData, w: f64, h: f64, dark: bool) -> String {
     let mut out = format!(
         "<svg viewBox=\"0 0 {w:.1} {h:.1}\" preserveAspectRatio=\"none\" \
-         xmlns=\"http://www.w3.org/2000/svg\">"
+         xmlns=\"http://www.w3.org/2000/svg\" font-size=\"{FONT_PX}\">"
     );
-    // The chart's own title and legend take their bands first — the GTK painter's order — and
-    // the plot and its axes are drawn in what is left, translated there as one group.
-    let (x0, y0, w, h) = dress(&mut out, chart, data, w, h);
-    let _ = write!(out, "<g transform=\"translate({x0:.1} {y0:.1})\">");
-    let ticks = axis_ticks(max_value(data));
-    let (x_axis, y_axis) = axes(chart, data);
-    let plot = plot_rect(&x_axis, &y_axis, data, &ticks, w, h);
-
-    if plot.2 > 0.0 && plot.3 > 0.0 {
-        grid(&mut out, &x_axis, &y_axis, data, &ticks, plot);
-        match data.kind {
-            ChartKind::Bar => bars(&mut out, chart, data, &ticks, plot),
-            ChartKind::Line => lines(&mut out, chart, data, &ticks, plot),
-            ChartKind::Pie => pie(&mut out, chart, data, plot),
-        }
-        ticks_text(&mut out, &x_axis, &y_axis, data, &ticks, (plot, h));
+    let frame = chart_paint::Rect::new(0.0, 0.0, w, h);
+    for mark in chart_paint::draw(chart, data, frame, &colours(dark), &Estimate) {
+        put(&mut out, mark);
     }
-    titles(&mut out, &x_axis, &y_axis, w, h);
-    out.push_str("</g></svg>");
+    out.push_str("</svg>");
     out
 }
 
-/// A legend swatch's side, the gap to its words, the gap between two entries in a row, and the
-/// gap between the legend and the plot — the GTK painter's own spacing.
-const SWATCH: f64 = 10.0;
-const SWATCH_GAP: f64 = 6.0;
-const ENTRY_GAP: f64 = 14.0;
-const LEGEND_GAP: f64 = 10.0;
-
-/// The chart's own title and legend, written into `out`, and the frame left for the plot —
-/// `(x, y, w, h)`. A legend that would take more than its share of a small chart is left off,
-/// which is the GTK painter's rule too.
-fn dress(out: &mut String, chart: &Chart, data: &ChartData, w: f64, h: f64) -> Plot {
-    let (mut x0, mut y0, mut fw, mut fh) = (0.0, 0.0, w, h);
-    if let Some(title) = &chart.title
-        && h > 4.0 * TICK_H
-    {
-        let _ = write!(
-            out,
-            "<text class=\"chart-title\" text-anchor=\"middle\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
-            w / 2.0,
-            INSET + TICK_H,
-            escape(title)
-        );
-        y0 += TICK_H + INSET + 6.0;
-        fh -= TICK_H + INSET + 6.0;
-    }
-    let Some(position) = chart.legend else {
-        return (x0, y0, fw, fh);
+fn put(out: &mut String, mark: Mark) {
+    let color = |rgb: Rgb| ink::hex(rgb);
+    let points = |points: &[(f64, f64)]| {
+        points
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .collect::<Vec<_>>()
+            .join(" ")
     };
-    let items = legend_items(chart, data);
-    if items.is_empty() {
-        return (x0, y0, fw, fh);
-    }
-    let text_w = |label: &str| label.chars().count() as f64 * TICK_CHAR_W;
-    let line = TICK_H + 4.0;
-    let entry = |out: &mut String, x: f64, y: f64, label: &str, color: &str| {
-        let _ = write!(
+    let _ = match mark {
+        Mark::Fill { rect, color: c } => write!(
             out,
-            "<rect class=\"swatch\" rx=\"2\" x=\"{x:.1}\" y=\"{:.1}\" width=\"{SWATCH}\" \
-             height=\"{SWATCH}\" fill=\"{color}\"/><text class=\"legend\" x=\"{:.1}\" \
-             y=\"{:.1}\">{}</text>",
-            y + (TICK_H - SWATCH) / 2.0,
-            x + SWATCH + SWATCH_GAP,
-            y + TICK_H - 2.0,
-            escape(label)
-        );
-    };
-    match position {
-        ChartLegend::Start | ChartLegend::End => {
-            let width =
-                SWATCH + SWATCH_GAP + items.iter().map(|i| text_w(&i.0)).fold(0.0, f64::max);
-            let height = items.len() as f64 * line;
-            if width + LEGEND_GAP > fw * 0.45 || height > fh {
-                return (x0, y0, fw, fh);
-            }
-            let x = match position {
-                ChartLegend::End => x0 + fw - INSET - width,
-                _ => x0 + INSET,
-            };
-            let mut y = y0 + (fh - height) / 2.0;
-            for (label, color) in &items {
-                entry(out, x, y, label, color);
-                y += line;
-            }
-            if let ChartLegend::Start = position {
-                x0 += width + LEGEND_GAP;
-            }
-            fw -= width + LEGEND_GAP;
-        }
-        ChartLegend::Top | ChartLegend::Bottom => {
-            let widths: Vec<f64> = items
-                .iter()
-                .map(|i| SWATCH + SWATCH_GAP + text_w(&i.0))
-                .collect();
-            let total = widths.iter().sum::<f64>() + ENTRY_GAP * (items.len() - 1) as f64;
-            // One row, centred. A legend too wide for it is left off rather than wrapped: this
-            // pane estimates the width of text rather than measuring it, and a second row
-            // placed on an estimate is one that overlaps.
-            if total > fw - 2.0 * INSET || line + LEGEND_GAP > fh * 0.35 {
-                return (x0, y0, fw, fh);
-            }
-            let y = match position {
-                ChartLegend::Top => y0 + INSET,
-                _ => y0 + fh - INSET - line,
-            };
-            let mut x = x0 + (fw - total) / 2.0;
-            for ((label, color), width) in items.iter().zip(&widths) {
-                entry(out, x, y, label, color);
-                x += width + ENTRY_GAP;
-            }
-            if let ChartLegend::Top = position {
-                y0 += line + LEGEND_GAP;
-            }
-            fh -= line + LEGEND_GAP;
-        }
-    }
-    (x0, y0, fw, fh)
-}
-
-/// What a legend names and in which colour: a series each for a bar or a line, a slice each for
-/// a pie — [`effective_color`] resolving both, so a swatch is the colour of what it names.
-fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, String)> {
-    match data.kind {
-        ChartKind::Pie => grind_sheet::pie_slices(data, chart.clockwise)
-            .into_iter()
-            .map(|slice| {
-                let name = data
-                    .categories
-                    .get(slice.point)
-                    .filter(|name| !name.is_empty())
-                    .cloned()
-                    .unwrap_or_else(|| format!("{}", slice.point + 1));
-                (name, effective_color(chart, 0, Some(slice.point)))
-            })
-            .collect(),
-        ChartKind::Bar | ChartKind::Line => data
-            .series
-            .iter()
-            .enumerate()
-            .map(|(i, (name, _))| {
-                let name = if name.is_empty() {
-                    format!("Series {}", i + 1)
-                } else {
-                    name.clone()
-                };
-                (name, effective_color(chart, i, None))
-            })
-            .collect(),
-    }
-}
-
-/// A pie has no axes, so nothing an axis carries costs it any of its circle — the same rule
-/// the GTK painter applies, stated once in each renderer because it is about the *picture*.
-fn axes(chart: &Chart, data: &ChartData) -> (ChartAxis, ChartAxis) {
-    match data.kind {
-        ChartKind::Pie => (ChartAxis::bare(), ChartAxis::bare()),
-        _ => (chart.x_axis.clone(), chart.y_axis.clone()),
-    }
-}
-
-/// `(x, y, w, h)` of the plot inside the frame, once the axes have taken their room.
-type Plot = (f64, f64, f64, f64);
-
-fn plot_rect(
-    x_axis: &ChartAxis,
-    y_axis: &ChartAxis,
-    data: &ChartData,
-    ticks: &grind_sheet::Ticks,
-    w: f64,
-    h: f64,
-) -> Plot {
-    let widest = ticks
-        .values
-        .iter()
-        .map(|value| data.tick_label(ticks, *value).chars().count())
-        .max()
-        .unwrap_or(1) as f64;
-
-    let mut left = INSET;
-    if y_axis.label.is_some() {
-        left += TITLE_SPACE;
-        if y_axis.tick_labels {
-            left += TICK_GAP;
-        }
-    }
-    if y_axis.tick_labels {
-        left += widest * TICK_CHAR_W + TICK_GAP;
-    }
-    let mut bottom = INSET;
-    if x_axis.label.is_some() {
-        bottom += TITLE_SPACE;
-    }
-    if x_axis.tick_labels {
-        bottom += names(data, w - left - INSET, h).depth;
-    }
-    // The topmost tick label is centred on the plot's own top edge, so half of it is above.
-    let top = INSET
-        + if y_axis.tick_labels {
-            TICK_H / 2.0
-        } else {
-            0.0
-        };
-    (
-        left,
-        top,
-        (w - left - INSET).max(0.0),
-        (h - bottom - top).max(0.0),
-    )
-}
-
-/// How the category names are set under a plot `width` wide in a frame `height` tall — level, or
-/// turned when one is too wide (`chart_paint::category_names`), widths estimated, not measured.
-fn names(data: &ChartData, width: f64, height: f64) -> grind_sheet::chart_paint::CategoryNames {
-    let widest = data
-        .categories
-        .iter()
-        .map(|name| name.chars().count() as f64 * TICK_CHAR_W)
-        .fold(0.0, f64::max);
-    let band = width.max(0.0) / category_count(data).max(1) as f64;
-    grind_sheet::chart_paint::category_names(widest, band, TICK_H, height, TICK_GAP, TICK_GAP)
-}
-
-fn max_value(data: &ChartData) -> f64 {
-    data.series
-        .iter()
-        .flat_map(|(_, values)| values.iter().copied())
-        .fold(0.0_f64, f64::max)
-        .max(1.0)
-}
-
-fn category_count(data: &ChartData) -> usize {
-    data.categories.len().max(
-        data.series
-            .iter()
-            .map(|(_, values)| values.len())
-            .max()
-            .unwrap_or(0),
-    )
-}
-
-/// Where a value sits vertically — the one place the scale is applied.
-fn value_y(value: f64, ticks: &grind_sheet::Ticks, plot: Plot) -> f64 {
-    plot.1 + plot.3 - (value.max(0.0) / ticks.max()) * plot.3
-}
-
-/// Where each category's tick sits horizontally: the centre of a bar's group, or a line's own
-/// point. Shared by the gridlines and the tick labels so the two line up.
-fn category_x(data: &ChartData, plot: Plot) -> Vec<f64> {
-    let count = category_count(data);
-    if count == 0 {
-        return Vec::new();
-    }
-    // Every kind in the middle of its own band, a line's points as much as a bar's group —
-    // the GTK painter's rule, which keeps the first category's name off the value axis' zero.
-    let step = plot.2 / count as f64;
-    (0..count)
-        .map(|i| plot.0 + (i as f64 + 0.5) * step)
-        .collect()
-}
-
-fn grid(
-    out: &mut String,
-    x_axis: &ChartAxis,
-    y_axis: &ChartAxis,
-    data: &ChartData,
-    ticks: &grind_sheet::Ticks,
-    plot: Plot,
-) {
-    if y_axis.gridlines {
-        for value in &ticks.values {
-            let y = value_y(*value, ticks, plot);
-            line(out, plot.0, y, plot.0 + plot.2, y);
-        }
-    }
-    if x_axis.gridlines {
-        for x in category_x(data, plot) {
-            line(out, x, plot.1, x, plot.1 + plot.3);
-        }
-    }
-}
-
-fn line(out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64) {
-    let _ = write!(
-        out,
-        "<line class=\"axis\" x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\"/>"
-    );
-}
-
-fn bars(out: &mut String, chart: &Chart, data: &ChartData, ticks: &grind_sheet::Ticks, plot: Plot) {
-    let count = category_count(data);
-    if count == 0 {
-        return;
-    }
-    let series = data.series.len().max(1);
-    let group = plot.2 / count as f64;
-    let width = (group * (1.0 - GROUP_GAP) / series as f64).max(1.0);
-    let gap = (group - width * series as f64) / (series as f64 + 1.0);
-    for cat in 0..count {
-        for (s, (_, values)) in data.series.iter().enumerate() {
-            let Some(value) = values.get(cat) else {
-                continue;
-            };
-            let y = value_y(*value, ticks, plot);
-            let x = plot.0 + cat as f64 * group + gap + s as f64 * (width + gap);
-            let height = plot.1 + plot.3 - y;
-            let _ = write!(
+            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"{}\"/>",
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            color(c)
+        ),
+        Mark::Path {
+            points: at,
+            fill: Some(fill),
+            stroke,
+        } => {
+            let stroke = stroke.map_or(String::new(), |(c, w)| {
+                format!(" stroke=\"{}\" stroke-width=\"{w}\"", color(c))
+            });
+            write!(
                 out,
-                "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" \
-                 fill=\"{}\"/>",
-                effective_color(chart, s, Some(cat))
-            );
+                "<path d=\"M{}Z\" fill=\"{}\"{stroke}/>",
+                points(&at).replace(' ', " L"),
+                color(fill)
+            )
         }
-    }
-}
-
-fn lines(
-    out: &mut String,
-    chart: &Chart,
-    data: &ChartData,
-    ticks: &grind_sheet::Ticks,
-    plot: Plot,
-) {
-    let count = category_count(data);
-    if count < 2 {
-        return;
-    }
-    let step = plot.2 / count as f64;
-    for (s, (_, values)) in data.series.iter().enumerate() {
-        if values.len() < 2 {
-            continue;
-        }
-        let points: Vec<String> = values
-            .iter()
-            .enumerate()
-            .map(|(i, value)| {
-                format!(
-                    "{:.1},{:.1}",
-                    plot.0 + (i as f64 + 0.5) * step,
-                    value_y(*value, ticks, plot)
-                )
-            })
-            .collect();
-        let _ = write!(
+        Mark::Path {
+            points: at,
+            fill: None,
+            stroke: Some((c, w)),
+        } => write!(
             out,
-            "<polyline fill=\"none\" stroke-width=\"2\" stroke-linejoin=\"round\" \
-             stroke-linecap=\"round\" stroke=\"{}\" points=\"{}\"/>",
-            effective_color(chart, s, None),
-            points.join(" ")
-        );
-    }
-}
-
-/// Every slice as [`grind_sheet::pie_slices`] sweeps it — the core's arithmetic, so this pane
-/// and the GNOME window cannot run the same pie two ways round (`doc/chart-format.md`,
-/// Direction). A negative sweep is SVG's sweep-flag `0`.
-fn pie(out: &mut String, chart: &Chart, data: &ChartData, plot: Plot) {
-    let (cx, cy) = (plot.0 + plot.2 / 2.0, plot.1 + plot.3 / 2.0);
-    let r = (plot.2.min(plot.3) / 2.0).max(1.0);
-    for slice in grind_sheet::pie_slices(data, chart.clockwise) {
-        let end = slice.start + slice.sweep;
-        // SVG's own arc, rather than the fan of segments the GTK painter draws: `gsk` has no
-        // arc primitive and this does.
-        let large = i32::from(slice.sweep.abs() > std::f64::consts::PI);
-        let sweep = i32::from(slice.sweep > 0.0);
-        let _ = write!(
-            out,
-            "<path fill=\"{}\" d=\"M{cx:.1} {cy:.1} L{:.2} {:.2} A{r:.2} {r:.2} 0 {large} {sweep} \
-             {:.2} {:.2} Z\"/>",
-            effective_color(chart, 0, Some(slice.point)),
-            cx + r * slice.start.cos(),
-            cy + r * slice.start.sin(),
-            cx + r * end.cos(),
-            cy + r * end.sin()
-        );
-    }
-}
-
-fn ticks_text(
-    out: &mut String,
-    x_axis: &ChartAxis,
-    y_axis: &ChartAxis,
-    data: &ChartData,
-    ticks: &grind_sheet::Ticks,
-    (plot, height): (Plot, f64),
-) {
-    if y_axis.tick_labels {
-        for value in &ticks.values {
-            let y = value_y(*value, ticks, plot);
-            let _ = write!(
-                out,
-                "<text class=\"tick\" text-anchor=\"end\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
-                plot.0 - TICK_GAP,
-                y + TICK_H / 3.0,
-                escape(&data.tick_label(ticks, *value))
-            );
-        }
-    }
-    if x_axis.tick_labels {
-        use grind_sheet::chart_paint::{TURN_DEGREES, shorten, turned_origin};
-        let names = names(data, plot.2, height);
-        let width = |t: &str| t.chars().count() as f64 * TICK_CHAR_W;
-        for (i, x) in category_x(data, plot).into_iter().enumerate() {
-            if i % names.every != 0 {
-                continue;
-            }
-            let Some(text) = data.categories.get(i).filter(|t| !t.is_empty()) else {
-                continue;
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{w}\" \
+             stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",
+            points(&at),
+            color(c)
+        ),
+        Mark::Path { .. } => Ok(()),
+        Mark::Text {
+            x,
+            top,
+            text,
+            style,
+            color: c,
+            turn,
+            ..
+        } => {
+            let weight = match style.font_weight.as_deref() {
+                Some("bold") => " font-weight=\"bold\"",
+                _ => "",
             };
-            let Some(text) = shorten(text, names.room, width) else {
-                continue;
-            };
-            if names.turned {
-                let (x, y) = turned_origin(x, plot.1 + plot.3, TICK_GAP, width(&text), TICK_H);
-                let _ = write!(
-                    out,
-                    "<text class=\"tick\" x=\"{x:.1}\" y=\"{:.1}\" transform=\"rotate({:.0} {x:.1} {y:.1})\">{}</text>",
-                    y + TICK_H * 0.8,
-                    -TURN_DEGREES,
-                    escape(&text)
-                );
+            // The core turns counter-clockwise about the box's top-left corner; SVG clockwise.
+            let turn = if turn == 0.0 {
+                String::new()
             } else {
-                let _ = write!(
-                    out,
-                    "<text class=\"tick\" text-anchor=\"middle\" x=\"{x:.1}\" y=\"{:.1}\">{}</text>",
-                    plot.1 + plot.3 + TICK_GAP + TICK_H * 0.8,
-                    escape(&text)
-                );
-            }
+                format!(" transform=\"rotate({:.1} {x:.1} {top:.1})\"", -turn)
+            };
+            write!(
+                out,
+                "<text x=\"{x:.1}\" y=\"{top:.1}\" dominant-baseline=\"text-before-edge\" \
+                 fill=\"{}\"{weight}{turn}>{}</text>",
+                color(c),
+                escape(&text)
+            )
         }
-    }
+    };
 }
 
-fn titles(out: &mut String, x_axis: &ChartAxis, y_axis: &ChartAxis, w: f64, h: f64) {
-    if let Some(text) = &x_axis.label {
-        let _ = write!(
-            out,
-            "<text class=\"axis-title\" text-anchor=\"middle\" x=\"{:.1}\" y=\"{:.1}\">{}</text>",
-            w / 2.0,
-            h - INSET,
-            escape(text)
-        );
-    }
-    if let Some(text) = &y_axis.label {
-        // Rotated about its own anchor, which is the middle of the left edge.
-        let _ = write!(
-            out,
-            "<text class=\"axis-title\" text-anchor=\"middle\" transform=\"translate({:.1} {:.1}) \
-             rotate(-90)\">{}</text>",
-            INSET + TITLE_SPACE * 0.6,
-            h / 2.0,
-            escape(text)
-        );
-    }
-}
-
-/// The five characters that are not text inside markup. A category's name comes out of a
-/// document, so it can be anything at all — including `<`.
+/// A chart's text is the document's, so it can be anything at all — including `<`.
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
@@ -511,6 +174,7 @@ fn escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use grind_sheet::{ChartKind, ChartLegend};
 
     fn data(kind: ChartKind) -> ChartData {
         ChartData {
@@ -521,8 +185,6 @@ mod tests {
         }
     }
 
-    /// A chart whose series match the data above — which is what the render path always has,
-    /// since both come from the same `App` call in the same frame.
     fn chart(kind: ChartKind) -> Chart {
         let mut chart = Chart::new(kind, "0cm".into(), "0cm".into(), "8cm".into(), "5cm".into());
         chart.series = vec![grind_sheet::ChartSeries {
@@ -536,62 +198,16 @@ mod tests {
 
     #[test]
     fn every_kind_draws_its_own_mark() {
-        assert!(svg(&chart(ChartKind::Bar), &data(ChartKind::Bar), 300.0, 200.0).contains("<rect"));
-        assert!(
-            svg(
-                &chart(ChartKind::Line),
-                &data(ChartKind::Line),
-                300.0,
-                200.0
-            )
-            .contains("<polyline")
-        );
-        assert!(svg(&chart(ChartKind::Pie), &data(ChartKind::Pie), 300.0, 200.0).contains("<path"));
+        let drawn = |kind| svg_in(&chart(kind), &data(kind), 300.0, 200.0, false);
+        assert_eq!(drawn(ChartKind::Bar).matches("<path").count(), 2);
+        assert!(drawn(ChartKind::Line).contains("<polyline"));
+        assert_eq!(drawn(ChartKind::Pie).matches("<path").count(), 2);
     }
 
-    /// The scale is the core's, so the topmost gridline is the top of the plot rather than
-    /// the tallest bar — the same property the GTK painter is tested for.
+    /// A title and a legend are drawn, and a legend's words are escaped like every other piece of
+    /// a document's text.
     #[test]
-    fn the_plot_is_scaled_to_the_top_tick() {
-        let ticks = axis_ticks(90.0);
-        assert_eq!(ticks.max(), 100.0);
-        let plot = (10.0, 10.0, 100.0, 100.0);
-        assert_eq!(value_y(100.0, &ticks, plot), plot.1);
-        assert!(value_y(90.0, &ticks, plot) > plot.1);
-    }
-
-    #[test]
-    fn a_pie_keeps_its_whole_frame_whatever_its_axes_say() {
-        let mut chart = chart(ChartKind::Pie);
-        chart.x_axis.label = Some("Party".into());
-        chart.y_axis.gridlines = true;
-        let data = data(ChartKind::Pie);
-        let (x, y) = (
-            plot_rect(
-                &axes(&chart, &data).0,
-                &axes(&chart, &data).1,
-                &data,
-                &axis_ticks(90.0),
-                300.0,
-                200.0,
-            ),
-            plot_rect(
-                &ChartAxis::bare(),
-                &ChartAxis::bare(),
-                &data,
-                &axis_ticks(90.0),
-                300.0,
-                200.0,
-            ),
-        );
-        assert_eq!(x, y);
-    }
-
-    /// A category called `<script>` is text, and has to leave as text.
-    /// A title and a legend are drawn, and a legend's words are escaped like every other piece
-    /// of a document's text — the swatch carrying the colour, the words in ink.
-    #[test]
-    fn a_title_and_a_legend_are_drawn_and_the_plot_moves_over_for_them() {
+    fn a_title_and_a_legend_are_drawn_and_their_words_escaped() {
         let data = ChartData {
             kind: ChartKind::Bar,
             categories: vec!["a".into(), "b".into()],
@@ -601,53 +217,25 @@ mod tests {
             ],
             value_format: None,
         };
-        let mut plain = chart(ChartKind::Bar);
-        plain.series.push(plain.series[0].clone());
-        let mut dressed = plain.clone();
+        let mut dressed = chart(ChartKind::Bar);
+        dressed.series.push(dressed.series[0].clone());
         dressed.title = Some("Q1".into());
         dressed.legend = Some(ChartLegend::End);
-        let drawn = svg(&dressed, &data, 400.0, 200.0);
-        assert!(drawn.contains("class=\"chart-title\"") && drawn.contains(">Q1</text>"));
-        assert_eq!(drawn.matches("class=\"swatch\"").count(), 2);
+        let drawn = svg_in(&dressed, &data, 400.0, 200.0, false);
+        assert!(drawn.contains("font-weight=\"bold\"") && drawn.contains(">Q1</text>"));
         assert!(drawn.contains("Sales &lt;net&gt;"));
-        assert!(!svg(&plain, &data, 400.0, 200.0).contains("swatch"));
+        assert!(!drawn.contains("<net>"));
     }
 
     #[test]
-    fn a_categorys_own_name_is_escaped() {
-        let mut data = data(ChartKind::Bar);
-        data.categories[0] = "<b>&".into();
-        let mut chart = chart(ChartKind::Bar);
-        chart.x_axis.tick_labels = true;
-        let svg = svg(&chart, &data, 300.0, 200.0);
-        assert!(svg.contains("&lt;b&gt;&amp;"), "{svg}");
-        assert!(!svg.contains("<b>"), "{svg}");
-    }
-
-    #[test]
-    fn an_axis_that_carries_nothing_gives_the_plot_the_whole_frame() {
-        let ticks = axis_ticks(90.0);
-        let data = data(ChartKind::Bar);
-        let bare = plot_rect(
-            &ChartAxis::bare(),
-            &ChartAxis::bare(),
-            &data,
-            &ticks,
+    fn a_dark_page_draws_a_dark_card() {
+        let drawn = svg_in(
+            &chart(ChartKind::Bar),
+            &data(ChartKind::Bar),
             300.0,
             200.0,
+            true,
         );
-        let dressed = plot_rect(
-            &ChartAxis::default(),
-            &ChartAxis {
-                label: Some("Votes".into()),
-                ..ChartAxis::default()
-            },
-            &data,
-            &ticks,
-            300.0,
-            200.0,
-        );
-        assert!(dressed.2 < bare.2, "the y scale and title take width");
-        assert!(dressed.3 < bare.3, "the categories take height");
+        assert!(drawn.contains(&format!("fill=\"{}\"", ink::hex(ink::DARK.0))));
     }
 }

@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart as a list of [`Mark`]s, so where every bar, point, slice and label goes is tested on
-//! any host and a shell only draws them. Scaled against [`axis_ticks`], pies swept by
-//! [`pie_slices`], colours from [`effective_color`], and text measured through the grid's
-//! `Metrics`. Coordinates are the caller's unit.
+//! A chart as a list of [`Mark`]s, so where every bar, point, slice and label goes is decided
+//! once and tested on any host, and a shell only draws them. [`Picture`] keeps what was drawn
+//! where, so a click and a tooltip ask the same geometry the marks were placed by. Scaled
+//! against [`axis_ticks`], pies swept by [`pie_slices`], colours from [`effective_color`], and
+//! text measured through the shell's `Metrics`. Coordinates are the caller's unit.
 
 use grind_core::color::{self, Rgb};
 use grind_core::layout::Metrics;
@@ -13,7 +14,7 @@ use grind_core::style::TextStyle;
 
 use crate::{
     Chart, ChartAxis, ChartData, ChartKind, ChartLegend, Ticks, axis_ticks, effective_color,
-    pie_slices,
+    pie_slice_at, pie_slices,
 };
 
 /// A rectangle in the caller's unit.
@@ -40,6 +41,11 @@ impl Rect {
     pub fn bottom(&self) -> f64 {
         self.y + self.h
     }
+
+    #[must_use]
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
+    }
 }
 
 /// The shell's theme colours, which the document's colours are lifted against on a dark page.
@@ -51,8 +57,6 @@ pub struct Colours {
     pub ink: Rgb,
     /// Hairlines — the card's edge and the gridlines.
     pub grid: Rgb,
-    /// Tick labels, axis titles and the baseline.
-    pub header_ink: Rgb,
     /// A mark whose colour names nothing this build can read.
     pub accent: Rgb,
     /// Whether the page is dark.
@@ -169,47 +173,171 @@ pub fn turned_origin(tick: f64, bottom: f64, gap: f64, w: f64, h: f64) -> (f64, 
 }
 
 /// How far the plot is inset from the frame.
-const INSET: f64 = 8.0;
+const INSET: f64 = 6.0;
 /// The share of a bar group's band left empty between groups.
 const GROUP_GAP: f64 = 0.2;
-/// The gap between a tick label and the plot, and between an axis title and its tick labels.
+/// The widest a bar is drawn: what is left of its band is air, which is what makes a column of
+/// bars read as a chart rather than as a block.
+const BAR_MAX: f64 = 24.0;
+/// The gap between two bars of one group — the page showing through, not an outline.
+const BAR_GAP: f64 = 2.0;
+/// How round a bar's data end is; its baseline end stays square.
+const BAR_ROUNDING: f64 = 4.0;
+/// The band an axis title is set in.
+const LABEL_SPACE: f64 = 18.0;
+/// The gap between a tick label and the plot.
 const TICK_GAP: f64 = 4.0;
-/// A legend swatch's side, the gap to its words, between two entries in a row, and between the
-/// legend and the plot.
+/// The least gap between two level category names.
+const TICK_CLEARANCE: f64 = 6.0;
+/// The gap under the chart's title.
+const TITLE_GAP: f64 = 6.0;
+/// A legend swatch's side, the gap to its words, between two entries in a row, between two
+/// rows, and between the legend and the plot.
 const SWATCH: f64 = 10.0;
 const SWATCH_GAP: f64 = 6.0;
 const ENTRY_GAP: f64 = 14.0;
+const ROW_GAP: f64 = 4.0;
 const LEGEND_GAP: f64 = 10.0;
-/// A line series' stroke, in points.
+/// The most rows a top or bottom legend wraps to before it is left off.
+const LEGEND_ROWS: usize = 3;
+/// A line series' stroke.
 const LINE_W: f64 = 2.0;
+/// How close a point has to be to a line to be on it: a line has no area of its own.
+const LINE_HIT: f64 = 4.0;
 /// How many straight segments a whole turn of a pie's rim is drawn with.
 const SEGMENTS_PER_TURN: f64 = 120.0;
+/// How many straight segments a rounded corner is drawn with.
+const CORNER_SEGMENTS: usize = 4;
 
-/// Tick labels, the legend and the axis titles: the grid's face, a little smaller.
-fn small() -> TextStyle {
-    TextStyle {
-        font_size: Some("9pt".into()),
-        ..TextStyle::default()
-    }
+/// Every text on a chart: the shell's own face, its title bold.
+fn plain() -> TextStyle {
+    TextStyle::default()
 }
 
-/// The chart's own title: the same face, larger and bold.
 fn title_style() -> TextStyle {
     TextStyle {
-        font_size: Some("12pt".into()),
         font_weight: Some("bold".into()),
         ..TextStyle::default()
     }
 }
 
-/// What draws one chart: its frame, its colours and the measure of its text.
-struct Painter<'a> {
-    chart: &'a Chart,
-    data: &'a ChartData,
-    palette: &'a Colours,
-    metrics: &'a dyn Metrics,
-    clip: Rect,
-    ops: Vec<Mark>,
+/// What a click or a pointer over a chart can mean: a legend entry, a bar, a line or a slice.
+/// `series` and `point` mean what [`effective_color`] takes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    Legend { series: usize, point: Option<usize> },
+    Bar { series: usize, point: usize },
+    Line { series: usize },
+    Slice { point: usize },
+}
+
+impl Target {
+    /// The `(series, point)` whose colour this is.
+    #[must_use]
+    pub fn mark(self) -> (usize, Option<usize>) {
+        match self {
+            Target::Legend { series, point } => (series, point),
+            Target::Bar { series, point } => (series, Some(point)),
+            Target::Line { series } => (series, None),
+            Target::Slice { point } => (0, Some(point)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Region {
+    Rect(Rect),
+    Line(Vec<(f64, f64)>),
+    Pie { cx: f64, cy: f64, r: f64 },
+}
+
+/// One chart drawn: its marks, the plot they were scaled into, and where each thing a pointer
+/// can mean was put.
+#[derive(Clone, Debug, Default)]
+pub struct Picture {
+    pub marks: Vec<Mark>,
+    /// The rectangle the data was scaled into; empty when there was no room.
+    pub plot: Option<Rect>,
+    hits: Vec<(Region, Target)>,
+    /// Each category's x, for a line's tooltip to name the nearest.
+    categories: Vec<f64>,
+    clockwise: bool,
+}
+
+impl Picture {
+    /// What is under `(x, y)`: a legend entry before anything in the plot.
+    #[must_use]
+    pub fn target_at(&self, x: f64, y: f64, data: &ChartData) -> Option<Target> {
+        let legend = self.hits.iter().find(|(region, target)| {
+            matches!(target, Target::Legend { .. })
+                && matches!(region, Region::Rect(r) if r.contains(x, y))
+        });
+        if let Some((_, target)) = legend {
+            return Some(*target);
+        }
+        self.hits.iter().find_map(|(region, target)| {
+            let hit = match region {
+                Region::Rect(r) => r.contains(x, y),
+                Region::Line(points) => points
+                    .windows(2)
+                    .any(|pair| distance_to_segment((x, y), pair[0], pair[1]) <= LINE_HIT),
+                Region::Pie { cx, cy, r } => {
+                    let (dx, dy) = (x - cx, y - cy);
+                    (dx * dx + dy * dy).sqrt() <= *r
+                        && pie_slice_at(data, self.clockwise, dy.atan2(dx))
+                            .is_some_and(|point| *target == Target::Slice { point })
+                }
+            };
+            hit.then_some(*target)
+        })
+    }
+
+    /// The mark under `(x, y)` in words — `Sales · Feb: 20` for a bar or a line, `Feb: 20 (33%)`
+    /// for a slice. A legend entry has none: its words are already on screen.
+    #[must_use]
+    pub fn describe(&self, x: f64, y: f64, data: &ChartData) -> Option<String> {
+        let number = crate::formula::value::format_number;
+        let series_name = |s: usize| match data.series.get(s) {
+            Some((name, _)) if !name.is_empty() => name.clone(),
+            _ => format!("Series {}", s + 1),
+        };
+        let category = |i: usize| match data.categories.get(i) {
+            Some(name) if !name.is_empty() => name.clone(),
+            _ => format!("{}", i + 1),
+        };
+        let at = |series: usize, cat: usize| -> Option<String> {
+            let value = *data.series.get(series)?.1.get(cat)?;
+            Some(format!(
+                "{} · {}: {}",
+                series_name(series),
+                category(cat),
+                number(value)
+            ))
+        };
+        match self.target_at(x, y, data)? {
+            Target::Legend { .. } => None,
+            Target::Bar { series, point } => at(series, point),
+            Target::Line { series } => {
+                let (cat, _) = self
+                    .categories
+                    .iter()
+                    .enumerate()
+                    .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))?;
+                at(series, cat)
+            }
+            Target::Slice { point } => {
+                let values = &data.series.first()?.1;
+                let value = *values.get(point)?;
+                let total: f64 = values.iter().map(|v| v.max(0.0)).sum();
+                Some(format!(
+                    "{}: {} ({:.0}%)",
+                    category(point),
+                    number(value),
+                    100.0 * value / total
+                ))
+            }
+        }
+    }
 }
 
 /// One chart in `frame`: a card on the page, then its title and legend, then the plot in what is
@@ -221,18 +349,44 @@ pub fn draw(
     palette: &Colours,
     metrics: &dyn Metrics,
 ) -> Vec<Mark> {
+    picture(chart, data, frame, palette, metrics).marks
+}
+
+/// [`draw`], keeping where each bar, line, slice and legend entry went.
+pub fn picture(
+    chart: &Chart,
+    data: &ChartData,
+    frame: Rect,
+    palette: &Colours,
+    metrics: &dyn Metrics,
+) -> Picture {
     let mut painter = Painter {
         chart,
         data,
         palette,
         metrics,
         clip: frame,
-        ops: Vec::new(),
+        out: Picture {
+            clockwise: chart.clockwise,
+            ..Picture::default()
+        },
     };
-    painter.card(frame);
-    let inner = painter.dress(frame);
-    painter.plot(inner);
-    painter.ops
+    if frame.w > 0.0 && frame.h > 0.0 {
+        painter.card(frame);
+        let inner = painter.dress(frame);
+        painter.plot(inner);
+    }
+    painter.out
+}
+
+/// What draws one chart: its frame, its colours and the measure of its text.
+struct Painter<'a> {
+    chart: &'a Chart,
+    data: &'a ChartData,
+    palette: &'a Colours,
+    metrics: &'a dyn Metrics,
+    clip: Rect,
+    out: Picture,
 }
 
 impl Painter<'_> {
@@ -249,7 +403,7 @@ impl Painter<'_> {
     }
 
     fn turned(&mut self, x: f64, top: f64, text: &str, style: TextStyle, color: Rgb, turn: f64) {
-        self.ops.push(Mark::Text {
+        self.out.marks.push(Mark::Text {
             x,
             top,
             text: text.to_owned(),
@@ -261,7 +415,15 @@ impl Painter<'_> {
     }
 
     fn fill(&mut self, rect: Rect, color: Rgb) {
-        self.ops.push(Mark::Fill { rect, color });
+        self.out.marks.push(Mark::Fill { rect, color });
+    }
+
+    fn shape(&mut self, points: Vec<(f64, f64)>, color: Rgb) {
+        self.out.marks.push(Mark::Path {
+            points,
+            fill: Some(color),
+            stroke: None,
+        });
     }
 
     /// A mark's colour: the document's ([`effective_color`]) made legible on a dark page, or the
@@ -291,85 +453,151 @@ impl Painter<'_> {
         }
     }
 
-    /// The title and the legend take their bands first, and the plot gets what is left. A legend
-    /// that would take more than its share of a small chart is left off.
+    /// The title and the legend take their bands first, and the plot gets what is left.
     fn dress(&mut self, frame: Rect) -> Rect {
         let mut rest = frame;
         if let Some(title) = self.chart.title.clone() {
             let style = title_style();
             let h = self.line_h(&style);
             if frame.h > 4.0 * h {
-                let w = self.text_w(&title, &style);
-                let x = frame.x + ((frame.w - w) / 2.0).max(INSET);
-                self.text(x, frame.y + INSET, &title, style, self.palette.ink);
-                rest.y += h + INSET;
-                rest.h -= h + INSET;
+                let room = (frame.w - 2.0 * INSET).max(0.0);
+                if let Some(title) = shorten(&title, room, |t| self.text_w(t, &style)) {
+                    let w = self.text_w(&title, &style);
+                    let x = frame.x + INSET + (room - w) / 2.0;
+                    self.text(x, frame.y + INSET, &title, style, self.palette.ink);
+                }
+                rest.y += h + TITLE_GAP;
+                rest.h -= h + TITLE_GAP;
             }
         }
-        let Some(position) = self.chart.legend else {
-            return rest;
-        };
+        match self.chart.legend {
+            Some(position) => self.legend(rest, position),
+            None => rest,
+        }
+    }
+
+    /// The legend at its edge of `rect`, and what is left — or no legend at all when it would
+    /// take more than its share of a small chart.
+    fn legend(&mut self, rect: Rect, position: ChartLegend) -> Rect {
         let items = legend_items(self.chart, self.data);
         if items.is_empty() {
-            return rest;
+            return rect;
         }
-        let style = small();
-        let line = self.line_h(&style).max(SWATCH) + 4.0;
-        let widths: Vec<f64> = items
-            .iter()
-            .map(|(label, _)| SWATCH + SWATCH_GAP + self.text_w(label, &style))
+        let style = plain();
+        let line = self.line_h(&style).max(SWATCH);
+        let sized: Vec<(String, (usize, Option<usize>), f64)> = items
+            .into_iter()
+            .map(|(label, at)| {
+                let w = SWATCH + SWATCH_GAP + self.text_w(&label, &style);
+                (label, at, w)
+            })
             .collect();
-        let ink = self.palette.ink;
-        let entry = |painter: &mut Self, x: f64, y: f64, label: &str, at: usize| {
-            let (series, point) = items[at].1;
-            let color = painter.mark(series, point);
-            painter.fill(
-                Rect::new(x, y + (line - 4.0 - SWATCH) / 2.0, SWATCH, SWATCH),
-                color,
-            );
-            painter.text(x + SWATCH + SWATCH_GAP, y, label, style.clone(), ink);
-        };
-        match position {
+        let mut placed = Vec::new();
+        let rest = match position {
             ChartLegend::Start | ChartLegend::End => {
-                let w = widths.iter().copied().fold(0.0, f64::max);
-                let h = items.len() as f64 * line;
-                if w + LEGEND_GAP > rest.w * 0.45 || h > rest.h {
-                    return rest;
+                let width = sized.iter().map(|item| item.2).fold(0.0, f64::max);
+                let height = sized.len() as f64 * (line + ROW_GAP) - ROW_GAP;
+                if width + LEGEND_GAP > rect.w * 0.45 || height > rect.h - 2.0 * INSET {
+                    return rect;
                 }
                 let x = match position {
-                    ChartLegend::End => rest.right() - INSET - w,
-                    _ => rest.x + INSET,
+                    ChartLegend::End => rect.right() - INSET - width,
+                    _ => rect.x + INSET,
                 };
-                let mut y = rest.y + (rest.h - h) / 2.0;
-                for (at, (label, _)) in items.iter().enumerate() {
-                    entry(self, x, y, label, at);
-                    y += line;
+                let mut y = rect.y + (rect.h - height) / 2.0;
+                for item in sized {
+                    placed.push((x, y, item));
+                    y += line + ROW_GAP;
                 }
-                if position == ChartLegend::Start {
-                    rest.x += w + LEGEND_GAP;
+                match position {
+                    ChartLegend::End => Rect {
+                        w: rect.w - width - LEGEND_GAP,
+                        ..rect
+                    },
+                    _ => Rect {
+                        x: rect.x + width + LEGEND_GAP,
+                        w: rect.w - width - LEGEND_GAP,
+                        ..rect
+                    },
                 }
-                rest.w -= w + LEGEND_GAP;
             }
             ChartLegend::Top | ChartLegend::Bottom => {
-                let total = widths.iter().sum::<f64>() + ENTRY_GAP * (items.len() - 1) as f64;
-                // One row, centred; a legend too wide for it is left off rather than wrapped.
-                if total > rest.w - 2.0 * INSET || line + LEGEND_GAP > rest.h * 0.35 {
-                    return rest;
+                // Entries flow in rows, each centred, wrapping at the frame's own width.
+                let room = rect.w - 2.0 * INSET;
+                let mut rows: Vec<Vec<_>> = vec![Vec::new()];
+                let mut used = 0.0;
+                for item in sized {
+                    let row = rows.last_mut().expect("never empty");
+                    if !row.is_empty() && used + ENTRY_GAP + item.2 > room {
+                        rows.push(Vec::new());
+                        used = 0.0;
+                    }
+                    let row = rows.last_mut().expect("never empty");
+                    used += if row.is_empty() {
+                        item.2
+                    } else {
+                        ENTRY_GAP + item.2
+                    };
+                    row.push(item);
                 }
-                let y = match position {
-                    ChartLegend::Top => rest.y + INSET,
-                    _ => rest.bottom() - INSET - line,
+                let height = rows.len() as f64 * (line + ROW_GAP) - ROW_GAP;
+                if rows.len() > LEGEND_ROWS || height + LEGEND_GAP > rect.h * 0.35 {
+                    return rect;
+                }
+                let mut y = match position {
+                    ChartLegend::Top => rect.y + INSET,
+                    _ => rect.bottom() - INSET - height,
                 };
-                let mut x = rest.x + (rest.w - total) / 2.0;
-                for (at, ((label, _), w)) in items.iter().zip(&widths).enumerate() {
-                    entry(self, x, y, label, at);
-                    x += w + ENTRY_GAP;
+                for row in rows {
+                    let width = row.iter().map(|item| item.2).sum::<f64>()
+                        + ENTRY_GAP * row.len().saturating_sub(1) as f64;
+                    let mut x = rect.x + (rect.w - width) / 2.0;
+                    for item in row {
+                        let step = item.2 + ENTRY_GAP;
+                        placed.push((x, y, item));
+                        x += step;
+                    }
+                    y += line + ROW_GAP;
                 }
-                if position == ChartLegend::Top {
-                    rest.y += line + LEGEND_GAP;
+                match position {
+                    ChartLegend::Top => Rect {
+                        y: rect.y + height + LEGEND_GAP,
+                        h: rect.h - height - LEGEND_GAP,
+                        ..rect
+                    },
+                    _ => Rect {
+                        h: rect.h - height - LEGEND_GAP,
+                        ..rect
+                    },
                 }
-                rest.h -= line + LEGEND_GAP;
             }
+        };
+        // Text in ink, identity in the key beside it: a light series colour is illegible as text.
+        let ink = self.palette.ink;
+        let text_h = self.line_h(&style);
+        for (x, y, (label, (series, point), w)) in placed {
+            let color = self.mark(series, point);
+            let swatch = Rect::new(x, y + (line - SWATCH) / 2.0, SWATCH, SWATCH);
+            if self.data.kind == ChartKind::Line {
+                // A line is keyed by a stroke of itself rather than by a square of its colour.
+                self.fill(
+                    Rect::new(x, swatch.y + SWATCH / 2.0 - 1.0, SWATCH, 2.0),
+                    color,
+                );
+            } else {
+                self.shape(rounded(swatch, 2.0, 2.0), color);
+            }
+            self.text(
+                x + SWATCH + SWATCH_GAP,
+                y + (line - text_h) / 2.0,
+                &label,
+                style.clone(),
+                ink,
+            );
+            self.out.hits.push((
+                Region::Rect(Rect::new(x, y, w, line)),
+                Target::Legend { series, point },
+            ));
         }
         rest
     }
@@ -378,7 +606,7 @@ impl Painter<'_> {
     fn plot(&mut self, frame: Rect) {
         let ticks = axis_ticks(max_value(self.data));
         let (x_axis, y_axis) = axes(self.chart, self.data);
-        let style = small();
+        let style = plain();
         let tick_h = self.line_h(&style);
         let widest = ticks
             .values
@@ -387,19 +615,18 @@ impl Painter<'_> {
             .fold(0.0, f64::max);
 
         let mut left = INSET;
-        let mut top = INSET;
         if y_axis.label.is_some() {
-            // ponytail: the value axis' title sits above the axis, level, rather than turned along
-            // it — `Mark::Text` is level only.
-            top += tick_h + TICK_GAP;
+            left += LABEL_SPACE;
+            if y_axis.tick_labels {
+                left += TICK_GAP;
+            }
         }
         if y_axis.tick_labels {
             left += widest + TICK_GAP;
-            top += tick_h / 2.0;
         }
         let mut bottom = INSET;
         if x_axis.label.is_some() {
-            bottom += tick_h + TICK_GAP;
+            bottom += LABEL_SPACE;
         }
         let band = (frame.w - left - INSET).max(0.0) / category_count(self.data).max(1) as f64;
         let widest_name = self
@@ -408,10 +635,17 @@ impl Painter<'_> {
             .iter()
             .map(|name| self.text_w(name, &style))
             .fold(0.0, f64::max);
-        let names = category_names(widest_name, band, tick_h, frame.h, TICK_GAP, TICK_GAP);
+        let names = category_names(widest_name, band, tick_h, frame.h, TICK_GAP, TICK_CLEARANCE);
         if x_axis.tick_labels {
             bottom += names.depth;
         }
+        // The topmost value label is centred on the plot's top, so half of it sits above.
+        let top = INSET
+            + if y_axis.tick_labels {
+                tick_h / 2.0
+            } else {
+                0.0
+            };
         let plot = Rect::new(
             frame.x + left,
             frame.y + top,
@@ -421,6 +655,8 @@ impl Painter<'_> {
         if plot.w <= 0.0 || plot.h <= 0.0 {
             return;
         }
+        self.out.plot = Some(plot);
+        self.out.categories = category_x(self.data, plot);
         if self.data.kind != ChartKind::Pie {
             self.gridlines(&x_axis, &y_axis, &ticks, plot);
         }
@@ -429,7 +665,7 @@ impl Painter<'_> {
             ChartKind::Line => self.lines(&ticks, plot),
             ChartKind::Pie => self.pie(plot),
         }
-        let ink = self.palette.header_ink;
+        let ink = self.palette.ink;
         if y_axis.tick_labels {
             for value in &ticks.values {
                 let label = self.data.tick_label(&ticks, *value);
@@ -439,7 +675,7 @@ impl Painter<'_> {
             }
         }
         if x_axis.tick_labels {
-            for (i, x) in category_x(self.data, plot).into_iter().enumerate() {
+            for (i, x) in self.out.categories.clone().into_iter().enumerate() {
                 if i % names.every != 0 {
                     continue;
                 }
@@ -464,19 +700,19 @@ impl Painter<'_> {
                 }
             }
         }
+        // Each axis title centred in its band: the category axis' under the frame, the value
+        // axis' turned along its left edge, reading upwards.
         if let Some(label) = &x_axis.label {
             let w = self.text_w(label, &style);
-            let x = plot.x + (plot.w - w) / 2.0;
-            self.text(
-                x,
-                frame.bottom() - INSET - tick_h,
-                label,
-                style.clone(),
-                ink,
-            );
+            let x = frame.x + (frame.w - w) / 2.0;
+            let top = frame.bottom() - LABEL_SPACE + (LABEL_SPACE - tick_h) / 2.0;
+            self.text(x, top, label, style.clone(), ink);
         }
         if let Some(label) = &y_axis.label {
-            self.text(frame.x + INSET, frame.y + INSET, label, style, ink);
+            let w = self.text_w(label, &style);
+            let x = frame.x + (LABEL_SPACE - tick_h) / 2.0;
+            let top = frame.y + f64::midpoint(frame.h, w);
+            self.turned(x, top, label, style, ink, 90.0);
         }
     }
 
@@ -489,33 +725,43 @@ impl Painter<'_> {
             }
         }
         if x_axis.gridlines {
-            for x in category_x(self.data, plot) {
+            for x in self.out.categories.clone() {
                 self.fill(Rect::new(x - 0.5, plot.y, 1.0, plot.h), rule);
             }
         }
-        // The baseline every bar stands on, in the axis' own ink.
-        let base = self.palette.header_ink;
-        self.fill(Rect::new(plot.x, plot.bottom() - 0.5, plot.w, 1.0), base);
     }
 
+    /// Each bar grows from the baseline, square there and rounded at its data end; a group's bars
+    /// are at most [`BAR_MAX`] wide and [`BAR_GAP`] apart, centred in the group's band.
     fn bars(&mut self, ticks: &Ticks, plot: Rect) {
         let count = category_count(self.data);
-        if count == 0 {
+        let series = self.data.series.len();
+        if count == 0 || series == 0 {
             return;
         }
-        let series = self.data.series.len().max(1);
         let group = plot.w / count as f64;
-        let w = (group * (1.0 - GROUP_GAP) / series as f64).max(1.0);
-        let gap = (group - w * series as f64) / (series as f64 + 1.0);
+        let gaps = BAR_GAP * (series - 1) as f64;
+        let w = ((group * (1.0 - GROUP_GAP) - gaps) / series as f64).clamp(1.0, BAR_MAX);
+        let lead = (group - (w * series as f64 + gaps)) / 2.0;
         for cat in 0..count {
-            for s in 0..self.data.series.len() {
+            for s in 0..series {
                 let Some(value) = self.data.series[s].1.get(cat).copied() else {
                     continue;
                 };
                 let y = value_y(value, ticks, plot);
-                let x = plot.x + cat as f64 * group + gap + s as f64 * (w + gap);
-                let color = self.mark(s, Some(cat));
-                self.fill(Rect::new(x, y, w, plot.bottom() - y), color);
+                let x = plot.x + cat as f64 * group + lead + s as f64 * (w + BAR_GAP);
+                let bar = Rect::new(x, y, w, plot.bottom() - y);
+                self.out.hits.push((
+                    Region::Rect(bar),
+                    Target::Bar {
+                        series: s,
+                        point: cat,
+                    },
+                ));
+                if bar.h > 0.0 {
+                    let color = self.mark(s, Some(cat));
+                    self.shape(rounded(bar, BAR_ROUNDING, 0.0), color);
+                }
             }
         }
     }
@@ -542,7 +788,10 @@ impl Painter<'_> {
                 })
                 .collect();
             let color = self.mark(s, None);
-            self.ops.push(Mark::Path {
+            self.out
+                .hits
+                .push((Region::Line(points.clone()), Target::Line { series: s }));
+            self.out.marks.push(Mark::Path {
                 points,
                 fill: None,
                 stroke: Some((color, LINE_W)),
@@ -550,8 +799,7 @@ impl Painter<'_> {
         }
     }
 
-    /// Every slice as [`pie_slices`] sweeps it, a fan of segments round its rim, with a line of
-    /// page ground between slices so same-coloured neighbours part.
+    /// Every slice as [`pie_slices`] sweeps it, a fan of segments round its rim.
     fn pie(&mut self, plot: Rect) {
         let (cx, cy) = (plot.x + plot.w / 2.0, plot.y + plot.h / 2.0);
         let r = (plot.w.min(plot.h) / 2.0).max(1.0);
@@ -565,17 +813,66 @@ impl Painter<'_> {
                 (cx + r * angle.cos(), cy + r * angle.sin())
             }));
             let color = self.mark(0, Some(slice.point));
-            self.ops.push(Mark::Path {
-                points,
-                fill: Some(color),
-                stroke: Some((self.palette.page, 1.0)),
-            });
+            self.out.hits.push((
+                Region::Pie { cx, cy, r },
+                Target::Slice { point: slice.point },
+            ));
+            self.shape(points, color);
         }
     }
 }
 
+/// `rect` as a polygon with its top corners rounded by `top` and its bottom ones by `bottom`,
+/// each no more than half the rectangle allows.
+fn rounded(rect: Rect, top: f64, bottom: f64) -> Vec<(f64, f64)> {
+    let limit = (rect.w / 2.0).min(rect.h / 2.0).max(0.0);
+    let (top, bottom) = (top.min(limit), bottom.min(limit));
+    let mut points = Vec::new();
+    // Clockwise on screen from the top-left corner's arc: each corner a quarter turn about its
+    // own centre, or the corner itself when its radius is zero.
+    let corners = [
+        (rect.x + top, rect.y + top, top, std::f64::consts::PI),
+        (
+            rect.right() - top,
+            rect.y + top,
+            top,
+            1.5 * std::f64::consts::PI,
+        ),
+        (rect.right() - bottom, rect.bottom() - bottom, bottom, 0.0),
+        (
+            rect.x + bottom,
+            rect.bottom() - bottom,
+            bottom,
+            0.5 * std::f64::consts::PI,
+        ),
+    ];
+    for (cx, cy, r, from) in corners {
+        if r <= 0.0 {
+            points.push((cx, cy));
+            continue;
+        }
+        for i in 0..=CORNER_SEGMENTS {
+            let angle = from + std::f64::consts::FRAC_PI_2 * i as f64 / CORNER_SEGMENTS as f64;
+            points.push((cx + r * angle.cos(), cy + r * angle.sin()));
+        }
+    }
+    points
+}
+
+fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len_sq = dx * dx + dy * dy;
+    let t = if len_sq <= f64::EPSILON {
+        0.0
+    } else {
+        (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len_sq).clamp(0.0, 1.0)
+    };
+    let (cx, cy) = (a.0 + t * dx, a.1 + t * dy);
+    ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt()
+}
+
 /// What a legend names and whose colour it shows: one series each for a bar or line, one slice
-/// each for a pie.
+/// each for a pie. A series with no name of its own is named by its position.
 fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<usize>))> {
     match data.kind {
         ChartKind::Pie => pie_slices(data, chart.clockwise)
@@ -622,6 +919,7 @@ fn max_value(data: &ChartData) -> f64 {
         .max(1.0)
 }
 
+/// The longer of the categories and any series' values: a chart tolerates the two disagreeing.
 fn category_count(data: &ChartData) -> usize {
     data.categories.len().max(
         data.series
@@ -632,7 +930,8 @@ fn category_count(data: &ChartData) -> usize {
     )
 }
 
-/// Where a value sits vertically — the one place the scale is applied.
+/// Where a value sits vertically — the one place the scale is applied. Negative values are
+/// floored to zero.
 fn value_y(value: f64, ticks: &Ticks, plot: Rect) -> f64 {
     plot.bottom() - (value.max(0.0) / ticks.max()) * plot.h
 }

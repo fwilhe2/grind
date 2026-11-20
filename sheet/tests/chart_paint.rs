@@ -2,13 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where `chart_paint::draw` puts a bar chart's category names.
+//! Where `chart_paint` puts a bar chart's category names, and what a point on a chart hits.
 
-use grind_core::color::Rgb;
 use grind_core::layout::Metrics;
 use grind_core::style::TextStyle;
 use grind_sheet::chart::Series;
-use grind_sheet::chart_paint::{self, Colours, Mark, Rect};
+use grind_sheet::chart_paint::{self, Colours, Mark, Picture, Rect, Target};
 use grind_sheet::{Chart, ChartData, ChartKind};
 
 /// Six units a letter, twelve a line: near enough a 9pt face in pixels.
@@ -24,14 +23,11 @@ impl Metrics for Letters {
     }
 }
 
-const AXIS: Rgb = (1, 2, 3);
-
 fn colours() -> Colours {
     Colours {
         page: (255, 255, 255),
         ink: (0, 0, 0),
         grid: (200, 200, 200),
-        header_ink: AXIS,
         accent: (0, 0, 255),
         dark: false,
     }
@@ -79,16 +75,24 @@ fn budget() -> (Chart, ChartData) {
     (chart, data)
 }
 
+fn draw(width: f64, height: f64) -> (Picture, ChartData) {
+    let (chart, data) = budget();
+    let picture = chart_paint::picture(
+        &chart,
+        &data,
+        Rect::new(0.0, 0.0, width, height),
+        &colours(),
+        &Letters,
+    );
+    (picture, data)
+}
+
 /// The plot's run along the baseline, and every text on the lowest line: the category names.
-fn names_and_plot(marks: &[Mark]) -> (Vec<(f64, f64, String)>, f64, f64) {
-    let (x, w) = marks
-        .iter()
-        .find_map(|mark| match mark {
-            Mark::Fill { rect, color } if *color == AXIS && rect.h == 1.0 => Some((rect.x, rect.w)),
-            _ => None,
-        })
-        .expect("a baseline");
-    let texts: Vec<(f64, f64, &str)> = marks
+fn names_and_plot(picture: &Picture) -> (Vec<(f64, f64, String)>, f64, f64) {
+    let plot = picture.plot.expect("a plot");
+    let (x, w) = (plot.x, plot.w);
+    let texts: Vec<(f64, f64, &str)> = picture
+        .marks
         .iter()
         .filter_map(|mark| match mark {
             Mark::Text { x, top, text, .. } => Some((*x, *top, text.as_str())),
@@ -113,15 +117,8 @@ fn names_and_plot(marks: &[Mark]) -> (Vec<(f64, f64, String)>, f64, f64) {
 /// Names that fit their bands stay level, whole and centred under their own bars.
 #[test]
 fn names_that_fit_stay_level_under_their_own_bars() {
-    let (chart, data) = budget();
-    let marks = chart_paint::draw(
-        &chart,
-        &data,
-        Rect::new(0.0, 0.0, 600.0, 200.0),
-        &colours(),
-        &Letters,
-    );
-    let (names, plot_x, plot_w) = names_and_plot(&marks);
+    let (picture, data) = draw(600.0, 200.0);
+    let (names, plot_x, plot_w) = names_and_plot(&picture);
     assert_eq!(names.len(), 6, "{names:?}");
     let step = plot_w / 6.0;
     for (i, (left, right, text)) in names.iter().enumerate() {
@@ -133,7 +130,8 @@ fn names_that_fit_stay_level_under_their_own_bars() {
         assert_eq!(text, &data.categories[i]);
     }
     assert!(
-        marks
+        picture
+            .marks
             .iter()
             .all(|mark| !matches!(mark, Mark::Text { turn, .. } if *turn != 0.0))
     );
@@ -143,16 +141,10 @@ fn names_that_fit_stay_level_under_their_own_bars() {
 /// bars.
 #[test]
 fn names_too_wide_for_their_bands_are_turned_whole() {
-    let (chart, data) = budget();
-    let marks = chart_paint::draw(
-        &chart,
-        &data,
-        Rect::new(0.0, 0.0, 330.0, 200.0),
-        &colours(),
-        &Letters,
-    );
-    let (_, plot_x, plot_w) = names_and_plot(&marks);
-    let turned: Vec<(f64, &str)> = marks
+    let (picture, data) = draw(330.0, 200.0);
+    let (_, plot_x, plot_w) = names_and_plot(&picture);
+    let turned: Vec<(f64, &str)> = picture
+        .marks
         .iter()
         .filter_map(|mark| match mark {
             Mark::Text { x, text, turn, .. } if *turn == chart_paint::TURN_DEGREES => {
@@ -204,4 +196,133 @@ fn shorten_keeps_what_fits_and_gives_up_on_nothing() {
         Some("Ab…")
     );
     assert_eq!(chart_paint::shorten("Housing", 1.0, width), None);
+}
+
+/// A point on a bar is that bar, and says what it is; a point between groups is nothing.
+#[test]
+fn a_bar_is_hit_where_it_is_drawn_and_named() {
+    let (picture, data) = draw(600.0, 200.0);
+    let plot = picture.plot.expect("a plot");
+    let band = plot.w / 6.0;
+    // Housing's Budgeted bar: the first of the first group, the tallest bar on the chart.
+    let (x, y) = (plot.x + band / 2.0 - 2.0, plot.bottom() - 2.0);
+    assert_eq!(
+        picture.target_at(x, y, &data),
+        Some(Target::Bar {
+            series: 0,
+            point: 0
+        })
+    );
+    assert_eq!(
+        picture.describe(x, y, &data).as_deref(),
+        Some("Budgeted · Housing: 2250")
+    );
+    assert_eq!(
+        picture.target_at(plot.x + 1.0, plot.bottom() - 2.0, &data),
+        None
+    );
+}
+
+/// No bar is wider than its maximum, and each is drawn as a shape — rounded at its data end.
+#[test]
+fn bars_are_narrow_shapes_however_wide_the_chart() {
+    let (picture, _) = draw(1200.0, 200.0);
+    let bars: Vec<f64> = picture
+        .marks
+        .iter()
+        .filter_map(|mark| match mark {
+            Mark::Path {
+                points,
+                fill: Some(_),
+                stroke: None,
+            } if points.len() > 4 => {
+                let xs = points.iter().map(|p| p.0);
+                Some(xs.clone().fold(f64::MIN, f64::max) - xs.fold(f64::MAX, f64::min))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        bars.len(),
+        11,
+        "twelve bars, and a zero draws nothing: {bars:?}"
+    );
+    assert!(bars.iter().all(|w| *w <= 24.0 + 1e-9), "{bars:?}");
+}
+
+/// A legend entry names the series it is the colour of, before anything drawn under it.
+#[test]
+fn a_legend_entry_is_its_series() {
+    let (mut chart, data) = budget();
+    chart.legend = Some(grind_sheet::ChartLegend::Bottom);
+    let picture = chart_paint::picture(
+        &chart,
+        &data,
+        Rect::new(0.0, 0.0, 600.0, 200.0),
+        &colours(),
+        &Letters,
+    );
+    let actual = picture
+        .marks
+        .iter()
+        .find_map(|mark| match mark {
+            Mark::Text { x, top, text, .. } if text == "Actual" => Some((*x, *top)),
+            _ => None,
+        })
+        .expect("the legend names Actual");
+    assert_eq!(
+        picture.target_at(actual.0 + 3.0, actual.1 + 3.0, &data),
+        Some(Target::Legend {
+            series: 1,
+            point: None
+        })
+    );
+    assert_eq!(
+        picture.describe(actual.0 + 3.0, actual.1 + 3.0, &data),
+        None
+    );
+}
+
+/// A point on a line is that series, named at the category nearest it; a slice is its point.
+#[test]
+fn a_line_and_a_slice_are_hit_and_named() {
+    let (mut chart, mut data) = budget();
+    chart.kind = ChartKind::Line;
+    data.kind = ChartKind::Line;
+    let frame = Rect::new(0.0, 0.0, 600.0, 200.0);
+    let picture = chart_paint::picture(&chart, &data, frame, &colours(), &Letters);
+    let line = picture
+        .marks
+        .iter()
+        .find_map(|mark| match mark {
+            Mark::Path {
+                points, fill: None, ..
+            } => Some(points.clone()),
+            _ => None,
+        })
+        .expect("a line");
+    let (x, y) = line[2];
+    assert_eq!(
+        picture.target_at(x, y + 1.0, &data),
+        Some(Target::Line { series: 0 })
+    );
+    assert_eq!(
+        picture.describe(x, y + 1.0, &data).as_deref(),
+        Some("Budgeted · Transport: 220")
+    );
+
+    chart.kind = ChartKind::Pie;
+    data.kind = ChartKind::Pie;
+    let picture = chart_paint::picture(&chart, &data, frame, &colours(), &Letters);
+    let plot = picture.plot.expect("a plot");
+    // Twelve o'clock, a little way in: the first slice, Housing's.
+    let (cx, cy) = (plot.x + plot.w / 2.0, plot.y + plot.h / 2.0);
+    let target = picture.target_at(cx + 1.0, cy - plot.h / 4.0, &data);
+    assert_eq!(target, Some(Target::Slice { point: 0 }));
+    assert_eq!(target.map(Target::mark), Some((0, Some(0))));
+    assert_eq!(
+        picture.target_at(plot.x + 1.0, plot.y + 1.0, &data),
+        None,
+        "outside the circle"
+    );
 }

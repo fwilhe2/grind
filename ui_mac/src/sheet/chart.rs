@@ -254,7 +254,6 @@ pub fn draw(
         page: palette.page,
         ink: palette.ink,
         grid: palette.grid,
-        header_ink: palette.header_ink,
         accent: palette.accent,
         dark: palette.dark,
     };
@@ -402,10 +401,27 @@ mod tests {
         let frame = Rect::new(0.0, 0.0, 300.0, 200.0);
         let ops = draw(chart, &data, frame, &Palette::LIGHT, &Fixed);
         let colour = color::parse(&effective_color(chart, 0, Some(0))).unwrap();
+        // A bar is a shape rounded at its data end; its box is what stands on the baseline.
         let bars: Vec<Rect> = ops
             .iter()
             .filter_map(|op| match op {
-                Op::Fill { rect, color } if *color == colour => Some(*rect),
+                Op::Path {
+                    points,
+                    fill: Some(fill),
+                    ..
+                } if *fill == colour => {
+                    let xs = points.iter().map(|p| p.0);
+                    let ys = points.iter().map(|p| p.1);
+                    let (left, right) = (
+                        xs.clone().fold(f64::MAX, f64::min),
+                        xs.fold(f64::MIN, f64::max),
+                    );
+                    let (top, bottom) = (
+                        ys.clone().fold(f64::MAX, f64::min),
+                        ys.fold(f64::MIN, f64::max),
+                    );
+                    Some(Rect::new(left, top, right - left, bottom - top))
+                }
                 _ => None,
             })
             .collect();

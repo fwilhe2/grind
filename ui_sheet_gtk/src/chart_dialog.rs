@@ -766,30 +766,13 @@ mod imp {
             let (w, h) = (f64::from(widget.width()), f64::from(widget.height()));
             let palette = crate::theme::Palette::of(&*widget);
             if let Some((chart, data)) = &*self.drawn.borrow() {
-                let color = |series: usize, point: Option<usize>| {
-                    crate::theme::color(&grind_sheet::effective_color(chart, series, point))
-                        .unwrap_or(palette.foreground)
+                let frame = Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    w,
+                    h,
                 };
-                crate::chart::draw(
-                    &*widget,
-                    snapshot,
-                    Rect {
-                        x: 0.0,
-                        y: 0.0,
-                        w,
-                        h,
-                    },
-                    chart,
-                    data,
-                    &crate::chart::Painter {
-                        background: palette.background,
-                        // The card is the frame; a second one inside it is a double line.
-                        border: gtk::gdk::RGBA::TRANSPARENT,
-                        foreground: palette.foreground,
-                        grid: palette.lines,
-                        color: &color,
-                    },
-                );
+                crate::chart::draw(&*widget, snapshot, frame, chart, data, &palette);
             } else {
                 let layout = widget.create_pango_layout(Some(&self.message.borrow()));
                 layout.set_width(((w - 48.0).max(1.0) * f64::from(gtk::pango::SCALE)) as i32);

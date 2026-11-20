@@ -711,7 +711,7 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   // Drawn as SVG from the same `ChartData` and the same scale the GTK shell uses.
   await openFile("chart.fods", CHART);
   check("a chart in the file is drawn", document.querySelectorAll("#charts .chart svg").length, 1);
-  check("with a mark per bar", document.querySelectorAll("#charts .chart rect").length, 2);
+  check("with a mark per bar", document.querySelectorAll("#charts .chart svg path").length, 2);
 
   // --- the autofilter (§9.4) -------------------------------------------------
   //

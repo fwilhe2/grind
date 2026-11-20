@@ -173,7 +173,6 @@ mod gdi_half {
             page: theme.background.into(),
             ink: theme.text.into(),
             grid: theme.grid_line.into(),
-            header_ink: theme.text.blend(theme.background, 0.45).into(),
             accent: theme.accent.into(),
             dark: theme.mode == Mode::Dark,
         };
@@ -233,7 +232,6 @@ mod gdi_half {
             page: theme.background.into(),
             ink: theme.text.into(),
             grid: theme.grid_line.into(),
-            header_ink: theme.text.blend(theme.background, 0.45).into(),
             accent: theme.accent.into(),
             dark: theme.mode == Mode::Dark,
         };

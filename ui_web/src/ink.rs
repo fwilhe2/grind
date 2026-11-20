@@ -19,8 +19,8 @@ use grind_core::color::{self, Rgb};
 
 /// The page's ground and ink as the browser paints them — Chromium's and Firefox's `Canvas` and
 /// `CanvasText` in each scheme, near enough that a contrast computed against them holds.
-const LIGHT: (Rgb, Rgb) = ((255, 255, 255), (0, 0, 0));
-const DARK: (Rgb, Rgb) = ((18, 18, 18), (255, 255, 255));
+pub(crate) const LIGHT: (Rgb, Rgb) = ((255, 255, 255), (0, 0, 0));
+pub(crate) const DARK: (Rgb, Rgb) = ((18, 18, 18), (255, 255, 255));
 
 /// The CSS `color` a run or a cell is drawn in, or `None` for the page's own.
 pub fn color(own: Option<&str>, fill: Option<&str>, dark: bool) -> Option<String> {
@@ -51,7 +51,7 @@ fn parse(value: &str) -> Option<Rgb> {
     }
 }
 
-fn hex((r, g, b): Rgb) -> String {
+pub(crate) fn hex((r, g, b): Rgb) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 

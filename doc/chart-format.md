@@ -270,13 +270,12 @@ supplies only how wide a piece of text is.
 (`Grid::draw_charts`, called between `draw_cells` and `draw_filter_buttons` — over a cell's own
 text, under the active-cell outline), reading `App::charts`/`App::chart_data` fresh each frame
 the same way every other paint reads the document and throws it away (doc/plan.md rule 1).
-`ui_sheet_gtk/src/chart.rs` is the drawing itself: a bar is a colour under a rounded clip —
-at most `BAR_MAX` (24px) wide, `BAR_GAP` (2px) from its neighbour, rounded at its data end and
-square at the baseline, which is the `dataviz` skill's mark spec; a line is a 2px
-`gsk::PathBuilder` stroke with round joins; a pie slice is a filled path — GTK's own vector
-drawing rather than cairo, since nothing here needs more than straight edges (a pie slice is a
-many-sided polygon, `PIE_SAMPLES_PER_TURN` fine enough that the seam does not show, swept by the
-core's `pie_slices`). Every mark's colour comes from
+**Where every mark goes is the core's** (`grind_sheet::chart_paint`): a chart is a list of
+marks — fills, polygons, polylines and text — that every graphical shell draws with its own
+toolkit, so the same chart is the same picture in each. A bar is a polygon at most `BAR_MAX`
+(24 units) wide, `BAR_GAP` (2) from its neighbour, rounded at its data end and square at the
+baseline, which is the `dataviz` skill's mark spec; a line is a 2-unit stroke; a pie slice is a
+many-sided polygon swept by `pie_slices`. Every mark's colour comes from
 [`grind_sheet::chart::effective_color`], the same function the writer calls, so what is on
 screen always matches what gets saved. The chart's own title is a bold band across the top;
 its legend is a swatch and a name per series (per slice for a pie) at its edge, the name in ink
@@ -294,10 +293,10 @@ label that would collide with the one before it is dropped rather than drawn ove
 (`TICK_CLEARANCE`), so twenty categories in a narrow chart label the ones that fit. A pie has
 no axes and keeps its whole frame whatever its axes carry.
 
-Because a tick label's own width moves the plot, `draw` and `mark_at` both take the same
-`Measure` — how wide and how tall a string is, in widget pixels, which is this shell's only
-contribution to a chart's layout and exactly the shape `doc/text-layout.md` settled on for a
-page of text. Measuring differently in the two would put the click somewhere the picture is not.
+A shell's only contribution to a chart's layout is a `Metrics` — how wide a string is — the
+shape `doc/text-layout.md` settled on for a page of text. `chart_paint::picture` keeps where
+each bar, line, slice and legend entry went, so a click (`Picture::target_at`) and a tooltip
+(`Picture::describe`) ask the geometry the marks were placed by.
 
 **The dialog is built around a live preview** (`ui_sheet_gtk/src/chart_dialog.rs`), reached
 from the cells' context menu (*Insert Chart…*) or the palette. **One dialog does both jobs**,
@@ -338,8 +337,7 @@ which chart was asked about. Deleting is immediate with an Undo toast, exactly a
 sheet is.
 
 **Assigning a colour by hand is a click, not a dialog**:
-`ui_sheet_gtk/src/chart.rs`'s `mark_at` shares the exact geometry `draw` paints from,
-so a click on a bar, a slice, a line or a legend entry names the same mark the picture shows; a
+`Picture::target_at` is the geometry the marks were drawn by, so a click on a bar, a slice, a line or a legend entry names the same mark the picture shows; a
 press that never moved (`Grid`'s own click-vs-drag distinction, reused from the chart-drag
 gesture) opens a palette popover — the same swatches a cell's fill-colour button offers
 (`formatting::palette_grid`, factored out for this) — and picking one calls
