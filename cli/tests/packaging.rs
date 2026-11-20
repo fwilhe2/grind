@@ -85,15 +85,15 @@ const UNPACKAGED: [(&str, &str); 18] = [
     ("build", "a library"),
     (
         "server",
-        "a library: `grind serve`, inside the `grind` binary behind the `server` feature",
+        "a library: `grind serve`, inside the `grind` binary",
     ),
     (
         "xlsx",
-        "a library, and an optional dependency of the binaries that want it",
+        "a library, and a dependency of the binaries that open workbooks",
     ),
     (
         "docx",
-        "a library, and an optional dependency of the binaries that want it",
+        "a library, and a dependency of the binaries that open Word documents",
     ),
     (
         "ooxml",
@@ -105,15 +105,15 @@ const UNPACKAGED: [(&str, &str); 18] = [
     ),
     (
         "print",
-        "a library, and an optional dependency of the binaries that want it",
+        "a library, and a dependency of the binaries that set pages",
     ),
     (
         "spell",
-        "a library — the dictionaries — and an optional dependency of the binaries that check spelling",
+        "a library — the dictionaries — and a dependency of the binaries that check spelling",
     ),
     (
         "grammar",
-        "a library — the built-in grammar checker — and an optional dependency of the binaries that check grammar",
+        "a library — the built-in grammar checker — and a dependency of the binaries that check grammar",
     ),
     (
         "lsp",

@@ -36,10 +36,9 @@ omission rule that already hides the sheet's verbs over a text document.
 
 ## 2. What it is, physically
 
-**`grind serve DIR`** — a suite-level verb of the `grind` binary, behind a `server` cargo feature,
-the way `grind lsp` is behind `lsp`. The code is its own crate, **`grind-server`** (`server/`), and
-`grind-cli` is a thin arm over it. One binary, no second thing to package; `--no-default-features`
-still builds a `grind` with none of it.
+**`grind serve DIR`** — a suite-level verb of the `grind` binary, as `grind lsp` is. The code is its
+own crate, **`grind-server`** (`server/`), and `grind-cli` is a thin arm over it. One binary, no
+second thing to package.
 
 - **Stack**: `tiny_http`, synchronous, a thread per request. Plumbing, so it can be lazy
   (`CLAUDE.md`). Chosen over the `axum`/`tokio` this section first named once the server became

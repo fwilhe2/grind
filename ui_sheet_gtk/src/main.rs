@@ -2697,15 +2697,13 @@ fn spreadsheet_filters() -> gio::ListStore {
     // opens.
     let mut patterns = vec!["*.fods", "*.ods", "*.grind"];
     let mut imports = Vec::new();
-    if cfg!(feature = "xlsx") {
-        let workbooks = gtk::FileFilter::new();
-        workbooks.set_name(Some("Excel Workbook"));
-        for pattern in ["*.xlsx", "*.xlsm"] {
-            workbooks.add_pattern(pattern);
-            patterns.push(pattern);
-        }
-        imports.push(workbooks);
+    let workbooks = gtk::FileFilter::new();
+    workbooks.set_name(Some("Excel Workbook"));
+    for pattern in ["*.xlsx", "*.xlsm"] {
+        workbooks.add_pattern(pattern);
+        patterns.push(pattern);
     }
+    imports.push(workbooks);
     let delimited = gtk::FileFilter::new();
     delimited.set_name(Some("CSV and TSV"));
     for pattern in ["*.csv", "*.tsv", "*.tab"] {

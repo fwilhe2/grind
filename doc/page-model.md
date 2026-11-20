@@ -98,9 +98,9 @@ grind-print::raster  + glyph cache, subpixel positions, page tiles
 shells               a strip of page tiles, overlays, input forwarded. No layout
 ```
 
-The font stack stays out of `grind-core` (`doc/text-layout.md` decision 2). The graphical text
-shells take `grind-print` unconditionally; the CLI's `--no-default-features` build and the
-terminal stay font-free.
+The font stack stays out of `grind-core` (`doc/text-layout.md` decision 2). Every shell and the CLI
+take `grind-print`; the terminal draws no glyph from it, and uses it to set the pages it rules
+into its column.
 
 Caret **motion** stays `App::caret_line` and `caret_line_bounds` over `Faces`; the shell passes
 `grind_print`'s faces, so Down-arrow walks the paper's lines. Caret **geometry** is the new line

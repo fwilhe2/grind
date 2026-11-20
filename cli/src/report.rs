@@ -44,13 +44,10 @@ pub enum Report {
     Tests(TestsReport),
     /// What `grind sheet import` carried, and what it did not (`doc/xlsx-import.md`).
     /// Boxed for the reason `CellStyle` is: the fidelity report outgrew every other variant.
-    #[cfg(feature = "xlsx")]
     Import(Box<ImportReport>),
     /// What `grind text import` carried, and what it did not (`doc/docx-import.md`).
-    #[cfg(feature = "docx")]
     TextImport(Box<TextImportReport>),
     /// What `grind text export-pdf` wrote (`doc/pdf-export.md`).
-    #[cfg(feature = "pdf")]
     Pdf(PdfReport),
     /// `grind licences --list`: one row per third-party component (`doc/third-party.md`).
     Components(Vec<ComponentReport>),
@@ -119,7 +116,6 @@ impl From<&grind_core::third_party::Component> for ComponentReport {
 
 /// A PDF export: where it went, and `grind_print::Report` — including what it had to
 /// substitute, which is part of the output for the reason [`ImportReport`]'s losses are.
-#[cfg(feature = "pdf")]
 #[derive(Debug, Serialize)]
 pub struct PdfReport {
     pub output: String,
@@ -130,7 +126,6 @@ pub struct PdfReport {
     pub summary: String,
 }
 
-#[cfg(feature = "pdf")]
 #[derive(Debug, Serialize)]
 pub struct PdfSubstitution {
     pub asked: String,
@@ -138,7 +133,6 @@ pub struct PdfSubstitution {
     pub compatible: bool,
 }
 
-#[cfg(feature = "pdf")]
 impl PdfReport {
     pub fn new(output: String, report: &grind_print::Report) -> Self {
         PdfReport {
@@ -163,7 +157,6 @@ impl PdfReport {
 /// The fidelity report, which is **part of the output rather than an afterthought**: what a
 /// conversion dropped is as important as what it carried, and a converter that lies about it
 /// is worse than one that refuses.
-#[cfg(feature = "xlsx")]
 #[derive(Debug, Serialize)]
 pub struct ImportReport {
     pub input: String,
@@ -221,7 +214,6 @@ pub struct ImportReport {
 
 /// `grind text import`'s report — [`ImportReport`]'s twin for Word, and part of the output for
 /// the same reason.
-#[cfg(feature = "docx")]
 #[derive(Debug, Serialize)]
 pub struct TextImportReport {
     pub input: String,
@@ -247,14 +239,12 @@ pub struct TextImportReport {
     pub must_understand: Vec<String>,
 }
 
-#[cfg(feature = "docx")]
 #[derive(Debug, Serialize)]
 pub struct TextDropped {
     pub what: String,
     pub count: usize,
 }
 
-#[cfg(feature = "docx")]
 impl TextImportReport {
     pub fn new(
         input: &str,
@@ -335,28 +325,24 @@ impl TestsReport {
     }
 }
 
-#[cfg(feature = "xlsx")]
 #[derive(Debug, Serialize)]
 pub struct NameLost {
     pub name: String,
     pub why: String,
 }
 
-#[cfg(feature = "xlsx")]
 #[derive(Debug, Serialize)]
 pub struct Renamed {
     pub from: String,
     pub to: String,
 }
 
-#[cfg(feature = "xlsx")]
 #[derive(Debug, Serialize)]
 pub struct DroppedCount {
     pub what: String,
     pub count: usize,
 }
 
-#[cfg(feature = "xlsx")]
 impl ImportReport {
     pub fn new(
         input: &str,
@@ -682,11 +668,9 @@ impl Report {
     }
 
     fn import_refused(&self) -> bool {
-        #[cfg(feature = "xlsx")]
         if matches!(self, Report::Import(import) if import.strict && !import.lossless) {
             return true;
         }
-        #[cfg(feature = "docx")]
         if matches!(self, Report::TextImport(import) if import.strict && !import.lossless) {
             return true;
         }
@@ -785,14 +769,12 @@ impl Report {
                     println!("{}\t{}\t{}\t{}", c.name, c.version, c.licence, c.source);
                 }
             }
-            #[cfg(feature = "pdf")]
             Report::Pdf(pdf) => {
                 println!("{}", pdf.summary);
                 println!("{}", pdf.output);
             }
             // The losses first and the counts last, because what a conversion dropped is the
             // half a person has to decide about.
-            #[cfg(feature = "xlsx")]
             Report::Import(import) => {
                 for dropped in &import.dropped {
                     println!("dropped\t{}\t{}", dropped.count, dropped.what);
@@ -841,7 +823,6 @@ impl Report {
                     import.flavour
                 );
             }
-            #[cfg(feature = "docx")]
             Report::TextImport(import) => {
                 for dropped in &import.dropped {
                     println!("dropped\t{}\t{}", dropped.count, dropped.what);

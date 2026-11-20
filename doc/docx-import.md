@@ -22,8 +22,8 @@ translation at the edge that produces an ODF document. One way in, never out.
 ## Decisions
 
 Every decision `doc/xlsx-import.md` took up front holds here unchanged, and is not repeated:
-the filter runs once and produces ODF; our own reader rather than a library; its own crate
-behind a cargo feature (`docx`, on by default); Transitional is the target and Strict a
+the filter runs once and produces ODF; our own reader rather than a library; its own crate;
+Transitional is the target and Strict a
 namespace table away; the fidelity report is part of the output and `--strict` turns any loss
 into a non-zero exit; the CLI's read commands stay ODF-only (`grind text import`, never `grind
 text view letter.docx`); ECMA-376 is the source and LibreOffice the oracle; nothing user-facing

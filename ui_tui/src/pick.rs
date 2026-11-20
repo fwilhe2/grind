@@ -99,7 +99,7 @@ impl Pick {
     }
 
     /// Every row, in order — what a test reads to see what a pane was opened on.
-    #[cfg(all(test, feature = "pdf"))]
+    #[cfg(test)]
     pub fn rows(&self) -> &[Row] {
         &self.rows
     }

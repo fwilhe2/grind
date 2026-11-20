@@ -1125,7 +1125,6 @@ fn the_lines_of_code_spreadsheet_is_current() {
     assert_eq!(ok(&["chart-list", &s(&out), "Crates"]).lines().count(), 1);
     // The committed file is a default build's: without `pdf` the columns' widths are an
     // estimate rather than measured in a font, and so other numbers.
-    #[cfg(feature = "pdf")]
     assert!(
         std::fs::read(&out).unwrap() == std::fs::read(example("loc/loc.fods")).unwrap(),
         "examples/loc/loc.fods is not what examples/loc/loc.rhai builds — run \
@@ -1184,7 +1183,6 @@ fn a_script_writes_a_letter_per_tenancy_and_they_add_up() {
 /// **A series**: a script that ends with a map of names to documents is built into a directory,
 /// one file each — here one DIN 5008 letter per recipient, as PDFs. The same data writes the same
 /// bytes, which is what writing a letter series down for an audit asks.
-#[cfg(feature = "pdf")]
 #[test]
 fn a_script_that_returns_a_map_of_letters_writes_a_pdf_each() {
     let dir = Sandbox::new("nebenkosten-pdf");
@@ -1292,7 +1290,6 @@ fn every_example_script_builds_and_passes_its_own_tests() {
 /// The spelling setting is the person's, one line per kind of document in one file
 /// (`doc/spelling.md`, decision 5): choosing a language for text leaves spreadsheets as they
 /// were, and the next command reads what the last one wrote.
-#[cfg(feature = "spell")]
 #[test]
 fn the_remembered_spelling_setting_is_one_line_per_kind_of_document() {
     let home = Sandbox::new("spelling-setting");
@@ -1334,7 +1331,6 @@ fn the_remembered_spelling_setting_is_one_line_per_kind_of_document() {
 
 /// `grind text grammar` lists what the built-in checker finds, one finding a line, and a
 /// finding's span is corrected by `grind text correct` (`doc/grammar.md`).
-#[cfg(feature = "grammar")]
 #[test]
 fn the_built_in_grammar_checker_answers_from_the_command_line() {
     let dir = Sandbox::new("text-grammar");
@@ -1366,7 +1362,6 @@ fn the_built_in_grammar_checker_answers_from_the_command_line() {
 
 /// `grind grammar` remembers the style rules and the rules ignored, and `grind text grammar`
 /// follows it (`doc/grammar.md`).
-#[cfg(feature = "grammar")]
 #[test]
 fn the_grammar_setting_is_remembered_and_followed() {
     let home = Sandbox::new("grammar-setting");
@@ -2406,7 +2401,6 @@ fn the_text_sample_script_still_builds_its_document() {
     // Both forms exist, and the document reads back as the one the script described.
     assert!(dir.path("out/sample.fodt").exists());
     assert!(dir.path("out/sample.odt").exists());
-    #[cfg(feature = "pdf")]
     assert!(
         std::fs::read(dir.path("out/sample.pdf"))
             .expect("the PDF was written")
@@ -2640,7 +2634,6 @@ fn renaming_a_sheet_rewrites_the_formulas_that_named_it() {
 /// `grind sheet import` carries values and formulas, and the result is an ODF document every other
 /// verb reads — the workbook is never consulted again. The vendored sample is the oracle's own
 /// conversion of a small budget, so what it holds is known without opening it.
-#[cfg(feature = "xlsx")]
 #[test]
 fn an_imported_workbook_arrives_with_its_values() {
     let dir = Sandbox::new("import-xlsx");
@@ -2668,7 +2661,6 @@ fn an_imported_workbook_arrives_with_its_values() {
 
 /// `--strict` fails a conversion that lost anything, writes nothing, and still says what was lost.
 /// The vendored sample loses nothing; a corpus workbook with comments does.
-#[cfg(feature = "xlsx")]
 #[test]
 fn a_strict_import_refuses_a_lossy_conversion() {
     let dir = Sandbox::new("import-strict");
@@ -2700,7 +2692,6 @@ fn a_strict_import_refuses_a_lossy_conversion() {
 /// `grind text import` (`doc/docx-import.md`): a Word document becomes an ODF text document
 /// that every other verb reads. The vendored sample is the oracle's Word conversion of
 /// `examples/sample-text.sh`'s own document, so what it holds is known without opening it.
-#[cfg(feature = "docx")]
 #[test]
 fn an_imported_word_document_arrives_with_its_structure() {
     let dir = Sandbox::new("import-docx");
@@ -2746,7 +2737,6 @@ fn notes_lists_every_footnote_and_endnote() {
 }
 
 /// A spreadsheet is not a Word document, and the import says so rather than writing an empty one.
-#[cfg(all(feature = "docx", feature = "xlsx"))]
 #[test]
 fn a_workbook_is_refused_by_the_word_import() {
     let dir = Sandbox::new("import-docx-wrong");

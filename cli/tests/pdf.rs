@@ -86,7 +86,6 @@ fn a_document_stating_no_page_reports_the_a4_it_will_print_on() {
 }
 
 #[test]
-#[cfg(feature = "pdf")]
 fn export_pdf_writes_a_pdf_and_says_what_it_did() {
     let dir = Sandbox::new("export");
     let out = dir.path("list.pdf");
@@ -101,7 +100,6 @@ fn export_pdf_writes_a_pdf_and_says_what_it_did() {
 }
 
 #[test]
-#[cfg(feature = "pdf")]
 fn export_pdf_prints_on_the_paper_asked_for_and_only_iso_paper() {
     let dir = Sandbox::new("paper");
     let out = dir.path("a5.pdf");
@@ -128,7 +126,6 @@ fn export_pdf_prints_on_the_paper_asked_for_and_only_iso_paper() {
 }
 
 #[test]
-#[cfg(feature = "pdf")]
 fn export_pdf_in_json_is_the_report() {
     let dir = Sandbox::new("json");
     let out = dir.path("x.pdf");
@@ -148,7 +145,6 @@ fn export_pdf_in_json_is_the_report() {
 /// Each page as `n<TAB>first<TAB>end`, addresses a person can hand straight back to
 /// `grind text get` — and each page ends where the next begins.
 #[test]
-#[cfg(feature = "pdf")]
 fn pages_lists_where_each_page_begins_and_ends() {
     let dir = Sandbox::new("pages");
     let file = dir.path("long.fodt");
@@ -173,7 +169,6 @@ fn pages_lists_where_each_page_begins_and_ends() {
 /// Where a caret is and what a click means, from the command line (rule 4): the two answer
 /// each other.
 #[test]
-#[cfg(feature = "pdf")]
 fn locate_says_where_a_caret_is_and_hit_takes_it_back() {
     let dir = Sandbox::new("locate");
     let file = dir.path("long.fodt");
@@ -223,7 +218,6 @@ fn locate_says_where_a_caret_is_and_hit_takes_it_back() {
 
 /// A page as a PNG at a resolution — the preview, from the command line (rule 4).
 #[test]
-#[cfg(feature = "pdf")]
 fn preview_draws_one_page_as_a_png() {
     let dir = Sandbox::new("preview");
     let out = dir.path("p1.png");
@@ -259,7 +253,6 @@ fn preview_draws_one_page_as_a_png() {
 /// `--bundled-fonts` sets everything in the faces compiled in, so the same document gives the
 /// same PDF on any machine — and a family only the machine might have is reported as substituted.
 #[test]
-#[cfg(feature = "pdf")]
 fn bundled_fonts_ignore_the_machine() {
     let dir = Sandbox::new("bundled");
     let file = dir.path("g.fodt");

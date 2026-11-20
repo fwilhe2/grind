@@ -60,17 +60,9 @@ const UNTITLED_TEXT: &str = "untitled.fodt";
 /// What the file picker offers, per [`Pick`], set on the input each time it is raised. Both
 /// document types and all three forms in one list, since the kind is read from the bytes; a CSV or
 /// TSV too, opened as a new spreadsheet (the sheet pane's *Import CSV* puts fields into the open
-/// one); and an Excel workbook or Word document, imported on arrival when the filter is built in.
-fn document_types() -> String {
-    let mut types = ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown".to_owned();
-    if cfg!(feature = "xlsx") {
-        types.push_str(",.xlsx,.xlsm");
-    }
-    if cfg!(feature = "docx") {
-        types.push_str(",.docx,.docm,.dotx");
-    }
-    types
-}
+/// one); and an Excel workbook or Word document, imported on arrival.
+const DOCUMENT_TYPES: &str =
+    ".fods,.ods,.fodt,.odt,.xml,.grind,.csv,.tsv,.tab,.md,.markdown,.xlsx,.xlsm,.docx,.docm,.dotx";
 /// Delimited text, including `.txt`, which is what a great many exports are called — the
 /// delimiter is sniffed from the content, so the name never has to carry it.
 const IMAGE_TYPES: &str = "image/*";
@@ -1003,7 +995,7 @@ impl Shell {
     // --- documents ---
 
     fn open_picker(&self) {
-        self.raise_picker(Pick::Document, &document_types());
+        self.raise_picker(Pick::Document, DOCUMENT_TYPES);
     }
 
     /// The same picker, raised for a delimited file instead.

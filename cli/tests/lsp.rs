@@ -10,7 +10,6 @@
 //! part only the real binary can show — the framing on stdout, the real vocabulary after `s.`,
 //! the real compiler's errors, and a script that would never finish being opened in an
 //! instant, because nothing in a language server runs one.
-#![cfg(feature = "lsp")]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};

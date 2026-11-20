@@ -420,8 +420,8 @@ the exit criterion by `cli/tests/init.rs`'s `update_rewrites_stale_vocabulary_an
 
 ## 5. The language server — the later half
 
-`grind lsp`, a subcommand speaking LSP over stdio, in its own crate (`grind-lsp`) behind a
-cargo feature like `xlsx`, since it brings an LSP library. It holds open documents as `App`s
+`grind lsp`, a subcommand speaking LSP over stdio, in its own crate (`grind-lsp`), since it
+brings an LSP library. It holds open documents as `App`s
 with their `projection::Source`, and answers every request from the core:
 
 | Request | `.grind` | `.rhai` |

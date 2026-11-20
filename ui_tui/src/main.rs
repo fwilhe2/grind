@@ -206,7 +206,6 @@ fn prepare(kind: DocumentKind, path: Option<PathBuf>) -> io::Result<Pane> {
             .spelling()
             .grammar()
             .noticed(imported);
-        #[cfg(feature = "pdf")]
         let pane = pane.paged();
         Ok(Pane::Text(Box::new(pane)))
     } else {

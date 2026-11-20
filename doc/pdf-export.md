@@ -152,10 +152,7 @@ the result: krilla and harfrust must agree on `read-fonts`/`skrifa`, or we drop 
   does not.
 * **`grind-print`: the font stack and the two backends.** It is a separate crate because
   `doc/text-layout.md` decision 2 kept the font stack *out of `grind-core`*, and this keeps that
-  promise. The terminal and the CLI with `--no-default-features` stay font-free. It is an
-  **optional dependency behind a `pdf` feature**, on by default, exactly like `grind-xlsx`'s
-  `xlsx`, and CI builds both halves for the same reason ("it still compiles without it" rots
-  silently). Internally it splits like the core does: `fonts/`, `ops.rs` and both backends are
+  promise. Internally it splits like the core does: `fonts/`, `ops.rs` and both backends are
   generic, and `text.rs` (blocks → ops) is the word processor's half. A future
   `grind sheet export-pdf` would add a `sheet.rs` beside it.
 

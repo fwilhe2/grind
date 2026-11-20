@@ -5,7 +5,7 @@
 //! `grind serve` as a process: it stops on SIGTERM by its own handler, which is what makes it
 //! stop as a container's PID 1, where a signal with no handler is ignored.
 
-#![cfg(all(unix, feature = "server"))]
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};

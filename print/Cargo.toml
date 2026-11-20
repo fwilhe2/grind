@@ -30,7 +30,7 @@ system-fonts = ["dep:fontdb"]
 grind-core = { path = "../core" }
 grind-text = { path = "../text" }
 # The font stack lives here and nowhere else, which is the promise doc/text-layout.md decision 2
-# made: `grind-core` stays font-free, and so do the terminal and a `grind` built without `pdf`.
+# made: `grind-core` stays font-free.
 # Pinned exactly: they are pre-1.0, and kept on one `read-fonts`. krilla is behind and brings its
 # own skrifa, so the binary carries a second `read-fonts` (0.39 under krilla, 0.46 under skrifa
 # and harfrust) rather than holding the shaper back until krilla moves. Only bytes cross between

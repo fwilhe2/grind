@@ -403,7 +403,6 @@ pub(crate) enum Top {
     /// The words every spelling check accepts, in every document and language, one per line in
     /// $XDG_CONFIG_HOME/grind/words. They are yours and never written into a document; every
     /// window's Personal Dictionary shows the same list.
-    #[cfg(feature = "spell")]
     Words {
         /// Add this word
         #[arg(long, conflicts_with = "remove")]
@@ -418,7 +417,6 @@ pub(crate) enum Top {
     /// `builtin` turns the grammar checker built into grind on, and is the default; `off` turns
     /// it off in every text window. Remembered in $XDG_CONFIG_HOME/grind/grammar; with nothing
     /// to set, prints it.
-    #[cfg(feature = "grammar")]
     Grammar {
         /// builtin or off
         choice: Option<String>,
@@ -483,7 +481,6 @@ pub(crate) enum TextCommand {
     ///
     /// Reads `.docx`; grind does not write Word documents. Nothing is fetched and no macro runs.
     /// The result is an ordinary ODF document, which every other command then works on.
-    #[cfg(feature = "docx")]
     Import {
         /// The Word document to read
         input: PathBuf,
@@ -686,7 +683,6 @@ pub(crate) enum TextCommand {
     /// their metric-compatible twins, or the bundled Liberation faces; the report says which.
     /// Paper is ISO 216 only: `a4`, `a5`, `a3-landscape`, …. The same document always writes
     /// the same bytes.
-    #[cfg(feature = "pdf")]
     ExportPdf {
         file: PathBuf,
         /// Where to write the PDF
@@ -707,7 +703,6 @@ pub(crate) enum TextCommand {
     /// One line per page — its number, the first character on it and one past the last, as
     /// addresses `grind text get` takes. Typeset exactly as `export-pdf` typesets, so these are
     /// the PDF's own page breaks.
-    #[cfg(feature = "pdf")]
     Pages {
         file: PathBuf,
         /// Lay out on this paper instead of the document's own page, e.g. a4 or a5-landscape
@@ -722,7 +717,6 @@ pub(crate) enum TextCommand {
     ///
     /// The page, from 1, then the caret's x, the top of its line and the line's height, in
     /// points from the page's top-left corner. Typeset exactly as `export-pdf` typesets.
-    #[cfg(feature = "pdf")]
     Locate {
         file: PathBuf,
         /// A caret, e.g. p3+12 — or a bare address for a block's start
@@ -739,7 +733,6 @@ pub(crate) enum TextCommand {
     ///
     /// The nearest line's nearest character, so a point in a margin or under the last line
     /// still answers. Printed as an address `grind text get` takes.
-    #[cfg(feature = "pdf")]
     Hit {
         file: PathBuf,
         /// Which page, from 1
@@ -758,7 +751,6 @@ pub(crate) enum TextCommand {
     },
 
     /// Draw one page as a PNG — the print preview, exactly as the PDF prints it
-    #[cfg(feature = "pdf")]
     Preview {
         file: PathBuf,
         /// Where to write the PNG
@@ -1075,7 +1067,6 @@ pub(crate) enum TextCommand {
     /// states, else the one whose dictionary knows most of its words — which is printed to stderr.
     /// Words in your personal dictionary ($XDG_CONFIG_HOME/grind/words, one per line) are
     /// accepted; --add puts one there. Nothing is written to the document.
-    #[cfg(feature = "spell")]
     Spell {
         #[arg(required_unless_present = "add")]
         file: Option<PathBuf>,
@@ -1100,7 +1091,6 @@ pub(crate) enum TextCommand {
     /// `grind text correct` takes the address, the covered text and a replacement. Each
     /// paragraph is checked in the language the document states, else the one its common words
     /// suggest. Nothing is written to the document.
-    #[cfg(feature = "grammar")]
     Grammar {
         file: PathBuf,
         /// Blocks to check, e.g. p3 or p3:p9 — the whole document when left out
@@ -1117,7 +1107,6 @@ pub(crate) enum TextCommand {
     /// turns it back on. Remembered in $XDG_CONFIG_HOME/grind/spelling — yours, not any
     /// document's — beside the spreadsheets' own setting (`grind sheet spelling`). With no
     /// setting, prints the remembered one.
-    #[cfg(feature = "spell")]
     Spelling {
         /// auto, off, or a language: en, de, fr, es, it, pt or pl
         setting: Option<String>,
@@ -1164,7 +1153,6 @@ pub(crate) enum Command {
     /// Reads `.xlsx` and `.xlsm`; grind does not write Excel files. Nothing is calculated: Excel's
     /// cached values are kept as they are, and `grind sheet recalc` recalculates when you want it
     /// to. The result is an ordinary ODF document, which every other command then works on.
-    #[cfg(feature = "xlsx")]
     Import {
         /// The workbook to read
         input: PathBuf,
@@ -1866,7 +1854,6 @@ pub(crate) enum Command {
     /// dictionary knows most of its words, which is printed to stderr. Words in your personal
     /// dictionary ($XDG_CONFIG_HOME/grind/words) are accepted; --add puts one there. Nothing is
     /// written to the document.
-    #[cfg(feature = "spell")]
     Spell {
         #[arg(required_unless_present = "add")]
         file: Option<PathBuf>,
@@ -1913,7 +1900,6 @@ pub(crate) enum Command {
     /// off until `auto` (the default: the document's own language, else a guess) or a language
     /// turns it back on. Remembered in $XDG_CONFIG_HOME/grind/spelling — yours, not any
     /// document's. With no setting, prints the remembered one.
-    #[cfg(feature = "spell")]
     Spelling {
         /// auto, off, or a language: en, de, fr, es, it, pt or pl
         setting: Option<String>,

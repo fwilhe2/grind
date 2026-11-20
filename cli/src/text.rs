@@ -101,7 +101,6 @@ fn kind_of(heading: Option<u32>, list: Option<u32>) -> Result<grind_text::BlockK
 
 pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failure> {
     match command {
-        #[cfg(feature = "docx")]
         TextCommand::Import {
             input,
             output,
@@ -418,7 +417,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             finish_text(&app, cli, file, true)
         }
 
-        #[cfg(feature = "pdf")]
         TextCommand::ExportPdf {
             file,
             out,
@@ -441,7 +439,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             Ok(Report::Pdf(report::PdfReport::new(show_path(out), &report)))
         }
 
-        #[cfg(feature = "pdf")]
         TextCommand::Pages {
             file,
             paper,
@@ -470,7 +467,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             )
         }
 
-        #[cfg(feature = "pdf")]
         TextCommand::Locate {
             file,
             at: address,
@@ -495,7 +491,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             )])
         }
 
-        #[cfg(feature = "pdf")]
         TextCommand::Hit {
             file,
             page,
@@ -523,7 +518,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             )])
         }
 
-        #[cfg(feature = "pdf")]
         TextCommand::Preview {
             file,
             out,
@@ -880,11 +874,9 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             finish_text(&app, cli, file, changed > 0)
         }
 
-        #[cfg(feature = "spell")]
         TextCommand::Spelling { setting } => {
             spelling_setting(DocumentKind::Text, setting.as_deref())
         }
-        #[cfg(feature = "spell")]
         TextCommand::Spell {
             file,
             range,
@@ -933,7 +925,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             )
         }
 
-        #[cfg(feature = "grammar")]
         TextCommand::Grammar { file, range, picky } => {
             let app = open_text(file)?;
             let setting = grind_grammar::setting::Setting::load();

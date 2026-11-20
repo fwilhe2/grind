@@ -641,21 +641,17 @@ sheet lint "$out/mistakes.fods" --off misspelt --off unspellable --off stale-val
 # so the correction is a second command fed by the first. `grind sheet spelling off` turns it off
 # for every spreadsheet, which this script leaves alone: it is the person's, not the sample's.
 
-if "$GRIND" sheet spell --help >/dev/null 2>&1; then
-    say "spell: the misspelt words in text cells, with what they might have been"
-    spelling="$out/spelling.fods"
-    run new "$spelling" --force
-    run set "$spelling" A1 'Quarterly reveneu'
-    run set "$spelling" A2 'Recieved from customers'
-    run set "$spelling" B2 1200
-    run set "$spelling" A3 '="not checked: wrogn"'
-    sheet spell "$spelling" --suggest
-    say "correct: the cell, the word and its replacement — one undo step, still text"
-    run correct "$spelling" A2 Recieved Received
-    sheet get "$spelling" A2
-else
-    say "spell: not in this build (compiled without the spell feature)"
-fi
+say "spell: the misspelt words in text cells, with what they might have been"
+spelling="$out/spelling.fods"
+run new "$spelling" --force
+run set "$spelling" A1 'Quarterly reveneu'
+run set "$spelling" A2 'Recieved from customers'
+run set "$spelling" B2 1200
+run set "$spelling" A3 '="not checked: wrogn"'
+sheet spell "$spelling" --suggest
+say "correct: the cell, the word and its replacement — one undo step, still text"
+run correct "$spelling" A2 Recieved Received
+sheet get "$spelling" A2
 
 # --- build: the same table, generated ------------------------------------------------------
 # `doc/dsl.md` layer 1, D7. The document above was written a cell at a time; `examples/budget.rhai`
@@ -699,26 +695,18 @@ sheet view "$out/prices.fods" F7:F9 --formulas
 # its number format, its look, the sheet's column widths — this one's stated default,
 # carried onto the columns it uses — and the document level: defined names, autofilters, and a
 # report counting every construct that had nowhere to go.
-#
-# The filter is a cargo feature, so a `grind` built with `--no-default-features` has no
-# `import` verb at all — hence the check rather than a bare call. A missing verb here is a
-# build configuration, not a failure.
-if "$GRIND" sheet import --help >/dev/null 2>&1; then
-    say "import: an Excel workbook becomes an ODF document"
-    # `--strict` fails, and writes nothing, if anything at all was lost. This workbook loses
-    # nothing, which is the claim the flag makes on its behalf. `--force` because this directory
-    # is rebuilt on every run (`scripts/run.sh`), and `import`, rightly, will not replace a
-    # document it did not write unless it is told to.
-    "$GRIND" sheet import --strict --force "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
-    "$GRIND" --format json info "$out/imported.fods"
-    sheet view "$out/imported.fods" A1:B3
-    sheet view "$out/imported.fods" B3 --formulas
-    # And it is an ODF document from that moment on: every other verb takes it, and the
-    # workbook is never consulted again.
-    "$GRIND" lint "$out/imported.fods"
-else
-    say "import: not in this build (compiled without the xlsx feature)"
-fi
+say "import: an Excel workbook becomes an ODF document"
+# `--strict` fails, and writes nothing, if anything at all was lost. This workbook loses
+# nothing, which is the claim the flag makes on its behalf. `--force` because this directory
+# is rebuilt on every run (`scripts/run.sh`), and `import`, rightly, will not replace a
+# document it did not write unless it is told to.
+"$GRIND" sheet import --strict --force "$here/../xlsx/tests/data/sample.xlsx" "$out/imported.fods"
+"$GRIND" --format json info "$out/imported.fods"
+sheet view "$out/imported.fods" A1:B3
+sheet view "$out/imported.fods" B3 --formulas
+# And it is an ODF document from that moment on: every other verb takes it, and the
+# workbook is never consulted again.
+"$GRIND" lint "$out/imported.fods"
 
 # It is an ordinary document from here on: it lints, it projects, every verb takes it.
 say "the generated document is a document like any other"

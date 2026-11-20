@@ -1945,16 +1945,13 @@ fn text_filters() -> gio::ListStore {
     let filters = gio::ListStore::new::<gtk::FileFilter>();
     filters.append(&filter);
     filters.append(&markdown);
-    // A Word document opens imported (`open_path`), and only in a build that reads one.
-    #[cfg(feature = "docx")]
-    {
-        let word = gtk::FileFilter::new();
-        word.set_name(Some("Word Document"));
-        for pattern in ["*.docx", "*.docm", "*.dotx"] {
-            word.add_pattern(pattern);
-        }
-        filters.append(&word);
+    // A Word document opens imported (`open_path`).
+    let word = gtk::FileFilter::new();
+    word.set_name(Some("Word Document"));
+    for pattern in ["*.docx", "*.docm", "*.dotx"] {
+        word.add_pattern(pattern);
     }
+    filters.append(&word);
     filters
 }
 
@@ -2329,7 +2326,6 @@ mod tests {
         std::fs::write(&path, text).expect("writes");
         assert!(!is_spreadsheet(&path));
         let _ = std::fs::remove_file(&path);
-        #[cfg(feature = "xlsx")]
         assert!(
             is_spreadsheet(Path::new(concat!(
                 env!("CARGO_MANIFEST_DIR"),

@@ -47,8 +47,8 @@ never out.
   exactly as it is for any other document.
 - **Our own reader, not `calamine`.** See the trade below; it is close, and the trigger that
   would flip it is named.
-- **Its own crate, behind a cargo feature.** `xlsx/` (crate `grind-xlsx`), an optional
-  dependency of each shell that wants it. A build without the feature contains none of it.
+- **Its own crate.** `xlsx/` (crate `grind-xlsx`), a dependency of each binary that opens a
+  workbook.
 - **Transitional is the target, Strict is nearly free, and neither is a fork.** Real files are
   ECMA-376 Transitional; the whole difference that reaches a reader is a namespace table and a
   markup-compatibility rule. See "Transitional, and the real world" below — it is the section
@@ -283,35 +283,17 @@ Two mechanisms, and they are not the same one:
   so the default commands skip the shells and `--workspace` still builds everything on demand.
   One line, and it makes the common case need no flags. (The GTK shells are already out of
   `cargo build --workspace`'s practical path for want of `libgtk-4-dev`; this states it.)
-- **The import filter is a cargo feature**, because it belongs *inside* the CLI binary rather
-  than beside it.
-
-```toml
-# cli/Cargo.toml
-[features]
-default = ["xlsx"]
-xlsx = ["dep:grind-xlsx"]
-
-[dependencies]
-grind-xlsx = { path = "../xlsx", optional = true }
-```
+- **The import filter is inside the CLI binary**, not beside it.
 
 | Command | core | cli | xlsx | gtk |
 |---|---|---|---|---|
-| `cargo build -p grind-cli --no-default-features` | ✓ | ✓ | — | — |
 | `cargo build -p grind-cli` | ✓ | ✓ | ✓ | — |
 | `cargo build -p grind-sheet-gtk` | ✓ | — | — | ✓ |
 | `cargo build` (with `default-members`) | ✓ | ✓ | ✓ | — |
 | `cargo build --workspace` | ✓ | ✓ | ✓ | ✓ |
 
-The subcommand is compiled out with the filter — `#[cfg(feature = "xlsx")]` on the `Import`
-variant and its match arm — so a build without it does not advertise a command that would
-only apologise. `cli/tests/parity.rs` keeps working because it tracks `App` methods, and the
-importer is not one; the *parity document* gains a "Beyond `App`" row saying so.
-
-**CI** gains one job that builds the matrix above and runs `cargo test -p grind-cli
---no-default-features`, because "it still compiles without the feature" is exactly the kind
-of claim that rots silently.
+`cli/tests/parity.rs` tracks `App` methods, and the importer is not one; the *parity document*
+has a "Beyond `App`" row saying so.
 
 ---
 

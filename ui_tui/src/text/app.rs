@@ -329,12 +329,10 @@ pub struct App {
     /// pane does not show pages.
     pages: Vec<(usize, Caret)>,
     page_count: usize,
-    #[cfg(feature = "pdf")]
     paged: Option<Paged>,
 }
 
 /// The printed document's pages, kept for a pane that rules them into its column.
-#[cfg(feature = "pdf")]
 struct Paged {
     session: grind_print::session::Session,
     /// [`RedrawFlag::edits`] as of the last setting.
@@ -392,19 +390,16 @@ impl App {
             remember_grammar: false,
             pages: Vec::new(),
             page_count: 0,
-            #[cfg(feature = "pdf")]
             paged: None,
         }
     }
 
     /// Rule where each printed page begins, set in the machine's fonts as `:pdf` prints them.
-    #[cfg(feature = "pdf")]
     pub fn paged(self) -> Self {
         self.paged_in(false)
     }
 
     /// Rule the pages, set in the bundled faces when `bundled` — what a test wants.
-    #[cfg(feature = "pdf")]
     fn paged_in(mut self, bundled: bool) -> Self {
         self.paged = Some(Paged {
             session: grind_print::session::Session::new(bundled),
@@ -415,7 +410,6 @@ impl App {
 
     /// Set the pages again if the document changed since they were.
     fn repaginate(&mut self) {
-        #[cfg(feature = "pdf")]
         if let Some(paged) = &mut self.paged {
             let edits = self.redraw.edits();
             if paged.seen != Some(edits) {
@@ -1141,18 +1135,13 @@ impl App {
             "find" => self.cmd_find(""),
             "mark!" => self.cmd_unmark(),
             "table" => self.cmd_table("2 2"),
-            #[cfg(feature = "pdf")]
             "pdf" => "usage: :pdf <file>".clone_into(&mut self.status),
-            #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("pdf ") => self.cmd_pdf(rest.trim()),
-            #[cfg(feature = "pdf")]
             "pages" => self.cmd_pages(),
             "break" => self.cmd_break(),
             "page-setup" => self.cmd_page_setup(""),
             _ if let Some(rest) = cmd.strip_prefix("page-setup ") => self.cmd_page_setup(rest),
-            #[cfg(feature = "pdf")]
             _ if let Some(rest) = cmd.strip_prefix("page ") => self.cmd_page(rest.trim()),
-            #[cfg(feature = "pdf")]
             "print" => self.cmd_print(),
             _ if let Some(rest) = cmd.strip_prefix("md-in ") => self.cmd_md_in(rest.trim()),
             _ if let Some(rest) = cmd.strip_prefix("md-out ") => self.cmd_md_out(rest.trim()),
@@ -1218,7 +1207,6 @@ impl App {
 
     /// `:pdf <file>` — the document typeset on its own page (A4 when it states none) and written
     /// as a PDF; the status bar is the export's own report.
-    #[cfg(feature = "pdf")]
     fn cmd_pdf(&mut self, path: &str) {
         let title = std::path::Path::new(path)
             .file_stem()
@@ -1238,7 +1226,6 @@ impl App {
 
     /// `:print` — the PDF `:pdf` would write, handed to the system's spooler (`lp`) on its
     /// standard input.
-    #[cfg(feature = "pdf")]
     fn cmd_print(&mut self) {
         let options = grind_print::Options {
             paper: None,
@@ -1256,7 +1243,6 @@ impl App {
 
     /// `:pages` — where each page of the PDF begins, in the outline's pane: a terminal cannot show
     /// a page, but it can say where one starts and go there.
-    #[cfg(feature = "pdf")]
     fn cmd_pages(&mut self) {
         let options = grind_print::Options::default();
         let pages = grind_print::pages(&self.core, grind_print::fonts_for(&self.core), &options);
@@ -1284,7 +1270,6 @@ impl App {
     }
 
     /// `:page <n>` — the caret to where printed page `n` begins, with its rule at the top.
-    #[cfg(feature = "pdf")]
     fn cmd_page(&mut self, number: &str) {
         self.repaginate();
         let Some(number) = number.parse::<usize>().ok().filter(|&n| n > 0) else {
@@ -3079,7 +3064,6 @@ fn non_empty(text: &str) -> Option<String> {
 }
 
 /// Hand a PDF to `lp`, and say what it answered — its request id, usually.
-#[cfg(feature = "pdf")]
 fn spool(pdf: &[u8], title: &str) -> Result<String, String> {
     use std::io::Write;
     use std::process::{Command, Stdio};
@@ -3345,7 +3329,6 @@ mod tests {
 
     /// `:pdf <file>` writes the document as a PDF and says what the export did, the way every
     /// other client shows `grind_print::Report::summary` (`doc/pdf-export.md`).
-    #[cfg(feature = "pdf")]
     #[test]
     fn pdf_writes_the_document_on_paper() {
         let dir = std::env::temp_dir().join(format!("grind-tui-pdf-{}", std::process::id()));
@@ -3362,7 +3345,6 @@ mod tests {
 
     /// `:pages` lists where each page begins, in the pane the outline uses, so Enter on a row is
     /// a jump to the top of that page.
-    #[cfg(feature = "pdf")]
     #[test]
     fn pages_lists_each_page_as_a_jump() {
         let long = "The quick brown fox jumps over the lazy dog. ".repeat(60);
@@ -3397,7 +3379,6 @@ mod tests {
 
     /// A paged pane rules where each printed page begins, says which page the caret is on, and
     /// `:page n` goes to one with its rule at the top.
-    #[cfg(feature = "pdf")]
     #[test]
     fn pages_are_ruled_into_the_column_and_page_n_goes_to_one() {
         let long = "The quick brown fox jumps over the lazy dog. ".repeat(60);

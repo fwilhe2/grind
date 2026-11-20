@@ -17,7 +17,6 @@ fn load_checked(file: &Path, cli: &Cli) -> Result<App, String> {
 
 pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure> {
     match command {
-        #[cfg(feature = "xlsx")]
         Command::Import {
             input,
             output,
@@ -1016,7 +1015,6 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             Ok(Report::Text(TextReport { lines: vec![line] }))
         }
 
-        #[cfg(feature = "spell")]
         Command::Spell {
             file,
             range,
@@ -1100,7 +1098,6 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             finish(&app, cli, file, word != with)
         }
 
-        #[cfg(feature = "spell")]
         Command::Spelling { setting } => {
             spelling_setting(DocumentKind::Spreadsheet, setting.as_deref())
         }

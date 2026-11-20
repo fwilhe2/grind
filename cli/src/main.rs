@@ -17,7 +17,6 @@ mod args;
 mod diff;
 mod failure;
 mod fit;
-#[cfg(feature = "grammar")]
 mod grammar;
 mod guide;
 mod init;
@@ -55,29 +54,23 @@ fn open_text(file: &Path) -> Result<TextApp, Failure> {
 }
 
 /// [`open_text`], with spelling checked the way the person has said text documents should be
-/// (`grind text spelling`) — by default in the document's own language, when this build has the
-/// dictionaries — and grammar checked by the built-in checker: what `lint` opens with, so its
-/// `misspelt`, `grammar` and `style` rules have something to ask. A document in a language there
-/// is no dictionary for is linted without spelling, silently: `grind text spell` is where that
-/// is worth saying.
+/// (`grind text spelling`) — by default in the document's own language — and grammar checked by
+/// the built-in checker: what `lint` opens with, so its `misspelt`, `grammar` and `style` rules
+/// have something to ask. A document in a language there is no dictionary for is linted without
+/// spelling, silently: `grind text spell` is where that is worth saying.
 fn open_text_checked(file: &Path, hints: bool) -> Result<TextApp, String> {
     let app = open_text(file)?;
-    #[cfg(feature = "spell")]
     let _ = grind_spell::preference::load(DocumentKind::Text).apply(&app);
     // The built-in checker, its opt-in rules with the hints: what `--hints` asks for is the
     // fuller look.
-    #[cfg(feature = "grammar")]
     app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
         picky: hints,
     })));
-    #[cfg(not(feature = "grammar"))]
-    let _ = hints;
     Ok(app)
 }
 
 /// `grind <app> spelling [setting]`: print, or set and then print, the remembered spelling setting
 /// for one kind of document — the same file the windows read and write.
-#[cfg(feature = "spell")]
 fn spelling_setting(kind: DocumentKind, setting: Option<&str>) -> Result<Report, Failure> {
     use grind_spell::{Setting, preference};
     if let Some(tag) = setting {
@@ -92,7 +85,6 @@ fn spelling_setting(kind: DocumentKind, setting: Option<&str>) -> Result<Report,
 }
 
 /// `--language`: a tag naming one of the dictionaries this build carries.
-#[cfg(feature = "spell")]
 fn spell_language(tag: &str) -> Result<grind_spell::Language, String> {
     grind_spell::Language::from_tag(tag).ok_or_else(|| {
         let have: Vec<&str> = grind_spell::Language::ALL.iter().map(|l| l.tag()).collect();
@@ -150,7 +142,6 @@ fn write_series(
             }
             Artifact::Text(app) => match ext {
                 "pdf" => {
-                    #[cfg(feature = "pdf")]
                     if !cli.dry_run {
                         let options = grind_print::Options {
                             paper: None,
@@ -160,8 +151,6 @@ fn write_series(
                         grind_core::atomic::write(&path, &bytes)
                             .map_err(|e| format!("{}: {e}", path.display()))?;
                     }
-                    #[cfg(not(feature = "pdf"))]
-                    return Err("this build has no PDF export".into());
                 }
                 _ => {
                     if !cli.dry_run {
@@ -178,7 +167,6 @@ fn write_series(
 
 /// The fonts a PDF command sets the document in: the machine's as well as the bundled ones,
 /// unless `--bundled-fonts` asks for output that is the same everywhere.
-#[cfg(feature = "pdf")]
 fn fonts(app: &TextApp, bundled_only: bool) -> grind_print::Fonts {
     if bundled_only {
         grind_print::Fonts::bundled()
@@ -371,7 +359,6 @@ fn main() -> ExitCode {
 }
 
 /// `grind lsp`: the server, with what it may not link itself handed in (`grind_lsp::Host`).
-#[cfg(feature = "lsp")]
 fn lsp() -> ExitCode {
     struct Host;
     impl grind_lsp::Host for Host {
@@ -389,10 +376,7 @@ fn lsp() -> ExitCode {
             check_spelling(app);
         }
         fn attach_spelling_text(&self, app: &TextApp) {
-            #[cfg(feature = "spell")]
             let _ = grind_spell::preference::load(DocumentKind::Text).apply(app);
-            #[cfg(not(feature = "spell"))]
-            let _ = app;
         }
     }
     match grind_lsp::serve(&Host) {
@@ -405,7 +389,6 @@ fn lsp() -> ExitCode {
 }
 
 /// `grind serve`. The page is `--page`, or the one installed beside the binary.
-#[cfg(feature = "server")]
 fn serve(dir: &Path, port: u16, page: Option<PathBuf>, hosts: &[String]) -> ExitCode {
     let page = page.or_else(|| {
         let exe = std::env::current_exe().ok()?;
@@ -443,7 +426,7 @@ fn serve(dir: &Path, port: u16, page: Option<PathBuf>, hosts: &[String]) -> Exit
 
 /// Exit on SIGTERM and SIGINT. As PID 1 in a container a signal with no handler is ignored, so
 /// without this a stop waits out the grace period. Every save is a rename, so exiting is safe.
-#[cfg(all(feature = "server", unix))]
+#[cfg(unix)]
 fn stop_on_signal() -> Result<(), String> {
     use signal_hook::consts::{SIGINT, SIGTERM};
     let mut signals = signal_hook::iterator::Signals::new([SIGTERM, SIGINT])
@@ -454,18 +437,6 @@ fn stop_on_signal() -> Result<(), String> {
         }
     });
     Ok(())
-}
-
-#[cfg(not(feature = "server"))]
-fn serve(_: &Path, _: u16, _: Option<PathBuf>, _: &[String]) -> ExitCode {
-    eprintln!("grind: this build has no server (built without the `server` feature)");
-    ExitCode::FAILURE
-}
-
-#[cfg(not(feature = "lsp"))]
-fn lsp() -> ExitCode {
-    eprintln!("grind: this build has no language server (built without the `lsp` feature)");
-    ExitCode::FAILURE
 }
 
 fn run(cli: &Cli) -> Result<Report, Failure> {
@@ -669,7 +640,6 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
                 .collect(),
         })),
 
-        #[cfg(feature = "spell")]
         Top::Words { add, remove } => {
             use grind_spell::personal;
             if let Some(typed) = add {
@@ -683,7 +653,6 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
             text_lines(personal::words())
         }
 
-        #[cfg(feature = "grammar")]
         Top::Grammar {
             choice,
             style,
@@ -774,14 +743,11 @@ fn unsupported(file: &Path, kind: Option<DocumentKind>) -> String {
     }
 }
 
-/// Attach the remembered spreadsheet spelling setting to `app` — nothing at all when it is `off`,
-/// or when this build has no dictionaries. A language with no dictionary is linted without
+/// Attach the remembered spreadsheet spelling setting to `app` — nothing at all when it is `off`.
+/// A language with no dictionary is linted without
 /// spelling, silently: `grind sheet spell` is where that is worth saying.
 fn check_spelling(app: &App) {
-    #[cfg(feature = "spell")]
     let _ = grind_spell::preference::load(DocumentKind::Spreadsheet).apply(app);
-    #[cfg(not(feature = "spell"))]
-    let _ = app;
 }
 
 fn open_as(file: &Path, wanted: DocumentKind, cli: &Cli) -> Result<App, Failure> {

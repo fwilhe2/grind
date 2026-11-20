@@ -5,10 +5,8 @@
 //! `grind sheet fit`'s measuring: the one thing about fitting a column the core leaves to its
 //! caller, since the core has no font (`grind_sheet::fit`).
 //!
-//! With the `pdf` feature — on by default — text is shaped in the bundled Liberation faces
-//! (`grind_print::Typesetter`), the metric twins of Arial and Times, so a width the CLI fits is
-//! the width LibreOffice would draw that text at. Without it the CLI has no font at all, and
-//! estimates: an average glyph a little over half an em.
+//! Text is shaped in the bundled Liberation faces (`grind_print::Typesetter`), the metric twins
+//! of Arial and Times, so a width the CLI fits is the width LibreOffice would draw that text at.
 
 use std::ops::Range;
 
@@ -39,35 +37,8 @@ fn style_of(style: Option<&grind_sheet::style::CellStyle>) -> TextStyle {
 }
 
 /// The CLI's `Metrics`, in points.
-#[cfg(feature = "pdf")]
 pub fn measure() -> impl Metrics {
     grind_print::Typesetter::new(grind_print::Fonts::bundled())
-}
-
-/// The CLI's `Metrics`, in points — estimated, with no font in this build.
-#[cfg(not(feature = "pdf"))]
-pub fn measure() -> impl Metrics {
-    Estimate
-}
-
-#[cfg(not(feature = "pdf"))]
-struct Estimate;
-
-#[cfg(not(feature = "pdf"))]
-impl Metrics for Estimate {
-    fn advances(&self, text: &str, style: &TextStyle, out: &mut Vec<f32>) {
-        let size = style
-            .font_size
-            .as_deref()
-            .and_then(grind_core::style::length_mm)
-            .map_or(look::DEFAULT_FONT_PT, |mm| mm * 72.0 / 25.4);
-        let em = (size * 0.55) as f32;
-        out.extend((1..=text.chars().count()).map(|n| n as f32 * em));
-    }
-
-    fn line_height(&self, _: &TextStyle) -> f32 {
-        look::DEFAULT_FONT_PT as f32 * 1.2
-    }
 }
 
 /// Each of `cols` with the width that fits it, `None` for one with nothing to show.

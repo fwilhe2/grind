@@ -105,10 +105,8 @@ cargo run -p grind-cli -- lsp
 cargo run -p grind-cli -- serve ~/Documents --page ui_web/dist    # http://127.0.0.1:8080/
 ```
 
-The import filters, PDF, spelling, the language server and the server are cargo features, on by
-default.
-CI also builds and tests `-p grind-cli --no-default-features`, because "it still compiles
-without it" rots silently.
+Every binary carries everything: no cargo feature turns an import filter, PDF, spelling, the
+language server or the server off (`doc/simplicity.md` rule 3).
 
 `examples/sample-sheet.sh` and `examples/sample-text.sh` build a document out of every feature,
 through the CLI only, and `cli/tests/cli.rs` runs both. **Add a line there when adding a

@@ -341,32 +341,29 @@ run import-md "$out/picture-back.fodt" "$out/picture.md"
 # --- pdf: the document on paper -------------------------------------------------------------
 # `doc/pdf-export.md`. Typeset on the page the document states — A4 when it states none, since
 # paper here is ISO 216 — in the fonts it names or their bundled twins, and the report says which
-# it had to substitute. The export is a cargo feature, hence the check rather than a bare call:
-# a `grind` built with `--no-default-features` has no PDF writer in it.
+# it had to substitute.
 
-if "$GRIND" text export-pdf --help >/dev/null 2>&1; then
-    say "export-pdf: the document on A4, and once more on A5 landscape"
-    text export-pdf "$doc" "$out/sample.pdf"
-    text export-pdf "$doc" "$out/sample-a5.pdf" --paper a5-landscape
-    text pages "$doc" --paper a6
-    say "locate and hit: where a caret is on its page, and the caret a point there means"
-    text locate "$doc" p2+8
-    text hit "$doc" --page 1 300 120
-    say "preview: the first page as the PDF prints it, at screen resolution"
-    text preview "$doc" "$out/sample-page1.png"
-    say "a soft hyphen (U+00AD) is where a word may break: a hyphen shows only where it does"
-    run new "$out/hyphen.fodt" --force
-    run set "$out/hyphen.fodt" p1 "$(printf 'The Donau\302\255dampf\302\255schiffahrts\302\255gesellschaft runs a steamer.')"
-    text export-pdf "$out/hyphen.fodt" "$out/hyphen.pdf" --paper a7
-    text preview "$out/hyphen.fodt" "$out/hyphen.png" --paper a7
-    # A style can only come from a template (`doc/generator-spec.md` §3.5), so this one is built:
-    # `examples/typesetting/satz.fodt` declares a justified, hyphenated German paragraph style and
-    # a display size, and the script sets a paragraph and the kerning pairs in them.
-    say "typesetting: justified and hyphenated by German patterns, and kerning at display size"
-    "$GRIND" build "$here/typesetting/satz.rhai" -o "$out/satz.fodt" >/dev/null
-    text export-pdf "$out/satz.fodt" "$out/satz.pdf"
-    text preview "$out/satz.fodt" "$out/satz.png"
-fi
+say "export-pdf: the document on A4, and once more on A5 landscape"
+text export-pdf "$doc" "$out/sample.pdf"
+text export-pdf "$doc" "$out/sample-a5.pdf" --paper a5-landscape
+text pages "$doc" --paper a6
+say "locate and hit: where a caret is on its page, and the caret a point there means"
+text locate "$doc" p2+8
+text hit "$doc" --page 1 300 120
+say "preview: the first page as the PDF prints it, at screen resolution"
+text preview "$doc" "$out/sample-page1.png"
+say "a soft hyphen (U+00AD) is where a word may break: a hyphen shows only where it does"
+run new "$out/hyphen.fodt" --force
+run set "$out/hyphen.fodt" p1 "$(printf 'The Donau\302\255dampf\302\255schiffahrts\302\255gesellschaft runs a steamer.')"
+text export-pdf "$out/hyphen.fodt" "$out/hyphen.pdf" --paper a7
+text preview "$out/hyphen.fodt" "$out/hyphen.png" --paper a7
+# A style can only come from a template (`doc/generator-spec.md` §3.5), so this one is built:
+# `examples/typesetting/satz.fodt` declares a justified, hyphenated German paragraph style and
+# a display size, and the script sets a paragraph and the kerning pairs in them.
+say "typesetting: justified and hyphenated by German patterns, and kerning at display size"
+"$GRIND" build "$here/typesetting/satz.rhai" -o "$out/satz.fodt" >/dev/null
+text export-pdf "$out/satz.fodt" "$out/satz.pdf"
+text preview "$out/satz.fodt" "$out/satz.png"
 
 # --- import: a Word document becomes an ODF document -----------------------------------------
 # `doc/docx-import.md`. One way in and never out, so this is the one step that cannot build its
@@ -374,16 +371,12 @@ fi
 # `docx/tests/data/sample.docx` — this script's own `sample.fodt`, saved as Word by the oracle.
 # What arrives is the text, the headings, the lists with their numbering, the table, the
 # formatting and the named styles, and a report counting what had nowhere to go — here,
-# nothing, which is what `--strict` asserts. A feature, hence the check.
+# nothing, which is what `--strict` asserts.
 
-if "$GRIND" text import --help >/dev/null 2>&1; then
-    say "import: a Word document becomes an ODF document"
-    "$GRIND" text import --strict --force "$here/../docx/tests/data/sample.docx" "$out/imported.fodt"
-    text outline "$out/imported.fodt"
-    "$GRIND" lint "$out/imported.fodt"
-else
-    say "import: not in this build (compiled without the docx feature)"
-fi
+say "import: a Word document becomes an ODF document"
+"$GRIND" text import --strict --force "$here/../docx/tests/data/sample.docx" "$out/imported.fodt"
+text outline "$out/imported.fodt"
+"$GRIND" lint "$out/imported.fodt"
 
 # --- spelling ----------------------------------------------------------------------------------
 # `doc/spelling.md`. One language per document — the one named, else the one it states, else the
@@ -391,52 +384,43 @@ fi
 # so the correction is a second command fed by the first. `lint` lists them too, as warnings.
 # A document of its own, so the sample above keeps exactly the text it was typed with.
 
-if "$GRIND" text spell --help >/dev/null 2>&1; then
-    say "spell: every misspelt word, with an address and what it might have been"
-    spelling="$out/spelling.fodt"
-    text new "$spelling" --force >/dev/null
-    text set "$spelling" p1 'We recieve letters in English, and see https://exmaple.org.' >/dev/null
-    text insert "$spelling" --text 'Die Rechtschreibprüfung kennt auch Zusammensetzungen.' >/dev/null
-    text spell "$spelling" --suggest
-    say "spell --language de: the second paragraph is German, and says so in no style"
-    text spell "$spelling" p2 --language de
-    say "correct: the address spell printed, the word, and its replacement — one undo step"
-    text correct "$spelling" "$(text spell "$spelling" | grep recieve | cut -f1)" recieve receive >/dev/null
-    text spell "$spelling" p1
-    "$GRIND" lint "$spelling"
-    say "spell: seven languages — a French document is guessed as French from its common words"
-    french="$out/orthographe.fodt"
-    text new "$french" --force >/dev/null
-    text set "$french" p1 'Nous avons écrit à l’école, mais la lettre est arivée trop tard.' >/dev/null
-    text spell "$french" --suggest
-    say "words: your own dictionary — kept here beside the sample, never in your real one"
-    # `grind words` reads and writes $XDG_CONFIG_HOME/grind/words; pointing that at the output
-    # directory keeps this script from touching the list of whoever runs it.
-    words() { XDG_CONFIG_HOME="$out/config" "$GRIND" words "$@"; }
-    rm -f "$out/config/grind/words"
-    words --add Grind >/dev/null
-    words --add recieve >/dev/null
-    words --remove recieve
-else
-    say "spell: not in this build (compiled without the spell feature)"
-fi
+say "spell: every misspelt word, with an address and what it might have been"
+spelling="$out/spelling.fodt"
+text new "$spelling" --force >/dev/null
+text set "$spelling" p1 'We recieve letters in English, and see https://exmaple.org.' >/dev/null
+text insert "$spelling" --text 'Die Rechtschreibprüfung kennt auch Zusammensetzungen.' >/dev/null
+text spell "$spelling" --suggest
+say "spell --language de: the second paragraph is German, and says so in no style"
+text spell "$spelling" p2 --language de
+say "correct: the address spell printed, the word, and its replacement — one undo step"
+text correct "$spelling" "$(text spell "$spelling" | grep recieve | cut -f1)" recieve receive >/dev/null
+text spell "$spelling" p1
+"$GRIND" lint "$spelling"
+say "spell: seven languages — a French document is guessed as French from its common words"
+french="$out/orthographe.fodt"
+text new "$french" --force >/dev/null
+text set "$french" p1 'Nous avons écrit à l’école, mais la lettre est arivée trop tard.' >/dev/null
+text spell "$french" --suggest
+say "words: your own dictionary — kept here beside the sample, never in your real one"
+# `grind words` reads and writes $XDG_CONFIG_HOME/grind/words; pointing that at the output
+# directory keeps this script from touching the list of whoever runs it.
+words() { XDG_CONFIG_HOME="$out/config" "$GRIND" words "$@"; }
+rm -f "$out/config/grind/words"
+words --add Grind >/dev/null
+words --add recieve >/dev/null
+words --remove recieve
 
 # --- grammar ----------------------------------------------------------------------------------
 # `doc/grammar.md`. The built-in checker: each finding with its address, its rule and the text it
-# covers, so `correct` takes them back as they came. `lint` lists them too. A feature, hence the
-# check.
+# covers, so `correct` takes them back as they came. `lint` lists them too.
 
-if "$GRIND" text grammar --help >/dev/null 2>&1; then
-    say "grammar: what the built-in checker finds, and correcting one"
-    grammar="$out/grammar.fodt"
-    text new "$grammar" --force >/dev/null
-    text set "$grammar" p1 'It is the the best of plans , and its a good one.' >/dev/null
-    text grammar "$grammar"
-    text correct "$grammar" p1+9 ' the' ''
-    text grammar "$grammar"
-else
-    say "grammar: not in this build (compiled without the grammar feature)"
-fi
+say "grammar: what the built-in checker finds, and correcting one"
+grammar="$out/grammar.fodt"
+text new "$grammar" --force >/dev/null
+text set "$grammar" p1 'It is the the best of plans , and its a good one.' >/dev/null
+text grammar "$grammar"
+text correct "$grammar" p1+9 ' the' ''
+text grammar "$grammar"
 
 # --- build: a document generated from a script -------------------------------------------------
 # `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the

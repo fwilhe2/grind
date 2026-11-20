@@ -60,25 +60,21 @@ pub const TYPES: &[FileType] = &[
         prog_id: "Grind.Projection",
         description: "Grind Projection",
     },
-    #[cfg(feature = "xlsx")]
     FileType {
         extension: ".xlsx",
         prog_id: "Grind.Workbook",
         description: "Excel Workbook (opened as a new ODF document)",
     },
-    #[cfg(feature = "xlsx")]
     FileType {
         extension: ".xlsm",
         prog_id: "Grind.MacroWorkbook",
         description: "Excel Macro-Enabled Workbook (opened as a new ODF document)",
     },
-    #[cfg(feature = "docx")]
     FileType {
         extension: ".docx",
         prog_id: "Grind.WordDocument",
         description: "Word Document (opened as a new ODF document)",
     },
-    #[cfg(feature = "docx")]
     FileType {
         extension: ".docm",
         prog_id: "Grind.MacroWordDocument",
@@ -508,7 +504,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "xlsx")]
     #[test]
     fn excel_workbooks_are_offered_both_extensions() {
         for (ext, prog) in [

@@ -30,28 +30,16 @@ pub struct Imported {
     pub summary: String,
 }
 
-/// Whether these bytes are a workbook this build imports.
+/// Whether these bytes are a workbook.
 #[must_use]
 pub fn is_workbook(bytes: &[u8]) -> bool {
-    #[cfg(feature = "xlsx")]
-    return grind_xlsx::sniff(bytes);
-    #[cfg(not(feature = "xlsx"))]
-    {
-        let _ = bytes;
-        false
-    }
+    grind_xlsx::sniff(bytes)
 }
 
-/// Whether these bytes are a Word document this build imports.
+/// Whether these bytes are a Word document.
 #[must_use]
 pub fn is_word(bytes: &[u8]) -> bool {
-    #[cfg(feature = "docx")]
-    return grind_docx::sniff(bytes);
-    #[cfg(not(feature = "docx"))]
-    {
-        let _ = bytes;
-        false
-    }
+    grind_docx::sniff(bytes)
 }
 
 /// Whether `name` is a CSV or TSV to import: bytes that are neither ODF nor a workbook, under a
@@ -88,7 +76,6 @@ pub fn kind(name: &str, bytes: &[u8]) -> Option<DocumentKind> {
 /// Markdown are recognised; `resolve` finds a Markdown file's pictures ([`beside`] a file on disk,
 /// or [`nowhere`]).
 pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<Imported, String>> {
-    #[cfg(feature = "xlsx")]
     if grind_xlsx::sniff(bytes) {
         return Some(
             grind_xlsx::open(bytes)
@@ -101,7 +88,6 @@ pub fn import(name: &str, bytes: &[u8], resolve: &Resolve<'_>) -> Option<Result<
                 .map_err(|e| format!("{name}: {e}")),
         );
     }
-    #[cfg(feature = "docx")]
     if grind_docx::sniff(bytes) {
         return Some(
             grind_docx::open(bytes)
@@ -174,7 +160,6 @@ mod tests {
         grind_text::write_bytes(&grind_text::Document::default(), grind_core::Form::Flat).unwrap()
     }
 
-    #[cfg(feature = "xlsx")]
     #[test]
     fn a_workbook_is_known_by_its_bytes_and_imports_as_a_spreadsheet() {
         let bytes = std::fs::read(concat!(
@@ -199,7 +184,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "docx")]
     #[test]
     fn a_word_document_is_known_by_its_bytes_and_imports_as_text() {
         let bytes = std::fs::read(concat!(
@@ -294,7 +278,6 @@ mod tests {
         assert_eq!(text("x.pdf", b"%PDF-1.7"), None);
     }
 
-    #[cfg(feature = "xlsx")]
     #[test]
     fn a_workbooks_text_is_what_its_cells_show() {
         let bytes = std::fs::read(concat!(
@@ -306,7 +289,6 @@ mod tests {
         assert!(text.contains("Region"), "{text}");
     }
 
-    #[cfg(feature = "docx")]
     #[test]
     fn a_word_documents_text_includes_its_headings() {
         let bytes = std::fs::read(concat!(
