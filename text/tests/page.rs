@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The page a document says it is set on (`doc/pdf-export.md` P2): read from the master page,
+//! The page a document says it is set on (`doc/pdf-export.md`): read from the master page,
 //! never written, and absent when the document states none.
 
 use std::path::Path;

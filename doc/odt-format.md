@@ -591,7 +591,7 @@ relabels the host's whole temp directory as a side effect of running a test.
 
 ## 5c. Pages — what Writer does — MEASURED (2026-10-04)
 
-`doc/pdf-export.md` P1. Each fact below was measured by converting a document written for the
+`doc/pdf-export.md`. Each fact below was measured by converting a document written for the
 purpose to PDF and reading the PDF back (`pdfinfo`, `pdftotext -bbox`), never by reading
 LibreOffice's source. Two builds were used, and which one is named per fact, because the pinned
 oracle turned out to be unable to answer the font questions (fact 4).
@@ -1246,7 +1246,7 @@ oracle turned out to be unable to answer the font questions (fact 4).
 7. **The pinned image has no Liberation fonts.** The same document set in Liberation Serif
    comes out in **DejaVu Serif** from the pin (`pdffonts`), so line breaks and page breaks
    measured there are DejaVu's. Loop G cannot use the pin as it stands; it needs the bundled
-   faces installed in the image first (`doc/pdf-export.md` P9).
+   faces installed in the image first (`doc/pdf-export.md` §6, loop G).
 
 ## 6. What the reader gets for free
 

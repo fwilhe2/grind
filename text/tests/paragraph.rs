@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A paragraph's style resolved for layout (`doc/pdf-export.md` P5): the block's own style, its
+//! A paragraph's style resolved for layout (`doc/pdf-export.md`): the block's own style, its
 //! `style:parent-style-name` chain, and the default paragraph style under all of them — read, and
 //! never written.
 

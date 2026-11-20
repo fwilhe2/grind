@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # PDF export for the word processor — the plan
 
-> **Status: DECIDED, being built** (2026-10-04). The six decisions in §8 are taken as recommended, plus one more: **paper is ISO 216, never a US size** (§8, decision 7). The spreadsheet is out of scope on purpose: printing a
+> **Status: built** (decided 2026-10-04); §6 is what is not. **Paper is ISO 216, never a US size** (§8, decision 7). The spreadsheet is out of scope on purpose: printing a
 > spreadsheet is rarer, and its page model (print ranges, repeated rows, scaling to fit) is a
 > different program. Nothing below shuts that door. The generic half is kept generic so that
 > `grind sheet export-pdf` could reuse it later.
@@ -18,7 +18,7 @@ This plan overturns two written decisions, so it says which ones first:
 | "**Print to PDF** — via the platform, so it needs a platform" | `doc/not-doing.md` §2 | **Reversed.** The core writes the PDF, and a platform only *prints* one (§3) |
 | "Pagination — gated, loop D at a stated floor, and a week of use proving the continuous view insufficient" | `doc/not-doing.md` §2, `doc/text-layout.md` "What stays gated" | **Split in two.** Pagination *as an output* (PDF, preview) comes in, with its own differential as the gate it always named. A paginated *editing view* stays gated, on the same condition as before |
 | "Loop D" as pagination's differential | `doc/not-doing.md`, `doc/text-layout.md` | **Renamed loop G.** The xlsx filter has used loop D since phase 11 |
-| Named paragraph styles "kept as a name, never resolved" | `doc/text-core.md`, Styles | **Narrowed** in milestone P5. They are *resolved for layout* and still never authored |
+| Named paragraph styles "kept as a name, never resolved" | `doc/text-core.md`, Styles | **Narrowed**. They are *resolved for layout* and still never authored |
 
 ---
 
@@ -47,8 +47,8 @@ What *does* have to enter the model, read-only:
    `style:print-orientation`. Today this is kept byte for byte through R6 and never looked at.
    It becomes *read* as well, and is still never written: R6 already carries it out unchanged.
 2. **The paragraph properties pagination honours**: `fo:break-before`/`fo:break-after`,
-   `fo:keep-with-next` (rng:2110), `fo:widows`/`fo:orphans` (rng:12512/12517). Direct ones
-   come first (P4), and ones inherited through a named style come with P5.
+   `fo:keep-with-next` (rng:2110), `fo:widows`/`fo:orphans` (rng:12512/12517). Direct ones,
+   and ones inherited through a named style.
 
 Because both are derived, a later **print-layout view** in a shell needs no further model
 change. It is the same paginator's output, drawn live. That is the natural follow-on to the
@@ -92,7 +92,7 @@ want to keep it, since it is the one the caret already agrees with:
 The rest of the stack, all format-neutral plumbing in this project's sense (CLAUDE.md: "can be
 lazy; semantics never are"):
 
-| Job | Crate | Licence (to verify in P0) |
+| Job | Crate | Licence |
 |---|---|---|
 | Find system fonts, match by family/weight/style | `fontdb` 0.24 | MIT |
 | Read metrics, ascent/descent, glyph outlines | `skrifa` **0.42**, the version krilla 0.8.2 uses (0.48 is current) | MIT OR Apache-2.0 |
@@ -106,7 +106,7 @@ That is the rule the Windows shell learned from bugs: measure with one engine an
 with another, and the caret lands where the ink is not. Here the "caret" is every glyph
 position on the page.
 
-P0 checks every licence above **in each crate's own `Cargo.toml`, not from memory**, the way
+Every licence above was checked **in each crate's own `Cargo.toml`, not from memory**, the way
 `doc/text-layout.md` decision 2 did for `unicode-linebreak`. It also runs `cargo tree -d` on
 the result: krilla and harfrust must agree on `read-fonts`/`skrifa`, or we drop krilla's
 `simple-text` so that only one shaper is in the binary.
@@ -142,7 +142,7 @@ the result: krilla and harfrust must agree on `read-fonts`/`skrifa`, or we drop 
     themselves, so for them this is unused until it is useful.
   * **alignment** (start/centre/end/justify) as a pass after `wrap`, adjusting the caret xs the
     `Layout` already holds. Justify spreads each line's slack across its spaces, except on the
-    last line. This comes with P5, when `fo:text-align` becomes readable at all.
+    last line.
 * **`grind_text::page`: the paginator.** It uses the word processor's vocabulary (blocks,
   headings that keep with what follows, table rows), so it is `grind-text`'s and not the core's,
   for the same reason `Faces` is. It is **pure arithmetic over `Layout`s**, built like
@@ -264,7 +264,7 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
   colour, highlight, code);
 * headings, lists with their bullets (`paint::bullet`, the same marks as the screen), tabs;
 * pagination: hard page breaks (`fo:break-before`/`after`), widows and orphans (the default when
-  unstated is a P1 measurement, not an assumption), headings kept with the next paragraph, an image never split and scaled to
+  unstated is measured, not assumed), headings kept with the next paragraph, an image never split and scaled to
   the text area if larger, a table row that does not fit split between lines and each part
   drawn as a closed row, as Writer does (`doc/odt-format.md` §5c fact 25) — a heading row and a
   row stating `fo:keep-together="always"` move whole;
@@ -275,7 +275,7 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
   `meta.xml`, used *as written*, never "now", so the output is deterministic);
 * **tagged PDF**: H1–H6, P, L/LI, Table/TR/TD, Figure with alt text when the frame has
   `svg:title`/`svg:desc`. Optionally `--pdfa 2b|2u|3b`, validated by krilla;
-* **headers and footers with page numbers** (P8). This needs the scope line moved:
+* **headers and footers with page numbers**. This needs the scope line moved:
   `text:page-number` is a field `doc/text-core.md` gated *on the page model*, and pagination now
   exists for output. Headers' and footers' *content* is ordinary blocks in the master page.
 
@@ -283,55 +283,23 @@ The first PDF should arrive early, and fidelity should then go up one ratchet at
 
 | | Why out | Gate |
 |---|---|---|
-| A paginated **editing** view | §1. Continuous editing was the product, and the preview covered "what will print" | **opened 2026-11-14**: `doc/page-model.md` |
 | Footnotes and endnotes | **Printed since 2026-11-17** (`doc/odt-format.md` §5c fact 67): a page's footnotes at its foot under their rule, their room taken from its body, endnotes on pages after it. Still out: a note cited in a table cell, and one split across pages | a document that needs either |
-| Hyphenation | Needs dictionaries per language. `fo:hyphenate` is read and ignored | a request; `hyphenation` crate + TeX patterns, both licence-checked |
 | RTL, vertical writing | inherited exclusion, `doc/text-layout.md` decision 1 | that document's gate |
 | Sections, columns, frames that text flows around | `doc/not-doing.md` §1, unchanged | unchanged |
 | PDF/X, CMYK, bleed and crop marks (prepress) | An ODF text document is RGB with no bleed; office and home printers want a well-formed PDF with embedded fonts, which is what this plan makes. krilla has no PDF/X | somebody sending a document to a commercial printer. Then the choice is writing PDF/X ourselves on pdf-writer, or a different backend behind `pdf.rs`, which is the only file that knows the library |
 | Table of contents, fields beyond page number/count | small named set later | a request |
-| Different first page, left/right master pages, page styles switching mid-document (`style:master-page-name` on a paragraph) | geometry per page is a list instead of one value. P2 reads it and P4 uses only the first | after P8 |
 
 ---
 
-## 6. Milestones
+## 6. What is not built
 
-Each milestone ends green on its own and adds a line to `examples/sample-text.sh` where it adds
-a user-visible capability (CLAUDE.md: a feature without a line there is invisible).
-
-### Where it stands (2026-10-06)
-
-| | State |
-|---|---|
-| P0 | **Done**: this document; the spike's numbers are in §7 |
-| P1 | **Done**: `doc/odt-format.md` §5c — the default page is the locale's (A4 under the pin), a line is ascent + descent + line gap (13.8 pt for Liberation Serif 12), widows and orphans are none unless stated (Writer states 2 and 2 on the default paragraph style), and the pin has no Liberation fonts, which loop G must fix first |
-| P2 | **Done**: `grind_core::page`, `Document::page`, `grind info`'s `page` line |
-| P3 | **Done, apart from system fonts**: `Fonts` (bundled Liberation, metric-compatible twins, generics, Writer's default), `Typesetter` (harfrust, points), `Metrics::ascent` and `Layout::baseline`. Per-glyph fallback is not built: a character no face has is counted in the report, not drawn from another face |
-| P3 | system fonts **done** too: `fonts_for` reads only the families a document names (and their twins) from the machine, `--bundled-fonts` turns it off |
-| P4 | **Done**: `grind_text::page::paginate`, `grind-print`'s `faces`, `ops`, `text` (typeset) and `pdf` (krilla); outline, title, **tagged** (H1–H6, P, L/LI/Lbl/LBody, Table/TR/TD, Figure); `grind text export-pdf` and `grind text pages`. PDF/A is still to come |
-| P5 | **Mostly done**: paragraph styles resolved down their `style:parent-style-name` chain to the default style (`grind_text::paragraph`, read and never written); a block whose style is declared prints in that style's face, spacing (added, measured), side margins, alignment (justify widening interior spaces, measured) and page breaks / keep-with-next; one whose style is undeclared keeps the screen's role face; a family nobody has falls back to the bundled face of its declared generic kind; `fo:text-indent`, `fo:line-height`, and **tab stops** (`style:tab-stops` and `style:tab-stop-distance`, placed line by line in the core breaker, `grind_core::layout::Tabs`; `doc/odt-format.md` §5c fact 13). **Not yet**: the screens, which still draw `look.rs`'s faces and a tab as wide as their metrics make it |
-| P6 | **Done**: `raster.rs`, its `hayro` cross-check, `grind text preview`, and the GNOME window's Print Preview, Export and Print (`gtk::PrintDialog` over the PDF) |
-| P7 | **Done**: the terminal (`:pdf`, `:pages`), the browser (a second wasm module loaded on first use; export, a canvas preview, print through the browser's viewer), Windows (export, a page preview, print as rasters through `StartDocW`) and the Mac (export, print through PDFKit, whose panel is the preview). The Windows and Mac halves are type-checked and linted from Linux and not yet run; Windows links and starts under Wine |
-| P8 | **Mostly done**: the master page's header and footer, their paragraphs in their own styles — `styles.xml`'s automatic ones included — and their tab stops, `text:page-number` and `text:page-count` per page, any other field as its cached text, a header held in a `text:section`, a header's tables and lists read as its paragraphs in order (their grid and labels dropped, 2026-10-29), and a first page set on a master page of its own (the first paragraph's `style:master-page-name`, the rest on its `next-style-name`). A master's `style:header-first` and `style:footer-first` are printed on the first page of every run of pages opening on it (2026-10-29, `doc/odt-format.md` §5c fact 24). **Not yet**: `style:header-left` variants, a header's table grid and frames |
-| P8b | **Done 2026-10-16, master pages anywhere.** A paragraph whose style names a master page (`style:master-page-name`) opens a page on it **wherever it is**, not only first: `grind_text::Document::masters` holds every master (its page layout, header, footer and `next-style-name`), `grind_text::page::paginate_slots` cuts the flow over several kinds of page, and `grind-print` sets each page on its own master's margins, header and footer — so a series of letters on one letterhead gets the letterhead on every letter, and a first page now uses its master's *own* margins rather than the body's. `style:page-number` on such a style restarts the numbering, and **`text:page-count` is then the pages of the numbering run, not of the document** — a departure from Writer, whose count is always the whole document, made so that "Seite 1 von 1" on a letter in a series is the letter's. Without a restart the two agree. A master whose text width differs from the body's sets its run of pages at its own width (2026-10-29: the flow is laid out once per width, and a run opened on such a master takes its blocks from that layout — a landscape section of a Word form is as wide as its page); a master reached only as another's `next-style-name` keeps the width of the run it continues. **A `draw:line` in a master's header or footer is drawn on every page set on that master** (`marginal::Paragraph::lines`: millimetres from the corner of the box its graphic style names, `doc/odt-format.md` §5c fact 49, in that style's stroke) — a DIN 5008 letter's fold marks (105 mm, 210 mm) and punch mark (148.5 mm) are three of them (`examples/letters/brief-din5008.fodt`). Other shapes, and a line's anchoring to anything but the page, are not read |
-| P9 | Open |
-
-| | What | Size | Exit criterion |
-|---|---|---|---|
-| **P0** | **Decision and spike.** This document reviewed; `doc/not-doing.md`, `doc/text-layout.md` and `doc/text-core.md` amended as in the table at the top. A throwaway spike: one paragraph of Liberation Serif through harfrust → krilla → a PDF that `qpdf --check` and `pdftotext` accept. Licences read from each `Cargo.toml`, `cargo tree -d` clean, wasm build of the stack measured | small | the numbers (binary and wasm delta) written here |
-| **P1** | **Clean-room notes.** `doc/odt-format.md` gains a page-layout section: what Writer writes for a default page (sizes, margins, the `Standard` master page), what `fo:widows`/`fo:orphans` default to when absent, where `fo:break-before` lands (paragraph style vs. automatic style), header/footer markup. Every fact `MEASURED` (soffice on the pinned image) or `SPEC` with an rng line. `UNVERIFIED` may not be implemented | small | the notes, cited |
-| **P2** | **Page geometry, read.** `grind_core::page::PageGeometry`; `grind-text` reads the master page used by the first paragraph (default `Standard`) from `styles.xml`. A read-only `Document::page`, never written: R6 already carries it out, and `text/tests/never_worse.rs` proves nothing changed. `grind text info` prints it. `doc/projection-text.md` names it a **gap** (read-only, carried by the envelope), so `projection_scope.rs` stays green | small | every vendored Writer document reports the size LibreOffice shows |
-| **P3** | **Fonts and the real `Metrics`.** `grind-print::fonts`: fontdb + skrifa + harfrust behind `layout::Metrics`, in points. Matching, the substitution table, per-glyph fallback, bundled Liberation, `Report`. Core: `Metrics::ascent` + `Line::baseline` (default keeps every existing shell byte-identical: `--render-to` frames unchanged) | medium | `grind text view --width` with `--metrics font` breaks the sample where `pdftotext -layout` of LibreOffice's PDF breaks it, for one paragraph per bundled family |
-| **P4** | **The paginator and the first PDF.** `grind_text::page::paginate` (pure, `Fixed`-tested: break, widows/orphans, keep-with-next, hard breaks, atomic rows and images); `ops.rs`; `pdf.rs`. Faces from `look.rs`, the same faces the screen uses, so v1 prints **what the screen shows, on pages**. `grind text export-pdf in.fodt out.pdf [--paper a4] [--fonts-only DIR] [--pdfa 2b]` and `grind text pages`. `cli/tests/parity.rs` and `doc/cli-parity-text.md` updated. Outline, links, metadata, tags | large | the sample document exports; `qpdf --check` clean; `pdftotext` of ours equals the document's text block for block; two exports are byte-identical; the parity ratchet passes |
-| **P5** | **Paragraph styles, resolved for layout.** The scope change from the top table. `style:style` of family `paragraph`, the `style:parent-style-name` chain, `style:default-style`. From paragraph properties: margins, `fo:text-indent`, `fo:line-height`, `fo:text-align`, the break/keep/widow properties; from text properties: font family/size/weight/style. **Resolved, never authored**: a heading set in 14pt bold because its style says so is read that way, and writing still emits only what it always did. `look.rs` stays as the fallback for a document that defines nothing. Core: alignment and justify in `layout`. **The screen shells get this too**, through `Faces`, since a `Title` the document defines as 28pt should not be 2.4× the body in one place and 28pt in another | large | loop C still green both ways; every vendored document's headings are set at the size LibreOffice's PDF sets them |
-| **P6** | **Preview.** `raster.rs`, `grind text preview`, the `hayro` cross-check test, the GTK Print Preview window, Export PDF… and Print… in `grind-text-gtk` | medium | preview PNG of page n equals hayro's raster of our PDF's page n within tolerance; GTK `--render-to` of the preview window is byte-stable |
-| **P7** | **The other shells.** Web (export, canvas preview, fonts fetched on demand), Windows (export, preview strip, raster print), macOS (export, `PDFView` preview, PDFKit print), TUI (`:pdf`, `:pages` pane). `doc/feature-matrix.md` rows, each shell's own doc's gap list, `menu.rs`/`command.rs` tables (so a verb in no menu fails a test, as already enforced) | medium | every client exports the sample to the same bytes as the CLI, given the same fonts |
-| **P8** | **Headers, footers, page numbers.** Master page `style:header`/`style:footer` (rng:11962/10844) content as blocks, `text:page-number`/`text:page-count` as the first two fields in the model (rendered as their current value in the continuous view, real per page in the PDF), header/footer height from `style:header-footer-properties` | medium | sample has a footer "Page n of N"; loop G compares it |
-| **P9** | **Loop G.** The pagination differential named since `doc/suite.md`: for each document in a corpus sample, our `grind text pages` against LibreOffice's PDF of the same file, on the **pinned image with the bundled fonts installed in it** (a digest pins fonts as well as renderer, which is why this loop can exist at all). Compare page count, the first line of every page, and line breaks per paragraph (from the PDF's text with positions). Ratchet a `FLOOR` like loop B/E. Runs in `ci.yml`'s `oracle` job beside C and E | large | a floor, written in CLAUDE.md's scoreboard, that only goes up |
-
-P0–P4 together are the **first useful release** of the feature: correct pages, correct fonts,
-the screen's own styling. P5 is where "proper" starts to mean "the way the document says",
-and P9 is what keeps that claim honest.
+* **PDF/A.**
+* **A header's or footer's table grid and frames**: their paragraphs print in order, without the
+  grid.
+* **Loop G**, the pagination differential: our pages against LibreOffice's PDF of the same file,
+  page count, each page's first line and the line breaks per paragraph, ratcheted by a `FLOOR`.
+  It waits for the pinned LibreOffice image to carry the bundled faces, since a digest pins fonts
+  as well as renderer (`doc/odt-format.md` §5c fact 7).
 
 ### Tests carried throughout
 
@@ -350,8 +318,8 @@ and P9 is what keeps that claim honest.
 
 ## 7. Risks, in the order they would bite
 
-1. **Style resolution scope creep (P5).** "Resolve paragraph styles" pulls toward list styles,
-   outline numbering and conditional styles. The line: the properties in P5's row and nothing
+1. **Style resolution scope creep.** "Resolve paragraph styles" pulls toward list styles,
+   outline numbering and conditional styles. The line: the properties §5 lists and nothing
    else. Numbered lists (`text:list-level-style-number`) are their own row if a document needs
    them.
 2. **Font matching versus LibreOffice.** Loop G will fail at first for reasons that are about
@@ -360,21 +328,21 @@ and P9 is what keeps that claim honest.
 3. **wasm size. Measured 2026-10-04**, with a scratch crate running the whole stack (harfrust shaping → krilla PDF, skrifa outlines → tiny-skia PNG) built for `wasm32-unknown-unknown` with `opt-level = "z"`, LTO: **2.0 MB raw, 704 KB gzipped**. Today's `ui_web/dist/grind_web_bg.wasm` is 4.6 MB raw and 1.33 MB gzipped, so folding the stack in adds about half. Natively, the same code wrote a deterministic 8 KB A4 PDF with Liberation Serif as a subset CID font with `ToUnicode` (`pdffonts`: emb/sub/uni all yes). `pdftotext` returned the text exactly, including the `fi`/`fl` ligatures. Recommendation: the export is a **second wasm module, loaded on first use**, so opening the page costs nothing. The fonts are separate fetches as well (Liberation Serif Regular is 393 KB as TTF).
 4. **Two shapers.** krilla's `simple-text` brings rustybuzz. We shape with harfrust and give
    krilla glyphs, so `simple-text` stays off. If a transitive dependency drags it back in,
-   `cargo tree -d` at P0 catches it.
+   `cargo tree -d` catches it.
 5. **Pre-1.0 dependencies.** krilla and harfrust both move. Pin exact versions, and keep the
    whole krilla surface inside `pdf.rs` (one file, as `gdi.rs` is the only file creating a GDI
    object) so an upgrade touches one place.
 
 ---
 
-## 8. Decisions to make before P0 starts
+## 8. The decisions
 
 1. **krilla** over printpdf (§2). Recommended.
 2. **Pagination as output, no page model** (§1), and the edits to `doc/not-doing.md` and
    `doc/text-layout.md` that come with it. Recommended.
-3. **v1 prints the screen's faces (`look.rs`)**, and real paragraph styles come at P5. The
-   alternative is to do P5 first and ship the PDF later but more faithful. Recommended: v1
-   first, because P5 changes the screen as well and deserves its own milestone.
+3. **The first PDF printed the screen's faces (`look.rs`)**, and real paragraph styles came
+   after, since resolving them changed the screen as well. Taken; the paragraph styles are now
+   resolved for paper and screen alike.
 4. **Bundled Liberation in native binaries, fetched on demand in the browser.** About 4 MB;
    the alternative is system fonts only, which makes the output depend on the machine.
 5. **macOS previews with `PDFView`**, every other GUI client with our raster. Recommended.
