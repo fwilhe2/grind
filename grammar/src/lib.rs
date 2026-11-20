@@ -17,10 +17,24 @@ pub use grind_spell::Language;
 
 use tokens::Token;
 
-/// The built-in checker. `picky` adds the style rules, which are off by default.
-#[derive(Clone, Copy, Debug, Default)]
+/// The built-in checker. `picky` adds the style rules, which are off by default; a rule in
+/// `ignored` finds nothing.
+#[derive(Clone, Debug, Default)]
 pub struct Builtin {
     pub picky: bool,
+    pub ignored: Vec<String>,
+}
+
+/// The checker a remembered setting asks for: the built-in one with its style rules and ignored
+/// rules, or none when grammar is off.
+#[must_use]
+pub fn checker(setting: &setting::Setting) -> Option<std::sync::Arc<dyn Checker>> {
+    setting.builtin.then(|| {
+        std::sync::Arc::new(Builtin {
+            picky: setting.style,
+            ignored: setting.ignored.clone(),
+        }) as std::sync::Arc<dyn Checker>
+    })
 }
 
 impl Checker for Builtin {
@@ -53,6 +67,7 @@ impl Checker for Builtin {
             german::seid_seit(&tokens, &mut out);
             german::comma_before_conjunction(&tokens, &mut out);
         }
+        out.retain(|finding| !self.ignored.contains(&finding.rule));
         out
     }
 }

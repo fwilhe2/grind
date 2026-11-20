@@ -48,13 +48,6 @@ impl Doc {
         self.queue_draw();
     }
 
-    /// Leave these grammar rules undrawn — the person's ignored ones (`doc/grammar.md`
-    /// decision 5).
-    pub fn set_grammar_ignored(&self, rules: Vec<String>) {
-        self.imp().grammar_ignored.replace(rules);
-        self.queue_draw();
-    }
-
     /// The document changed: forget everything measured from it and repaint. Called from the
     /// observer, so it covers this widget's own edits too (rule 3).
     pub fn invalidate(&self) {
@@ -523,7 +516,6 @@ mod imp {
         /// `grammar.ignore` act on.
         pub grammar_spot: RefCell<Option<grind_text::grammar::Flag>>,
         /// The grammar rules the person ignores, which are not drawn.
-        pub grammar_ignored: RefCell<Vec<String>>,
         /// What the input method is composing and has not committed, set into the document at
         /// its caret (`App::compose`).
         pub preedit: Cell<Option<Composing>>,
@@ -571,7 +563,6 @@ mod imp {
                 speller: RefCell::new(None),
                 spot: RefCell::new(None),
                 grammar_spot: RefCell::new(None),
-                grammar_ignored: RefCell::new(Vec::new()),
                 preedit: Cell::new(None),
                 needle: RefCell::new(None),
                 found: RefCell::new(Vec::new()),
@@ -1505,19 +1496,12 @@ mod imp {
                 .find(|m| m.offset <= caret.offset && caret.offset <= m.offset + m.len)
         }
 
-        /// Every grammar finding in `blocks` but the ignored rules'.
+        /// Every grammar finding in `blocks`; the checker leaves out the ignored rules.
         pub fn grammar_flags(
             &self,
             blocks: std::ops::Range<usize>,
         ) -> Vec<grind_text::grammar::Flag> {
-            let Some(app) = self.app() else {
-                return Vec::new();
-            };
-            let ignored = self.grammar_ignored.borrow();
-            app.grammar(blocks)
-                .into_iter()
-                .filter(|flag| !ignored.contains(&flag.finding.rule))
-                .collect()
+            self.app().map_or_else(Vec::new, |app| app.grammar(blocks))
         }
 
         /// The grammar finding at a caret, if one covers it.
@@ -1576,7 +1560,9 @@ mod imp {
                     self.notice(format!("Could not remember ignoring {rule}: {error}"));
                 }
             }
-            self.grammar_ignored.borrow_mut().push(rule);
+            if let Some(app) = self.app() {
+                app.set_checker(grind_grammar::checker(&setting));
+            }
             self.obj().queue_draw();
         }
 
@@ -2893,7 +2879,10 @@ mod tests {
             actions,
             ["grammar.none", "grammar.correct", "grammar.ignore"]
         );
-        doc.set_grammar_ignored(vec!["builtin:repeated-word".to_owned()]);
+        app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
+            ignored: vec!["builtin:repeated-word".to_owned()],
+            ..grind_grammar::Builtin::default()
+        })));
         assert!(
             imp.grammar_at(Caret {
                 block: 0,
@@ -2902,7 +2891,7 @@ mod tests {
             .is_none(),
             "ignored"
         );
-        doc.set_grammar_ignored(Vec::new());
+        app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin::default())));
         imp.grammar_spot.replace(Some(flag));
         imp.correct_grammar("");
         assert_eq!(

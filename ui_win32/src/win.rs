@@ -900,15 +900,7 @@ impl Text {
     /// Attach the built-in checker as [`Text::grammar`] says — on open and whenever the setting
     /// changes.
     fn check_grammar(&mut self) {
-        let setting = &self.grammar;
-        let checker: Option<std::sync::Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
-            Some(std::sync::Arc::new(grind_grammar::Builtin {
-                picky: setting.style,
-            }))
-        } else {
-            None
-        };
-        self.app.set_checker(checker);
+        self.app.set_checker(grind_grammar::checker(&self.grammar));
     }
 
     /// Change the grammar setting, remember it, and apply it.
@@ -920,13 +912,9 @@ impl Text {
         self.check_grammar();
     }
 
-    /// Every grammar finding in `blocks`, but the ignored rules'.
+    /// Every grammar finding in `blocks`; the checker leaves out the ignored rules.
     fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<grind_text::grammar::Flag> {
-        self.app
-            .grammar(blocks)
-            .into_iter()
-            .filter(|flag| !self.grammar.ignored.contains(&flag.finding.rule))
-            .collect()
+        self.app.grammar(blocks)
     }
 
     /// The grammar finding at `at`, if one covers it.

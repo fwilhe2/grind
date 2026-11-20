@@ -103,8 +103,6 @@ pub struct Ui {
     /// The word the palette last found, which F3 and Shift+F3 step through and Replace offers
     /// back.
     needle: RefCell<String>,
-    /// The grammar rules the person ignores, which are not drawn (`crate::grammar`).
-    grammar_ignored: RefCell<Vec<String>>,
 }
 
 impl Ui {
@@ -133,7 +131,6 @@ impl Ui {
             alt_at: Cell::new(None),
             message: RefCell::new(String::new()),
             needle: RefCell::new(String::new()),
-            grammar_ignored: RefCell::new(Vec::new()),
         });
         ui.apply_grammar(&crate::grammar::load());
         wire(&ui)?;
@@ -763,26 +760,13 @@ impl Ui {
 
     // --- grammar (`crate::grammar`) ---
 
-    /// Attach the built-in checker as `setting` says, and leave its ignored rules undrawn.
+    /// Attach the built-in checker as `setting` says, its ignored rules included.
     pub fn apply_grammar(&self, setting: &grind_grammar::setting::Setting) {
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
-            Some(Arc::new(grind_grammar::Builtin {
-                picky: setting.style,
-            }))
-        } else {
-            None
-        };
-        self.app.set_checker(checker);
-        self.grammar_ignored.replace(setting.ignored.clone());
+        self.app.set_checker(grind_grammar::checker(setting));
     }
 
     fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<grind_text::grammar::Flag> {
-        let ignored = self.grammar_ignored.borrow();
-        self.app
-            .grammar(blocks)
-            .into_iter()
-            .filter(|flag| !ignored.contains(&flag.finding.rule))
-            .collect()
+        self.app.grammar(blocks)
     }
 
     /// The grammar finding the caret is in, if any.

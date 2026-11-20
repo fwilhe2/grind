@@ -65,6 +65,7 @@ fn open_text_checked(file: &Path, hints: bool) -> Result<TextApp, String> {
     // fuller look.
     app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
         picky: hints,
+        ..grind_grammar::Builtin::default()
     })));
     Ok(app)
 }

@@ -223,3 +223,34 @@ fn a_ratio_written_with_spaces_is_not_a_space_before_a_colon() {
     nothing("Time taken (Hrs : Mins)", None);
     assert_eq!(found("Location :", None), ["space-before-punctuation: "]);
 }
+
+/// A rule the person ignored finds nothing, and the setting says which rules those are.
+#[test]
+fn an_ignored_rule_finds_nothing() {
+    use grind_core::grammar::Paragraph;
+    use grind_grammar::setting::Setting;
+    let paragraph = Paragraph {
+        text: "It is the the best.",
+        skip: &[],
+        language: Some("en"),
+    };
+    let rules = |setting: &Setting| -> Vec<String> {
+        grind_grammar::checker(setting)
+            .expect("grammar is on")
+            .check(&paragraph)
+            .into_iter()
+            .map(|finding| finding.rule)
+            .collect()
+    };
+    assert_eq!(rules(&Setting::default()), ["builtin:repeated-word"]);
+    let ignoring = Setting {
+        ignored: vec!["builtin:repeated-word".into()],
+        ..Setting::default()
+    };
+    assert_eq!(rules(&ignoring), Vec::<String>::new());
+    let off = Setting {
+        builtin: false,
+        ..Setting::default()
+    };
+    assert!(grind_grammar::checker(&off).is_none());
+}

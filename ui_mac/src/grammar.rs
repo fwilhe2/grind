@@ -6,8 +6,6 @@
 //! *Grammar Style Suggestions* and *Next Grammar Finding* (⌥⌘;), the rows leading the context
 //! menu over a finding — its message, its replacements and *Ignore Grammar Rule*.
 
-use std::sync::Arc;
-
 use objc2::MainThreadMarker;
 use objc2_app_kit::{NSMenu, NSMenuItem};
 
@@ -24,15 +22,8 @@ impl TextPane {
     /// Attach the built-in checker as the remembered setting says — when the pane is made and
     /// whenever the setting changes.
     pub(crate) fn check_grammar(&self) {
-        let setting = self.grammar.borrow().clone();
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
-            Some(Arc::new(grind_grammar::Builtin {
-                picky: setting.style,
-            }))
-        } else {
-            None
-        };
-        self.app.set_checker(checker);
+        self.app
+            .set_checker(grind_grammar::checker(&self.grammar.borrow()));
     }
 
     /// Change the remembered setting, and apply it.
@@ -45,14 +36,9 @@ impl TextPane {
         self.act_on(|_, _, _| Ok(()));
     }
 
-    /// Every grammar finding in `blocks`, but the ignored rules'.
+    /// Every grammar finding in `blocks`; the checker leaves out the ignored rules.
     fn grammar_flags(&self, blocks: std::ops::Range<usize>) -> Vec<Flag> {
-        let ignored = self.grammar.borrow().ignored.clone();
-        self.app
-            .grammar(blocks)
-            .into_iter()
-            .filter(|flag| !ignored.contains(&flag.finding.rule))
-            .collect()
+        self.app.grammar(blocks)
     }
 
     /// The grammar finding at `at`, if one covers it.

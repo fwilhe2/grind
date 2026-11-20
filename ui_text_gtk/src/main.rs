@@ -738,15 +738,7 @@ impl Ui {
     /// ignored rules left undrawn (`doc/grammar.md`).
     fn check_grammar(self: &Rc<Self>) {
         let setting = grind_grammar::setting::Setting::load();
-        self.doc.set_grammar_ignored(setting.ignored.clone());
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if setting.builtin {
-            Some(Arc::new(grind_grammar::Builtin {
-                picky: setting.style,
-            }))
-        } else {
-            None
-        };
-        self.app.set_checker(checker);
+        self.app.set_checker(grind_grammar::checker(&setting));
         self.doc.queue_draw();
     }
 

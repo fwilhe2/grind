@@ -930,6 +930,7 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             let setting = grind_grammar::setting::Setting::load();
             app.set_checker(Some(std::sync::Arc::new(grind_grammar::Builtin {
                 picky: *picky || setting.style,
+                ignored: setting.ignored,
             })));
             let blocks = match range {
                 Some(range) => span(&app, range)?,
@@ -940,7 +941,6 @@ pub(super) fn run_text(command: &TextCommand, cli: &Cli) -> Result<Report, Failu
             text_lines(
                 flags
                     .into_iter()
-                    .filter(|flag| !setting.ignored.contains(&flag.finding.rule))
                     .map(|flag| {
                         let text = viewport
                             .iter()

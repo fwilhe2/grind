@@ -1893,24 +1893,13 @@ impl App {
 
     /// Attach the built-in checker as [`App::grammar`] says, or none.
     fn check_grammar(&mut self) {
-        let checker: Option<Arc<dyn grind_core::grammar::Checker>> = if self.grammar.builtin {
-            Some(Arc::new(grind_grammar::Builtin {
-                picky: self.grammar.style,
-            }))
-        } else {
-            None
-        };
-        self.core.set_checker(checker);
+        self.core.set_checker(grind_grammar::checker(&self.grammar));
         self.redraw.raise();
     }
 
-    /// Every grammar finding in `blocks`, but the ignored rules'.
+    /// Every grammar finding in `blocks`; the checker leaves out the ignored rules.
     fn grammar_flags(&self, blocks: Range<usize>) -> Vec<grind_text::grammar::Flag> {
-        self.core
-            .grammar(blocks)
-            .into_iter()
-            .filter(|flag| !self.grammar.ignored.contains(&flag.finding.rule))
-            .collect()
+        self.core.grammar(blocks)
     }
 
     /// The grammar finding the caret is in, if any.

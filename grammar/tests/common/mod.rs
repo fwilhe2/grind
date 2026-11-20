@@ -14,7 +14,14 @@ pub fn found(text: &str, language: Option<&str>) -> Vec<String> {
 /// [`found`], with the style rules on.
 #[allow(dead_code)]
 pub fn found_picky(text: &str, language: Option<&str>) -> Vec<String> {
-    check(Builtin { picky: true }, text, language)
+    check(
+        Builtin {
+            picky: true,
+            ..Builtin::default()
+        },
+        text,
+        language,
+    )
 }
 
 /// [`found`], with `skip` not prose — as a run of code is in a document.
