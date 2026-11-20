@@ -493,7 +493,7 @@ There is no dialog.
 | **Files** | | | | | | |
 | Open a Word document (`doc/docx-import.md`) | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ | ● ʷᵈ |
 
-ʷᵈ `grind text import`, and in every window the ordinary Open (DX6): sniffed from the bytes,
+ʷᵈ `grind text import`, and in every window the ordinary Open: sniffed from the bytes,
 imported through `grind_docx::open`, and opened as a **new, unsaved ODF document with no path**
 under `grind_docx::suggested_name` (`letter.docx` → `letter.fodt`), with `Report::summary`'s one
 sentence — ᵏ's shape for the word processor. The GTK window's `.desktop` file, the Windows

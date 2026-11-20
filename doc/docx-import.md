@@ -4,7 +4,9 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# The docx import filter — done (DX0–DX6)
+# The docx import filter
+
+**Status: built.**
 
 Reading `.docx` — the word processor's half of what `doc/xlsx-import.md` did for the
 spreadsheet, for the same reason and under the same rules. Normative for `docx/` (crate
@@ -161,14 +163,13 @@ at 157 of 169 (108 agree):
 
 ---
 
-## Milestones
+## What it reads
 
-| | | |
-|---|---|---|
-| DX0 | The seam: `grind-ooxml` hoisted, the crate, `sniff`, `Error`, `Report`, `grind text import` | done |
-| DX1 | Paragraphs, headings, runs, whitespace, breaks, bookmarks, hyperlinks, fields | done |
-| DX2 | Character and paragraph formatting, named styles and their inheritance, defaults | done |
-| DX3 | Lists from `numbering.xml` | done |
-| DX4 | Tables: grid, spans, header rows, borders, fills, margins, table styles | done |
-| DX5 | The page: sections, header and footer, footnotes and endnotes, pictures | done |
-| DX6 | Every shell opens a `.docx` as a new, unsaved document under its ODF name, with the report's one sentence: `grind-tui`, `grind-text-gtk` (and its `.desktop` file), `grind-web`, `grind-win32` (and its associations) and `grind-mac` (and its Info.plist) | done |
+- Paragraphs, headings, runs, whitespace, breaks, bookmarks, hyperlinks and fields.
+- Character and paragraph formatting, named styles and their inheritance, the defaults.
+- Lists, from `numbering.xml`.
+- Tables: the grid, spans, header rows, borders, fills, margins and table styles.
+- The page: sections, header and footer, footnotes and endnotes, pictures.
+
+Every shell opens a `.docx` as a new, unsaved document under its ODF name, with the report's one
+sentence (`ooxml/` is shared with `doc/xlsx-import.md`'s filter).

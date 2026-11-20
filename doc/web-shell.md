@@ -95,7 +95,7 @@ sentence (`Report::summary`) shown. Having no path is the point: one way in and 
 (`doc/not-doing.md` §1), so nothing can write ODF over the workbook it came from. `grind-open`
 decides it, the same in every shell, and the crate's `xlsx` feature compiles it out.
 
-**A Word document opens** the same way into the text pane (`doc/docx-import.md`, DX6): the
+**A Word document opens** the same way into the text pane (`doc/docx-import.md`): the
 picker lists `.docx`, `.docm` and `.dotx`, the message line says the report, and the download is
 `letter.fodt` — `grind-open` again, behind the crate's `docx` feature.
 
