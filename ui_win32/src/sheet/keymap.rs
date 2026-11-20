@@ -16,8 +16,8 @@
 //! ## The selection is presentation state
 //!
 //! An anchor and an active cell; the core sees a range as two positions when something is done to
-//! it. [`Selection`], [`Motion`], [`Extent`], [`moved`], [`onto_visible`] and the Ctrl+arrow rule
-//! are `grind_sheet::nav`'s; what is here is which key means which motion.
+//! it. [`Selection`], [`Motion`], what each key means ([`nav::motion_for`]) and how a motion is
+//! applied ([`nav::apply`]) are `grind_sheet::nav`'s; what is here is Windows' own keys.
 
 use grind_sheet::nav;
 pub use grind_sheet::nav::{Dir, Motion, Selection};

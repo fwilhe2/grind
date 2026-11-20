@@ -7,7 +7,7 @@
 //! stack. The document is drawn as its printed pages (`text/paged.rs`, `doc/page-model.md`),
 //! set by the print module, which is loaded with the first text document; over them, the caret,
 //! the selection and the marks, and beside them a reader layer with the words on screen
-//! ([`Ui::reader`]) for a screen reader and the browser's find.
+//! (`Ui::reader`) for a screen reader and the browser's find.
 
 pub mod keymap;
 mod paged;
