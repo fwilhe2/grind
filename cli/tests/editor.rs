@@ -110,7 +110,7 @@ fn the_shipped_snippets_are_current() {
 }
 
 /// The installed binary hands out the projection's snippets byte for byte — what `grind init`
-/// writes into a project with no copy of this repository (`doc/init.md` I0).
+/// writes into a project with no copy of this repository (`doc/init.md` §2).
 #[test]
 fn the_binary_carries_the_projection_snippets() {
     let out = Command::new(env!("CARGO_BIN_EXE_grind"))

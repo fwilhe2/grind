@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **`grind lsp`, the binary, over real stdio** — `doc/init.md` I5's exit criterion: the server
+//! **`grind lsp`, the binary, over real stdio** — `doc/init.md` §5: the server
 //! driven the way an editor drives it, on `examples/quote.grind` and on a script, with the
 //! vocabulary and the syntax check the binary hands it (`grind_lsp::Host`).
 //!

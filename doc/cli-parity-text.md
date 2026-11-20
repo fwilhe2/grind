@@ -169,7 +169,7 @@ had no width and therefore no lines.
   `.grind` as somebody wrote it rather than of the projection this build writes, in
   `--anchors`' own shape, so an editor can find an address in the text it has open. Empty for
   a document read from another form, which the flag reports as an error. `grind lsp` is its
-  other caller (`doc/init.md` I5)
+  other caller (`doc/init.md` §5)
 
 ## Reading
 

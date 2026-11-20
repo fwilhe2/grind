@@ -2522,7 +2522,7 @@ fn lint_reports_what_a_document_says_about_itself_and_writes_nothing() {
 }
 
 /// A finding in a `.grind` names the line and column it is on — `file:line:col:` in front, a
-/// `location` in the JSON — which is what an editor's problem matcher needs (`doc/init.md` I0).
+/// `location` in the JSON — which is what an editor's problem matcher needs (`doc/init.md` §2).
 /// The address stays, and a document from any other form reports exactly as it always did.
 #[test]
 fn lint_puts_a_projection_finding_on_its_line() {

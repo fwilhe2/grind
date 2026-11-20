@@ -274,7 +274,7 @@ that from the extension.
 
 ### 7.1 The language server: `grind lsp`
 
-`grind lsp` speaks the Language Server Protocol over stdin and stdout (`doc/init.md` I5), and is
+`grind lsp` speaks the Language Server Protocol over stdin and stdout (`doc/init.md` §5), and is
 what lifts every ○ in §1's table for an editor that can start one:
 
 | | `.grind` | `.rhai` |
@@ -291,7 +291,7 @@ method of every host type, and it says nothing about the script's own variables 
 quick as opening any other.
 
 **VS Code** starts a server through a client extension, and grind's is in this repository,
-`editors/vscode/` (`doc/init.md` I6). It is not published anywhere yet; build and install it:
+`editors/vscode/` (`doc/init.md` §5.2). It is not published anywhere yet; build and install it:
 
 ```console
 $ editors/vscode/package.sh                       # writes target/grind-0.0.1.vsix

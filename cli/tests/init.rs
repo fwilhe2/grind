@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **`grind init`, held to `doc/init.md` I1's exit criterion**: the starter builds, tests and
+//! **`grind init`, held to `doc/init.md` §4**: the starter builds, tests and
 //! lints clean; a second run writes nothing; a file the user already had survives byte for
 //! byte; and nothing is written outside the directory named.
 

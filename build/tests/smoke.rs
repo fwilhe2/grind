@@ -461,7 +461,7 @@ fn a_chart_with_nothing_to_draw_says_so() {
 }
 
 /// `check` compiles and never runs — what a language server may do with a script it merely has
-/// open (`doc/init.md` I5). A script that would fail the moment it ran, or never finish, is
+/// open (`doc/init.md` §5). A script that would fail the moment it ran, or never finish, is
 /// still one that *parses*, and only the parse is an editor's business.
 #[test]
 fn check_parses_and_never_runs() {

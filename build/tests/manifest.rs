@@ -45,7 +45,7 @@ const READERS: [(&str, &str); 20] = [
     ("grammar", include_str!("../../grammar/Cargo.toml")),
     // The language server opens every `.grind` an editor shows it, and a script it is shown is
     // compiled and never run — the check arrives from the CLI through `grind_lsp::Host`, which
-    // is exactly the shape that keeps an evaluator out of here (doc/init.md I5).
+    // is exactly the shape that keeps an evaluator out of here (doc/init.md §5).
     ("lsp", include_str!("../../lsp/Cargo.toml")),
     ("server", include_str!("../../server/Cargo.toml")),
     // What opening a file means in every shell: the import filters' front door.

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// grind's VS Code client — doc/init.md I6.
+// grind's VS Code client — doc/init.md §5.2.
 //
 // All it does is start `grind lsp` and introduce VS Code to it. Every answer — completion,
 // hover, diagnostics, the values shown beside formulas — is the server's, and the server's are

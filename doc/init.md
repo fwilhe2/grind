@@ -6,16 +6,12 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # `grind init` — a project for the two languages, and what comes after it
 
-**Status: I0, I1, I2, I5 and I6 done (2026-10-11); I3, I4 and I7 planned, not built.** Written 2026-10-11 from the request *"the CLI should have an
+**Status: built** — `grind init`, `--update`, the three templates, `grind lsp` and the VS Code client; §7 is what is not. Written 2026-10-11 from the request *"the CLI should have an
 `init` command that sets up a workspace for working with a `.rhai` or `.grind` in VS Code or
 other editors — environment, extensions, snippets, run commands, as complete an experience as
 possible; later, perhaps a VS Code extension that calculates values inline."* §3 is the part
 the request asked for most directly: the assumptions in it, challenged one at a time, each
 with what this plan does about it.
-
-Milestones are **I0–I7** (§7). I0 is three small things the CLI owes *before* an `init` is
-worth writing; I1 is `init` itself; I5 onwards is the inline-values half, and it changes shape
-under §3's challenges more than anything else here.
 
 ---
 
@@ -47,7 +43,7 @@ executed** — plus the things §3 below argues a project wants and that documen
 ## 2. What `init` had to know that it did not
 
 Three facts surfaced while reading the CLI for this plan. Each blocked part of a good `init`,
-each was small, and **all three are I0 and done** — what was built follows each one:
+each was small, and **all three are done** — what was built follows each one:
 
 1. **`grind lint` cannot say a line.** Its location is an address in the document's own
    spelling (`Quote.C5`, `#intro`), in both the text and the JSON form. An editor's problem
@@ -75,7 +71,7 @@ each was small, and **all three are I0 and done** — what was built follows eac
    there is still one copy; `cli/tests/editor.rs` asserts the binary's output is that file
    byte for byte.
 
-Two smaller things noticed on the way, both fixed with I0: `grind convert --help` said *"A
+Two smaller things noticed on the way, both fixed then: `grind convert --help` said *"A
 text document has no projection yet and says so"*, which D3 had made untrue; and `grind lint
 examples/quote.grind` reported eight `misspelt` warnings, because the quote was written in
 British English and is checked as `en-US` — it and the timesheet are now spelt the American way
@@ -109,7 +105,7 @@ That is not a side effect a command named `init` should have.
 **Decision: recommend, never install.** `init` writes `.vscode/extensions.json`, and VS Code
 offers the two extensions itself the first time the folder opens — the same mechanism this
 repository uses. `init` prints the two `code --install-extension` lines for anybody who wants
-them now. Nothing outside the target directory is written, ever (I1's test asserts it).
+them now. Nothing outside the target directory is written, ever (a test asserts it).
 
 ### 3.3 "VS Code or other editors" — the cost is a matrix, so pick the cells
 
@@ -119,14 +115,14 @@ keeps project configuration in a file and expensive where it does not:
 
 | Editor | Project file | `.grind` → KDL | Vocabulary | Commands | Verdict |
 |---|---|---|---|---|---|
-| VS Code (and VSCodium, Cursor) | `.vscode/` | `files.associations` | snippets (§1) | `tasks.json` | **I1** |
-| Zed | `.zed/settings.json`, `.zed/tasks.json` | `file_types` | none without a server | `tasks.json` | **I3** — association and tasks only |
-| Helix | `.helix/languages.toml` | `file-types` on the `kdl` language | none without a server | none | **I3** — association only |
+| VS Code (and VSCodium, Cursor) | `.vscode/` | `files.associations` | snippets (§1) | `tasks.json` | **built** |
+| Zed | `.zed/settings.json`, `.zed/tasks.json` | `file_types` | none without a server | `tasks.json` | **not built** — association and tasks only |
+| Helix | `.helix/languages.toml` | `file-types` on the `kdl` language | none without a server | none | **not built** — association only |
 | Neovim, Emacs | no project convention (`exrc` is opt-in and off by default) | — | — | — | **not written**; `doc/editor-setup.md` §7 says what to add |
-| Any | `.editorconfig` | — | — | — | **I1** — indent and final newline, which every editor above reads |
+| Any | `.editorconfig` | — | — | — | **built** — indent and final newline, which every editor above reads |
 
 **Decision:** `grind init --editor vscode` is the default and writes the VS Code files;
-`--editor zed`, `--editor helix` and `--editor none` are I3; several may be named. The real
+`--editor zed`, `--editor helix` and `--editor none` are not built (§7); several may be named. The real
 cross-editor answer is a language server (§3.9), and the matrix above is the argument for
 building one rather than five sets of configuration.
 
@@ -146,7 +142,7 @@ launch configuration that only runs a command is a task wearing a costume), and 
 second, worse copy of `tasks.json`).
 
 **A `README.md` was first kept out too** — a project's README is its author's, not a
-generator's — and the author asked for one after using I1: the first session in VS Code ran into
+generator's — and the author asked for one after using `grind init`: the first session in VS Code ran into
 three things this document knew and the project did not say (Restricted Mode ignoring the
 `.grind` association, no completion on `s.`, the description behind Ctrl+Space). So `init`
 writes one, **seeded** like every other starting point: what to do first, what each task is, what
@@ -180,7 +176,7 @@ applied to configuration.
 
 **Decision: never clobber, never merge silently.** A seeded file that exists is left exactly as
 it is, and `init` prints the keys it would have added, so a person can paste them. `--force`
-overwrites seeded files and says which. There is no merge in I1; if it proves wanted, it
+overwrites seeded files and says which. There is no merge; if it proves wanted, it
 merges only top-level keys `init` owns, via a JSONC parser that keeps comments, and is its own
 milestone.
 
@@ -221,7 +217,7 @@ git config diff.grind.textconv "grind project"
 The catch, and why this is a design decision rather than a template line: **`textconv` lives in
 `.git/config`, which is not committed**, so a clone does not get it. `init` can set it in the
 repository it is run in (and does, when that is a git repository), and the README line it prints
-tells collaborators the one command. This needs I0's suite-level `grind project`.
+tells collaborators the one command. It uses the suite-level `grind project`.
 
 The same attribute takes a second setting: `git config diff.grind.command "grind diff --git"`
 hands git's two versions to `grind diff`, which prints the cells whose formula or value was
@@ -236,7 +232,7 @@ projection; `grind sheet recalc quote.grind` fills every answer in, one line of 
 (`doc/projection-guide.md` §4). So "calculate inline" for the projection splits into two
 different features:
 
-- **write the answers** — exists; it is a task bound to a key (I1 ships it);
+- **write the answers** — exists; it is a task bound to a key (`grind init` writes it);
 - **show the answers without writing them** — new, and the right analogue is
   `doc/view-modes.md`: what a document *means*, drawn, never stored. That is what an editor's
   *inlay hints* are for.
@@ -261,7 +257,7 @@ resolved rather than ignored:
   only what `grind build` and `grind test` already compute: errors at their line, test
   results at their `fn`, and the values of §(c). It never parses Rhai itself.
 
-§9's row should be amended to say that, by the author, once I5 is decided.
+§9's row should be amended to say that if the server ever analyses a script.
 
 **(c) For a `.rhai`, "inline" needs something that does not exist: provenance.** A script's
 line `s.push(row("Rent", rent))` produces a cell, but nothing records which line produced which
@@ -273,15 +269,15 @@ materialises, the line and column of the call that wrote it. Two honest conseque
   rows`, not ninety values;
 - a helper function's `push` is the call site, not the line that called the helper — the
   hint lands inside the helper. Walking up Rhai's call stack is possible and is a later
-  refinement, not I6.
+  refinement of the client, not part of it.
 
 ### 3.10 Starting from the CLI keeps the core honest
 
 A tempting shortcut for inline values is a TypeScript extension that shells out to `grind sheet
 view --format json` per keystroke and maps addresses to lines itself. It would work for small
 files, and it would put a second copy of the address-to-line logic in TypeScript where nothing
-tests it against loop F. The plan's order — span map consulted by the CLI first (I0), then a
-server in Rust that owns the mapping (I5) — keeps the mapping in one place, which is the same
+tests it against loop F. The plan's order — span map consulted by the CLI first, then a
+server in Rust that owns the mapping — keeps the mapping in one place, which is the same
 reason `grind_sheet::formula::assist` was hoisted out of a shell.
 
 ---
@@ -308,7 +304,7 @@ done to it: `wrote`, `kept`, `stale`, `updated`, `would add` (§3.6).
 | `.vscode/settings.json` | seeded | `*.grind` → `kdl`, snippets on top, four-space indent — `doc/editor-setup.md` §3, verbatim |
 | `.vscode/tasks.json` | seeded | §4.3 |
 | `.vscode/grind.code-snippets` | generated | `grind definitions --snippets` |
-| `.vscode/grind-projection.code-snippets` | generated | the projection's nodes, from the binary (I0) |
+| `.vscode/grind-projection.code-snippets` | generated | the projection's nodes, from the binary |
 | `grind.d.rhai` | generated | `grind definitions` — kept for the reading, and for a Rhai server if one appears |
 | `.editorconfig` | seeded | indent and newline for `*.grind` and `*.rhai` |
 | `.gitignore` | seeded | the starter's built output, with a comment saying why |
@@ -319,7 +315,7 @@ done to it: `wrote`, `kept`, `stale`, `updated`, `would add` (§3.6).
 ### 4.3 The tasks
 
 One task per verb a person runs while writing, each on `${file}` so no target list is needed
-(§3.1), each with a problem matcher that lands on a line once I0 is done:
+(§3.1), each with a problem matcher that lands on a line:
 
 | Task | Command | Group |
 |---|---|---|
@@ -331,7 +327,7 @@ One task per verb a person runs while writing, each on `${file}` so no target li
 
 `grind` is called as `${config:grind.path}`, defaulting to `grind`, so a user with the binary
 somewhere odd sets one key rather than editing five tasks. (VS Code warns that the key is
-unknown until an extension declares it; I6's client declares it.)
+unknown until an extension declares it; the client declares it.)
 
 ### 4.4 The starter
 
@@ -349,10 +345,10 @@ Templates are compiled into the binary (`include_str!`), checked by the same tes
 them, and are deliberately *small*: `doc/generator-guide.md` and `doc/projection-guide.md` are
 the tutorials, and the starter's first comment points at the right one.
 
-### 4.5 What I1 built, and where it settled the plan
+### 4.5 What building it settled
 
 `grind init [DIR] [--force]` — `cli/src/init.rs`, its templates in `cli/templates/` (CC0, since
-they are copied into other people's projects), held to I1's exit criterion by
+they are copied into other people's projects), held by
 `cli/tests/init.rs`. Everything in §4.2 is written; `--template`, `--editor`, `--ci` and
 `--update` are the later milestones' and do not exist yet. Five things the plan left open or
 got slightly wrong:
@@ -367,7 +363,7 @@ got slightly wrong:
   association, a `.gitattributes` with no `diff=grind`.
 - **A generated file's header names the commit as well as the version**, because the suite's
   version number does not move yet and the commit is what tells two builds apart — which is
-  what I2's staleness check will compare.
+  what the staleness check compares.
 - **The open task is per platform**: `grind-sheet-gtk` on Linux, `grind-win32` on Windows,
   `open -a Grind` on macOS, each on the `.fods` the build task wrote. `settings.json` states
   `"grind.path": "grind"` rather than leaving `${config:grind.path}` unresolved.
@@ -387,7 +383,7 @@ the one that looks like a broken setup and is not; `init`'s report and README no
 `doc/editor-setup.md` §1 and §8 carry the measurements. A task has still not been *run* from a
 window.
 
-### 4.6 What I2 built
+### 4.6 `--update`, and the other templates
 
 `--update`, `stale`, and the `sheet`, `text` and `none` starters — `cli/src/init.rs`, held to
 the exit criterion by `cli/tests/init.rs`'s `update_rewrites_stale_vocabulary_and_nothing_else`.
@@ -442,15 +438,15 @@ which would bring Node into a Rust workspace and a new job into CI.
 A **wasm** build of the server — so the extension runs in `vscode.dev` with no binary — is
 plausible because `ui_web` already proves the core runs in a browser, and is not planned.
 
-### 5.1 What I5 built, and where it departed from the table above
+### 5.1 What building it settled
 
 `grind lsp` — the `grind-lsp` crate (`lsp/`), behind the CLI's `lsp` feature, on by default —
 over rust-analyzer's `lsp-server` and `lsp-types`, held to it by `lsp/tests/session.rs` (every
 request, in process, with a stand-in host) and `cli/tests/lsp.rs` (the real binary over real
 stdio, on `examples/quote.grind` and on scripts). Four departures, each on purpose:
 
-- **The `.rhai` half came forward from I7, the part of it that runs nothing.** The first session
-  in VS Code found nothing after `s.` and no hover, which is the script side, so I5 offers the
+- **The `.rhai` half came first, the part of it that runs nothing.** The first session
+  in VS Code found nothing after `s.` and no hover, which is the script side, so the server offers the
   host vocabulary — methods after a dot, free functions elsewhere — and hover from it, read out
   of `grind definitions`' own text. That is still not Rhai analysis: the server does not know
   what `s` holds and offers every host type's methods after a dot, which is why `doc/dsl.md` §9
@@ -458,25 +454,25 @@ stdio, on `examples/quote.grind` and on scripts). Four departures, each on purpo
 - **A script is compiled and never run.** The table above promised `build`'s errors and failing
   tests as diagnostics; both need the script *run*, and a script runs because a person typed a
   command, never because an editor opened a file. So the diagnostics are the compiler's syntax
-  errors (`grind_build::check`), and building and testing stay the tasks they are. I7's
-  provenance hints need a run too, and will have to arrive the same way — on a person's *Build*,
+  errors (`grind_build::check`), and building and testing stay the tasks they are. Provenance
+  hints need a run too, and will have to arrive the same way — on a person's *Build*,
   not on open.
 - **The evaluator is handed in, not linked.** The server opens documents, so R11
   (`build/tests/manifest.rs`) lists it as a reader: the vocabulary arrives as text and the
   syntax check and the dictionaries as a `grind_lsp::Host` the CLI implements.
 - **Not built:** code actions (*Recalculate*, *Fix spelling*, *Build*, *Run tests*), the
   friendly reading of a formula in hover (it shows the formula through its names instead), and
-  I7's provenance.
+  provenance (§7).
 
 What the server needed from the core was one thing: where each address is in the file **as
 read** rather than in the projection this build writes. `App::source_anchors` is that, for both
 applications, and `grind <app> project --anchors --as-read` reaches it from the CLI (R9).
 
-**Not yet run in an editor.** VS Code needs I6's client to start a server at all, and none of
+**Not yet run in an editor.** VS Code needs the client to start a server at all, and none of
 Helix, Zed or Neovim was installed where this was written; `doc/editor-setup.md` §7.1 has their
 configuration, marked as not run.
 
-### 5.2 What I6 built
+### 5.2 The VS Code client
 
 `editors/vscode/` — grind's VS Code extension, plain JavaScript over `vscode-languageclient`
 10.1.1 (MIT; its tree is MIT, ISC and BlueOak-1.0.0), so it builds with no compiler. It starts
@@ -509,7 +505,7 @@ the same locally.
 **Not published.** §8's question 3 was answered by default rather than by decision: the
 extension lives in this repository, at its own version (`0.0.1`) under the publisher id
 `fwilhe2`, and is offered as a `.vsix`. Which marketplace, if any, is still the author's call;
-once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.json` (I2).
+once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.json`.
 
 ---
 
@@ -520,7 +516,7 @@ once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.js
 | Install editor extensions | §3.2 — recommendations only |
 | A `grind.toml` / project manifest | §3.1 — no evidence yet |
 | `launch.json` | there is no debugger; §3.4 |
-| Merge into existing settings in I1 | §3.6 — never clobber, print instead |
+| Merge into existing settings | §3.6 — never clobber, print instead |
 | Configuration for Neovim or Emacs | no project-file convention to write into; documented instead |
 | Rhai language analysis | `doc/dsl.md` §9, unchanged — §3.9 b |
 | A TypeScript address-to-line mapping | §3.10 |
@@ -528,21 +524,15 @@ once one is chosen, `grind init` can recommend `fwilhe2.grind` in `extensions.js
 
 ---
 
-## 7. Milestones
+## 7. What is not built
 
-| | What | Exit criterion |
-|---|---|---|
-| **I0** — done | The three prerequisites (§2), as built there: `grind lint` reports `file:line:col` for a `.grind` through the span map (and keeps the address); a suite-level `grind project <file>` printing either kind's projection to stdout; the projection snippets compiled into the binary, printed by `grind definitions --projection`. Plus the stale `convert --help` sentence | `doc/editor-setup.md` §6's matcher lands every finding on its line; `git diff` with the §3.8 textconv shows a changed `.ods` as changed cells; `cli/tests/editor.rs` holds the embedded file to the shipped one |
-| **I1** — done | `grind init` for VS Code: §4.2's files, the `generator` template, never-clobber, the report | in a temp dir: the template builds, tests and lints clean; a second run writes nothing; a pre-existing `settings.json` survives byte for byte; nothing is written outside `DIR` |
-| **I2** — done | `--update` and the generated-file header; the `sheet` and `text` templates | upgrading the vocabulary (a test that adds a function) makes `init` report `stale` and `--update` fix it, touching no seeded file |
-| **I3** | `--editor zed`, `--editor helix`, several at once | each editor's files written and parsed back (TOML, JSON) by a test |
-| **I4** | `--ci github` | the workflow it writes runs green in this repository's own CI on the starter |
-| **I5** — done | `grind lsp` for `.grind`, and the `.rhai` half that runs nothing (§5.1): diagnostics, hover, inlay hints, go-to-definition, completion | an LSP conformance test driving the server over stdio on `examples/quote.grind`; and the decision recorded in `doc/dsl.md` §9 |
-| **I6** — done | The VS Code client extension, and Helix/Zed configuration pointing at `grind lsp` | the extension opens `examples/quote.grind` in a VS Code test host and shows `G14`'s value as a hint |
-| **I7** | `.rhai` provenance in `grind-build` and its hints through the server | `examples/timesheet/timesheet.rhai`'s loop line shows the range it produced; `grind build` output is byte-identical with provenance on and off |
-
-I0 is worth doing regardless of the rest: the line-accurate lint and `grind project` help
-every editor and every repository today.
+* **`--editor zed`, `--editor helix`**, and several at once — each editor's files written and
+  parsed back (TOML, JSON) by a test.
+* **`--ci github`**, whose workflow would run green in this repository's own CI on the starter —
+  if a forge-specific file is worth carrying at all (§8).
+* **`.rhai` provenance** in `grind-build` and its hints through the server: a loop line in
+  `examples/timesheet/timesheet.rhai` showing the range it produced, with `grind build`'s output
+  byte-identical with provenance on and off.
 
 ---
 
@@ -551,10 +541,10 @@ every editor and every repository today.
 1. ~~Is §3.1 right — no manifest?~~ Answered: no manifest; the recommendation stands.
 2. ~~Default template?~~ Answered: a script that builds a spreadsheet — `generator`.
 3. **The extension's publication** — VS Code Marketplace, Open VSX, both, or a `.vsix` only?
-   Its *home* was settled by default in I6: this repository, `editors/vscode/` (§5.2).
-4. ~~`doc/dsl.md` §9: amend the LSP row?~~ Not needed so far: I5 serves `.rhai` with the
+   Its *home* was settled by default: this repository, `editors/vscode/` (§5.2).
+4. ~~`doc/dsl.md` §9: amend the LSP row?~~ Not needed so far: the server serves `.rhai` with the
    vocabulary and the compiler's syntax errors and analyses nothing (§5.1), which is inside the
-   row as written. It comes back at I7, whose provenance needs a script *run*.
+   row as written. It comes back with provenance (§7), which needs a script *run*.
 5. **`--ci github`**: worth carrying a forge-specific file at all, or document the two commands
    and let people write their own?
 
@@ -562,7 +552,7 @@ every editor and every repository today.
 
 ## 9. Risks
 
-**Configuration drift across editors.** Every editor added in I3 is configuration that a new
+**Configuration drift across editors.** Every editor added is configuration that a new
 release of that editor can break, tested only by parsing it back. The language server is the
 mitigation, which is why it is the later half rather than an afterthought.
 
