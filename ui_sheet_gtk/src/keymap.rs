@@ -11,6 +11,7 @@
 //! handle's arithmetic. The keys while editing are `state.rs`'s.
 
 use grind_sheet::Pos;
+use grind_sheet::nav;
 pub use grind_sheet::nav::{Dir, Extent, Motion, Selection, moved};
 
 /// A key, as this shell cares about it.
@@ -73,38 +74,26 @@ pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
     if mods.alt {
         return None;
     }
-    let go = |motion, extend| Some(Action::Move { motion, extend });
-    let arrow = |dir| {
-        go(
-            if mods.ctrl {
-                Motion::Edge(dir)
-            } else {
-                Motion::By(dir)
-            },
-            mods.shift,
-        )
+    let walking = match key {
+        Key::Left => Some(nav::Key::Left),
+        Key::Right => Some(nav::Key::Right),
+        Key::Up => Some(nav::Key::Up),
+        Key::Down => Some(nav::Key::Down),
+        Key::Home => Some(nav::Key::Home),
+        Key::End => Some(nav::Key::End),
+        Key::PageUp => Some(nav::Key::PageUp),
+        Key::PageDown => Some(nav::Key::PageDown),
+        Key::Tab => Some(nav::Key::Tab),
+        Key::Return => Some(nav::Key::Return),
+        _ => None,
     };
+    if let Some(motion) = walking.and_then(|k| nav::motion_for(k, mods.ctrl, mods.shift)) {
+        return Some(Action::Move {
+            motion: motion.0,
+            extend: motion.1,
+        });
+    }
     match key {
-        Key::Left => arrow(Dir::Left),
-        Key::Right => arrow(Dir::Right),
-        Key::Up => arrow(Dir::Up),
-        Key::Down => arrow(Dir::Down),
-        Key::Home if mods.ctrl => go(Motion::SheetStart, mods.shift),
-        Key::Home => go(Motion::RowStart, mods.shift),
-        Key::End if mods.ctrl => go(Motion::SheetEnd, mods.shift),
-        Key::End => go(Motion::RowEnd, mods.shift),
-        Key::PageUp => go(Motion::Page(Dir::Up), mods.shift),
-        Key::PageDown => go(Motion::Page(Dir::Down), mods.shift),
-        // Tab and Return walk the sheet the way they do while typing, so the habit is the
-        // same before there is anything to type. Shift reverses rather than extends.
-        Key::Tab if !mods.ctrl => go(
-            Motion::By(if mods.shift { Dir::Left } else { Dir::Right }),
-            false,
-        ),
-        Key::Return if !mods.ctrl => go(
-            Motion::By(if mods.shift { Dir::Up } else { Dir::Down }),
-            false,
-        ),
         Key::Char(c) if mods.ctrl && !mods.shift => match c.to_ascii_lowercase() {
             'a' => Some(Action::SelectAll),
             'c' => Some(Action::Copy),

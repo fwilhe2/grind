@@ -14,14 +14,8 @@ use grind_sheet::Pos;
 
 use super::{MAX_COLS, MAX_ROWS};
 
+use grind_sheet::nav;
 pub use grind_sheet::nav::{Dir, Motion};
-
-fn edge(dir: Dir, extend: bool) -> Action {
-    Action::Move {
-        motion: Motion::Edge(dir),
-        extend,
-    }
-}
 
 /// A key as the page reports it, with ⌘/Ctrl already collapsed into one flag.
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +64,26 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         return None;
     }
 
+    // The motions every grid shares (`nav::motion_for`). Ctrl+Page Up and Down switch the
+    // browser's tabs, so they stay the browser's.
+    let walking = match chord.key {
+        "ArrowLeft" => Some(nav::Key::Left),
+        "ArrowRight" => Some(nav::Key::Right),
+        "ArrowUp" => Some(nav::Key::Up),
+        "ArrowDown" => Some(nav::Key::Down),
+        "Home" => Some(nav::Key::Home),
+        "End" => Some(nav::Key::End),
+        "PageUp" if !chord.primary => Some(nav::Key::PageUp),
+        "PageDown" if !chord.primary => Some(nav::Key::PageDown),
+        _ => None,
+    };
+    if (chord.primary || !chord.alt)
+        && let Some((motion, extend)) =
+            walking.and_then(|key| nav::motion_for(key, chord.primary, chord.shift))
+    {
+        return Some(Action::Move { motion, extend });
+    }
+
     if chord.primary {
         return match chord.key {
             "z" | "Z" if chord.shift => Some(Action::Run("doc.redo")),
@@ -93,18 +107,6 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
             "+" | "=" => Some(Action::Run("view.zoom-in")),
             "-" => Some(Action::Run("view.zoom-out")),
             "0" => Some(Action::Run("view.zoom-reset")),
-            "ArrowLeft" => Some(edge(Dir::Left, chord.shift)),
-            "ArrowRight" => Some(edge(Dir::Right, chord.shift)),
-            "ArrowUp" => Some(edge(Dir::Up, chord.shift)),
-            "ArrowDown" => Some(edge(Dir::Down, chord.shift)),
-            "Home" => Some(Action::Move {
-                motion: Motion::SheetStart,
-                extend: chord.shift,
-            }),
-            "End" => Some(Action::Move {
-                motion: Motion::SheetEnd,
-                extend: chord.shift,
-            }),
             // Ctrl+C, Ctrl+X and Ctrl+V stay with the browser, whose events are how this
             // shell reaches the clipboard at all.
             _ => None,
@@ -114,21 +116,7 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
         return None;
     }
 
-    let motion = |motion| {
-        Some(Action::Move {
-            motion,
-            extend: chord.shift,
-        })
-    };
     match chord.key {
-        "ArrowLeft" => motion(Motion::By(Dir::Left)),
-        "ArrowRight" => motion(Motion::By(Dir::Right)),
-        "ArrowUp" => motion(Motion::By(Dir::Up)),
-        "ArrowDown" => motion(Motion::By(Dir::Down)),
-        "PageDown" => motion(Motion::Page(Dir::Down)),
-        "PageUp" => motion(Motion::Page(Dir::Up)),
-        "Home" => motion(Motion::RowStart),
-        "End" => motion(Motion::RowEnd),
         "F2" => Some(Action::Begin(None)),
         "F9" => Some(Action::Run("sheet.recalc")),
         "F3" if chord.shift => Some(Action::Run("edit.find-previous")),
@@ -147,22 +135,6 @@ pub fn action_for(chord: &Chord, editing: bool) -> Option<Action> {
                 None
             }
         }
-    }
-}
-
-/// Apply a motion. Clamped to the sheet's own limits for a plain move, and to
-/// `extent` — the used region — for the edges, matching the other two shells.
-#[must_use]
-pub fn moved(from: Pos, motion: Motion, extent: (u32, u32), page: u32) -> Pos {
-    let page = page.max(1);
-    match motion {
-        // Needs the document; the pane answers it (`Ui::move_to`). One cell, if asked here.
-        Motion::Edge(dir) | Motion::By(dir) => step(from, dir, 1),
-        Motion::Page(dir) => step(from, dir, page),
-        Motion::RowStart => Pos::new(from.row, 0),
-        Motion::RowEnd => Pos::new(from.row, extent.1.saturating_sub(1)),
-        Motion::SheetStart => Pos::new(0, 0),
-        Motion::SheetEnd => Pos::new(extent.0.saturating_sub(1), extent.1.saturating_sub(1)),
     }
 }
 
@@ -350,56 +322,6 @@ mod tests {
     }
 
     #[test]
-    fn the_edges_use_the_used_extent_and_a_plain_move_the_sheet_limit() {
-        let extent = (10, 5);
-        assert_eq!(
-            moved(Pos::new(2, 3), Motion::RowEnd, extent, 1),
-            Pos::new(2, 4)
-        );
-        assert_eq!(
-            moved(Pos::new(2, 3), Motion::RowStart, extent, 1),
-            Pos::new(2, 0)
-        );
-        assert_eq!(
-            moved(Pos::new(2, 3), Motion::SheetEnd, extent, 1),
-            Pos::new(9, 4)
-        );
-        assert_eq!(
-            moved(Pos::new(2, 3), Motion::SheetStart, extent, 1),
-            Pos::new(0, 0)
-        );
-        // An empty sheet must not underflow into the last row of the address space.
-        assert_eq!(
-            moved(Pos::new(0, 0), Motion::SheetEnd, (0, 0), 1),
-            Pos::new(0, 0)
-        );
-    }
-
-    #[test]
-    fn a_move_stops_at_the_edge_of_the_sheet() {
-        assert_eq!(
-            moved(Pos::new(0, 0), Motion::By(Dir::Up), (0, 0), 1),
-            Pos::new(0, 0)
-        );
-        assert_eq!(
-            moved(Pos::new(0, 0), Motion::By(Dir::Left), (0, 0), 1),
-            Pos::new(0, 0)
-        );
-        assert_eq!(
-            moved(Pos::new(MAX_ROWS - 1, 0), Motion::By(Dir::Down), (0, 0), 1).row,
-            MAX_ROWS - 1
-        );
-        assert_eq!(
-            moved(Pos::new(1, 0), Motion::Page(Dir::Down), (0, 0), 20).row,
-            21
-        );
-        assert_eq!(
-            moved(Pos::new(1, 0), Motion::Page(Dir::Up), (0, 0), 20).row,
-            0
-        );
-    }
-
-    #[test]
     fn enter_goes_down_and_tab_goes_right() {
         assert_eq!(
             after_commit(Pos::new(3, 3), Some(Dir::Down)),
@@ -417,7 +339,10 @@ mod tests {
     fn ctrl_arrow_jumps_to_the_edge_of_the_data() {
         assert_eq!(
             action_for(&primary("ArrowRight"), false),
-            Some(edge(Dir::Right, false))
+            Some(Action::Move {
+                motion: Motion::Edge(Dir::Right),
+                extend: false,
+            })
         );
         assert_eq!(
             action_for(
@@ -427,7 +352,10 @@ mod tests {
                 },
                 false
             ),
-            Some(edge(Dir::Up, true))
+            Some(Action::Move {
+                motion: Motion::Edge(Dir::Up),
+                extend: true,
+            })
         );
     }
 

@@ -37,6 +37,56 @@ pub enum Motion {
     SheetEnd,
 }
 
+/// A key that moves the active cell, whichever toolkit reported it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Key {
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    PageUp,
+    PageDown,
+    Tab,
+    Return,
+}
+
+/// What a key does to the active cell in every grid, and whether it extends the selection: an
+/// arrow one cell and Ctrl+arrow to the edge of the data, Home and End the row's ends and with
+/// Ctrl the sheet's, Page Up and Down a screenful — Shift extending each. Tab and Return walk the
+/// sheet the way they do while typing, Shift reversing rather than extending; with Ctrl they are
+/// not a motion.
+#[must_use]
+pub fn motion_for(key: Key, ctrl: bool, shift: bool) -> Option<(Motion, bool)> {
+    let arrow = |dir| {
+        Some((
+            if ctrl {
+                Motion::Edge(dir)
+            } else {
+                Motion::By(dir)
+            },
+            shift,
+        ))
+    };
+    let walk =
+        |back, forward| (!ctrl).then_some((Motion::By(if shift { back } else { forward }), false));
+    match key {
+        Key::Left => arrow(Dir::Left),
+        Key::Right => arrow(Dir::Right),
+        Key::Up => arrow(Dir::Up),
+        Key::Down => arrow(Dir::Down),
+        Key::Home if ctrl => Some((Motion::SheetStart, shift)),
+        Key::Home => Some((Motion::RowStart, shift)),
+        Key::End if ctrl => Some((Motion::SheetEnd, shift)),
+        Key::End => Some((Motion::RowEnd, shift)),
+        Key::PageUp => Some((Motion::Page(Dir::Up), shift)),
+        Key::PageDown => Some((Motion::Page(Dir::Down), shift)),
+        Key::Tab => walk(Dir::Left, Dir::Right),
+        Key::Return => walk(Dir::Up, Dir::Down),
+    }
+}
+
 /// An anchor and an active cell — the whole of what a selection is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Selection {
@@ -712,5 +762,34 @@ mod tests {
             target(Selection::whole_col(2), (0, 0)),
             (Pos::new(0, 2), Pos::new(0, 2))
         );
+    }
+
+    #[test]
+    fn a_key_means_one_motion_in_every_grid() {
+        assert_eq!(
+            motion_for(Key::Down, false, false),
+            Some((Motion::By(Dir::Down), false))
+        );
+        assert_eq!(
+            motion_for(Key::Down, true, true),
+            Some((Motion::Edge(Dir::Down), true))
+        );
+        assert_eq!(
+            motion_for(Key::Home, true, false),
+            Some((Motion::SheetStart, false))
+        );
+        assert_eq!(
+            motion_for(Key::End, false, true),
+            Some((Motion::RowEnd, true))
+        );
+        assert_eq!(
+            motion_for(Key::Tab, false, true),
+            Some((Motion::By(Dir::Left), false))
+        );
+        assert_eq!(
+            motion_for(Key::Return, false, false),
+            Some((Motion::By(Dir::Down), false))
+        );
+        assert_eq!(motion_for(Key::Return, true, false), None);
     }
 }
