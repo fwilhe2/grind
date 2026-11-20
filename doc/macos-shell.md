@@ -12,9 +12,7 @@ It also records the decisions behind the plan. It is normative for that director
 `doc/plan.md` reserved the directory name long before anything was in it, and ruled out the Mac
 App Store (GPLv3 §6).
 
-**M0 is this document**, plus a crate that parses its command line, a workflow that checks the
-AppKit half from Linux, and a probe that measures on a real Mac what the rest of the plan would
-otherwise have to assume. Nothing here opens a window yet.
+**Status: built**, and run on a Mac now and then; §"What is not built" is what is left.
 
 ## In one line
 
@@ -24,9 +22,9 @@ runners.**
 
 ## The problem this plan is shaped by
 
-Nobody working on this repository has easy access to a Mac. So the question this document
-answers first is not "how should a Mac shell look" but **how much of a Mac shell can be built and
-tested without one**. The Windows shell asked the same question and answered it with a portable
+This shell is developed on a machine that is not a Mac. So the question this document answers
+first is not "how should a Mac shell look" but **how much of a Mac shell can be built and tested
+without one**. The Windows shell asked the same question and answered it with a portable
 half, `cargo check --target`, and Wine. Two of those carry over. Wine does not: there is no
 equivalent for AppKit.
 
@@ -298,7 +296,7 @@ costs no code**: a certificate and a notary key as CI secrets, and two more step
 The day they are added, the `spctl` assertion in M10 flips from "rejected, as expected" to
 "accepted", and the test says so.
 
-## The page model (2026-11-15)
+## The page model
 
 The page view shows the document's **printed pages** (`doc/page-model.md`): `grind_print`
 sets them, each is drawn from its raster as an `Op::Pixels` (`render.rs` makes a `CGImage` over
@@ -356,371 +354,15 @@ threads. The `[M]` assertions that need an application object are therefore made
 run the real application on its main thread (*What M9 built* says why not a `harness = false`
 test); the `[M]` unit tests are the ones that need no application — CoreText's, in `metrics.rs`.
 
-## M1 — hoist before copying
+## What is not built
 
-The ledger says when a copy must stop being a copy, and a Mac shell pulls several of those
-triggers at once. **This is the milestone before the shell, not a cleanup after it.**
+The Mac column of `doc/feature-matrix.md` is what the shell does. Beyond its gaps:
 
-| What | Copies today | The ledger's trigger | Destination |
-|---|---|---|---|
-| Sheet navigation: `Selection`, `Motion`, `moved`, the Ctrl+arrow data-edge rule, `onto_visible` | `ui_win32/src/sheet/keymap.rs`, `ui_sheet_gtk/src/keymap.rs`, `ui_tui/src/sheet/keymap.rs`, `ui_web/src/sheet/keymap.rs` | `ui_win32/src/sheet/keymap.rs`'s `ponytail:`: "the trigger is a **third** copy" | `grind_sheet::nav`, adopted by `ui_win32` and `ui_sheet_gtk`, whose vocabularies were kept identical for this |
-| The text pane's `Flow`, including table placement | `ui_win32/src/text/geom.rs`, `ui_text_gtk/src/geom.rs` | `ui_win32/src/text/geom.rs`'s `ponytail:`: "the trigger is a third copy" | `grind_text::flow`, adopted by both |
-| The status bar's Sum / Count / Average over `App::preview` | `ui_sheet_gtk/src/chrome.rs`, `ui_win32/src/sheet/status.rs`, `ui_tui/src/sheet/app.rs` | `ui_tui`'s `ponytail:`: "a fourth caller is where it gets hoisted" | `grind_sheet`, adopted by all three |
-| The TSV clipboard codec | `ui_win32`, `ui_sheet_gtk`, `ui_web`, `ui_tui` | four copies already | `grind_sheet::clip`, adopted by all five shells |
-| Track prefix sums (`Sizes`), with the unit per millimetre as a parameter | `ui_sheet_gtk/src/geom.rs`, `ui_win32/src/sheet/geom.rs` | the Mac would be the third | `grind_sheet::tracks` |
-| UTF-8 ⇄ UTF-16 offsets | `ui_win32/src/sheet/state.rs` | `NSRange` counts UTF-16 units, as `EM_GETSEL` does | `grind_core` |
-| The file-decides-its-kind rule (`reconcile`, `describe`) | `ui_tui/src/main.rs`, `ui_win32/src/args.rs`, and now `ui_mac/src/args.rs` | this crate's own `ponytail:`, written in M0 | `grind_core::kind` |
-| The edit modes (Ready / Enter / Edit) and a cell format toggle's read-change-write | `ui_sheet_gtk/src/state.rs`, `ui_win32/src/sheet/state.rs`; `ui_win32/src/sheet/format.rs` and the GNOME format bar | the Mac would be the third | hoisted if one abstract key type fits all three shells' inputs, and otherwise mirrored with a `ponytail:` naming the fourth |
-
-Each hoist is its own commit, and **each is proved a refactor rather than argued one**:
-`--render-to` from `ui_win32` (under Wine, `env -u DISPLAY`) and from both GTK windows,
-byte-identical before and after. The precedent is `formula::assist` and `grind_text::format::Change`.
-
-### What M1 did
-
-**Done.** Every row above is answered, one commit each, and two rows grew on the way because the
-Mac would have copied something the table had not listed:
-
-| Row | Became | What the hoist found |
-|---|---|---|
-| Navigation | `grind_sheet::nav` | The GTK step added without saturating and the Windows one saturated; the hoist saturates |
-| Tracks | `grind_sheet::tracks` | The union of both copies' methods; the millimetre conversion is a function, so `ui_win32` keeps its own order of arithmetic |
-| Aggregates | `grind_sheet::summary` | The terminal keeps its own spelling over the same numbers |
-| Clipboard | `grind_sheet::clip`, the line ending a parameter | The browser and the terminal pasted a formula back as `#NAME?`: neither turned display syntax into ODF's |
-| `Flow` | `grind_text::flow`, with each shell's numbers as a `Spacing` and cell measures from one `across` map | Three drifts: GTK left two gaps above a table, only Windows indented a list item inside a cell, only GTK gave `Title`/`Subtitle` a heading's space. The GTK frame changed by exactly the first, proved against the old code with that one line changed |
-| UTF-16 | `grind_core::utf16` | Windows' copy put the caret at the end of a formula for a byte inside a character; the browser counted `char`s where the DOM counts UTF-16 units, and could panic on a parse error's offset. It is the third caller |
-| The kind rule | `grind_core::kind::reconcile`, and `DocumentKind::label` for `describe` | `describe` was a copy of `label` that called a presentation a "document" |
-| Edit modes | **Mirrored**, with a `ponytail:` on both machines naming the fourth copy | No one abstract key type fits: GTK's `Key` carries its character, Windows takes `WM_KEYDOWN` and `WM_CHAR` apart and asks its accelerators first, and the Mac gets selectors from its field editor. The machines also differ on purpose — pointing and F4 exist only in GTK |
-| — what a commit stores | `grind_sheet::formula::display::to_input` | Five copies of the same four-line match, one of them `App::replace`'s |
-| Format toggles | `grind_sheet::format` — `Toggle`, `restyled`, `coloured`, `stepped` | The browser left an empty `style:style` behind, read `oblique` as not italic, and stepped a date's decimals into a number format |
-
-So the Mac's `sheet/state.rs` (M4) is the one copy it writes on purpose, and it starts from
-`to_input`, `nav` and `format` rather than from either shell.
-
-## Milestones
-
-Every milestone lands green: `cargo fmt --check`, clippy for the host **and both Apple targets**,
-`cargo doc`, `reuse lint`, the portable tests, and, from M2, the runner's job.
-
-| # | Milestone | Exit criterion |
-|---|---|---|
-| **M0** | **Plan and wiring** — this document; `ui_mac/` with `args.rs` and `main.rs`; a workspace member (not a default member); `macos.yml`; `-p grind-mac` in `ci.yml`'s host lists; `ui_mac` in `cli/tests/packaging.rs`'s `UNPACKAGED`; the deployment target | The Linux half is **met** (see *Evidence*). The runner half is **the first run of `macos.yml`'s `probe` job**: the core works on macOS, CoreText draws headless and reproducibly, a window opens and can be snapshotted on both OS versions, and synthesized events reach a text field. Each answer goes into *Evidence*, and a "no" rewrites the decision that depended on it before M2 starts |
-| **M1** | The hoists above — *done* (*What M1 did*) | All suites green; Win32 and GTK frames byte-identical before and after each — **met**, with the one GTK frame change the `Flow` hoist made on purpose, proved separately |
-| **M2** | **The application, the document and the read-only grid**: the menu bar from `menu.rs` (application, File, Edit, Format, View, Window, Help — standard selectors); the `NSDocument` reading all three forms, with workbooks and CSV as untitled; the grid in an `NSScrollView` (elastic, overlay scrollers, headers as floating subviews); the document's own widths and heights; hidden tracks gone; CoreText cells with `numfmt::overflow`'s hashes; both appearances; `--render-to`; `--drive`; the `macos` job in `artifacts.yml`, which retires the probe — *built, and not yet run* (*What M2 built*) | Every R7 and sample document opens on the runner through a drive script, with a snapshot each; renders byte-identical ×2 in both appearances, on 15 and on 26. **The Linux half is met; the runner half is the first run of `artifacts.yml`'s `macos` job** (`.github/scripts/mac-frames.sh`) |
-| **M3** | Selection and navigation from selectors over `grind_sheet::nav`; click, drag and the header bands; the name box; the status bar over the hoisted aggregates; sheets in the sidebar — *built, and not yet run* (*What M3 built*) | A drive's transcript ends on the expected selection for arrows, ⌘-arrows, Shift-extension and a typed `g20`. **The Linux half is met; the runner half is `mac-frames.sh`'s selection drive**, which checks the transcript after every step |
-| **M4** | **Editing and saving**: the formula field and the in-cell editor, the three modes, display syntax in and ODF out, a parse error keeping the edit open, undo and redo validated, **autosave in place**, Versions, Revert and Duplicate, sheet add/rename/delete, the notice banner. `doc/feature-matrix.md` §9, `doc/sheet-shell.md` and `doc/not-doing.md` amended for autosave — *built, and not yet run* (*What M4 built*) | A driven edit autosaves a file that lints clean and projects as expected; **an untouched open writes nothing**, bytes and modification time; an imported workbook's source is never touched. **The Linux half is met; the runner half is `mac-frames.sh`'s editing section** |
-| **M5** | The pasteboard (plain text and TSV) and Edit ▸ Find (⌘F, ⌘G, ⇧⌘G, ⌘E) over `App::find` / `replace` / `find::step` — *built, and not yet run* (*What M5 built*) | Copy in the app and `pbpaste` in the job shows the TSV; `pbcopy` in the job and paste in the app lands in cells. This is cross-application interop, which `ui_win32` could not verify under Wine. **The Linux half is met; the runner half is `mac-frames.sh`'s pasteboard section** |
-| **M6** | **The page**: CoreText `Metrics` and `Faces`, `grind_text::flow`, `NSTextInputClient` with inline marked text, selection, `type_markdown`, the selector actions, tables drawn as a grid — *built, and not yet run* (*What M6 built*) | The page breaks where `grind text view --width` does (`Fixed`, as in W5a); CoreText tests show NFD at precomposed width, and a ZWJ family and a Devanagari conjunct each as one caret stop; a drive types `**bold**` and composes `é` through `setMarkedText`; renders ×2. **The Linux half is met, and the probe measured the CoreText half (*Evidence*); the runner half is `metrics.rs`'s Mac-only tests and `mac-frames.sh`'s page section** |
-| **M7** | **Formatting**: toolbar items (bold, italic, underline, strike and code as one segmented control; number format and paragraph style as pop-ups; `NSColorWell`s opening the system colour panel); Format ▸ Font through the system font panel (`changeFont:` becomes a `grind_text::format::Change`); the grid's cell formatting — *built, and not yet run* (*What M7 built*) | A drive makes a label bold, steps a currency's decimals, colours a cell and clears it; the saved file projects `style … bold=#true …`. **The Linux half is met; the runner half is `mac-frames.sh`'s formatting section** |
-| **M8** | Formula literacy and the shared panes: completion and signature over `formula::assist`, the friendly formula bar, the function list, Explain; the source pane (D9); Problems in the sidebar (D6); the roles and names overlays (V7) — *built, and not yet run* (*What M8 built*) | A drive types `=SUM`, steps the offers with ↓ and ↑, and Tab takes one; every Problems row jumps; with every overlay on, a save is byte-identical. **The Linux half is met; the runner half is `mac-frames.sh`'s eighth section** |
-| **M9** | The welcome window and Open Recent; context menus; the accessibility floor — *built, and not yet run* (*What M9 built*) | ~~`tests/appkit.rs`'s~~ **a drive's `a11y` step's** accessibility assertions pass; the welcome window renders in both appearances. **The Linux half is met; the runner half is `mac-frames.sh`'s last two sections** |
-| **M10** | **Packaging**: `plist.rs` writes the Info.plist (every type at `LSHandlerRank` **Alternate** — *offered, never taken*, `assoc.rs`'s stance in Mac terms — except `.grind`, which nothing else opens, at **Owner**, conforming to `public.plain-text` so Quick Look previews one for free); an icon on the macOS 26 grid; universal2; ad-hoc signed; a DMG; the tap — *built but for the tap, and not yet run* (*What M10 built*) | `plutil -lint`; `codesign --verify --strict`; `otool -L` lists only `/System/Library` and `/usr/lib`, the Mac's version of the Windows import-table check; `vtool` reports a minimum of 15.0; LaunchServices offers Grind for a `.fods` without becoming its default; `spctl` rejects the ad-hoc build, **as expected, and asserted as such**. **The Linux half is met; the runner half is `.github/scripts/mac-bundle.sh`** |
-| **M11** | **The remote loop**: `scripts/mac-remote.sh renders`, `… drive <script>` and `… session`; `mac-drive.yml`; a Mac column in `doc/feature-matrix.md`; `CLAUDE.md` — *built, and not yet run* (*What M11 built*) | A drive script written on Linux comes back as a transcript and PNGs in minutes, compiling nothing. **Met by construction and unproved: the first dispatch of `mac-drive.yml` after a DMG exists is the proof** |
-| **M12** | **The UX pass**, over a screen-sharing session into a runner (`mac-session.yml`), recorded the way `doc/windows-shell.md`'s is | Every item on *What the runner cannot speak for* is either checked or still named |
-
-### What M2 built
-
-Everything M2 names exists, and **none of the AppKit half has run**: it is written against
-objc2's generated bindings, type-checked and linted for both Apple targets from Linux, and the
-first thing that will run it is `artifacts.yml`'s `macos` job. Until then this is a claim about
-what compiles, not about what works.
-
-The split is decision 9's, taken as far as it goes. Every decision a user would notice is
-portable and tested here; only turning it into pixels and events needs a Mac:
-
-| File | Half | What it is |
-|---|---|---|
-| `sheet/geom.rs` | portable | Every cell in points, in the sheet's own coordinates: one-inch columns and quarter-inch rows by default (`ui_web`'s and `ui_tui`'s sizes), the document's own through `grind_sheet::tracks`, rows hidden by hand or by a filter closed up, and a grid that reaches the used extent and a margin rather than a million rows |
-| `sheet/paint.rs` | portable | A frame as a list of `Op`s — a fill, or a line of text at a place — over `grind_sheet::look`, `numfmt::overflow` and `grind_core::color::document_ink`; the header bands, and a whole frame composed from them. Tested against `grind_core::layout::Fixed` |
-| `metrics.rs` | both | The UTF-16 fold, portable and tested; CoreText behind `Metrics`, whose `CTLine` is also the one drawn |
-| `png.rs` | portable | The frame's PNG, written here over the workspace's own `flate2`, so two renders are the same **bytes** — a system encoder may write a timestamp or a profile of its choosing |
-| `menu.rs` | portable | The menu bar as data, and *Conventions made mechanical* as its tests |
-| `drive.rs` | both | The drive-script parser, portable, and its replay through `NSApp.sendEvent` |
-| `document.rs` | both | The type names and the byte sniff, portable; the `NSDocument` subclass and the document controller, whose `typeForContentsOfURL:error:` reads the file rather than its name |
-| `render.rs` `grid_view.rs` `app.rs` | Mac | The `Op`s onto a flipped `CGContext`; the grid in its scroll view with the bands floating; the application, its delegate and the menu bar |
-
-What M2 leaves, each on purpose: the selection (M3), editing, saving and autosave (M4 — the
-document writes, but nothing yet changes it), a label spilling into the empty cells beside it
-(since closed), borders (since closed), the welcome window (M9 — a launch with nothing
-named starts an empty spreadsheet), a text document's page (M6 — its window says so), and
-Info.plist document types (M10 — the document controller answers by the bytes, and the open panel
-shows every file, so M2 needs none). **The probe's answers are in
-*Evidence*** (run 36679496310), and it stays one step longer than planned: `artifacts.yml`'s
-`macos` job has been red since its first run, and until it is green the probe is the only Mac job
-that says anything works. `mac-frames.sh` now reports its own failure as an annotation, so the
-next red run says why.
-
-### What M3 built
-
-The same arrangement as M2's, and the same caveat: built, type-checked for both Apple targets,
-and not yet run. Two more hoists came first, because the Mac's name box and its keyboard would
-otherwise have been a third copy each: `grind_sheet::place` (the name box's text, `locate`, and
-the status bar saying nothing for one cell) and `nav::occupied` with `nav::all` (whose Select All
-now keeps the active cell at A1 in every shell — the GNOME window had put it at the far corner).
-
-| File | Half | What it is |
-|---|---|---|
-| `keys.rs` | portable | Decision 7's table: a selector to a grid action, with ⌘-arrows as the data's edge, each `…AndModifySelection:` its plain twin extending, and every binding left alone named with its reason in `UNANSWERED` — the list the runner's `StandardKeyBinding.dict` check will read |
-| `sheet/select.rs` | portable | What an action, a click, a drag or a header click makes of the selection, over `nav`; how far a page goes; what to scroll into sight beside the bands |
-| `sheet/paint.rs` | portable | The selection: a wash over the range but its active cell, an outline over everything, the selected tracks tinted in the bands |
-| `grid_view.rs` | Mac | Keys through `interpretKeyEvents:` and `doCommandBySelector:`, clicks and drags, the bands' own clicks, and `Pane::select`, which redraws, reveals and tells the listeners |
-| `accessory.rs` | Mac | The titlebar accessory: the name box, where typing a place and Return goes there, and the status read-out |
-| `sidebar.rs` | Mac | An `NSSplitViewController` whose sidebar is a source list of the sheets; choosing one shows it |
-
-Go To (⌘L) is a new `Command` — the keyboard into the name box — because a drive, like a person,
-can only reach the box through a key.
-
-### What M4 built
-
-Built and type-checked, not yet run — the same caveat as M2 and M3. One more hoist came first:
-`App::fresh_sheet_name`, since the Windows pane's Add Sheet had been suggesting a name the core
-then refused.
-
-| File | Half | What it is |
-|---|---|---|
-| `sheet/state.rs` | portable | The edit-mode machine, fed selectors — the third copy M1 decided to mirror, with its `ponytail:` naming a fourth as the trigger |
-| `notice.rs` | portable | Every sentence the banner says, with ⌘ for keys and a test that none says Ctrl |
-| `editor.rs` | Mac | One `NSTextField` over the active cell; its delegate's `control:textView:doCommandBySelector:` goes through `sheet/state.rs`; a commit is `display::to_input` and `App::enter`, and a formula that will not parse keeps the edit open with the caret on the problem |
-| `banner.rs` | Mac | A second titlebar accessory, hidden with nothing to say; Recalculate Anyway is its one button |
-| `grid_view.rs` | Mac | Typing starts an edit, a double-click or ⌃U amends the cell, `undo:` and `redo:` are the core's and validated by `can_undo`/`can_redo`, and the core's observer reaches the pane through a registry the main thread owns — the observer must be `Send + Sync`, and a pane holding views is not |
-| `document.rs` | Mac | Autosave in place on, no undo manager, and every change the core reports marking the document edited — which is what keeps an untouched open from writing anything |
-| `sidebar.rs` `menu.rs` | both | Insert ▸ Sheet, Format ▸ Rename Sheet…, Edit ▸ Delete Sheet, where Excel for Mac has them, with the sidebar's list following every change |
-
-What M4 leaves: the formula field edited only through the cell editor (since closed: the
-read-out is `GrindFormulaBar`, and clicking it opens the same edit there — or carries one open over
-the cell into it); an undo back to the saved state left the Edited dot, since
-the core's observer says *changed* rather than *which way* (since closed: a pane knows when it is
-undoing, and tells `NSDocument` the change was undone, `watch::Turn`); and ⌃U inside the editor was
-the field editor's (since closed: it arrives as `noop:`, and the event behind it says it was ⌃U).
-
-### What M5 built
-
-Built and type-checked, not yet run. One more hoist came first, and it fixed a bug: `nav::target`,
-the rectangle an operation over a selection acts on, is the Windows pane's rule (only a whole
-row or column is cut to what the sheet uses) — the GNOME window had cut every rectangle, and the
-Windows pane's Copy had cut none, so copying a whole column there put a million lines on the
-clipboard.
-
-| File | Half | What it is |
-|---|---|---|
-| `sheet/search.rs` | portable | Where Find goes next: `App::find` and `find::step`, across sheets and wrapping |
-| `notice.rs` | portable | Found, not found and replaced, in ⌘-spelled sentences |
-| `menu.rs` | portable | Edit ▸ Find as the platform's own `performFindPanelAction:` with `NSFindPanelAction`'s tags — ⌘F, ⌘G, ⇧⌘G, ⌘E — tested for their keys like every other item |
-| `clipboard.rs` | Mac | Copy, Cut, Paste and Delete; the one file that touches `NSPasteboard`, writing the TSV as plain text and as tab-separated text, and reading plain text back through `App::enter_range` |
-| `find_bar.rs` | Mac | A third titlebar accessory: a search field, a replace field, Replace All and Done |
-
-Also mended while here: Edit ▸ Select All and the Delete keys reach the grid, which M3 and M4
-had named and not wired.
-
-### What M6 built
-
-Built and type-checked, not yet run — with one difference from M2–M5: the probe had by then
-measured the CoreText half on both OS versions (*Evidence*), so decision 4 rests on a
-measurement rather than on the documentation. Four hoists came first, each a copy the Mac
-would otherwise have been the third or fourth of: `grind_text::caret` (a character, a word and a
-click), `grind_text::look` (which face a block is set in), `grind_text::paint` (what a laid-out
-line is drawn as — the pieces, the selection band, the bullet) and `App::layout_composing` (an
-input method's composition, laid out as if typed).
-
-| File | Half | What it is |
-|---|---|---|
-| `ops.rs` | portable | The one drawing vocabulary for both panes — `Op` left `sheet/paint.rs` and gained `Run`, a piece of a line in a resolved `Font`, with its underline and strike |
-| `metrics.rs` | both | `Font`, the one currency between measuring and drawing; CoreText's user fixed-pitch face and a family the document names; and Mac-only tests holding the shaping answers |
-| `text/geom.rs` | portable | The caret's width, and how tall the page view is |
-| `text/face.rs` | portable | A block's role and a run's own formatting resolved into one `Font` — the font panel's reading of the selection |
-| `text/state.rs` | portable | The caret, the selection and the composition; every motion and edit the page makes, over a real `grind_text::App` |
-| `text/input.rs` | portable | `NSTextInputClient`'s arithmetic: the caret's block as the string an input method sees, and every UTF-16 range converted once |
-| `text/pages.rs` | portable | A frame of the page view as `Op`s (`doc/page-model.md`): each printed page in view as its raster from `grind_print`, on a desk, and over them the selection, the spelling and grammar dots, bookmark names, marked text at the caret and the caret, placed by `grind_print::view` |
-| `keys.rs` | portable | The page's selector table beside the grid's, and `PAGE_UNANSWERED` with its reasons |
-| `page_view.rs` | Mac | The page in its scroll view, the input client, clicks by the count, the standard Edit selectors, and the core's notification held back while the view's own edit runs |
-| `watch.rs` | Mac | The observer registry `grid_view.rs` had, behind a trait, for both panes |
-| `drive.rs` | both | `mark` and `commit`, the two calls an input method makes; a click lands in whichever view the document has |
-
-What M6 leaves: the caret did not blink (since closed: `text/blink.rs`, steady while the user
-types and never started under a drive, so a snapshot does not depend on when it was taken); a selection across
-blocks is shown to an input method as the caret alone, since the one block it sees cannot hold
-it; a picture outlined where it goes rather than drawn (since closed: `NSImage` decodes it); the text sidebar (headings and bookmarks),
-paragraph kinds from a menu and every formatting control, which are M7's and M8's — and Edit ▸
-Find over the page, a go-to prompt and a word count, which came after M11; and a notice banner for an edit the core refuses, which beeps instead.
-
-### What M7 built
-
-Built and type-checked, not yet run. Two hoists came first. `grind_text::format::{here, apply}`
-is where a formatting bar reads and writes — the selection's agreed style, or with nothing
-selected the style the next character typed takes — which `ui_text_gtk`, `ui_web` and
-`ui_win32` each had; hoisting it found that three of them turned a toggle *off* by writing
-`normal` or `none` where the GNOME window removed the property, and every shell now removes it.
-`grind_sheet::format::Preset` is the number picker's nine rows, out of `ui_win32`.
-
-| File | Half | What it is |
-|---|---|---|
-| `menu.rs` | portable | Format ▸ Font, Text, Text Color, Background Color, Number and Paragraph, then Clear Formatting — TextEdit's and Pages' shape, the platform's ⌘B/⌘I/⌘U/⌘T/⇧⌘C, and `Command::applies`, which kind of document each verb means something in |
-| `sheet/format.rs` `text/format.rs` | portable | What each command writes on either pane and when its item is ticked, over the cores' vocabularies; and the font panel's answer read as the difference between the font it was shown and the one it gave back |
-| `tools.rs` | portable | The toolbar as data, with decision 3's test made mechanical: every segment and pop-up row is a menu command with the same title, every colour well has its colour submenu, and nothing on it is a verb |
-| `formatting.rs` | Mac | Both panes' `format`, `changeFont:`, `changeColor:` and Show Fonts; `Formats`, the one trait the toolbar speaks to |
-| `toolbar.rs` | Mac | The `NSToolbar`: segmented controls, pop-ups and colour wells, every one reading the selection before it shows |
-| `app.rs` | Mac | Format commands reach the front document; `validateMenuItem:` greys and ticks |
-| `drive.rs` | both | A ⌘-key or a menu step sends its action along AppKit's documented path from the window when the window cannot be key, which on a runner it never is |
-
-Two bugs M7 found in what M3–M5 built, both of the kind only a runner shows: the delegate found
-the front document through `currentDocument`, which is nil when no window is main — so Go To,
-and every Format command, reached nothing in a drive — and a drive's ⌘-key went to a nil
-target that starts at the key window, so Copy, Save and Undo did nothing either. Both are
-very likely why `artifacts.yml`'s `macos` job has been red since M3.
-
-What M7 leaves: a cell's font family (the font panel can choose one and a `CellStyle` cannot
-hold it, so it is left out rather than approximated); borders (since closed); a paragraph kind over several
-blocks is one ⌘Z per block; and the toolbar's controls have not been seen, only compiled.
-
-### What M8 built
-
-Built and type-checked, not yet run. Two more hoists came first, each a copy the Mac would
-otherwise have made: `grind_sheet::formula::assist` gained the offer machine (`Assist`), the
-band's runs, the friendly formula-bar line and the function list's rows, out of `ui_win32`,
-which keeps only which keys steer it; and `CellRole::hue` is which colour each role is, the
-table `ui_sheet_gtk` and `ui_win32` each carried.
-
-| File | Half | What it is |
-|---|---|---|
-| `sheet/assist.rs` | portable | Which selectors steer a list of offers — `insertTab:` takes one, the vertical arrows step, Esc closes it for the word, and Return still commits — and what the formula read-out shows at rest and while typing |
-| `editor.rs` | Mac | A one-line band under the cell editor with the offers or the signature, the accent where the core says `Strong`; an accepted offer goes in through the field editor, so it is one step of the field's own undo |
-| `app.rs` `menu.rs` | both | View ▸ Friendly Formulas (on by default) and Explain Formula, Insert ▸ Function… (every function, by name and plain-English name), View ▸ Cell Roles, Names and Show Source (⌥⌘U) |
-| `sheet/paint.rs` `text/pages.rs` | portable | The role marker in a margin reserved at a cell's leading edge and a muted outline round each defined name; on a page, each bookmark named in the margin beside its line, never over the ink |
-| `places.rs` | portable | The sidebar's rows for either document — sheets, names and Problems; outline, bookmarks and Problems — and where each goes, a Problems row to another sheet if that is where the finding is |
-| `sidebar.rs` | Mac | One source list over those rows for both panes, so a page has a sidebar too; re-read when the document changes and not when the cursor moves |
-| `code.rs` | portable | The source pane's lines in UTF-16 and its colours, from the projection's own token map |
-| `source_pane.rs` | Mac | The projection in a read-only `NSTextView` in a trailing inspector item, the selection's line marked and a click on a line going where it projects |
-| `drive.rs` | both | `sidebar <text>`, which chooses a row the way a click does |
-
-What M8 leaves: the signature band followed the text, so a caret moved by an arrow without
-typing showed the old argument until the next keystroke (since closed: the editor makes a caret
-move itself, then reads the caret); point mode (since closed); the formula read-out was a
-read-out rather than a second editor (since closed); every change re-linted the whole document for the Problems
-section (since closed: the rows are read again once changes pause for a quarter second); and the source pane is read-only, as every shell's is.
-
-### What M9 built
-
-Built and type-checked, not yet run.
-
-| File | Half | What it is |
-|---|---|---|
-| `welcome.rs` | portable | Decision 6's window: the three choices, each a menu item's own action; the layout, the hit test and the keys; the system's recent documents under the cards; and a frame as `Op`s, so `--render-to` with nothing named draws it |
-| `welcome_window.rs` | Mac | The view that draws that frame in the system's colours and answers the keys by selector; shown at a launch with nothing named, on a Dock click with no window open, and from Window ▸ Welcome to Grind (⇧⌘1) |
-| `menu.rs` | portable | The grid's and the page's context menus as tables, every row held by a test to a menu-bar row with the same title, key and action |
-| `grid_view.rs` `page_view.rs` | Mac | `menuForEvent:` from those tables, the selection moved to what was clicked first; the page as an accessibility text area, and an announcement on every move on the grid |
-| `a11y.rs` | portable | The words the floor says: the page's value, its selected range in UTF-16, the caret's line, and what a move on the grid announces |
-| `drive.rs` | both | `a11y`, which asks the key view what VoiceOver would ask, in-process, and prints the answers |
-
-**`tests/appkit.rs` was not built, and the drive is its replacement.** It was planned as a
-`harness = false` integration test reading the accessibility attributes back on the main thread,
-but `grind-mac` is a binary crate, and an integration test of a binary can only run it, not reach
-into its views. A drive already runs the real application on the main thread with a document
-open, so the read-back is a drive step and `mac-frames.sh` asserts on the line it prints — the
-same assertion, made where the views exist.
-
-What M9 leaves: Open Recent needed nothing — `NSDocumentController` fills it, which M2's
-`clearRecentDocuments:` item was for; a line of the page's accessibility value is a block rather
-than a laid-out line (a `ponytail:` in `a11y.rs`, `accesskit_macos` the upgrade); and the grid is
-announced rather than described cell by cell, which is decision 10's floor and not its ceiling.
-
-### What M10 built
-
-Built, and not yet run: every check is in `.github/scripts/mac-bundle.sh`, which `artifacts.yml`'s
-`macos` job runs after the frames — and whether or not they passed, since its checks are about
-the binary.
-
-| File | Half | What it is |
-|---|---|---|
-| `plist.rs` | portable | The Info.plist from one table of nine types — `assoc.rs`'s, offered never taken: every type **Alternate** but `.grind`, **Owner** and exported conforming to `public.plain-text`; ODF forms as Editor, imports as Viewer. Printed by `grind-mac --info-plist`; tests hold each extension to a form this build reads and the floor to the deployment target |
-| `document.rs` | Mac | Declared types would have given a Save the package's extension; the document answers it — its own, or the flat form for an untitled one (`doc/flat-first.md`) — and the panel keeps what is typed |
-| `data/grind.svg` `data/make-icns.py` `data/Grind.icns` | portable | The suite's mark on the macOS icon grid, rasterised and packed into eleven sizes with no Mac tool, reproducibly, and checked in as `grind.ico` is |
-| `main.rs` | both | `--handlers <file>`, what LaunchServices offers for a file and its default, asked of `NSWorkspace` |
-| `mac-bundle.sh` `artifacts.yml` | CI | The x86_64 slice, `lipo`, the bundle, the ad-hoc signature, the DMG and its upload, and the checks: `plutil -lint`, `codesign --verify --strict`, `otool -L`, `vtool`'s 15.0, LaunchServices offering without taking, and `spctl` rejecting, as expected |
-
-What M10 leaves: **the tap**. A Homebrew cask points at a published DMG by URL and checksum, and
-this project publishes nothing yet — the DMG is a workflow artifact — so the tap, with decision
-12's Open Anyway step written into its caveats, waits for the first release. Quick Look's preview
-of a `.grind` is claimed by the declaration and not yet seen.
-
-### What M11 built
-
-| File | What it is |
-|---|---|
-| `scripts/mac-remote.sh` | `renders` fetches the latest `artifacts.yml` run's frames and every annotation its scripts left; `drive <script> [document] [branch]` dispatches `mac-drive.yml`, waits, prints the transcript and fetches the snapshots; `session` asks for `mac-session.yml`. Needs `gh` signed in |
-| `.github/workflows/mac-drive.yml` | A script against the newest DMG `artifacts.yml` left on a branch — compiling nothing — with the transcript uploaded and annotated, and the inputs reaching the shell only through its environment |
-| `.github/workflows/mac-session.yml` | M12's session: dispatch only, at most an hour, three secrets checked before anything happens |
-| `doc/feature-matrix.md` | The Mac column, read out of `ui_mac` through M10, whose ● means *written* until a run says *working* |
-| `ui_mac/src/document.rs` `app.rs` | A drive started with `--sheet` or `--text` is handed its new document, so `save`, `click` and `sidebar` act on it |
-
-**The loop's whole design is the lesson of M2–M10**: everything that has to be read back from a
-runner is an *annotation*, because the public API serves annotations to anyone while a job's log
-and its artifacts need credentials. `mac-frames.sh`, `mac-bundle.sh` and `mac-drive.yml` all
-report that way, and the probe's answers reached *Evidence* that way.
-
-### After M11: the named gaps, closed one at a time
-
-With M12 waiting on a person, the work turned to what each milestone named as left. Closed so far:
-**Find and Replace on the page** (one find bar over a `Findable` trait both panes answer, with a
-status line of its own, since a page window has no banner); **Go To on a page** (⌘L asks for
-`p12`, `#intro` or `§2.1` in an alert); **Edit ▸ Recalculate** on ⌘=, Excel for Mac's key; a
-page's **word count** in its window's subtitle; **pictures drawn on the page** — `NSImage`
-decodes them, `text/picture.rs` fits each to the column at no more than its own size with its
-caption under it (`ui_text_gtk`'s rule, so a figure takes the same room in both windows), and
-bytes nothing reads stay outlined — and **Insert ▸ Picture…**, an open panel whose file is
-embedded in a paragraph of its own, refused when its signature is no picture's (`picture::mime`),
-and Format ▸ **Image Description…** — Pages' words for alt text — an `NSAlert` with the picture, a
-field whose delegate keeps `grind_text::picture::advice` under it as it is typed, and a scrolling
-long description, on the page's context menu too (`describe.rs`); **charts drawn on the grid** — `sheet/chart.rs` turns each into `Op`s (bars, a line as one
-`Op::Path`, a pie as one path per slice from `grind_sheet::pie_slices`), scaled by `axis_ticks`
-and coloured by `effective_color` as the GNOME window and the browser are, with its title and
-legend placed on *measured* text rather than the browser's estimate; read-only, and the value
-axis' title set level above the axis rather than turned along it; **cell borders**, drawn per edge centred on the grid line they replace, and Format ▸ Borders
-writing the terminal's and the browser's hairline; **tracks resized from the header bands** — the
-resize cursors over every edge, a drag drawn live from `Sizes::with` and written once when the
-button comes up (every selected whole track with it, one undo step), and a double-click fitting a
-column to its widest text or giving a row back to its content (`sheet/resize.rs`); **rows grown to their content** — `Grid::measured`, a row with no
-height of its own as tall as its tallest wrapping or larger-faced cell through
-`grind_core::layout::wrap`, the GNOME window's L3 rule and bound; **a caret that blinks**, lit for a whole period after every key and
-click, its rectangle alone redrawn on each tick; **point mode** — typing `=SUM(` and pressing an arrow points at a
-cell instead of committing, Shift grows the range, the pointed cells are outlined in the system's
-orange, and typing anything ends it; the predicate is `formula::assist::ref_eligible`, hoisted
-out of the GNOME window for it, and a drive in `mac-frames.sh` checks the formula it writes.
-A click on the grid points too, at the clicked cell (a drag grows the range), and where no
-reference could go a click commits the edit before it moves — it used to move the selection and
-leave the edit open, so the next Return wrote into the clicked cell. F4's `$` cycle is not built:
-⌘T, Excel for Mac's key for it, is the font panel's here; **Insert ▸ Chart**, the selection's table charted beside it by
-`App::suggest_chart` in one step, with no dialog, and a chart's own context menu — its title,
-bar, line or pie, where its legend goes, and Delete Chart (`App::edit_chart`, `App::remove_chart`)
-— and dragged to move it, drawn where the pointer has it and written once as the button comes up
-(`App::reshape_chart`); every Format ▸ Number item carrying **a live sample** of the active
-cell in its format as the item's subtitle (`App::shown_as`, macOS 15's `NSMenuItem.subtitle`); **a label spilling into the empty cells beside it**, the way it is
-aligned, with the grid lines it crosses covered and twelve columns read past the view either
-side so one anchored off-screen still shows (the GNOME window's margin) — a number never spills; File ▸ **Import CSV…** into the open sheet at the active cell, and
-Export as CSV… writing TSV when the name says `.tsv`; and **About Grind** telling the standard panel the build's stamp; **the autofilter** — Edit ▸ Filter (⇧⌘F, Excel for Mac's key)
-over the selection or from one cell to the end of the used part, a button drawn in each heading
-and filled in the accent while its field has a condition, and a click on one listing the field's
-values as a menu (`filter::offered`'s order), ticked while shown, plus Show All; **every paragraph kind a page draws** — Title, Subtitle and
-Heading 4–6 beside Body, Heading 1–3 and List Item, the two names taken off again only when this
-page put them on, as the GNOME window does; Edit ▸ **Copy Value** (`App::value_text` through `clip::rect_text`)
-and **Formula to Value** (`App::clear_formula`, LibreOffice's name, the first window with it); Edit ▸ **Evaluate…** (`App::preview` at the active cell, display syntax in, an alert out)
-and Format ▸ Number ▸ **Document Locale…** (`App::set_locale`, a tag or nothing); **a defined name's context menu** in the sidebar — Rename… (every
-use following, `App::rename_name`), Redefine…, Inline Everywhere (`App::inline_name`) and Delete,
-the first window with the first and third; **View ▸ Formulas** (⌃⌘\`), every formula shown in its cell in
-display syntax rather than its value, drawn and never written — the first window with it; and with View ▸ Names on, the formula read-out **reads a formula
-through its names** (`App::named_formula`); Edit ▸ Fill ▸ **Across Selection**, the active cell into the whole
-selection in one `App::fill`; **View ▸ Calculations…**, every formula in the document listed in
-the sidebar as a section of its own — address, formula and value, each a jump — narrowed by what
-it asked for (`App::calculations`, the GNOME window's dialog as a list of places); Format ▸ Paragraph ▸ **Move Up, Move Down and Delete Paragraph**
-over the paragraphs the selection touches, one undo step each (`App::move_blocks`, `App::delete`); and Format ▸ Paragraph ▸ **Style…**, a named paragraph style on them
-(`App::set_style`), kept and not interpreted unless it is Title or Subtitle; and `canAsynchronouslyWriteToURL:` answering NO
-where *Risks* says it does, rather than by `NSDocument`'s default. And **the page on paper**
-(`doc/pdf-export.md`): File ▸ **Export as PDF…**, `grind_print::export` set in the bundled faces and
-the Mac's own, telling only when a family was substituted or a character had no glyph; and File ▸
-**Print…** (⌘P), the same PDF handed to the system's print panel through PDFKit
-(`PDFDocument::printOperationForPrintInfo`), so the panel's own preview *is* the PDF — the one
-client where the native preview is also the truest one, which is why there is no preview window
-of this shell's own. Type-checked and linted for both Apple targets; not yet run. `doc/feature-matrix.md`'s Mac
-column carries each.
+* **The Homebrew tap.** A cask points at a published DMG, and nothing is published yet: the
+  DMG is a workflow artifact.
+* **F4's `$` cycle** while a formula is edited.
+* **A cell's font family** from the font panel: a `CellStyle` carries none.
+* **The UX pass over a screen-sharing session** (`mac-session.yml`), which needs its secrets set.
 
 ## Conventions made mechanical
 
@@ -774,8 +416,7 @@ as much of it as possible is a test, and most of those tests are portable:
   from a secret and joins a private network as an ephemeral node, using an auth key that is also
   a secret, so the session is reachable from the user's own machines and nowhere else. **The
   password is never printed**: a public repository's logs are public. The private network is
-  Tailscale's, through an OAuth client rather than a reusable key. *Built in M11, not yet run;
-  used in M12.*
+  Tailscale's, through an OAuth client rather than a reusable key.
 
 The cost: macOS minutes are free on public repositories and billed at ten times the Linux rate
 on private ones. `check-from-linux` carries the everyday signal on the cheapest runner there is.
@@ -852,36 +493,3 @@ On a Mac, if one is to hand, there is nothing to arrange:
 cargo run -p grind-mac -- book.fods
 cargo run -p grind-mac --example probe -- /tmp/probe    # M0's measurements, by hand
 ```
-
-## Evidence
-
-Measured on 2026-09-29, on the Linux development machine, before any AppKit code existed:
-
-| Claim | How it was checked |
-|---|---|
-| `grind-core`, `grind-sheet`, `grind-text` and `grind-xlsx` type-check for macOS on Linux, with no SDK | `cargo check --target aarch64-apple-darwin`: clean, 17.7 s cold; `--target x86_64-apple-darwin`: clean, 11.6 s |
-| The whole CLI type-checks for macOS | `cargo check -p grind-cli --target aarch64-apple-darwin`: clean, 29.5 s |
-| objc2's framework crates are all-features by default, and that is expensive | With defaults, 16 crates join `Cargo.lock` (313 → 330, `grind-mac` included), CloudKit, CoreData, Metal and CoreImage bindings among them, and a cold check of the stack takes **53.8 s** |
-| Gated to the classes used, it is cheap | `default-features = false` with the probe's features: **9** crates (313 → 323), and **9.2 s** cold — about what the `windows` crate cost `ui_win32` (10 crates, 5.0 s) |
-| AppKit, CoreGraphics and CoreText code type-checks **and lints** from Linux | The probe (`examples/probe.rs`): `cargo clippy --all-targets -D warnings` clean for both Apple targets and the host. It was written against the crates' generated sources, and never run here |
-| The portable half tests on Linux | `cargo test -p grind-mac`: 22 passed — argument handling including AppKit's own launch arguments, the type flags, the bytes deciding over the extension, and the workbook and CSV sniffs |
-| AppKit's launch arguments do not become files | `grind-mac -AppleLanguages '(de)' examples/quote.grind` resolves to the projection, a spreadsheet, and to nothing else |
-
-**The first run of `macos.yml`'s `probe` job** was run 36620879811, on the M0 commit, and it
-was green on both `macos-15` and `macos-26`. Green settles only what the job *asserts*: the core
-question below (the step ends in `test … = 9`), and that CoreText draws into a bitmap with no
-application object and a window, a content view and a key event can all be built — the probe
-exits non-zero otherwise. Everything else it *prints*, and from run 36679496310 (on `d85d6a0`,
-2026-09-30) the Summary step emits each answer file as a workflow annotation, which the public
-API serves to anyone (`/repos/fwilhe2/grind/check-runs/<job>/annotations`). That run answered
-every row, identically on macOS 15.7.9 and 26.6.2 (arm64) unless a row says otherwise:
-
-| Question | Answer | What depends on it |
-|---|---|---|
-| Does the suite's core run on macOS — `grind sheet set`, `recalc`, `view`, `lint` — and does `=SUM` give 9? | **Yes**, on both, asserted by the step | Everything; `ui_win32`'s W0 found a stack overflow this way |
-| Does CoreText draw into a `CGBitmapContext` with no application object, and are two renders the same bytes? | **Yes**, and yes (`headless-identical: true`; 8,983 bytes on 15, 9,023 on 26 — the same drawing, not the same pixels, across versions) | Decision 9's `--render-to` |
-| What are the caret offsets of `é`, `e◌́`, a ZWJ family and `क्षि`? Are they one stop each? | **One stop each.** `é` is `[0, 12.62]` and `e◌́` `[0, 0, 12.62]` — the same width; the family (5 characters, 8 UTF-16 units) is `0` at every unit and `27.00` after the last; the conjunct (4 characters) `0` inside and `23.40` after it (`23.30` on 26). `fold` makes each one advance, on its last character. `metrics.rs`'s Mac-only tests now hold the page's own `Metrics` to this on every run | Decision 4 |
-| Is there a screen, does a window become visible and key, and does the application become active? | **One screen, at a backing scale of 1** — not Retina. The window **becomes visible but never key**, and the application **never active**: a runner's session has no user to hand focus to | Decision 9's `--drive`, and M2 onward. A drive must not assume a key window: `drive.rs` falls back to the first window, sends a ⌘-key's action along AppKit's own path from it (M7), and the delegate finds the front document without a main window. Anything drawn only while the window is key — the page's caret — is absent from a drive's snapshots, which is the platform being honest rather than a bug. **Since amended**: on run 36816633386 (2026-10-01) both runners report the application active and the window key at a drive's start — and a drive's arrow keys still moved nothing, which is why its first line now names the first responder as well. Run 37050570786 (2026-10-02) answered it: the grid *is* first responder and the window key, and arrows, Escape and the name box's typing all still changed nothing. The probe's yes was measured with the application **inactive**; an active one's text-input context is the suspect, so a drive's key now carries the system uptime as its timestamp rather than zero and an arrow the Function and NumericPad flags real hardware sets, and every transcript line says what the grid `heard` — `keyDown:`, the selector, the inserted text — so a key that still goes nowhere says where it stopped. Run 37052072298 then showed the grid hearing `keyDown:` and `moveRight:` and the selection still at A1 — and the arithmetic, run on Linux over the same document, lands on B1. The cause was **two documents**: AppKit's `NSTreatUnknownArgumentsAsOpen` opened the command line's path a second time beside the one `Delegate::launch` opened, so the keys moved the selection in the key window and the transcript read the other. `app::run` now registers it off, and a drive's first line counts documents and windows |
-| Does caching the frame view give a picture of the window? | **Yes** (7,119 and 7,320 bytes) | `--drive`'s `snap` |
-| Do synthesized key events reach a focused `NSTextField`? | **Yes** — `"hi"` typed, in a window that was not key | `--drive` itself |
-| Does `screencapture` work from a job step? | **Yes** (about 79 KB) | Nothing depends on it; it is a second opinion |

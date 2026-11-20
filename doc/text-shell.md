@@ -239,7 +239,7 @@ they were closed here first because this is the shell the suite showcases:
   report. The MIME type comes from GIO's own content-type guess over the name *and* the bytes.
 
 **Tables are drawn, and what that cost is worth writing down.** The grid was `geom.rs`'s and
-`view.rs`'s, and is `grind_text::flow`'s since `doc/macos-shell.md`'s M1 hoisted it, shared with
+`view.rs`'s, and is `grind_text::flow`'s since it was hoisted for the Mac, shared with
 `ui_win32` — which is also when this window stopped leaving two gaps above a table and one below
 it, and started indenting a list item inside its cell. A
 `Slot` now carries the box a block was laid out in rather than only its height, because a block

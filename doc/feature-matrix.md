@@ -44,10 +44,8 @@ opens either kind, dispatched on `grind_core::kind` from the file's bytes.
 **Legend.** ● built · ◐ partial, see the notes under the table · ○ absent, and deferred by
 decision · — not applicable to this client.
 
-**The Mac column means *written*, not *seen working*.** It is read out of `ui_mac` as built and
-type-checked from Linux; none of it has run on a Mac yet (`doc/macos-shell.md`, M2–M10), and the
-runner's first green `artifacts.yml` job is what turns its ● into the others' ●. Its notes are
-numbered, under each table, so they cannot collide with the lettered ones.
+The Mac column's notes are numbered, under each table, so they cannot collide with the lettered
+ones.
 
 ## 2. Suite-wide
 
@@ -760,7 +758,7 @@ cell would display under each (`App::shown_as`), and both read a formula through
 Names overlay on — the Windows bar in its reading slot after the friendly one, the browser beside
 the arithmetic — over the new `grind_sheet::place::named_reading`.
 
-**Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`'s M11), read out of `ui_mac`
+**Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`), read out of `ui_mac`
 through M10 by the same three steps — every row judged against the code, its notes numbered so
 they cannot collide with the lettered ones — and none of it yet seen running. Nothing else was
 re-derived.
