@@ -680,17 +680,11 @@ impl Sheet {
         self.geom.first_col = self.geom.first_col.min(self.geom.max_first_col());
     }
 
-    /// What the sheet's occupied region is, as far as navigation cares.
-    ///
-    /// A page keeps one row of context, which is what every other grid does.
-    fn extent(&self) -> keymap::Extent {
-        let (rows, cols) = self.app.used_extent(self.sheet).unwrap_or((0, 0));
+    /// How many rows Page Down moves: the rows in view, less one kept for context, as every
+    /// other grid does.
+    fn page(&self) -> u32 {
         let visible = u32::try_from(self.geom.page_rows()).unwrap_or(1);
-        keymap::Extent {
-            rows,
-            cols,
-            page: visible.saturating_sub(1).max(1),
-        }
+        visible.saturating_sub(1).max(1)
     }
 
     /// Do what a keystroke asked for. [`keymap::Action::GoTo`] is not here: it opens a window,
@@ -698,16 +692,14 @@ impl Sheet {
     fn act(&mut self, action: keymap::Action) {
         match action {
             keymap::Action::Move { motion, extend } => {
-                let extent = self.extent();
-                let occupied = grind_sheet::nav::occupied(&self.app, self.sheet);
-                let to = keymap::moved(self.selection, motion, extend, extent, &occupied);
-                // A hidden track is drawn as gone, so a cursor may not stop on one — see
-                // `keymap::onto_visible`, which is the rule and has the tests.
-                let to = keymap::onto_visible(to, motion, &self.geom.rows, &self.geom.cols);
-                // A merge is one cell: a step leaves it from its far edge.
-                let merges = grind_sheet::nav::merges(&self.app, self.sheet);
-                self.selection =
-                    grind_sheet::nav::through_merges(self.selection, to, motion, &merges);
+                self.selection = grind_sheet::nav::apply(
+                    &self.app,
+                    self.sheet,
+                    self.selection,
+                    (motion, extend),
+                    self.page(),
+                    (&self.geom.rows, &self.geom.cols),
+                );
             }
             // Everything the sheet *uses*, with the active cell at A1 so that the view goes
             // home rather than to the far corner. An empty sheet selects the one cell it has.

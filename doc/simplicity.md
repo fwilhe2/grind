@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Simple, not easy
 
-**Status: decided 2026-11-20. Phases 0, 1 and 2 done; phase 3 next.**
+**Status: decided 2026-11-20. Phases 0 to 3 done; phase 4 next.**
 
 *Simple* is one concept in one place doing one job; *easy* is near at hand. Most of the
 accidental complexity here came from easy steps: a decision copied into the next shell, a feature
@@ -84,9 +84,10 @@ pages.
 
 ### Phase 3 — narrow the surfaces
 
-`grind-xlsx`, `grind-docx`, `grind-ooxml` and `grind-print` keep `pub` only what another crate
-calls, then `grind-sheet` and `grind-text` the same way. clerk is checked before each
-(`../clerk`).
+Done for modules and functions: a module or function no other crate and none of the crate's
+own integration tests name is private or `pub(crate)`, in every library crate, and what only
+being public had kept alive is deleted. Types and fields are the same question, one size down,
+and are asked as phase 4 touches them. clerk (`../clerk`) is checked before each.
 
 ### Phase 4 — the shell's decisions move into the core
 

@@ -14,26 +14,7 @@ use grind_sheet::Pos;
 
 use super::{MAX_COLS, MAX_ROWS};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Dir {
-    Left,
-    Right,
-    Up,
-    Down,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Motion {
-    By(Dir),
-    Page(Dir),
-    /// The next edge of the data — Ctrl+arrow, resolved against the document by the pane
-    /// (`grind_sheet::nav`'s rule), since this file has no document to ask.
-    Edge(Dir),
-    RowStart,
-    RowEnd,
-    SheetStart,
-    SheetEnd,
-}
+pub use grind_sheet::nav::{Dir, Motion};
 
 fn edge(dir: Dir, extend: bool) -> Action {
     Action::Move {

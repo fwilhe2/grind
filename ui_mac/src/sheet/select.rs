@@ -8,7 +8,7 @@
 //! the selection it makes. Points are in the **sheet's** coordinates; the view subtracts its
 //! header margin first.
 
-use grind_sheet::nav::{self, Extent, Selection};
+use grind_sheet::nav::{self, Selection};
 use grind_sheet::{App, MAX_COLS, MAX_ROWS, Pos};
 
 use super::geom::{Grid, HEADER_H, HEADER_W, Rect};
@@ -31,16 +31,14 @@ pub fn apply(
     page: u32,
 ) -> Selection {
     match action {
-        GridAction::Move { motion, extend } => {
-            let (rows, cols) = app.used_extent(sheet).unwrap_or((0, 0));
-            let extent = Extent { rows, cols, page };
-            let occupied = nav::occupied(app, sheet);
-            let moved = nav::moved(selection, motion, extend, extent, &occupied);
-            // A hidden track is drawn as gone, so a cursor may not stop on one.
-            let moved = nav::onto_visible(moved, motion, &grid.rows, &grid.cols);
-            // A merge is one cell: a step leaves it from its far edge.
-            nav::through_merges(selection, moved, motion, &nav::merges(app, sheet))
-        }
+        GridAction::Move { motion, extend } => nav::apply(
+            app,
+            sheet,
+            selection,
+            (motion, extend),
+            page,
+            (&grid.rows, &grid.cols),
+        ),
         GridAction::Collapse => Selection::at(selection.active),
         // Emptying cells is an edit, which the grid view makes; the selection stays.
         GridAction::Clear => selection,

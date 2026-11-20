@@ -294,6 +294,29 @@ pub fn onto_merge(selection: Selection, merge_at: &dyn Fn(Pos) -> Option<(Pos, P
     }
 }
 
+/// One motion as every grid applies it: over the data ([`moved`], `page` rows to a page), then off
+/// any hidden or filtered track, which is drawn as gone ([`onto_visible`]), then out of a merge
+/// from its far edge ([`through_merges`]).
+#[must_use]
+pub fn apply(
+    app: &App,
+    sheet: usize,
+    from: Selection,
+    (motion, extend): (Motion, bool),
+    page: u32,
+    (rows, cols): (&Sizes, &Sizes),
+) -> Selection {
+    let (used_rows, used_cols) = app.used_extent(sheet).unwrap_or((0, 0));
+    let extent = Extent {
+        rows: used_rows,
+        cols: used_cols,
+        page,
+    };
+    let moved = moved(from, motion, extend, extent, &occupied(app, sheet));
+    let moved = onto_visible(moved, motion, rows, cols);
+    through_merges(from, moved, motion, &merges(app, sheet))
+}
+
 /// [`moved`]'s result with merges taken into account: one step out of a merge leaves from its far
 /// edge (Right from `B2:D2` lands on `E2`), and a landing inside a merge goes to its top-left
 /// cell. An extended selection is left alone; growing it to whole merges is a gap

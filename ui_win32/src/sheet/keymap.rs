@@ -19,7 +19,7 @@
 //! it. [`Selection`], [`Motion`], [`Extent`], [`moved`], [`onto_visible`] and the Ctrl+arrow rule
 //! are `grind_sheet::nav`'s; what is here is which key means which motion.
 
-pub use grind_sheet::nav::{Dir, Extent, Motion, Selection, moved, onto_visible};
+pub use grind_sheet::nav::{Dir, Motion, Selection};
 
 /// A key, as this shell cares about it: navigation, the verbs that are navigation in disguise, and
 /// the keys that mean something while editing (`F2`, `Delete`, `Backspace`, `F9`), which

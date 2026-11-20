@@ -2195,22 +2195,15 @@ mod imp {
                     let Some(app) = self.app.borrow().clone() else {
                         return glib::Propagation::Stop;
                     };
-                    let occupied = grind_sheet::nav::occupied(&app, self.sheet.get());
-                    let moved = keymap::moved(
-                        self.selection.get(),
-                        motion,
-                        extend,
-                        self.extent(),
-                        &occupied,
-                    );
-                    // A hidden or filtered track is drawn as gone, so a cursor may not stop on
-                    // one — `nav::onto_visible`, the rule the Windows and Mac grids apply.
                     let geom = self.geom();
-                    let moved =
-                        grind_sheet::nav::onto_visible(moved, motion, &geom.rows, &geom.cols);
-                    // A merge is one cell: a step leaves it from its far edge.
-                    let merges = grind_sheet::nav::merges(&app, self.sheet.get());
-                    grind_sheet::nav::through_merges(self.selection.get(), moved, motion, &merges)
+                    grind_sheet::nav::apply(
+                        &app,
+                        self.sheet.get(),
+                        self.selection.get(),
+                        (motion, extend),
+                        self.extent().page,
+                        (&geom.rows, &geom.cols),
+                    )
                 }
                 Action::SelectAll => {
                     let Some(app) = self.app.borrow().clone() else {

@@ -27,6 +27,7 @@ use grind_sheet::find::{self, Search, Towards};
 use grind_sheet::format::{self, Toggle};
 use grind_sheet::formula::{display, lex};
 use grind_sheet::look::{self, Align, VAlign};
+use grind_sheet::nav::Selection;
 use grind_sheet::numfmt::{self, Kind};
 use grind_sheet::style::{CellStyle, EDGES};
 use grind_sheet::{App, CellValue, ChartKind, Filter, Form, Pos, RecalcMode, a1, csv};
@@ -59,48 +60,6 @@ fn declare_cell_size(document: &Document) -> Result<(), JsValue> {
     let style = root.style();
     style.set_property("--cell-w", &format!("{}px", layout::CELL.cell_w))?;
     style.set_property("--cell-h", &format!("{}px", layout::CELL.cell_h))
-}
-
-/// The selected rectangle as two `Pos`es — where it started and where it is — so extending with
-/// Shift knows which corner is pinned.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Selection {
-    anchor: Pos,
-    active: Pos,
-}
-
-impl Default for Selection {
-    fn default() -> Self {
-        Selection::at(Pos::new(0, 0))
-    }
-}
-
-impl Selection {
-    fn at(pos: Pos) -> Self {
-        Selection {
-            anchor: pos,
-            active: pos,
-        }
-    }
-
-    /// Top-left and bottom-right, whichever way round it was dragged.
-    fn rect(&self) -> (Pos, Pos) {
-        (
-            Pos::new(
-                self.anchor.row.min(self.active.row),
-                self.anchor.col.min(self.active.col),
-            ),
-            Pos::new(
-                self.anchor.row.max(self.active.row),
-                self.anchor.col.max(self.active.col),
-            ),
-        )
-    }
-
-    fn contains(&self, pos: Pos) -> bool {
-        let (start, end) = self.rect();
-        (start.row..=end.row).contains(&pos.row) && (start.col..=end.col).contains(&pos.col)
-    }
 }
 
 /// A column being sized: which, where the pointer was and how wide the column was, the `<col>`
@@ -370,7 +329,7 @@ impl Ui {
         self.dom.head.append_child(&corner)?;
         for &col in &shown {
             let cell = self.dom.document.create_element("th")?;
-            cell.set_class_name(if selection.contains(Pos::new(selection.active.row, col)) {
+            cell.set_class_name(if selection.contains(selection.active.row, col) {
                 "head col current"
             } else {
                 "head col"
@@ -446,7 +405,7 @@ impl Ui {
                     cell.set_attribute("rowspan", &down.to_string())?;
                 }
                 let active = pos == selection.active;
-                cell.set_class_name(match (active, selection.contains(pos)) {
+                cell.set_class_name(match (active, selection.contains(pos.row, pos.col)) {
                     (true, _) => "cell active",
                     (_, true) => "cell selected",
                     _ => "cell",
@@ -1789,13 +1748,7 @@ impl Ui {
         // A whole row or column is cut to the part in use, as every verb over one is.
         let selection = self.selection.get();
         let used = self.app.used_extent(sheet).unwrap_or((0, 0));
-        let (start, end) = grind_sheet::nav::target(
-            grind_sheet::nav::Selection {
-                anchor: selection.anchor,
-                active: selection.active,
-            },
-            used,
-        );
+        let (start, end) = grind_sheet::nav::target(selection, used);
         let said = if merge {
             match self.app.merge(sheet, start, end) {
                 Ok(_) => {
@@ -1855,15 +1808,6 @@ impl Ui {
         self.request_repaint();
     }
 
-    /// A selection in the core's own type, for `grind_sheet::verbs`.
-    fn nav_selection(&self) -> grind_sheet::nav::Selection {
-        let selection = self.selection.get();
-        grind_sheet::nav::Selection {
-            anchor: selection.anchor,
-            active: selection.active,
-        }
-    }
-
     /// A window prompt, or `None` when there is no window or the question was cancelled.
     fn ask(&self, message: &str, default: &str) -> Option<String> {
         web_sys::window()?
@@ -1886,7 +1830,7 @@ impl Ui {
             return;
         };
         let size = Some(answer.trim().to_owned()).filter(|size| !size.is_empty());
-        let selection = self.nav_selection();
+        let selection = self.selection.get();
         let result = if rows {
             self.app
                 .set_row_height(self.sheet.get(), grind_sheet::verbs::rows(selection), size)
@@ -1910,7 +1854,7 @@ impl Ui {
     /// step.
     fn fit(&self, cols: bool, rows: bool, whole: bool) {
         let sheet = self.sheet.get();
-        let selection = self.nav_selection();
+        let selection = self.selection.get();
         let cols = match (cols, whole) {
             (_, true) => grind_sheet::fit::all_columns(&self.app, sheet),
             (true, false) => grind_sheet::fit::columns_in_use(
@@ -1941,7 +1885,7 @@ impl Ui {
     /// sheet (`grind_sheet::verbs::name_target`), read the way `grind sheet name` reads one.
     fn define_name(&self) {
         let sheet = self.app.sheet_name(self.sheet.get()).unwrap_or_default();
-        let target = grind_sheet::verbs::name_target(&sheet, self.nav_selection());
+        let target = grind_sheet::verbs::name_target(&sheet, self.selection.get());
         let Some(name) = self.ask(&format!("A name for {target}"), "") else {
             return;
         };
@@ -2669,36 +2613,8 @@ impl Ui {
     /// and the cursor then steps over what is not drawn: a hidden row or column, or a row a filter
     /// folds away, takes no room, and a cursor parked on one is invisible (`nav::onto_visible`).
     fn move_to(&self, motion: Motion, extend: bool) {
-        use grind_sheet::nav;
         let sheet = self.sheet.get();
-        let (rows, cols) = self.app.used_extent(sheet).unwrap_or((0, 0));
-        let selection = self.selection.get();
         let page = self.visible().0.saturating_sub(1).max(1);
-        let dir = |dir| match dir {
-            keymap::Dir::Left => nav::Dir::Left,
-            keymap::Dir::Right => nav::Dir::Right,
-            keymap::Dir::Up => nav::Dir::Up,
-            keymap::Dir::Down => nav::Dir::Down,
-        };
-        let motion = match motion {
-            Motion::By(d) => nav::Motion::By(dir(d)),
-            Motion::Page(d) => nav::Motion::Page(dir(d)),
-            Motion::Edge(d) => nav::Motion::Edge(dir(d)),
-            Motion::RowStart => nav::Motion::RowStart,
-            Motion::RowEnd => nav::Motion::RowEnd,
-            Motion::SheetStart => nav::Motion::SheetStart,
-            Motion::SheetEnd => nav::Motion::SheetEnd,
-        };
-        let moved = nav::moved(
-            nav::Selection {
-                anchor: selection.anchor,
-                active: selection.active,
-            },
-            motion,
-            extend,
-            nav::Extent { rows, cols, page },
-            &nav::occupied(&self.app, sheet),
-        );
         let mut hidden_rows = self.app.manually_hidden_rows(sheet).unwrap_or_default();
         hidden_rows.extend(self.app.hidden_rows(sheet).unwrap_or_default());
         let hidden_cols = self.app.hidden_cols(sheet).unwrap_or_default();
@@ -2706,22 +2622,15 @@ impl Ui {
         let steps = |count, hidden: &[u32]| {
             grind_sheet::tracks::Sizes::from_lengths(1.0, count, &none, hidden, |mm| mm)
         };
-        let moved = nav::onto_visible(
-            moved,
-            motion,
-            &steps(MAX_ROWS, &hidden_rows),
-            &steps(MAX_COLS, &hidden_cols),
-        );
-        // A merge is one cell: a step leaves it from its far edge.
-        let before = nav::Selection {
-            anchor: selection.anchor,
-            active: selection.active,
-        };
-        let moved = nav::through_merges(before, moved, motion, &nav::merges(&self.app, sheet));
-        self.set_selection(Selection {
-            anchor: moved.anchor,
-            active: moved.active,
-        });
+        let (rows, cols) = (steps(MAX_ROWS, &hidden_rows), steps(MAX_COLS, &hidden_cols));
+        self.set_selection(grind_sheet::nav::apply(
+            &self.app,
+            sheet,
+            self.selection.get(),
+            (motion, extend),
+            page,
+            (&rows, &cols),
+        ));
     }
 
     fn set_selection(&self, selection: Selection) {
@@ -3781,8 +3690,8 @@ mod tests {
             active: Pos::new(1, 2),
         };
         assert_eq!(up.rect(), (Pos::new(1, 2), Pos::new(4, 4)));
-        assert!(up.contains(Pos::new(2, 3)));
-        assert!(!up.contains(Pos::new(5, 3)));
+        assert!(up.contains(2, 3));
+        assert!(!up.contains(5, 3));
         assert_eq!(
             Selection::at(Pos::new(2, 2)).rect(),
             (Pos::new(2, 2), Pos::new(2, 2))
