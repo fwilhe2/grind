@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Setting the page (`doc/page-model.md` PM8): paper, orientation and margins written over the
+//! Setting the page (`doc/page-model.md`): paper, orientation and margins written over the
 //! master page's own layout and nothing else, as Writer writes them (`doc/odt-format.md` §5c
 //! fact 59) — or, in a document stating no page, a layout and a master page added.
 

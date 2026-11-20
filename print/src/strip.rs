@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Where each page sits in a window: a column of sheets on a desk, centred, scrolled as one
-//! (`doc/page-model.md` PM5). Pure arithmetic between a window's pixels and a page's points, the
+//! (`doc/page-model.md`). Pure arithmetic between a window's pixels and a page's points, the
 //! same in every shell that shows pages.
 
 use std::ops::Range;

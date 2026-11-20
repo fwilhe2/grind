@@ -2,9 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `doc/page-model.md` PM3 item 6: after every edit of a scripted session, the pages set from the
-//! pages before (`typeset_after`, which copies those it finds unchanged) equal the pages set from
-//! nothing. Over the vendored documents and a long one made here, and over every `.odt` of a
+//! After every edit of a scripted session, the pages set from the pages before (`typeset_after`,
+//! which copies those it finds unchanged) equal the pages set from nothing. Over the vendored documents and a long one made here, and over every `.odt` of a
 //! LibreOffice checkout when `GRIND_LO_CORPUS` names one.
 
 use grind_print::text::{Options, typeset, typeset_after};

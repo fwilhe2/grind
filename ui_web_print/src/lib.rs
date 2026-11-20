@@ -9,7 +9,7 @@
 //! with the fonts the page fetched. Functions with a host-side twin are tested without a browser;
 //! the `#[wasm_bindgen]` wrappers only convert.
 //!
-//! [`Pages`] is the text pane's page view (`doc/page-model.md` PM7): the document kept typeset,
+//! [`Pages`] is the text pane's page view (`doc/page-model.md`): the document kept typeset,
 //! its pages placed in a strip, and every question about where text is answered in the strip's
 //! CSS pixels, so the main module positions elements and knows no font.
 

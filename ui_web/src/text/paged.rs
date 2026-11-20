@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document as its printed pages (`doc/page-model.md` PM7): a canvas per page, drawn by the
+//! The document as its printed pages (`doc/page-model.md`): a canvas per page, drawn by the
 //! print module's `Pages`, which keeps the document typeset and answers every question about
 //! where its text is in the strip's CSS pixels. This module holds the canvases and asks; it knows
 //! no font.

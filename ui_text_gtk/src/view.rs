@@ -6,7 +6,7 @@
 //! neither. The pages are [`grind_print`]'s, set by a [`grind_print::session::Session`] and
 //! drawn from the very raster Print Preview shows; what is drawn over them — caret, selection,
 //! underlines — and every question about a point or a line is [`grind_print::place`]'s, over the
-//! line boxes the pages were set with (`doc/page-model.md` PM5).
+//! line boxes the pages were set with (`doc/page-model.md`).
 //!
 //! **Not `GtkTextView`**, whose `GtkTextBuffer` would be a second copy of the document with its
 //! own undo stack and no notion of a `text:h`.
@@ -3147,8 +3147,8 @@ mod tests {
         assert_eq!(down.value(), second.y - grind_print::strip::PAD);
     }
 
-    /// `doc/page-model.md` PM5's exit: with nothing drawn over it, a page as the window shows it
-    /// is, pixel for pixel, the preview of that page at the same scale.
+    /// With nothing drawn over it, a page as the window shows it is, pixel for pixel, the preview
+    /// of that page at the same scale.
     fn a_page_in_the_window_is_the_previews_pixels() {
         let (doc, app) = shell(&[
             "A heading of sorts",

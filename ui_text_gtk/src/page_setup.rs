@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! **Page Setup…** — the paper, how it lies and the four margins (`doc/page-model.md` PM8), set
+//! **Page Setup…** — the paper, how it lies and the four margins (`doc/page-model.md`), set
 //! through `App::set_page` as `grind text page-setup` sets them. The papers are ISO 216's A sizes
 //! (`doc/pdf-export.md` decision 7); a page of another size is offered as itself.
 

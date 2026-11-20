@@ -2,8 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a caret is on a page, and which caret a point on a page means (`doc/page-model.md`
-//! PM2). Lookups over the [`LineBox`]es typesetting leaves on each [`Page`]: no font, no layout.
+//! Where a caret is on a page, and which caret a point on a page means (`doc/page-model.md`).
+//! Lookups over the [`LineBox`]es typesetting leaves on each [`Page`]: no font, no layout.
 //! In points from the page's top-left corner, as the display list is.
 
 use grind_text::Caret;

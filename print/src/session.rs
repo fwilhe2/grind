@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! A document kept typeset while it is open, for a window that shows and edits its pages
-//! (`doc/page-model.md` PM3). The pages are set when first asked for after a change and held
+//! (`doc/page-model.md`). The pages are set when first asked for after a change and held
 //! until the next; nothing is stored in the document.
 
 use std::cell::RefCell;
@@ -50,7 +50,7 @@ impl Session {
     // ponytail: an edit to a heading, a list's numbering, a table cell or a picture, or one
     // adding or removing a list item, paginates the whole document again (150–300 ms for 560
     // pages), every measurement and unchanged layout kept. Re-cut those from near the edit too
-    // when that is too slow (`doc/page-model.md` PM3 item 3).
+    // when that is too slow (`doc/page-model.md`).
     pub fn changed(&self) {
         self.named.replace(None);
         if let Some(set) = self.set.take() {

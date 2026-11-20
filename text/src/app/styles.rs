@@ -15,7 +15,7 @@ impl App {
     }
 
     /// Set the page the document is set on: paper, orientation and margins, written over its
-    /// master page's layout and nothing else (`doc/page-model.md` PM8). One undo step.
+    /// master page's layout and nothing else (`doc/page-model.md`). One undo step.
     pub fn set_page(&self, page: grind_core::page::PageGeometry) -> Result<()> {
         self.mutate(|state| {
             Self::commit(state, crate::action::Action::SetPage { page: Some(page) })

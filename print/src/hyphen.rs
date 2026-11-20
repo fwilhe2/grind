@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Where a word may be hyphenated (`doc/page-model.md` PM6 item 5): Liang's patterns, as
+//! Where a word may be hyphenated (`doc/page-model.md`): Liang's patterns, as
 //! libhyphen's `.dic` files spell them — an encoding line, `LEFTHYPHENMIN` and `RIGHTHYPHENMIN`,
 //! then one pattern a line, letters with the digits between them. A position takes the highest
 //! digit any pattern puts there, and an odd one is a place to break.

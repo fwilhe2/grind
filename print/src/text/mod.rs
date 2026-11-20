@@ -56,7 +56,7 @@ pub fn typeset(app: &App, setter: &Typesetter, options: &Options) -> Document {
 /// before an edit, with the same `setter`. A page is the same when everything its drawing reads
 /// is: its place in the flow, its blocks and their styles, labels, boxes and spacing, its number
 /// and running heads, and the pages' masters. The rest are `previous`'s, copied
-/// (`doc/page-model.md` PM3). An edit that left every block it changed the shape it was is
+/// (`doc/page-model.md`). An edit that left every block it changed the shape it was is
 /// not even cut again: only the pages holding it are drawn.
 pub fn typeset_after(
     app: &App,
@@ -2480,7 +2480,7 @@ fn lines(
                 }
                 let run: f32 = shaped.glyphs.iter().map(|g| g.x_advance).sum();
                 // What is drawn ends where the layout put the caret after it: shaping a piece
-                // alone and measuring its run whole must agree (`doc/page-model.md` PM1).
+                // alone and measuring its run whole must agree (`doc/page-model.md`).
                 #[cfg(test)]
                 {
                     let end = start + text.chars().count();

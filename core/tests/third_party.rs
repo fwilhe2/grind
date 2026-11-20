@@ -133,7 +133,7 @@ const EXTRAS: &[Extra] = &[
             text
         },
     },
-    // The hyphenation patterns (doc/page-model.md PM6 item 5), held to AGPL-3.0-or-later by
+    // The hyphenation patterns (doc/page-model.md), held to AGPL-3.0-or-later by
     // hand as the dictionaries below are.
     Extra {
         name: "English hyphenation patterns (hyph_en_US)",

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! `doc/page-model.md` PM9 item 1, screen = PDF: every page of every vendored document, as the
+//! Screen = PDF (`doc/page-model.md`): every page of every vendored document, as the
 //! windows draw it (`raster::render`), against `hayro`'s rendering of the PDF written from the same
 //! pages. Two rasterisers antialias differently, and the screen darkens small text
 //! (`raster::contrast`), so the claim is that almost every inked pixel agrees, not every one; a

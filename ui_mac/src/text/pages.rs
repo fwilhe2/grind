@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A frame of the page view as [`Op`]s (`doc/page-model.md` PM7): the document's printed pages,
+//! A frame of the page view as [`Op`]s (`doc/page-model.md`): the document's printed pages,
 //! each its raster from `grind_print`, on a desk, and over them what is not on paper — the
 //! selection, spelling and grammar dots, bookmark names, an input method's composition and the
 //! caret. Where any of it is comes from `grind_print::view`; no CoreGraphics here, so the frame

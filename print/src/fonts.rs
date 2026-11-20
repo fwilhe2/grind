@@ -155,7 +155,7 @@ const DEFAULT: &str = "Liberation Serif";
 ///
 /// ponytail: a variable face is drawn at its default instance, which for Noto Sans CJK's is
 /// Thin. Upgrade: set the `wght` axis to the run's weight when shaping, rasterising and
-/// embedding (`doc/page-model.md` PM6 item 1).
+/// embedding (`doc/page-model.md`).
 pub const FALLBACK: [&str; 14] = [
     "DejaVu Sans",
     "Noto Sans",

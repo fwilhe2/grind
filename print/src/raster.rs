@@ -59,8 +59,8 @@ pub fn render(page: &Page, fonts: &Fonts, scale: f32) -> Raster {
 
 /// What rasterising keeps from one page to the next: each glyph's outline, its coverage at each
 /// size and quarter-pixel phase it was drawn at, and each picture as drawn — so what was drawn
-/// before is a blend rather than a path filled or an image decoded again (`doc/page-model.md`
-/// PM4). For one [`Fonts`]: a face is its index.
+/// before is a blend rather than a path filled or an image decoded again (`doc/page-model.md`).
+/// For one [`Fonts`]: a face is its index.
 #[derive(Default)]
 pub struct Rasteriser {
     glyphs: Glyphs,
@@ -499,7 +499,7 @@ fn quarters(at: f32) -> (i32, u8) {
 /// partly covered pixels made darker at text sizes, where an unhinted stem spreads over two
 /// pixels and reads grey, and left alone from [`CONTRAST_TO`] up, where a stem is many pixels
 /// wide. The outline and the PDF are untouched; only how much ink a pixel gets changes
-/// (`doc/page-model.md` PM4 item 3).
+/// (`doc/page-model.md`).
 fn contrast(ppem: f32) -> [u8; 256] {
     let share = ((CONTRAST_TO - ppem) / (CONTRAST_TO - CONTRAST_FROM)).clamp(0.0, 1.0);
     let exponent = 1.0 / (1.0 + (CONTRAST_GAMMA - 1.0) * share);

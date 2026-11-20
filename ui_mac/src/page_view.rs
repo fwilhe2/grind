@@ -4,7 +4,7 @@
 
 //! The page inside an `NSScrollView` — the word processor's document view, the one place this
 //! shell draws a text document. One flipped view over one [`TextPane`]: the document's printed
-//! pages as `grind_print` sets them (`doc/page-model.md` PM7), placed in a strip as wide as the
+//! pages as `grind_print` sets them (`doc/page-model.md`), placed in a strip as wide as the
 //! scroll view and as tall as the pages; the scroll view scrolls and magnifies. It draws through
 //! `text::pages` and [`crate::render::draw`], as `--render-to` does.
 //!

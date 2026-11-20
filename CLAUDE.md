@@ -23,8 +23,8 @@ phase 10.
   screen. Not built: a session (no `undo` across CLI invocations), table styles and
   `table:formula`, footnotes, fields, style definitions, RTL.
 - **Import filters**, one way in and never out: `.xlsx` (`grind-xlsx`), `.docx` (`grind-docx`).
-- **Shells**: GTK (one per document type), terminal, browser, Windows, macOS (built, not yet run
-  on a Mac). `doc/feature-matrix.md` is which client can do what.
+- **Shells**: GTK (one per document type), terminal, browser, Windows, macOS.
+  `doc/feature-matrix.md` is which client can do what.
 - **`grind serve`** — a directory of documents behind the browser shell, on 127.0.0.1 only; the
   page probes for it and is the static page without it (`doc/server.md`).
 
@@ -65,6 +65,7 @@ semantics never are.
 | ODF itself | `doc/OpenDocument-v1.4-schema.rng` (Part 3), `doc/OpenDocument-v1.4-os-part4-formula.html` (Part 4) |
 | Scope lines | `doc/small-group.md` (functions), `doc/function-coverage.md` (the evidence for going past it), `doc/text-core.md` (text elements), `doc/not-doing.md` (the product line) |
 | Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md`, `doc/metafile-format.md` |
+| Keeping it simple | `doc/simplicity.md` (the rules, and the plan they come with) |
 | Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
 | Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
 | Import filters | `doc/xlsx-import.md`, `doc/docx-import.md`, `doc/craft-corpus.md` (the compatibility matrix and import timings) |
@@ -280,6 +281,10 @@ update: check `../clerk` for callers, and name the change in the commit message.
 
 ## Conventions
 
+- **Simple, not easy** (`doc/simplicity.md`): a migration ends with the old path deleted; a
+  decision two shells hold moves into the core; no cargo feature or setting without someone who
+  needs the other answer; no `pub` without an outside caller. `cli/tests/simplicity.rs` holds
+  the counts.
 - **Comments must earn their place.** Say what the code and its names cannot, and stay true when
   other files change: no milestone tags, no "used to", no status ("not yet", "this build"), no
   descriptions of other shells. A doc comment is one to three lines unless the item really needs

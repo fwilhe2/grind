@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! Which blocks changed since a revision, for a reader that set the document then and would set
-//! again only what changed ([`crate::App::changed_since`], `doc/page-model.md` PM3).
+//! again only what changed ([`crate::App::changed_since`], `doc/page-model.md`).
 
 use std::collections::VecDeque;
 use std::ops::Range;

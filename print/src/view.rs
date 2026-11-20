@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The pages as a window shows them (`doc/page-model.md` PM7): a typeset document placed in a
+//! The pages as a window shows them (`doc/page-model.md`): a typeset document placed in a
 //! [`Strip`], and every question a shell asks about where its text is — a caret's stroke, the
 //! caret a point means, a selection's rectangles — answered in the strip's pixels. A shell adds
 //! only its own offset: a scroll, a band above the pages.

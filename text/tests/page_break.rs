@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A page break made here (`doc/page-model.md` PM8): Ctrl+Enter splits the paragraph and starts a
+//! A page break made here (`doc/page-model.md`): Ctrl+Enter splits the paragraph and starts a
 //! page with the second part, written as Writer writes it — an automatic paragraph style over the
 //! paragraph's own with `fo:break-before="page"` (`doc/odt-format.md` §5c fact 58).
 

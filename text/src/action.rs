@@ -23,7 +23,7 @@ pub enum Action {
     RemoveBlock { index: usize },
     /// Several changes that undo as one step.
     Batch(Vec<Action>),
-    /// The page the document is set on (`doc/page-model.md` PM8).
+    /// The page the document is set on (`doc/page-model.md`).
     SetPage {
         page: Option<grind_core::page::PageGeometry>,
     },

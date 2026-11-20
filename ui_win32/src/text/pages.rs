@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The document as its printed pages in this window (`doc/page-model.md` PM7): which pages are in
+//! The document as its printed pages in this window (`doc/page-model.md`): which pages are in
 //! view and where, in client pixels, and every point and rectangle between those pixels and the
 //! pages' points. **No Windows types**; `grind_print::place` answers where text is on a page.
 
