@@ -117,8 +117,8 @@ projection, `grind init`, the docx filter, the formula workbench, the grammar ch
 modes, the server and loop E: each says what is built and what is not, and nothing cites a
 milestone by number. `doc/xlsx-import.md` keeps its milestone labels: `xlsx/tests/ooxmlgen.rs` and the
 corpus's README classify every fixture by them, so they are a vocabulary the tests check rather
-than history. Left: `doc/suite.md`'s prose, which is written around its milestones,
-and `AGENTS.md`.
+than history. `AGENTS.md` points at `CLAUDE.md`. Left: `doc/suite.md`'s prose, which is
+written around its milestones.
 
 ### Phase 6 — the big files
 
