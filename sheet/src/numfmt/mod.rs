@@ -171,7 +171,7 @@ impl Op {
 /// `style:condition="value()>=0"` as an operator and its operand's text. Anything else is `None`
 /// and the map is dropped, rather than evaluating a condition this does not model.
 #[must_use]
-pub fn parse_condition(condition: &str) -> Option<(Op, String)> {
+pub(crate) fn parse_condition(condition: &str) -> Option<(Op, String)> {
     let rest = condition.trim().strip_prefix("value()")?.trim_start();
     let (text, op) = Op::SPELLINGS
         .iter()
@@ -333,7 +333,7 @@ impl Format {
     /// [`Format::render`] in a document whose locale is `fallback`, which a format with no locale
     /// of its own uses ([`crate::Document::locale`]).
     #[must_use]
-    pub fn render_in(
+    pub(crate) fn render_in(
         &self,
         value: &CellValue,
         null_date: i64,
@@ -643,7 +643,7 @@ pub fn currency_named(word: &str) -> Option<&'static str> {
 /// Whether a currency symbol goes before the amount (`$1,234.50`, `£1,234.50`) rather than after
 /// it with a no-break space (`1,234.50 €`), as every other symbol is spelled here.
 #[must_use]
-pub fn symbol_leads(symbol: &str) -> bool {
+pub(crate) fn symbol_leads(symbol: &str) -> bool {
     matches!(symbol, "$" | "£")
 }
 
@@ -740,7 +740,7 @@ pub fn general(
 /// [`general`] in a document whose locale is `locale`: numbers take its decimal separator
 /// ([`spell_number`]); dates and times stay ISO.
 #[must_use]
-pub fn general_in(
+pub(crate) fn general_in(
     value: &CellValue,
     kind: Option<crate::model::NumberKind>,
     null_date: i64,

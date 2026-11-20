@@ -114,11 +114,6 @@ impl CellBox {
     pub fn bottom(&self) -> f64 {
         self.top + self.height
     }
-
-    #[must_use]
-    pub fn right_edge(&self) -> f64 {
-        self.left + self.width
-    }
 }
 
 /// Every block stacked, and a table's blocks on its grid. Built fresh whenever the document, the
@@ -171,7 +166,7 @@ impl Flow {
     /// Add a block with a document style's space above and below it, added to the space before
     /// rather than collapsed, and above the first block too, as Writer does (`doc/odt-format.md`
     /// §5c, facts 5 and 6) — for a printed page. `width` is the measure its face set it at.
-    pub fn push_spaced(
+    pub(crate) fn push_spaced(
         &mut self,
         index: usize,
         height: f64,
@@ -327,7 +322,7 @@ pub struct Across {
 /// columns (the answer that never overflows the measure). A merged cell takes every column it
 /// spans.
 #[must_use]
-pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
+pub(crate) fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     let share = column / f64::from(columns.max(1));
     (
         f64::from(cell.column) * share,
@@ -339,7 +334,12 @@ pub fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
 /// none): unstated columns share what is left, and the stated ones are scaled to fill the table's
 /// width, as Writer does (`doc/odt-format.md` §5c fact 26).
 #[must_use]
-pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
+pub(crate) fn cell_x_with(
+    cell: &Cell,
+    columns: u32,
+    column: f64,
+    widths: &[Option<f64>],
+) -> (f64, f64) {
     let count = columns.max(1) as usize;
     let stated: f64 = widths.iter().take(count).flatten().sum();
     let unstated = (0..count)
@@ -1096,7 +1096,11 @@ mod tests {
         let boxes = flow.cells();
         assert_eq!(boxes[1].left, share);
         assert_eq!(boxes[0].bottom(), boxes[3].top, "rows abut: one rule");
-        assert_eq!(boxes[0].right_edge(), boxes[1].left, "and so do columns");
+        assert_eq!(
+            boxes[0].left + boxes[0].width,
+            boxes[1].left,
+            "and so do columns"
+        );
 
         let before = flow.slot(0).unwrap();
         let after = flow.slot(7).unwrap();

@@ -83,7 +83,7 @@ fn parameter(part: &str) -> Option<(String, String)> {
 /// whole. One value when every alternative type is: `Number`, `Text|Number`, `Any`; not
 /// `NumberSequence`, `Reference|Array` or `Criteria`.
 #[must_use]
-pub fn takes_one_value(name: &str, index: usize) -> bool {
+pub(crate) fn takes_one_value(name: &str, index: usize) -> bool {
     const ONE: &[&str] = &[
         "Any",
         "Criterion",

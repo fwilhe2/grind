@@ -289,7 +289,7 @@ impl Typesetter {
 
     /// Which face and size `style` sets text in. Remembered, so the report can say afterwards
     /// what was substituted.
-    pub fn face_of(&self, style: &TextStyle) -> (FaceId, f32) {
+    pub(crate) fn face_of(&self, style: &TextStyle) -> (FaceId, f32) {
         let bold = style.font_weight.as_deref().is_some_and(is_bold);
         let italic = matches!(style.font_style.as_deref(), Some("italic" | "oblique"));
         let key = (style.font_family.clone(), bold, italic);

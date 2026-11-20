@@ -5,7 +5,7 @@
 //! A chart as a list of [`Mark`]s, so where every bar, point, slice and label goes is decided
 //! once and tested on any host, and a shell only draws them. [`Picture`] keeps what was drawn
 //! where, so a click and a tooltip ask the same geometry the marks were placed by. Scaled
-//! against [`axis_ticks`], pies swept by [`pie_slices`], colours from [`effective_color`], and
+//! against `axis_ticks`, pies swept by `pie_slices`, colours from [`effective_color`], and
 //! text measured through the shell's `Metrics`. Coordinates are the caller's unit.
 
 use grind_core::color::{self, Rgb};

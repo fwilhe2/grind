@@ -24,7 +24,7 @@ use crate::numfmt::{self, Format, Kind, Part};
 use crate::style::{CellStyle, EDGES};
 use crate::{MAX_ROWS, Result};
 use grind_core::odf::envelope;
-use grind_core::odf::package::{self, SubDocument, VERSION, write_package_with};
+use grind_core::odf::package::{self, SubDocument, VERSION, write_package};
 use grind_core::odf::xml::esc;
 
 /// The media type, byte for byte; readers sniff it at a fixed offset in the package (§1.1).
@@ -179,7 +179,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
         }
         (Form::Package, _, _) => {
             let styles = common_styles_part(doc);
-            Ok(write_package_with(
+            Ok(write_package(
                 MIMETYPE,
                 &String::from_utf8_lossy(&content),
                 styles.as_deref(),
@@ -4081,7 +4081,7 @@ mod tests {
 
     #[test]
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
-        let bytes = write_package_with(
+        let bytes = write_package(
             MIMETYPE,
             &content(&Document::default(), Form::Package, &HashSet::new(), None).0,
             None,

@@ -85,14 +85,14 @@ mod pairs {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::BTreeMap;
 
-    pub fn serialize<S: Serializer, V: Serialize>(
+    pub(crate) fn serialize<S: Serializer, V: Serialize>(
         map: &BTreeMap<Pos, V>,
         s: S,
     ) -> Result<S::Ok, S::Error> {
         map.iter().collect::<Vec<_>>().serialize(s)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
         d: D,
     ) -> Result<BTreeMap<Pos, V>, D::Error> {
         Ok(Vec::<(Pos, V)>::deserialize(d)?.into_iter().collect())
@@ -395,7 +395,7 @@ impl Sheet {
 
     /// Whether one row is hidden by the filter, without building the whole list.
     #[must_use]
-    pub fn row_hidden(
+    pub(crate) fn row_hidden(
         &self,
         row: u32,
         null_date: i64,
@@ -440,7 +440,7 @@ impl Sheet {
 
     /// The row's height and whether it measures the row's content, as a writer pools them.
     #[must_use]
-    pub fn row_size(&self, row: u32) -> Option<(&str, bool)> {
+    pub(crate) fn row_size(&self, row: u32) -> Option<(&str, bool)> {
         self.row_height(row)
             .map(|height| (height, self.row_measured(row)))
     }
@@ -486,7 +486,7 @@ impl Sheet {
         self.hidden_cols.iter().copied()
     }
 
-    /// Whether this row is hidden by hand, as distinct from [`Sheet::row_hidden`]'s filter answer.
+    /// Whether this row is hidden by hand, as distinct from `Sheet::row_hidden`'s filter answer.
     #[must_use]
     pub fn row_manually_hidden(&self, row: u32) -> bool {
         self.manually_hidden_rows.contains(&row)
@@ -559,7 +559,7 @@ impl Sheet {
     }
 
     /// Back to the plain spelling of the value — ODF's "General", which is no data style at all.
-    pub fn clear_format(&mut self, pos: Pos) {
+    pub(crate) fn clear_format(&mut self, pos: Pos) {
         self.formats.remove(&pos);
     }
 
@@ -583,7 +583,7 @@ impl Sheet {
         };
     }
 
-    pub fn clear_style(&mut self, pos: Pos) {
+    pub(crate) fn clear_style(&mut self, pos: Pos) {
         self.styles.remove(&pos);
     }
 
@@ -657,7 +657,7 @@ impl Sheet {
     /// an open reference (`A:A`) by. Narrower than [`Sheet::used_rows`] because a styled blank
     /// contributes nothing to a function: `fdo67682-2.ods` has 94,868 of them past its data, and
     /// counting them took its recalculation from 1.8 to 8.3 seconds.
-    pub fn cell_extent(&self) -> (u32, u32) {
+    pub(crate) fn cell_extent(&self) -> (u32, u32) {
         let values = self.cols.iter().map(Column::len).max().unwrap_or(0);
         let rows = self
             .formulas
@@ -1029,7 +1029,7 @@ impl Document {
 
     /// A [`Document::names`] key as the name was spelled.
     #[must_use]
-    pub fn name_spelling<'a>(&'a self, key: &'a str) -> &'a str {
+    pub(crate) fn name_spelling<'a>(&'a self, key: &'a str) -> &'a str {
         self.name_spellings.get(key).map_or(key, String::as_str)
     }
 

@@ -18,7 +18,7 @@ use std::fmt::Write as _;
 use grind_core::Result;
 use grind_core::odf::envelope;
 use grind_core::odf::names::{DRAW, FO, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK};
-use grind_core::odf::package::{VERSION, write_package_with};
+use grind_core::odf::package::{VERSION, write_package};
 use grind_core::odf::xml::esc;
 
 use crate::model::{Block, BlockKind, Document, Run};
@@ -105,7 +105,7 @@ pub fn write(doc: &Document, form: Form) -> Result<Vec<u8>> {
             }
             None => envelope::repackage(original, &content, &[], &[], &[])?,
         },
-        (Form::Package, None) => write_package_with(
+        (Form::Package, None) => write_package(
             MIMETYPE,
             &String::from_utf8_lossy(&content),
             styles

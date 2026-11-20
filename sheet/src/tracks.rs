@@ -208,7 +208,7 @@ impl Sizes {
     /// The nearest visible track to `index`, looking `forward` first, then back: a cursor on a
     /// hidden track cannot be seen. Falls back to `index` when everything is hidden.
     #[must_use]
-    pub fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
+    pub(crate) fn nearest_visible(&self, index: u32, forward: bool) -> u32 {
         if !self.is_hidden(index) {
             return index;
         }

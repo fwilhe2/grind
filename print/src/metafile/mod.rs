@@ -47,7 +47,7 @@ pub struct Bitmap {
 
 /// Whether `mime` names a Windows metafile.
 #[must_use]
-pub fn is_metafile(mime: &str) -> bool {
+pub(crate) fn is_metafile(mime: &str) -> bool {
     matches!(
         mime,
         "image/x-wmf" | "image/wmf" | "image/x-emf" | "image/emf"

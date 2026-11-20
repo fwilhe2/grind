@@ -265,16 +265,11 @@ fn manifest_with(mimetype: &str, styles: bool, subdocuments: &[SubDocument]) -> 
     )
 }
 
-/// Wrap a `content.xml` as a package (§1.1). `mimetype` goes first, stored uncompressed, with no
+/// Wrap a `content.xml` as a package (§1.1), with a `styles.xml` when there are common styles to
+/// put in one — the part `office:styles` lives in, since `content.xml`'s root does not allow it —
+/// and [`SubDocument`]s beside the content. `mimetype` goes first, stored uncompressed, with no
 /// trailing newline: readers sniff it at a fixed offset.
-pub fn write_package(mimetype: &str, content: &str) -> Result<Vec<u8>> {
-    write_package_with(mimetype, content, None, &[])
-}
-
-/// [`write_package`], with a `styles.xml` when there are common styles to put in one — the
-/// part `office:styles` lives in, since `content.xml`'s root does not allow it — and
-/// [`SubDocument`]s beside the content.
-pub fn write_package_with(
+pub fn write_package(
     mimetype: &str,
     content: &str,
     styles: Option<&str>,
@@ -324,6 +319,8 @@ mod tests {
         let mut bytes = write_package(
             "application/vnd.oasis.opendocument.spreadsheet",
             "<office:document-content/>",
+            None,
+            &[],
         )
         .expect("writes");
         let name = b"content.xml";
@@ -374,7 +371,7 @@ mod tests {
     #[test]
     fn the_package_starts_with_an_uncompressed_mimetype_entry() {
         const MEDIA: &str = "application/vnd.oasis.opendocument.text";
-        let bytes = write_package(MEDIA, "<x/>").expect("writes");
+        let bytes = write_package(MEDIA, "<x/>", None, &[]).expect("writes");
 
         assert_eq!(&bytes[..4], b"PK\x03\x04");
         // Local header is 30 bytes, then the name, then the raw media type.
@@ -397,7 +394,7 @@ mod tests {
     #[test]
     fn a_sub_document_is_declared_and_readable() {
         const CHART: &str = "application/vnd.oasis.opendocument.chart";
-        let bytes = write_package_with(
+        let bytes = write_package(
             "application/vnd.oasis.opendocument.spreadsheet",
             "<x/>",
             None,
@@ -422,8 +419,8 @@ mod tests {
 
     #[test]
     fn a_written_package_reads_its_own_content_back() {
-        let bytes =
-            write_package("application/vnd.oasis.opendocument.text", "<x/>").expect("writes");
+        let bytes = write_package("application/vnd.oasis.opendocument.text", "<x/>", None, &[])
+            .expect("writes");
         assert!(is_package(&bytes));
         assert_eq!(content_xml(&bytes).expect("has content.xml"), b"<x/>");
     }

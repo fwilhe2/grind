@@ -422,7 +422,7 @@ pub trait Faces {
     fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics);
 
     /// The space above and below the block at `index` when its paragraph style decides it — added
-    /// to its neighbours', and above the first block too ([`flow::Flow::push_spaced`]). `None`,
+    /// to its neighbours', and above the first block too (`flow::Flow::push_spaced`). `None`,
     /// the default, is a screen's own spacing; a printed page answers from the styles.
     fn spacing(&self, _index: usize) -> Option<flow::Space> {
         None

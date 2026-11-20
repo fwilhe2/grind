@@ -90,7 +90,7 @@ pub struct Shape {
 }
 
 /// [`parse`], and where each node came from.
-pub fn parse_spanned(formula: &str) -> Result<(Expr, Shape), SyntaxError> {
+pub(crate) fn parse_spanned(formula: &str) -> Result<(Expr, Shape), SyntaxError> {
     parse_with(formula, true).map(|(expr, shape)| (expr, shape.expect("asked for")))
 }
 

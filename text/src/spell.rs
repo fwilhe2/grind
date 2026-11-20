@@ -97,7 +97,7 @@ pub fn candidates(block: &Block) -> Vec<(Range<usize>, String)> {
 }
 
 /// Every word of `block` that `lexicon` does not know.
-pub fn check_block(block: &Block, index: usize, lexicon: &dyn Lexicon) -> Vec<Misspelling> {
+pub(crate) fn check_block(block: &Block, index: usize, lexicon: &dyn Lexicon) -> Vec<Misspelling> {
     candidates(block)
         .into_iter()
         .filter(|(_, word)| !known(lexicon, word))

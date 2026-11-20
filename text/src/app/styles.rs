@@ -38,15 +38,6 @@ impl App {
         (state.doc.header.clone(), state.doc.footer.clone())
     }
 
-    /// The first page's own header and footer, when it is set on a master page of its own
-    /// ([`model::Document::first_page`]); `None` when it wears [`App::marginals`] like the rest.
-    #[allow(clippy::type_complexity)]
-    pub fn first_page_marginals(
-        &self,
-    ) -> Option<(Option<marginal::Marginal>, Option<marginal::Marginal>)> {
-        self.state.read().unwrap().doc.first_page.clone()
-    }
-
     /// One master page by name — its page, header, footer and next master ([`model::Master`]) —
     /// and the name of the body's master, for a paragraph that starts a page on a master of its
     /// own.

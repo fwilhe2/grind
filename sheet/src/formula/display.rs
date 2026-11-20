@@ -248,7 +248,7 @@ impl Canonical {
 /// name (`date1`), so anything substituting a name into display form must ask this first, as
 /// `view::Names` does.
 #[must_use]
-pub fn reads_as_reference(word: &str) -> bool {
+pub(crate) fn reads_as_reference(word: &str) -> bool {
     matches!(
         spans(word).as_slice(),
         [span] if span.kind == TokenKind::Ref && span.range == (0..word.len())

@@ -46,7 +46,7 @@ impl ChartKind {
 
     /// The kind a `chart:class` names; anything not drawn here is `None` (§9).
     #[must_use]
-    pub fn from_class(class: &str) -> Option<Self> {
+    pub(crate) fn from_class(class: &str) -> Option<Self> {
         match class {
             "chart:bar" => Some(ChartKind::Bar),
             "chart:line" => Some(ChartKind::Line),
@@ -147,7 +147,7 @@ impl Legend {
 
     /// The position a `chart:legend-position` token names; unrecognised is `End` (§9).
     #[must_use]
-    pub fn from_token(token: &str) -> Self {
+    pub(crate) fn from_token(token: &str) -> Self {
         match token {
             "start" => Legend::Start,
             "top" | "top-start" | "top-end" => Legend::Top,
@@ -631,7 +631,7 @@ impl Ticks {
 /// The ticks of a value axis from zero to `max`: a step of 1, 2 or 5 times a power of ten, the
 /// smallest keeping the count near `TICK_TARGET`.
 #[must_use]
-pub fn axis_ticks(max: f64) -> Ticks {
+pub(crate) fn axis_ticks(max: f64) -> Ticks {
     if !max.is_finite() || max <= 0.0 {
         return Ticks {
             step: 1.0,
@@ -678,7 +678,7 @@ const TWELVE: f64 = -std::f64::consts::FRAC_PI_2;
 /// A pie's slices, in order, from its first series' values; a non-positive value takes no slice.
 /// Computed here so every shell draws the same pie. Empty when there is nothing to draw.
 #[must_use]
-pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
+pub(crate) fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
     let Some((_, values)) = data.series.first() else {
         return Vec::new();
     };
@@ -709,7 +709,7 @@ pub fn pie_slices(data: &ChartData, clockwise: bool) -> Vec<Slice> {
 /// arithmetic. `None` for a pie without slices; whether the point is inside the circle is the
 /// caller's question.
 #[must_use]
-pub fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
+pub(crate) fn pie_slice_at(data: &ChartData, clockwise: bool, angle: f64) -> Option<usize> {
     let slices = pie_slices(data, clockwise);
     // How far round from twelve o'clock the point is, travelling the way this pie runs.
     let travelled = if clockwise {
@@ -744,7 +744,7 @@ pub struct ChartData {
     pub series: Vec<(String, Vec<f64>)>,
     /// How the value axis spells a tick: the first series' own number format, in the document's
     /// locale, as LibreOffice links an axis to its source — `150,000`, not `150000`. `None` for
-    /// general, a date or a time, and [`ChartData::tick_label`]'s plain spelling stands.
+    /// general, a date or a time, and `ChartData::tick_label`'s plain spelling stands.
     pub value_format: Option<(crate::numfmt::Format, Option<crate::locale::Locale>)>,
 }
 
@@ -792,7 +792,7 @@ impl ChartData {
     /// tick apart — a format with no decimals would spell 0.5-steps `0, 1, 1, 2` — else as
     /// [`Ticks::label`] does.
     #[must_use]
-    pub fn tick_label(&self, ticks: &Ticks, value: f64) -> String {
+    pub(crate) fn tick_label(&self, ticks: &Ticks, value: f64) -> String {
         let Some((format, locale)) = &self.value_format else {
             return ticks.label(value);
         };

@@ -267,7 +267,7 @@ impl Projection {
 /// [`crate::kind()`] must answer for any bytes; blank lines and `//` comments before the header
 /// are skipped.
 #[must_use]
-pub fn header_kind(text: &str) -> Option<DocumentKind> {
+pub(crate) fn header_kind(text: &str) -> Option<DocumentKind> {
     let header = text.lines().find(|line| {
         let line = line.trim();
         !line.is_empty() && !line.starts_with("//")

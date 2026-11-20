@@ -44,7 +44,7 @@ impl PageGeometry {
     /// standard defines it: A0 is 841 × 1189 mm, and each next size halves the longer side,
     /// rounded down to a whole millimetre.
     #[must_use]
-    pub fn iso_a(n: u8) -> Option<Self> {
+    pub(crate) fn iso_a(n: u8) -> Option<Self> {
         if n > 10 {
             return None;
         }

@@ -271,7 +271,7 @@ impl Run {
 /// one atomic character. A zero-width run exactly at the offset goes to the second half, so
 /// `#intro` at the front of a paragraph follows the words it names when the paragraph is split.
 #[must_use]
-pub fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
+pub(crate) fn split_runs(runs: &[Run], offset: usize) -> (Vec<Run>, Vec<Run>) {
     let mut head = Vec::new();
     let mut tail = Vec::new();
     let mut pos = 0;
@@ -391,7 +391,7 @@ impl Cell {
     /// Whether two blocks are in the same cell — the fold the writer performs; a cell with two
     /// paragraphs is two blocks.
     #[must_use]
-    pub fn is_same(&self, other: &Cell) -> bool {
+    pub(crate) fn is_same(&self, other: &Cell) -> bool {
         self.table == other.table && self.row == other.row && self.column == other.column
     }
 }
@@ -461,7 +461,7 @@ impl Block {
     /// Whether any run carries direct formatting or a named style — what `grind text formatting`
     /// looks for.
     #[must_use]
-    pub fn is_styled(&self) -> bool {
+    pub(crate) fn is_styled(&self) -> bool {
         self.style.is_some()
             || self.runs.iter().any(|r| match r {
                 Run::Text { style, props, .. } => style.is_some() || !props.is_plain(),
@@ -600,13 +600,6 @@ pub struct Document {
     /// (`crate::marginal`).
     pub header: Option<crate::marginal::Marginal>,
     pub footer: Option<crate::marginal::Marginal>,
-    /// The first page's own header and footer, when the first paragraph names a master page of its
-    /// own and later pages are set on another (Writer's First Page). Read for printing; `None`
-    /// when every page wears the same.
-    pub first_page: Option<(
-        Option<crate::marginal::Marginal>,
-        Option<crate::marginal::Marginal>,
-    )>,
     /// Every master page by name, and the body's master. A paragraph whose style names a master
     /// starts a page on it (`doc/pdf-export.md`). Read for printing.
     pub masters: BTreeMap<String, Master>,
@@ -671,7 +664,6 @@ impl Document {
             notes: Vec::new(),
             note_look: crate::marginal::NoteLook::default(),
             header: None,
-            first_page: None,
             masters: BTreeMap::new(),
             rest_master: None,
             paragraph_spaces_add: true,
@@ -698,7 +690,7 @@ impl Document {
 
     /// Where a block with this id currently sits.
     #[must_use]
-    pub fn index_of(&self, id: BlockId) -> Option<usize> {
+    pub(crate) fn index_of(&self, id: BlockId) -> Option<usize> {
         self.blocks.iter().position(|b| b.id == id)
     }
 
@@ -753,7 +745,7 @@ impl Document {
     /// How many rows and columns the table occupying `blocks` has, counting a spanned cell for
     /// every position it covers; derived, not stored.
     #[must_use]
-    pub fn table_extent(&self, blocks: std::ops::Range<usize>) -> (u32, u32) {
+    pub(crate) fn table_extent(&self, blocks: std::ops::Range<usize>) -> (u32, u32) {
         let mut rows = 0;
         let mut columns = 0;
         for cell in self.blocks[blocks].iter().filter_map(|b| b.cell.as_ref()) {

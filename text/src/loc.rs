@@ -169,7 +169,7 @@ pub fn format_offset(index: usize, offset: usize) -> String {
 }
 
 /// An outline path back as `§2.1.3`.
-pub fn format_outline(path: &[u32]) -> String {
+pub(crate) fn format_outline(path: &[u32]) -> String {
     let parts: Vec<String> = path.iter().map(u32::to_string).collect();
     format!("\u{a7}{}", parts.join("."))
 }
@@ -231,7 +231,7 @@ fn outline_index(doc: &Document, path: &[u32]) -> Option<usize> {
 /// The outline path of the heading at `index`, or `None` — the inverse of the walk, so `grind text
 /// outline` prints typeable addresses.
 #[must_use]
-pub fn outline_path(doc: &Document, index: usize) -> Option<Vec<u32>> {
+pub(crate) fn outline_path(doc: &Document, index: usize) -> Option<Vec<u32>> {
     let mut counters: Vec<u32> = Vec::new();
     for (i, level) in doc.outline() {
         let depth = level as usize;

@@ -92,7 +92,7 @@ impl std::hash::Hash for Origin {
 
 impl CharStyle {
     /// Nothing set at all. About what the formatting says, so a run distinguished only by its
-    /// [`Origin`] is plain; a writer asks [`CharStyle::needs_style`].
+    /// [`Origin`] is plain; a writer asks `CharStyle::needs_style`.
     #[must_use]
     pub fn is_plain(&self) -> bool {
         *self == CharStyle::default()
@@ -101,7 +101,7 @@ impl CharStyle {
     /// Whether writing this formatting takes a style: anything set, or an [`Origin`] whose style
     /// says more (a superscript alone).
     #[must_use]
-    pub fn needs_style(&self) -> bool {
+    pub(crate) fn needs_style(&self) -> bool {
         !self.is_plain() || self.origin.name().is_some()
     }
 
@@ -115,7 +115,7 @@ impl CharStyle {
     /// removed, nothing else — so a restyle built on the old element keeps the file's own spelling
     /// of the rest. A changed family also drops `style:font-name`, which would otherwise win.
     #[must_use]
-    pub fn patch_against(&self, base: &CharStyle) -> Vec<(String, Option<String>)> {
+    pub(crate) fn patch_against(&self, base: &CharStyle) -> Vec<(String, Option<String>)> {
         let mut out = Vec::new();
         for ((name, new), (_, old)) in self.pairs().into_iter().zip(base.pairs()) {
             if new == old {
@@ -288,7 +288,7 @@ fn is_line(value: Option<&str>) -> bool {
 /// system resolves. Decoded on reading and re-encoded on writing (`quote_family`), as `text:s` is.
 /// A value with a comma is a list and is left as it is.
 #[must_use]
-pub fn unquote_family(value: &str) -> String {
+pub(crate) fn unquote_family(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.contains(',') {
         return value.to_owned();

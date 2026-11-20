@@ -247,7 +247,7 @@ impl Analysis {
     }
 
     /// The anchors intersecting a rectangle — what a viewport carries.
-    pub fn anchors_in(
+    pub(crate) fn anchors_in(
         &self,
         sheet: usize,
         rows: Range<u32>,
@@ -331,7 +331,7 @@ impl Names {
         &self.anchors
     }
 
-    pub fn anchors_in(
+    pub(crate) fn anchors_in(
         &self,
         sheet: usize,
         rows: Range<u32>,

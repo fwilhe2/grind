@@ -271,7 +271,7 @@ pub fn pixels(data: &[u8]) -> Option<(u32, u32)> {
 /// to the inch, made to fit `measure` millimetres across with its shape kept. A frame stating no
 /// size is a 16 pt square to LibreOffice (`doc/odt-format.md` §5c fact 50).
 #[must_use]
-pub fn own_size(data: &[u8], measure: f64) -> Option<(String, String)> {
+pub(crate) fn own_size(data: &[u8], measure: f64) -> Option<(String, String)> {
     const MM_PER_PIXEL: f64 = 25.4 / 96.0;
     let (width, height) = pixels(data)?;
     let (width, height) = (f64::from(width.max(1)), f64::from(height.max(1)));

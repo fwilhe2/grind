@@ -38,7 +38,7 @@ impl Flag {
 
 /// Every finding `checker` makes in `blocks` — `(index, block)` — in `language` when the document
 /// states one.
-pub fn check_blocks<'a>(
+pub(crate) fn check_blocks<'a>(
     blocks: impl IntoIterator<Item = (usize, &'a Block)>,
     language: Option<&str>,
     checker: &dyn Checker,

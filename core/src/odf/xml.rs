@@ -49,7 +49,7 @@ fn tag_at(bytes: &[u8], at: usize, tag: &[u8]) -> bool {
 /// and reports positions from the byte after it, so anything recording where an element was must
 /// add this back (`tdf117948_CollapseBeforeShape.ods`).
 #[must_use]
-pub fn bom_len(bytes: &[u8]) -> usize {
+pub(crate) fn bom_len(bytes: &[u8]) -> usize {
     if bytes.starts_with(b"\xEF\xBB\xBF") {
         3
     } else {

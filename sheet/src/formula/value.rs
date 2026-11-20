@@ -117,7 +117,7 @@ impl Value {
     }
 
     /// §6.3.5 Conversion to Number. Empty is 0.
-    pub fn to_number(&self) -> Result<f64, FormulaError> {
+    pub(crate) fn to_number(&self) -> Result<f64, FormulaError> {
         match self {
             Value::Number(n) => Ok(*n),
             Value::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
@@ -129,7 +129,7 @@ impl Value {
     }
 
     /// §6.3.12 Conversion to Logical.
-    pub fn to_logical(&self) -> Result<bool, FormulaError> {
+    pub(crate) fn to_logical(&self) -> Result<bool, FormulaError> {
         match self {
             Value::Bool(b) => Ok(*b),
             Value::Number(n) => Ok(*n != 0.0),
@@ -183,24 +183,6 @@ impl From<FormulaError> for Value {
     fn from(e: FormulaError) -> Self {
         Value::Error(e)
     }
-}
-
-/// §6.3.7 Conversion to `NumberSequence`, the reference case — `SUM(A1:C9)`. Text (even numeric
-/// text), empty cells and logicals are skipped, which is why `SUM(A1:A3)` and `SUM(A1;A2;A3)`
-/// differ when a cell holds `"7"`: a scalar argument goes through [`Value::to_number`]. The first
-/// error stops the sequence, which is observably the spec's propagation (§4.6).
-pub fn number_sequence<'a>(
-    cells: impl IntoIterator<Item = &'a Value>,
-) -> Result<Vec<f64>, FormulaError> {
-    let mut out = Vec::new();
-    for cell in cells {
-        match cell {
-            Value::Number(n) => out.push(*n),
-            Value::Error(e) => return Err(*e),
-            Value::Empty | Value::Text(_) | Value::Bool(_) => {}
-        }
-    }
-    Ok(out)
 }
 
 /// Text → Number, the strict half of §6.3.5. Locale-free: `.` is the decimal separator and there
@@ -294,10 +276,6 @@ mod tests {
         assert_eq!(v.to_number(), Err(FormulaError::DivZero));
         assert_eq!(v.to_logical(), Err(FormulaError::DivZero));
         assert_eq!(v.to_text(), Err(FormulaError::DivZero));
-        assert_eq!(
-            number_sequence([&Value::Number(1.0), &v]),
-            Err(FormulaError::DivZero)
-        );
     }
 
     #[test]
@@ -381,19 +359,4 @@ mod tests {
     }
 
     // --- §6.3.7 Conversion to NumberSequence ---
-
-    #[test]
-    fn a_number_sequence_from_cells_keeps_only_the_numbers() {
-        // The distinction that makes SUM(A1:A3) differ from SUM(A1,A2,A3): a *referenced*
-        // "7" is skipped, whereas the same text passed as a scalar converts.
-        let cells = [
-            Value::Number(1.0),
-            Value::from("7"),
-            Value::Empty,
-            Value::Bool(true),
-            Value::Number(2.0),
-        ];
-        assert_eq!(number_sequence(&cells), Ok(vec![1.0, 2.0]));
-        assert_eq!(Value::from("7").to_number(), Ok(7.0));
-    }
 }

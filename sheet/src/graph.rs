@@ -144,7 +144,8 @@ impl RefIndex {
     }
 
     /// The formula cells that read `at`, in address order.
-    pub fn dependents(&self, at: Address) -> &[Address] {
+    #[cfg(test)]
+    pub(crate) fn dependents(&self, at: Address) -> &[Address] {
         self.read_by.get(&at).map_or(&[], Vec::as_slice)
     }
 
@@ -171,7 +172,7 @@ impl RefIndex {
     }
 
     /// Every formula cell that reads something, in address order.
-    pub fn formula_cells(&self) -> impl Iterator<Item = Address> + '_ {
+    pub(crate) fn formula_cells(&self) -> impl Iterator<Item = Address> + '_ {
         self.reads.keys().copied()
     }
 

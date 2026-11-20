@@ -16,7 +16,7 @@
 /// Is this text a pattern rather than a literal? A lone `~` counts: `"~*"` is not the string
 /// `"~*"`.
 #[must_use]
-pub fn is_pattern(text: &str) -> bool {
+pub(crate) fn is_pattern(text: &str) -> bool {
     text.contains(['*', '?', '~'])
 }
 

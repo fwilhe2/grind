@@ -66,7 +66,7 @@ impl Rule {
     /// The condition as it reads at `pos`: parsed, with relative references moved from
     /// [`Rule::base`]. `None` when it does not parse, and then it never holds.
     #[must_use]
-    pub fn condition_at(&self, pos: Pos) -> Option<Expr> {
+    pub(crate) fn condition_at(&self, pos: Pos) -> Option<Expr> {
         let expr = parse(&self.condition).ok()?;
         Some(self.moved(&expr, pos))
     }
@@ -96,7 +96,7 @@ fn within(pos: Pos, start: Pos, end: Pos) -> bool {
 }
 
 /// The style the first rule holding at `pos` draws, if any. `engine` is the caller's so a
-/// screenful shares one cache; it should be [`Engine::over_cached`], since a rule is about what
+/// screenful shares one cache; it should be `Engine::over_cached`, since a rule is about what
 /// the sheet shows.
 pub fn applied<'d>(
     doc: &'d Document,
@@ -115,7 +115,7 @@ pub fn applied<'d>(
 /// A rule's condition as written on a `style:map`: `is-true-formula(…)` (`doc/ods-format.md`
 /// §3.6).
 #[must_use]
-pub fn odf_condition(condition: &str) -> String {
+pub(crate) fn odf_condition(condition: &str) -> String {
     format!("is-true-formula({})", strip_intro(condition))
 }
 
@@ -131,7 +131,7 @@ fn strip_intro(condition: &str) -> &str {
 /// (`doc/conditional-format.md` §1). Anything else is `None`, and the file's map is kept where a
 /// save does not touch it.
 #[must_use]
-pub fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
+pub(crate) fn from_odf_condition(condition: &str, base: Pos) -> Option<String> {
     let condition = condition.trim();
     if let Some(inner) = call(condition, "is-true-formula") {
         let inner = strip_intro(inner);
@@ -340,7 +340,9 @@ impl Look {
 /// A condition as somebody typed it — display syntax, `=B2>0` or `B2>0`, written from the range's
 /// top-left cell — as the ODF a [`Rule`] stores (`[.B2]>0`), through
 /// [`crate::formula::display::from_display`], with the same errors a cell's formula gets.
-pub fn condition_from_display(text: &str) -> Result<String, crate::formula::display::DisplayError> {
+pub(crate) fn condition_from_display(
+    text: &str,
+) -> Result<String, crate::formula::display::DisplayError> {
     let text = text.trim();
     let body = text.trim_prefix('=');
     let odf = crate::formula::display::from_display(&format!("={body}"))?;

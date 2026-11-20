@@ -109,7 +109,7 @@ pub struct Table {
 impl Table {
     /// The default cell style the file declared for `col`.
     #[must_use]
-    pub fn column_default(&self, col: u32) -> Option<&str> {
+    pub(crate) fn column_default(&self, col: u32) -> Option<&str> {
         self.column_defaults
             .iter()
             .find(|(cols, _)| cols.contains(&col))

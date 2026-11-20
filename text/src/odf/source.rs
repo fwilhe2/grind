@@ -105,7 +105,7 @@ pub struct TableSource {
 /// writer can tell whether an image run is still a frame the file spelled ([`Source::frames`]).
 /// `None` for any other run.
 #[must_use]
-pub fn image_key(run: &crate::model::Run) -> Option<u64> {
+pub(crate) fn image_key(run: &crate::model::Run) -> Option<u64> {
     use std::hash::{Hash, Hasher};
     let crate::model::Run::Image {
         mime,
@@ -139,7 +139,7 @@ impl Source {
     /// The automatic style a run's formatting was read from, when it says more than the model
     /// reads ([`CharStyle::origin`]) — what a restyle of that run is built from.
     #[must_use]
-    pub fn base_of(&self, props: &CharStyle) -> Option<&TextStyle> {
+    pub(crate) fn base_of(&self, props: &CharStyle) -> Option<&TextStyle> {
         let name = props.origin.name()?;
         self.styles.iter().find(|style| style.name == name)
     }
@@ -148,7 +148,7 @@ impl Source {
     /// writer emits character styles that inherit from nothing and puts a named style in a span
     /// around them, so reusing one with a parent would apply the parent twice.
     #[must_use]
-    pub fn style_named(&self, props: &CharStyle) -> Option<&str> {
+    pub(crate) fn style_named(&self, props: &CharStyle) -> Option<&str> {
         self.styles
             .iter()
             .find(|style| style.parent.is_none() && !style.extras && style.props.same(props))

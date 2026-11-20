@@ -140,7 +140,7 @@ pub fn lex(src: &str) -> Result<Vec<Token>, SyntaxError> {
 
 /// The tokens, and the `char` offset each starts at, so a parse error reported by token can put a
 /// caret in the text.
-pub fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
+pub(crate) fn lex_spans(src: &str) -> Result<(Vec<Token>, Vec<usize>), SyntaxError> {
     lex_extents(src).map(|(tokens, starts, _)| (tokens, starts))
 }
 
@@ -149,7 +149,7 @@ pub type Extents = (Vec<Token>, Vec<usize>, Vec<usize>);
 
 /// The tokens with the `char` range each one covers — [`lex_spans`] plus where each token
 /// *ends*, which is what a node's span needs and a diagnostic does not (`parse_spanned`).
-pub fn lex_extents(src: &str) -> Result<Extents, SyntaxError> {
+pub(crate) fn lex_extents(src: &str) -> Result<Extents, SyntaxError> {
     // Char-indexed: the grammar allows non-ASCII in identifiers, sheet names and strings,
     // and byte offsets in a diagnostic would point at the wrong place.
     let src: Vec<char> = src.chars().collect();

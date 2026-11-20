@@ -51,7 +51,7 @@ pub const PREFORMATTED: &str = "Preformatted Text";
 /// Whether a paragraph style is [`PREFORMATTED`], as grind spells it or as LibreOffice encodes it
 /// (`Preformatted_20_Text`).
 #[must_use]
-pub fn is_preformatted(style: Option<&str>) -> bool {
+pub(crate) fn is_preformatted(style: Option<&str>) -> bool {
     style.is_some_and(|s| s == PREFORMATTED || crate::style::readable_name(s) == PREFORMATTED)
 }
 
@@ -248,7 +248,7 @@ pub fn linked(text: &str, caret: usize) -> Option<Linked> {
 /// a code region is a run of preformatted paragraphs ended by the closing fence. ``` mid-sentence
 /// is three backticks.
 #[must_use]
-pub fn is_fence(text: &str, caret: usize) -> bool {
+pub(crate) fn is_fence(text: &str, caret: usize) -> bool {
     let chars: Vec<char> = text.chars().collect();
     caret == chars.len() && chars.len() == 3 && chars.iter().all(|c| *c == '`')
 }
@@ -257,7 +257,7 @@ pub fn is_fence(text: &str, caret: usize) -> bool {
 /// or `* ` for a list item — and how many characters to remove, recognised when its trailing space
 /// lands.
 #[must_use]
-pub fn block_prefix(text: &str, caret: usize) -> Option<(usize, BlockKind)> {
+pub(crate) fn block_prefix(text: &str, caret: usize) -> Option<(usize, BlockKind)> {
     let chars: Vec<char> = text.chars().collect();
     // Only at the very start of a block, and only as the space lands: `a # b` is prose.
     if caret > chars.len() || chars.get(caret.checked_sub(1)?) != Some(&' ') {

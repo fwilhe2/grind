@@ -31,7 +31,7 @@ pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 
 /// The inverse of [`days_from_civil`] — Hinnant's `civil_from_days`.
 #[must_use]
-pub fn civil_from_days(z: i64) -> (i64, i64, i64) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
@@ -63,7 +63,7 @@ const DAY: f64 = 86_400.0;
 /// A two-digit year as the four-digit one it stands for (§3.4 item 7). Only 0..=99 are two-digit:
 /// `DATE(1899;1;1)` is 1899.
 #[must_use]
-pub fn expand_year(y: i64, null_year: i64) -> i64 {
+pub(crate) fn expand_year(y: i64, null_year: i64) -> i64 {
     if (0..=99).contains(&y) {
         null_year + (y - null_year).rem_euclid(100)
     } else {
@@ -90,7 +90,7 @@ pub fn serial(y: i64, m: i64, d: i64, null_date: i64) -> f64 {
 /// as §6.10.17 says `SECOND` rounds, so `HOUR`, `MINUTE` and `SECOND` all describe one clock and
 /// 23:59:59.6 is not hour 23 with second 0.
 #[must_use]
-pub fn seconds_of_day(serial: f64) -> i64 {
+pub(crate) fn seconds_of_day(serial: f64) -> i64 {
     let fraction = serial - serial.floor();
     (fraction * DAY).round() as i64 % 86_400
 }
@@ -188,7 +188,7 @@ fn parse_clock(s: &str) -> Option<f64> {
 /// `office:date-value` text for a serial number. A fractional serial is a `DateTime` (§4.3.4) and
 /// takes the combined spelling, as LibreOffice's files do.
 #[must_use]
-pub fn format_date(serial: f64, null_date: i64) -> String {
+pub(crate) fn format_date(serial: f64, null_date: i64) -> String {
     let (y, m, d) = ymd(serial, null_date);
     let date = format!("{y:04}-{m:02}-{d:02}");
     // `{:04}` pads the digits and leaves the sign outside, which is the ISO 8601 spelling
@@ -209,7 +209,7 @@ pub fn format_date(serial: f64, null_date: i64) -> String {
 /// `office:time-value` text — an `xsd:duration`, the form LibreOffice writes. Not wrapped at 24
 /// hours: the corpus holds `PT33H45M00S`, and wrapping would lose a day on every save.
 #[must_use]
-pub fn format_time(fraction: f64) -> String {
+pub(crate) fn format_time(fraction: f64) -> String {
     let sign = if fraction < 0.0 { "-" } else { "" };
     let (h, m, s) = hms(fraction.abs() * DAY);
     format!("{sign}PT{h:02}H{m:02}M{}S", seconds_text(s))

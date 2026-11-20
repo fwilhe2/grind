@@ -132,7 +132,7 @@ pub fn indent_length(steps: i64) -> String {
 /// How many indent levels a cell styled `style` is in, to the nearest level, whatever unit its
 /// `fo:margin-left` uses.
 #[must_use]
-pub fn indent_level(style: &CellStyle) -> i64 {
+pub(crate) fn indent_level(style: &CellStyle) -> i64 {
     style
         .indent_mm()
         .map_or(0, |mm| (mm / INDENT_STEP_MM).round() as i64)
@@ -299,7 +299,7 @@ pub fn decimals_shown(text: &str, locale: Option<&Locale>) -> u8 {
 
 /// The locale a new format is written in: the cell's own format's, else the caller's fallback.
 #[must_use]
-pub fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<Locale> {
+pub(crate) fn own_locale(current: Option<&Format>, fallback: Option<Locale>) -> Option<Locale> {
     match current.and_then(|f| f.locale.clone()) {
         Some(own) => Some(own),
         None => fallback,

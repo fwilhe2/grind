@@ -61,9 +61,10 @@ pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 pub use action::Action;
 pub use chart::{
     Axis as ChartAxis, Chart, ChartData, ChartKind, Guess as ChartGuess, Legend as ChartLegend,
-    Series as ChartSeries, Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, axis_ticks,
-    effective_color, pie_slice_at, pie_slices, series_color,
+    Series as ChartSeries, Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, effective_color,
+    series_color,
 };
+pub(crate) use chart::{axis_ticks, pie_slice_at, pie_slices};
 pub use filter::Filter;
 pub use model::{CellValue, Checkbox, Document, Link, Pos, Sheet, Span};
 pub use reading::Reading;
@@ -1719,7 +1720,7 @@ pub fn render(sheet: &Sheet, pos: Pos, null_date: i64) -> String {
 
 /// [`render`] in a document whose own locale is `locale` ([`Document::locale`]).
 #[must_use]
-pub fn render_in(
+pub(crate) fn render_in(
     sheet: &Sheet,
     pos: Pos,
     null_date: i64,
@@ -2015,7 +2016,7 @@ fn apply_batch(state: &mut State, sheet: usize, updates: Vec<Action>) -> Result<
 /// Whether a checkbox is ticked: its linked cell's value (`TRUE`, or a non-zero number), else its
 /// own state.
 #[must_use]
-pub fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool {
+pub(crate) fn checkbox_state(doc: &Document, sheet: usize, checkbox: &Checkbox) -> bool {
     let Some(link) = &checkbox.link else {
         return checkbox.checked;
     };

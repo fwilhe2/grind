@@ -162,8 +162,8 @@ pub fn paginate(
 }
 
 /// [`paginate`] with the first page's text area `heights.0` tall and the rest `heights.1` — a
-/// first page on its own master (`Document::first_page`).
-pub fn paginate_first(
+/// first page on its own master.
+pub(crate) fn paginate_first(
     app: &App,
     faces: &dyn Faces,
     column: f64,

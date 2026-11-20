@@ -154,7 +154,7 @@ pub fn from_environment() -> Option<Locale> {
 /// A POSIX locale name as the environment spells one — `de_DE.UTF-8`, `sv_SE@euro`, `fr` — as
 /// a locale. `C` and `POSIX` are the absence of one, and so is anything that is not a language.
 #[must_use]
-pub fn from_posix(value: &str) -> Option<Locale> {
+pub(crate) fn from_posix(value: &str) -> Option<Locale> {
     let name = value.split(['.', '@']).next().unwrap_or_default().trim();
     match name {
         "" | "C" | "POSIX" => None,

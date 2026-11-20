@@ -76,7 +76,7 @@ impl LineRule {
 impl<'a> RoleFace<'a> {
     /// The same face with its paragraph style's line height.
     #[must_use]
-    pub fn with_line(mut self, line: Option<LineRule>) -> Self {
+    pub(crate) fn with_line(mut self, line: Option<LineRule>) -> Self {
         self.line = line;
         self
     }
@@ -84,7 +84,7 @@ impl<'a> RoleFace<'a> {
     /// What a proportional line rule above 100% adds below each line, in points; nothing for
     /// any other.
     #[must_use]
-    pub fn extra_below(&self) -> f32 {
+    pub(crate) fn extra_below(&self) -> f32 {
         match self.line {
             Some(LineRule::Proportional(share)) if share > 1.0 => {
                 self.setter.line_height(&self.style(&TextStyle::default())) * (share - 1.0)
@@ -252,7 +252,7 @@ fn points(size: f64) -> String {
 }
 
 /// One [`RoleFace`] per role, in [`Role::ALL`]'s order.
-pub fn role_faces(setter: &Typesetter) -> Vec<RoleFace<'_>> {
+pub(crate) fn role_faces(setter: &Typesetter) -> Vec<RoleFace<'_>> {
     Role::ALL
         .iter()
         .map(|role| RoleFace::new(setter, *role))

@@ -157,7 +157,7 @@ pub fn handles(frame: &Frame, size: f64) -> [(Grip, Frame); 8] {
 /// inside it, or nothing. `size` and `slop` are [`HANDLE`] and [`HANDLE_SLOP`] in the shell's
 /// unit.
 #[must_use]
-pub fn grip_at(
+pub(crate) fn grip_at(
     frame: &Frame,
     selected: bool,
     x: f64,

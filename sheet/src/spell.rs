@@ -39,7 +39,7 @@ pub fn unknown(text: &str, lexicon: &dyn Lexicon) -> Vec<(std::ops::Range<usize>
 
 /// Every misspelt word on one sheet in reading order, or only within `within`'s corners,
 /// inclusive.
-pub fn check_sheet(
+pub(crate) fn check_sheet(
     sheet: usize,
     s: &Sheet,
     within: Option<(Pos, Pos)>,

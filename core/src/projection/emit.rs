@@ -297,7 +297,7 @@ impl DocumentKind {
     /// The one word a projection header spells this kind as (`doc/dsl.md` §3.3) — an identifier,
     /// unlike [`DocumentKind::label`].
     #[must_use]
-    pub fn label_word(self) -> &'static str {
+    pub(crate) fn label_word(self) -> &'static str {
         match self {
             DocumentKind::Spreadsheet => "spreadsheet",
             DocumentKind::Text => "text",

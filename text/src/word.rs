@@ -39,7 +39,7 @@ pub fn around(text: &str, offset: usize) -> (usize, usize) {
 /// Where Ctrl+Right lands from `offset`: the end of the current or next word. `None` when no word
 /// is left, the cue to go on to the next block.
 #[must_use]
-pub fn next_end(text: &str, offset: usize) -> Option<usize> {
+pub(crate) fn next_end(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());
     while at < chars.len() && unit(&chars, at) != Unit::Word {
@@ -57,7 +57,7 @@ pub fn next_end(text: &str, offset: usize) -> Option<usize> {
 /// Where Ctrl+Left lands from `offset`: the start of the current or previous word. `None` when
 /// none is left — go to the previous block.
 #[must_use]
-pub fn previous_start(text: &str, offset: usize) -> Option<usize> {
+pub(crate) fn previous_start(text: &str, offset: usize) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     let mut at = offset.min(chars.len());
     while at > 0 && unit(&chars, at - 1) != Unit::Word {

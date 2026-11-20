@@ -134,7 +134,7 @@ impl<'a> Engine<'a> {
     /// cell is evaluated from its formula, so anything reading an overridden cell, however
     /// indirectly, sees the override. A formula cell can be overridden too.
     #[must_use]
-    pub fn with_overlay(doc: &'a Document, overlay: &HashMap<Address, Value>) -> Self {
+    pub(crate) fn with_overlay(doc: &'a Document, overlay: &HashMap<Address, Value>) -> Self {
         let mut engine = Self::new(doc);
         engine
             .cache
@@ -147,7 +147,7 @@ impl<'a> Engine<'a> {
     /// (`crate::rule`), so drawing never recalculates, and a rule agrees with the values on screen
     /// even when they are stale, as LibreOffice's do.
     #[must_use]
-    pub fn over_cached(doc: &'a Document) -> Self {
+    pub(crate) fn over_cached(doc: &'a Document) -> Self {
         Self {
             cached: true,
             ..Self::new(doc)
@@ -185,7 +185,7 @@ impl<'a> Engine<'a> {
     /// ([`crate::model::Sheet::row_hidden`], what every renderer draws), nor — when `collapsed`
     /// asks, for functions 101 to 111 — hidden by hand, nor when its own formula calls `SUBTOTAL`,
     /// so a grand total over subtotals does not count them twice.
-    pub fn counted_by_subtotal(&self, at: Address, collapsed: bool) -> bool {
+    pub(crate) fn counted_by_subtotal(&self, at: Address, collapsed: bool) -> bool {
         let Some(sheet) = self.doc.sheet(at.sheet) else {
             return true;
         };
@@ -360,7 +360,7 @@ impl<'a> Engine<'a> {
     }
 
     /// Evaluate an expression and reduce it to a single value.
-    pub fn value_of(&mut self, expr: &Expr, at: Address) -> Value {
+    pub(crate) fn value_of(&mut self, expr: &Expr, at: Address) -> Value {
         let operand = self.operand(expr, at);
         self.scalar(operand, at)
     }
@@ -388,7 +388,11 @@ impl<'a> Engine<'a> {
 
     /// §6.3.7 Conversion to `NumberSequence` over a whole area — the referenced-cells case,
     /// where text and empty cells are skipped rather than converted.
-    pub fn numbers_in(&mut self, area: &Area, out: &mut Vec<f64>) -> Result<(), FormulaError> {
+    pub(crate) fn numbers_in(
+        &mut self,
+        area: &Area,
+        out: &mut Vec<f64>,
+    ) -> Result<(), FormulaError> {
         for cell in area.cells().collect::<Vec<_>>() {
             match self.value(cell) {
                 Value::Number(n) => out.push(n),
@@ -401,7 +405,7 @@ impl<'a> Engine<'a> {
 
     /// Every value in an area, in row-major order, for the functions that care about more
     /// than numbers (`COUNTA`, `ISBLANK`, the lookups).
-    pub fn values_in(&mut self, area: &Area) -> Vec<Value> {
+    pub(crate) fn values_in(&mut self, area: &Area) -> Vec<Value> {
         area.cells()
             .collect::<Vec<_>>()
             .into_iter()
@@ -481,7 +485,7 @@ pub(crate) fn intersect(a: &Area, b: &Area) -> Option<Area> {
 /// A stored cell as a value. The reader keeps a formula's cached result here too, which is
 /// what recalculation replaces.
 #[must_use]
-pub fn from_cell(cell: CellValue) -> Value {
+pub(crate) fn from_cell(cell: CellValue) -> Value {
     match cell {
         CellValue::Empty => Value::Empty,
         CellValue::Number(n) => Value::Number(n),
@@ -490,7 +494,7 @@ pub fn from_cell(cell: CellValue) -> Value {
     }
 }
 
-/// A computed value on its way back into a cell — the inverse of [`from_cell`]. An error becomes
+/// A computed value on its way back into a cell — the inverse of `from_cell`. An error becomes
 /// its name as text, which is what LibreOffice writes (`doc/ods-format.md` §6) and what the reader
 /// takes back.
 #[must_use]

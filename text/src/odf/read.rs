@@ -285,7 +285,7 @@ impl Builder {
     }
 
     /// Resolve every table's look against the cell and column styles, once every part is read.
-    pub fn settle_table_looks(&mut self) {
+    pub(crate) fn settle_table_looks(&mut self) {
         for (name, pending) in std::mem::take(&mut self.table_pending) {
             let columns = pending
                 .columns
@@ -338,7 +338,7 @@ impl Builder {
     }
 
     /// Hand the paragraph styles to the document once every part is read.
-    pub fn settle_paragraph_styles(&mut self) {
+    pub(crate) fn settle_paragraph_styles(&mut self) {
         self.doc.list_styles = std::mem::take(&mut self.list_styles)
             .into_iter()
             .map(|(name, (_, style))| (name, style))
@@ -353,7 +353,7 @@ impl Builder {
     /// the first there is, and its page layout; a layout nobody declared is no page. Called after
     /// the paragraph styles settle, since the first paragraph's style decides which master starts
     /// the document.
-    pub fn settle_page(&mut self) {
+    pub(crate) fn settle_page(&mut self) {
         let named = |name: &str| self.master_pages.iter().find(|(m, _)| m == name);
         // The master the first paragraph's style names (Writer's First Page), and the one later
         // pages are set on: its `next-style-name`, else itself.
@@ -445,12 +445,6 @@ impl Builder {
         if let Some(rest) = &rest {
             (self.doc.header, self.doc.footer, _, _) = marginals_of(rest);
         }
-        self.doc.first_page = first
-            .filter(|first| rest.as_ref().is_some_and(|rest| rest.0 != first.0))
-            .map(|first| {
-                let (header, footer, _, _) = marginals_of(&first);
-                (header, footer)
-            });
 
         // Every master page by name, so a paragraph that starts a page on its own master anywhere
         // — a letter in a series — gets its page, header and footer (`crate::model::Master`).
@@ -533,7 +527,7 @@ impl Builder {
 
     /// Drop every automatic style read so far — after `styles.xml`, whose automatic styles only
     /// that part can name.
-    pub fn forget_automatic_styles(&mut self) {
+    pub(crate) fn forget_automatic_styles(&mut self) {
         // A header's or footer's paragraphs name `styles.xml`'s automatic styles (`MP1`), which
         // `content.xml` may reuse for something else, so each is kept under a name no file can
         // spell.
@@ -577,7 +571,7 @@ impl Builder {
     /// Hand the automatic character styles to the source, so a formatting edit can splice by
     /// reusing a name the file spells (`super::source::TextStyle`). Sorted by name, so two saves
     /// of one document are the same bytes.
-    pub fn publish_styles(&mut self) {
+    pub(crate) fn publish_styles(&mut self) {
         let mut styles: Vec<super::source::TextStyle> = self
             .styles
             .iter()

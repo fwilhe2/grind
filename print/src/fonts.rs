@@ -263,7 +263,7 @@ impl Fonts {
     /// [`FALLBACK`]'s families here that has one, nearest this weight and slant, else any face
     /// here that has one.
     #[must_use]
-    pub fn fallback_for(&self, c: char, bold: bool, italic: bool) -> Option<FaceId> {
+    pub(crate) fn fallback_for(&self, c: char, bold: bool, italic: bool) -> Option<FaceId> {
         FALLBACK
             .iter()
             .filter_map(|family| self.nearest(family, bold, italic))
@@ -303,7 +303,7 @@ impl Fonts {
     /// `roman`, `swiss`, `modern`, …) for the last step: a family nothing here has, and nothing
     /// is metric-compatible with, falls back to the bundled face of that kind rather than to
     /// Writer's serif.
-    pub fn resolve_hinted(
+    pub(crate) fn resolve_hinted(
         &self,
         family: Option<&str>,
         bold: bool,
@@ -372,7 +372,7 @@ impl Fonts {
     /// The fonts installed on this machine, indexed but not read: only their names and where
     /// they are. Reading a face is [`Fonts::add_families`]'s, and only for the families asked for.
     #[must_use]
-    pub fn system_database() -> fontdb::Database {
+    pub(crate) fn system_database() -> fontdb::Database {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
         db
@@ -381,7 +381,7 @@ impl Fonts {
     /// Read every face of these families that `db` knows of and add it, unless a face of that
     /// family is already here (the bundled Liberation is not replaced by an installed copy).
     /// Answers how many faces were added.
-    pub fn add_families(&mut self, db: &fontdb::Database, families: &[String]) -> usize {
+    pub(crate) fn add_families(&mut self, db: &fontdb::Database, families: &[String]) -> usize {
         let missing: Vec<&String> = families
             .iter()
             .filter(|family| {
@@ -427,7 +427,7 @@ impl Fonts {
 
     /// Add the [`FALLBACK`] families `db` has that hold a glyph for one of `wanted` no face here
     /// has, each only if it does. Answers how many faces were added.
-    pub fn add_fallbacks(&mut self, db: &fontdb::Database, wanted: &[char]) -> usize {
+    pub(crate) fn add_fallbacks(&mut self, db: &fontdb::Database, wanted: &[char]) -> usize {
         let covered = |fonts: &Fonts, c: char| {
             (0..fonts.faces.len()).any(|face| fonts.covers(FaceId(face), c))
         };

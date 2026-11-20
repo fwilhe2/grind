@@ -64,7 +64,8 @@ pub fn implemented() -> Vec<&'static str> {
     NAMES.to_vec()
 }
 
-pub use catalog::{FuncInfo, catalog, category, parameters, takes_one_value};
+pub(crate) use catalog::takes_one_value;
+pub use catalog::{FuncInfo, catalog, category, parameters};
 
 /// Every function a formula calls, outermost first, each named once and upper-cased — including
 /// ones this build does not implement. `None` when the formula will not parse.
@@ -404,7 +405,7 @@ impl Args<'_, '_> {
     /// [`Args::numbers`] over some of the arguments — for the functions whose first
     /// parameter is not part of the sequence (`NPV`'s rate) or whose sequence is one
     /// argument (`IRR`'s values).
-    pub fn numbers_range(
+    pub(crate) fn numbers_range(
         &mut self,
         range: std::ops::Range<usize>,
     ) -> Result<Vec<f64>, FormulaError> {
@@ -451,7 +452,7 @@ impl Args<'_, '_> {
         }
     }
 
-    /// The values of the `i`th argument that `SUBTOTAL` counts ([`Engine::counted_by_subtotal`]),
+    /// The values of the `i`th argument that `SUBTOTAL` counts (`Engine::counted_by_subtotal`),
     /// in row-major order. `None` when the argument is not a reference: §6.16.60's sequence is
     /// a range of cells, and the oracle refuses anything else.
     pub fn counted(&mut self, i: usize, collapsed: bool) -> Option<Vec<Value>> {
@@ -504,7 +505,7 @@ impl Args<'_, '_> {
     }
 
     /// Every value in an area — for the few functions that resolve a reference themselves.
-    pub fn values_in(&mut self, area: &Area) -> Vec<Value> {
+    pub(crate) fn values_in(&mut self, area: &Area) -> Vec<Value> {
         self.engine.values_in(area)
     }
 
