@@ -75,13 +75,9 @@ windows — and there is a test in `ui_web` that says so.
 > bold/italic/underline/strikethrough run, clipped to the line and converted from the model's
 > character offsets to the byte offsets Pango attributes are measured against) rather than one
 > plain string per line — so a bold word in a file that already laid out bold now paints bold,
-> with no change to the arithmetic that placed it there. `ui_web` arrives the other way round,
-> because a page has no attribute list to hang over a string: `runs::cut` breaks the line at
-> every boundary the *formatting*, the *selection* and the *caret* introduce, and each piece
-> between two of them becomes one `<span>` — the four booleans as classes, and the values the
-> document itself chose (colour, highlight, family, size) as inline CSS, since a class cannot
-> carry a value (`ui_web/src/text/runs.rs`, which is pure offset arithmetic and therefore tested
-> on the host with no browser).
+> with no change to the arithmetic that placed it there. `ui_web` draws the printed pages
+> and keeps a reader layer beside them, where `runs::cut` breaks each block at every boundary
+> the formatting and the spelling and grammar marks introduce (`ui_web/src/text/runs.rs`).
 >
 > The two used to be **unequal**, and the difference was the GTK window's: `run_attributes`
 > emitted the four booleans and the line was then painted in a single theme ink, so a run the
@@ -202,9 +198,8 @@ an anchor alongside the caret (Shift+arrow, Shift+click and dragging all extend 
 Enter over one erases it first, the way every other editor's Shift key does), a toolbar of
 toggles that read the selection's common formatting and write through `set_char_style`, and
 drawing each run as the document formatted it rather than as one plain string. `grind-text-gtk`
-does it with a Pango attribute list per line (`run_attributes`); `grind-web` cuts each line into
-`<span>`s at every boundary the formatting, the selection and the caret introduce
-(`ui_web/src/text/runs.rs`). Both give `Title` and `Subtitle` their own faces, so a document has
+does it with a Pango attribute list per line (`run_attributes`); `grind-web` draws the printed pages,
+as every graphical shell does. Both give `Title` and `Subtitle` their own faces, so a document has
 one shape in both windows. What the two do *not* agree on is how much of a `CharStyle` reaches
 the screen, and that is the next paragraph's first line.
 

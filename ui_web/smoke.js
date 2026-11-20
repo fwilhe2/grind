@@ -75,13 +75,28 @@ dom.window.HTMLAnchorElement.prototype.click = function () {
 // The dictionaries spelling is checked with (`ui_web/src/spelling.rs`) are fetched from
 // `dictionaries/` beside the page; here that is the repository's own copy.
 // The page asks nothing of another host (`doc/local-only.md`), so an absolute URL fails the run.
+// The fonts the pages are set in are fetched from `fonts/` the same way: `print/fonts` here.
 dom.window.fetch = async (url) => {
   if (/^[a-z]+:\/\//i.test(String(url))) throw new Error(`fetch left the page's own files: ${url}`);
-  const file = path.join(here, "..", "spell/dictionaries", path.basename(String(url)));
+  const name = path.basename(String(url));
+  const dir = String(url).startsWith("fonts/") ? "print/fonts" : "spell/dictionaries";
+  const file = path.join(here, "..", dir, name);
   if (!fs.existsSync(file)) return { ok: false, status: 404 };
-  const text = fs.readFileSync(file, "utf8");
-  return { ok: true, status: 200, text: async () => text };
+  const bytes = fs.readFileSync(file);
+  return {
+    ok: true,
+    status: 200,
+    text: async () => bytes.toString("utf8"),
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length),
+  };
 };
+
+// The print module, which `index.html`'s `grindPrint` imports on first use: here the node build,
+// so the text pane draws its pages as it does in a browser. jsdom has no canvas, so a page's
+// pixels are missing; everything over and beside them — the caret, the selection, the marks, the
+// reader layer — is there.
+const print = require(path.join(here, ".smoke/grind_web_print.js"));
+dom.window.grindPrint = async () => print;
 
 // Instantiating the module runs `start()`, which wires the page up.
 require(path.join(here, ".smoke/grind_web.js"));
@@ -114,11 +129,10 @@ const pressInDoc = (key, modifiers = {}) =>
   );
 
 // What the document pane is showing, block by block — the same rule as `shown()`:
-// read the page, never the core, because the page is what a reader sees.
+// read the page, never the core. The pages are pixels, so this is their reader layer, which is
+// what a screen reader reads.
 const blocks = () =>
-  [...document.querySelectorAll("#flow .block")].map((block) =>
-    [...block.querySelectorAll(".line")].map((line) => line.textContent).join("")
-  );
+  [...document.querySelectorAll("#reader .block")].map((block) => block.textContent);
 
 // Typing into the formula bar the way a user does: the key opens the edit and
 // seeds it, and the rest goes in as text, each keystroke firing `input`.
@@ -522,6 +536,13 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   };
 
   await openFile("notes.fodt", FODT);
+  // The first text document fetches the fonts and the print module, and sets its pages.
+  for (let i = 0; i < 600 && !byId("flow").classList.contains("paged"); i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await frame();
+  }
+  await frame();
+  check("then shows them", byId("flow").classList.contains("paged"), true);
   check("a text document opens the document pane", byId("page").hidden, false);
   check("and puts the grid away", byId("surface").hidden, true);
   check("the formula bar goes with the grid", byId("formula-bar").hidden, true);
@@ -1132,7 +1153,6 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   // The print module (doc/pdf-export.md): the page loads it on first use and hands it the
   // document as flat ODF bytes and the fonts it fetched, so that is exactly what is done here —
   // a real Writer document in, a PDF and the preview's pages out.
-  const print = require(path.join(here, ".smoke/grind_web_print.js"));
   const root = path.join(here, "..");
   const writer = fs.readFileSync(path.join(root, "text/tests/data/numbered-list.fodt"));
   const fonts = fs

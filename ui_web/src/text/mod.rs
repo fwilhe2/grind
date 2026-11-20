@@ -4,21 +4,14 @@
 
 //! The word processor half of the browser shell. **The DOM is a renderer, not the document**: no
 //! `contenteditable`, which would be a second copy of the text with its own paragraphs and undo
-//! stack. Every visible line is rebuilt from [`App::get_viewport`] and [`App::layout_block`] each
-//! repaint.
-//!
-//! **One `<div>` per laid-out line, not per paragraph**: a browser wrapping a paragraph itself
-//! would break lines where the core does not, and Down-arrow would land elsewhere than the caret
-//! appears. The core breaks the lines in this shell's units (`doc/text-layout.md`); `Face` is the
-//! browser's whole contribution — how wide is this text, in CSS pixels.
-//!
-//! That is the view until the print module has loaded; from then the document is drawn as its
-//! printed pages (`text/paged.rs`, `doc/page-model.md` PM7), and the lines are where it cannot load.
+//! stack. The document is drawn as its printed pages (`text/paged.rs`, `doc/page-model.md`),
+//! set by the print module, which is loaded with the first text document; over them, the caret,
+//! the selection and the marks, and beside them a reader layer with the words on screen
+//! ([`Ui::reader`]) for a screen reader and the browser's find.
 
 pub mod keymap;
 mod paged;
 mod runs;
-mod table;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -27,205 +20,27 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use grind_core::style::TextStyle;
 use grind_text::find::{self, Towards};
 use grind_text::format::{self, Change, Landed};
-use grind_text::look::Role;
 use grind_text::markdown::Emphasis;
 use grind_text::style::CharStyle;
-use grind_text::{App, BlockKind, BlockView, Caret, Form, Metrics, loc};
+use grind_text::{App, BlockKind, BlockView, Caret, Form, loc};
 use wasm_bindgen::prelude::*;
 use web_sys::{
-    CanvasRenderingContext2d, CompositionEvent, Document, Element, Event, HtmlCanvasElement,
-    HtmlDialogElement, HtmlElement, HtmlInputElement, HtmlTextAreaElement, KeyboardEvent,
-    MouseEvent,
+    CompositionEvent, Document, Element, Event, HtmlDialogElement, HtmlElement, HtmlInputElement,
+    HtmlTextAreaElement, KeyboardEvent, MouseEvent,
 };
 
 use crate::command::Entry;
 use crate::{element, listen, request_repaint, set_pressed, set_select, set_swatch};
 use keymap::{Action, Chord, Motion};
 
-/// The document's typeface, owned **here** rather than in the stylesheet, so it cannot disagree:
-/// written into each block's inline style and given to the canvas that measures. A serif, since
-/// this is a page of prose.
-const FAMILY: &str = "Georgia, 'Times New Roman', serif";
-/// What a fenced block and a `` `code` `` run are set in. A generic first, so the reader's own
-/// monospace face wins — which one that is, is theirs to know.
-const MONO_FAMILY: &str = "ui-monospace, monospace";
-const BODY_PX: f64 = 17.0;
-/// Multiplied by the font size to give a line's height, and by the *body* size to give the
-/// space under a paragraph.
-const LINE: f64 = 1.55;
-const GAP: f64 = 0.85;
-/// The extra space above a heading, and how far one list level indents. Both in body sizes.
-const HEADING_GAP: f64 = 1.4;
-const INDENT: f64 = 1.6;
-
-/// Where a paragraph wraps before the browser has laid the page out. jsdom reports every rectangle
-/// as zero, and a zero width means "do not wrap" to the core — right for a headless test, wrong
-/// for a window not yet measured.
+/// How wide and tall the pane is taken to be before the browser has laid it out: jsdom reports
+/// every rectangle as zero.
 const UNMEASURED: f64 = 640.0;
 
 /// CSS pixels per point at which the pages are shown: a page at its printed size.
 const PAGE_SCALE: f64 = 96.0 / 72.0;
-
-/// One block-level face: a font, its line height, and a canvas to measure with, in **CSS pixels**.
-///
-/// ponytail: a character's advance is measured once and cached, so `advance("ab")` is
-/// `advance("a") + advance("b")` and kerning is lost. Measuring every prefix of every paragraph
-/// per repaint is quadratic and shows as typing latency; the caret is an element in the line,
-/// placed by the browser's own kerning, so this costs at most a pixel or two in where a line
-/// breaks.
-struct Face {
-    /// `None` where the page has no canvas — headless under jsdom, where `ui_web/smoke.js` runs.
-    /// Everything still works; the widths are made up.
-    ctx: Option<Rc<CanvasRenderingContext2d>>,
-    font: String,
-    size: f64,
-    height: f64,
-    widths: RefCell<HashMap<char, f32>>,
-}
-
-impl Face {
-    fn new(ctx: Option<Rc<CanvasRenderingContext2d>>, size: f64, bold: bool) -> Self {
-        Self::in_family(ctx, size, bold, FAMILY)
-    }
-
-    fn in_family(
-        ctx: Option<Rc<CanvasRenderingContext2d>>,
-        size: f64,
-        bold: bool,
-        family: &str,
-    ) -> Self {
-        let weight = if bold { "bold " } else { "" };
-        Face {
-            ctx,
-            font: format!("{weight}{size}px {family}"),
-            size,
-            height: (size * LINE).round(),
-            widths: RefCell::new(HashMap::new()),
-        }
-    }
-
-    /// What a block's element is styled with — the same font this face measures in, which is
-    /// the whole reason the two are one object.
-    fn css(&self, indent: f64) -> String {
-        format!(
-            "font:{};line-height:{}px;margin-left:{indent}px",
-            self.font, self.height
-        )
-    }
-
-    fn width_of(&self, c: char) -> f32 {
-        if let Some(width) = self.widths.borrow().get(&c) {
-            return *width;
-        }
-        if let Some(ctx) = &self.ctx {
-            ctx.set_font(&self.font);
-        }
-        let width = match c {
-            // A break ends the line; a caret sits at its end, and nothing is drawn.
-            '\n' => 0.0,
-            // ODF's `text:tab` is a tab *stop* the document does not record, so this shell
-            // draws it as a fixed space rather than inventing a stop table.
-            '\t' => 4.0 * self.measure(' '),
-            c => self.measure(c),
-        };
-        self.widths.borrow_mut().insert(c, width);
-        width
-    }
-
-    fn measure(&self, c: char) -> f32 {
-        let mut buffer = [0u8; 4];
-        self.ctx
-            .as_ref()
-            .and_then(|ctx| ctx.measure_text(c.encode_utf8(&mut buffer)).ok())
-            .map_or((self.size / 2.0) as f32, |metrics| metrics.width() as f32)
-    }
-}
-
-impl Metrics for Face {
-    fn advances(&self, text: &str, _style: &TextStyle, out: &mut Vec<f32>) {
-        let mut x = 0.0;
-        for c in text.chars() {
-            x += self.width_of(c);
-            out.push(x);
-        }
-    }
-
-    fn line_height(&self, _style: &TextStyle) -> f32 {
-        self.height as f32
-    }
-}
-
-/// The faces a document is set in: body text, one per heading level, and the two named
-/// paragraph styles that are not headings.
-struct Faces {
-    body: Face,
-    headings: Vec<Face>,
-    title: Face,
-    subtitle: Face,
-    /// A fenced code block (`grind_text::markdown::PREFORMATTED`). A *face* rather than a CSS
-    /// rule, because the same object is what measures the block — a monospace paragraph drawn
-    /// in one font and measured in another would break every line in the wrong place.
-    code: Face,
-}
-
-impl Faces {
-    fn new(ctx: Option<Rc<CanvasRenderingContext2d>>) -> Self {
-        // Every size and weight is `grind_text::look`'s, so a document has one shape in every
-        // shell that draws a page. The code face is a pixel smaller than the body: a monospace
-        // face at the same size reads larger, which is this page's own optical correction.
-        let face =
-            |role: Role| Face::new(ctx.clone(), (BODY_PX * role.scale()).round(), role.bold());
-        Faces {
-            body: face(Role::Body),
-            headings: (1..=grind_text::look::HEADING_SCALE.len() as u8)
-                .map(|level| face(Role::Heading(level)))
-                .collect(),
-            title: face(Role::Title),
-            subtitle: face(Role::Subtitle),
-            code: Face::in_family(ctx, BODY_PX - 1.0, false, MONO_FAMILY),
-        }
-    }
-
-    /// The face a block is set in — [`Role::of`], which decides which name wins over which kind
-    /// and what a heading deeper than six levels is set in, for every shell that draws a page.
-    fn of(&self, kind: &BlockKind, style: Option<&str>) -> &Face {
-        match Role::of(kind, style) {
-            Role::Body => &self.body,
-            Role::Heading(level) => &self.headings[usize::from(level) - 1],
-            Role::Title => &self.title,
-            Role::Subtitle => &self.subtitle,
-            Role::Code => &self.code,
-        }
-    }
-}
-
-/// The measure and face of every block — `grind_text::Faces`, for motions crossing between blocks:
-/// a heading is set larger than the paragraph below it, and a list item's indent narrows it.
-struct Column<'a> {
-    faces: &'a Faces,
-    /// The flow's width, in the same CSS pixels [`Face`] answers in.
-    width: f64,
-    /// The width of every block that sits in a table cell ([`table::measures`]) — a cell's
-    /// lines are broken at the cell's width, and a motion has to be answered at that width too.
-    cells: HashMap<usize, f64>,
-}
-
-impl grind_text::Faces for Column<'_> {
-    fn of(&self, index: usize, kind: &BlockKind, style: Option<&str>) -> (f32, &dyn Metrics) {
-        let width = self.cells.get(&index).copied().unwrap_or(self.width);
-        (
-            (width - indent_of(kind)).max(1.0) as f32,
-            self.faces.of(kind, style),
-        )
-    }
-}
-
-/// A table being drawn: its `table:name`, its grid element, and the cell elements made so far
-/// by (row, column).
-type OpenTable = (String, Element, HashMap<(u32, u32), Element>);
 
 /// The elements this pane writes to. No document state — that is all in the core.
 struct Dom {
@@ -253,12 +68,10 @@ impl Dom {
 pub struct Ui {
     pub app: Arc<App>,
     dom: Dom,
-    faces: Faces,
     pending: Arc<AtomicBool>,
     /// How many times the document has changed, counted by its observer.
     changes: Arc<AtomicU64>,
-    /// The printed pages, once the print module has loaded (`doc/page-model.md` decision 3):
-    /// until then, and where it cannot load, the document is drawn as lines.
+    /// The printed pages, once the print module has loaded (`doc/page-model.md` decision 3).
     paged: RefCell<Option<paged::Paged>>,
     // Everything below is *presentation*. None of it is the document, which is why the core
     // neither knows nor keeps it.
@@ -301,21 +114,9 @@ impl Ui {
         pending: Arc<AtomicBool>,
         changes: Arc<AtomicU64>,
     ) -> Result<Rc<Self>, JsValue> {
-        // A canvas never added to the page, there to be asked how wide a string is. Optional: a
-        // page with no canvas still opens documents, and refusing to start over it would take the
-        // spreadsheet down too.
-        let ctx = document
-            .create_element("canvas")
-            .ok()
-            .and_then(|canvas| canvas.dyn_into::<HtmlCanvasElement>().ok())
-            .and_then(|canvas| canvas.get_context("2d").ok().flatten())
-            .and_then(|ctx| ctx.dyn_into::<CanvasRenderingContext2d>().ok())
-            .map(Rc::new);
-
         let ui = Rc::new(Ui {
             app,
             dom: Dom::find(document)?,
-            faces: Faces::new(ctx),
             pending,
             changes,
             paged: RefCell::new(None),
@@ -398,160 +199,14 @@ impl Ui {
 
     // --- rendering ---
 
-    /// The measure: how wide a line may be, in the same pixels [`Face`] answers in.
-    fn width(&self) -> f64 {
-        match self.dom.flow.client_width() {
-            0 => UNMEASURED,
-            width => f64::from(width),
-        }
-    }
-
+    /// The pages once the print module has set them; until then, a line saying so.
     fn render(&self) -> Result<(), JsValue> {
         if self.is_paged() {
             return self.render_pages();
         }
-        let caret = self.caret.get();
-        let selection = self.selection();
-        // ponytail: the whole document is rendered, not the part on screen. Windowing needs a
-        // scroll-position-to-block map that pays only on documents far longer than people write
-        // (`doc/text-shell.md`).
-        let viewport = self.app.get_viewport(0..self.app.block_count());
-        // The same lookup a click and a motion ask, so a cell's lines are drawn broken where
-        // the caret will think they are.
-        let column = self.column_over(&viewport);
-        // The table being drawn, if the last block was in one: its name, its grid element, and
-        // the cell elements made so far — a cell holding two paragraphs is two blocks, and both
-        // go in the one cell.
-        let mut open: Option<OpenTable> = None;
-        let columns = table::columns(viewport.iter().filter_map(|block| block.cell.as_ref()));
-
-        // The words the checker underlines — none until a dictionary is attached
-        // (`crate::spelling`), which is also what turning spelling off is.
-        let wrong = self.app.misspellings(0..self.app.block_count());
-        let flagged = self.grammar_flags(0..self.app.block_count());
-
-        self.dom.flow.set_text_content(None);
-        for block in viewport.iter() {
-            let face = self.faces.of(&block.kind, block.style.as_deref());
-            let indent = indent_of(&block.kind);
-            let (measure, _) =
-                grind_text::Faces::of(&column, block.index, &block.kind, block.style.as_deref());
-            let Ok(layout) = self.app.layout_block(block.index, measure, face) else {
-                continue;
-            };
-
-            let element = self.dom.document.create_element("div")?;
-            element.set_class_name(&class_of(block));
-            element.set_attribute("data-block", &block.index.to_string())?;
-            element.set_attribute("style", &face.css(indent))?;
-            // A list item's number or its style's bullet (`BlockView::mark`), drawn by the
-            // stylesheet in front of it — never a character of the document.
-            if let Some(mark) = block.mark() {
-                element.set_attribute("data-label", mark)?;
-            }
-
-            // A block that is a picture is drawn as one, above whatever text it also holds
-            // (a caption reads as the paragraph's own text — `doc/odt-format.md`).
-            if let Some((at, image)) = block
-                .runs
-                .iter()
-                .find_map(|run| Some((run.start, run.image.as_ref()?)))
-            {
-                let figure = self.dom.document.create_element("div")?;
-                figure.set_class_name("figure");
-                let picture = self.dom.document.create_element("img")?;
-                picture.set_class_name("picture");
-                // The document's own alternative text is the page's, too.
-                picture.set_attribute("alt", image.title.as_deref().unwrap_or(""))?;
-                picture.set_attribute("src", &self.image_url(block.index, image))?;
-                figure.append_child(&picture)?;
-                let badge = self.dom.document.create_element("button")?;
-                badge.set_attribute("type", "button")?;
-                badge.set_attribute("data-alt", &format!("{}:{at}", block.index))?;
-                let (class, label, says) = match image.title {
-                    Some(_) => ("alt-badge", "ALT", "Edit the alt text"),
-                    None => ("alt-badge missing", "+ Alt text", "Add alt text"),
-                };
-                badge.set_class_name(class);
-                badge.set_text_content(Some(label));
-                badge.set_attribute("aria-label", says)?;
-                badge.set_attribute("title", says)?;
-                figure.append_child(&badge)?;
-                element.append_child(&figure)?;
-            }
-
-            for (number, line) in layout.lines().iter().enumerate() {
-                let row = self.dom.document.create_element("div")?;
-                row.set_class_name("line");
-                row.set_attribute("data-line", &number.to_string())?;
-                // An empty line still occupies one: a `<div>` with nothing in it is zero
-                // pixels tall, however tall its line height says it is.
-                row.set_attribute("style", &format!("height:{}px", face.height))?;
-
-                // `line_at` rather than `Line::holds`: an offset at a soft break belongs to
-                // both lines, and drawing the caret on both is drawing it twice.
-                let here = (block.index == caret.block && layout.line_at(caret.offset) == number)
-                    .then_some(caret.offset);
-                self.draw_line(
-                    &row,
-                    block,
-                    line.start..line.end,
-                    (&selection, &wrong, &flagged),
-                    here,
-                )?;
-                // A bookmark contributes no characters (`doc/view-modes.md` §3.6), so with the
-                // mode on each is named after its line's text, not inside it, where it would be an
-                // offset the caret counts.
-                if self.names.get() {
-                    for (at, name) in &block.marks {
-                        if !(line.start..line.end.max(line.start + 1)).contains(at) {
-                            continue;
-                        }
-                        let mark = self.dom.document.create_element("span")?;
-                        mark.set_class_name("mark-name");
-                        mark.set_text_content(Some(&format!("\u{2039}{name}\u{203a}")));
-                        row.append_child(&mark)?;
-                    }
-                }
-                element.append_child(&row)?;
-            }
-            let parent: Element = match &block.cell {
-                None => {
-                    open = None;
-                    self.dom.flow.clone().into()
-                }
-                Some(cell) => {
-                    if open.as_ref().is_none_or(|(name, ..)| *name != cell.table) {
-                        let grid = self.dom.document.create_element("div")?;
-                        grid.set_class_name("table");
-                        let count = columns.get(&cell.table).copied().unwrap_or(1);
-                        grid.set_attribute(
-                            "style",
-                            &format!("grid-template-columns:repeat({count}, minmax(0, 1fr))"),
-                        )?;
-                        self.dom.flow.append_child(&grid)?;
-                        open = Some((cell.table.clone(), grid, HashMap::new()));
-                    }
-                    let Some((_, grid, cells)) = open.as_mut() else {
-                        continue;
-                    };
-                    if let Some(existing) = cells.get(&(cell.row, cell.column)) {
-                        existing.clone()
-                    } else {
-                        let box_ = self.dom.document.create_element("div")?;
-                        box_.set_class_name("tcell");
-                        box_.set_attribute("style", &table::placement(cell))?;
-                        grid.append_child(&box_)?;
-                        cells.insert((cell.row, cell.column), box_.clone());
-                        box_
-                    }
-                }
-            };
-            parent.append_child(&element)?;
-        }
-
+        self.dom.flow.set_class_name("flow waiting");
+        self.dom.flow.set_text_content(Some("Setting the pages…"));
         self.render_chrome();
-        self.follow_caret();
         Ok(())
     }
 
@@ -577,12 +232,18 @@ impl Ui {
         style.set_property("width", &format!("{strip_width}px"))?;
         style.set_property("height", &format!("{strip_height}px"))?;
         let top = f64::from(pane.scroll_top());
-        let bottom = top + f64::from(pane.client_height()).max(1.0);
+        let bottom = top
+            + match pane.client_height() {
+                0 => UNMEASURED,
+                height => f64::from(height),
+            };
         let ratio = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
         paged.draw(&self.dom.document, flow, (top, bottom), PAGE_SCALE, ratio)?;
 
-        if let Some(old) = self.dom.document.get_element_by_id("marks") {
-            old.remove();
+        for old in ["marks", "reader"] {
+            if let Some(old) = self.dom.document.get_element_by_id(old) {
+                old.remove();
+            }
         }
         let marks = self.dom.document.create_element("div")?;
         marks.set_id("marks");
@@ -670,6 +331,33 @@ impl Ui {
         {
             mark("caret paged", [x, y, 0.0, h])?.set_id("caret");
         }
+        if let Some(blocks) = paged.blocks(top, bottom) {
+            // A picture's way to its alt text: a chip over its corner, quiet once it has some.
+            for block in self.app.get_viewport(blocks.clone()).iter() {
+                for run in &block.runs {
+                    let Some(image) = &run.image else { continue };
+                    let Some([x, y, _, _]) = paged.spot(at(block.index, run.start)) else {
+                        continue;
+                    };
+                    let (class, label, says) = match image.title {
+                        Some(_) => ("alt-badge", "ALT", "Edit the alt text"),
+                        None => ("alt-badge missing", "+ Alt text", "Add alt text"),
+                    };
+                    let badge = self.dom.document.create_element("button")?;
+                    badge.set_class_name(class);
+                    badge.set_attribute("type", "button")?;
+                    badge.set_attribute("data-alt", &format!("{}:{}", block.index, run.start))?;
+                    badge
+                        .set_attribute("style", &format!("left:{}px;top:{}px", x + 6.0, y + 6.0))?;
+                    badge.set_text_content(Some(label));
+                    badge.set_attribute("aria-label", says)?;
+                    badge.set_attribute("title", says)?;
+                    marks.append_child(&badge)?;
+                }
+            }
+            let reader = self.reader(blocks, caret, selection.is_some())?;
+            flow.append_child(&reader)?;
+        }
         flow.append_child(&marks)?;
         drop(slot);
         self.render_chrome();
@@ -677,121 +365,84 @@ impl Ui {
         Ok(())
     }
 
-    /// One line's worth of `<span>`s — the document's formatting, the selection and the caret,
-    /// each of which cuts the line somewhere the others do not ([`runs::cut`]).
-    fn draw_line(
+    /// The text of the blocks on screen, for whoever cannot see the pages — a screen reader, the
+    /// browser's find, a test: each block's words with their formatting as classes, a misspelt
+    /// word and a grammar finding marked as ARIA marks them. Laid out nowhere.
+    fn reader(
         &self,
-        row: &Element,
-        block: &BlockView,
-        line: std::ops::Range<usize>,
-        (selection, wrong, flagged): (
-            &Option<(Caret, Caret)>,
-            &[grind_text::Misspelling],
-            &[grind_text::grammar::Flag],
-        ),
-        caret: Option<usize>,
-    ) -> Result<(), JsValue> {
-        let text: Vec<char> = block.text.chars().collect();
-        // The selection, clipped to *this block* — it may start pages above and end below.
-        let within = selection.as_ref().and_then(|(from, to)| {
-            (from.block <= block.index && block.index <= to.block).then(|| {
-                let start = if from.block == block.index {
-                    from.offset
-                } else {
-                    0
-                };
-                let end = if to.block == block.index {
-                    to.offset
-                } else {
-                    text.len()
-                };
-                start..end
-            })
-        });
-
-        // A tick at a bookmark's own offset says exactly where it is; the name at the line's end
-        // says only which line. A boundary between two pieces places it against the browser's own
-        // kerning.
-        let anchors_here: Vec<usize> = if self.names.get() {
-            block
-                .marks
-                .iter()
-                .map(|(at, _)| *at)
-                .filter(|at| line.contains(at))
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let mut drawn = false;
-        // The block's misspelt words, but not the one still being typed: a caret at the end of a
-        // word is the word not finished, and underlining it on every keystroke is noise.
-        let misspelt: Vec<std::ops::Range<usize>> = wrong
-            .iter()
-            .filter(|w| w.block == block.index)
-            .map(|w| w.offset..w.offset + w.len)
-            .filter(|word| caret != Some(word.end))
-            .collect();
-        // The grammar findings, the same way; one covering nothing (a missing comma) marks the
-        // character before it.
-        let flagged: Vec<(std::ops::Range<usize>, bool)> = flagged
-            .iter()
-            .filter(|f| f.block == block.index)
-            .filter(|f| caret != Some(f.finding.range.end))
-            .map(|f| {
-                let range = &f.finding.range;
-                let quiet = matches!(
-                    f.finding.kind,
-                    grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
-                );
-                (
-                    range.start.saturating_sub(usize::from(range.is_empty()))..range.end,
-                    quiet,
-                )
-            })
-            .collect();
-        let marks = runs::Marks {
-            misspelt: &misspelt,
-            flagged: &flagged,
-        };
-        for piece in runs::cut_marked(line, &block.runs, within, caret, &anchors_here, &marks) {
-            if anchors_here.contains(&piece.range.start) {
-                let tick = self.dom.document.create_element("span")?;
-                tick.set_class_name("mark-tick");
-                row.append_child(&tick)?;
+        blocks: std::ops::Range<usize>,
+        caret: Caret,
+        selecting: bool,
+    ) -> Result<Element, JsValue> {
+        let reader = self.dom.document.create_element("div")?;
+        reader.set_id("reader");
+        reader.set_class_name("reader");
+        let wrong = self.app.misspellings(blocks.clone());
+        let flagged = self.grammar_flags(blocks.clone());
+        let dark = crate::ink::page_is_dark();
+        for block in self.app.get_viewport(blocks).iter() {
+            let tag = match &block.kind {
+                BlockKind::Heading { level } => format!("h{}", (*level).clamp(1, 6)),
+                _ => "p".to_owned(),
+            };
+            let element = self.dom.document.create_element(&tag)?;
+            element.set_class_name(&class_of(block));
+            element.set_attribute("data-block", &block.index.to_string())?;
+            if let Some(image) = block.runs.iter().find_map(|run| run.image.as_ref()) {
+                let picture = self.dom.document.create_element("img")?;
+                picture.set_class_name("picture");
+                picture.set_attribute("alt", image.title.as_deref().unwrap_or(""))?;
+                element.append_child(&picture)?;
             }
-            if caret == Some(piece.range.start) {
-                self.append_caret(row)?;
-                drawn = true;
-            }
-            let slice: String = text
-                [piece.range.start.min(text.len())..piece.range.end.min(text.len())]
+            // The word still being typed is not marked: a caret at its end is a word not finished.
+            let typing =
+                |end: usize| !selecting && caret.block == block.index && caret.offset == end;
+            let misspelt: Vec<std::ops::Range<usize>> = wrong
                 .iter()
+                .filter(|w| w.block == block.index && !typing(w.offset + w.len))
+                .map(|w| w.offset..w.offset + w.len)
                 .collect();
-            // A line break is where the line ends; it is not a character to draw.
-            let slice = slice.trim_end_matches('\n');
-            let span = self.dom.document.create_element("span")?;
-            span.set_class_name(&runs::classes(&piece));
-            let css = runs::css(&piece, crate::ink::page_is_dark());
-            if !css.is_empty() {
-                span.set_attribute("style", &css)?;
+            let flags: Vec<(std::ops::Range<usize>, bool)> = flagged
+                .iter()
+                .filter(|f| f.block == block.index && !typing(f.finding.range.end))
+                .map(|f| {
+                    let range = &f.finding.range;
+                    let quiet = matches!(
+                        f.finding.kind,
+                        grind_text::grammar::Kind::Typography | grind_text::grammar::Kind::Style
+                    );
+                    (
+                        range.start.saturating_sub(usize::from(range.is_empty()))..range.end,
+                        quiet,
+                    )
+                })
+                .collect();
+            let marks = runs::Marks {
+                misspelt: &misspelt,
+                flagged: &flags,
+            };
+            let text: Vec<char> = block.text.chars().collect();
+            for piece in runs::cut(0..text.len(), &block.runs, &marks) {
+                let span = self.dom.document.create_element("span")?;
+                span.set_class_name(&runs::classes(&piece));
+                let css = runs::css(&piece, dark);
+                if !css.is_empty() {
+                    span.set_attribute("style", &css)?;
+                }
+                if piece.wrong {
+                    span.set_attribute("aria-invalid", "spelling")?;
+                } else if piece.grammar.is_some() {
+                    span.set_attribute("aria-invalid", "grammar")?;
+                }
+                let slice: String = text[piece.range.start..piece.range.end.min(text.len())]
+                    .iter()
+                    .collect();
+                span.set_text_content(Some(&slice));
+                element.append_child(&span)?;
             }
-            span.set_text_content(Some(slice));
-            row.append_child(&span)?;
+            reader.append_child(&element)?;
         }
-        // At the end of the line, and in an empty one — neither is the start of any piece.
-        if caret.is_some() && !drawn {
-            self.append_caret(row)?;
-        }
-        Ok(())
-    }
-
-    fn append_caret(&self, row: &Element) -> Result<(), JsValue> {
-        let caret = self.dom.document.create_element("span")?;
-        caret.set_class_name("caret");
-        caret.set_id("caret");
-        row.append_child(&caret)?;
-        Ok(())
+        Ok(reader)
     }
 
     /// A picture as a `data:` URL, encoded once and remembered. A `blob:` URL would skip the
@@ -1981,45 +1632,11 @@ impl Ui {
             self.anchor.set(None);
         }
         let caret = self.caret.get();
-        if let Some(moved) = self.go_on_pages(motion, caret) {
-            if !matches!(motion, Motion::Line(_) | Motion::Page(_)) {
-                self.goal_x.set(None);
-            }
-            return self.set_caret(moved);
-        }
-        let faces = self.column();
         let moved = match motion {
             Motion::Char(delta) => Some(self.stepped(delta)),
-            Motion::Line(steps) | Motion::Page(steps) => {
-                let lines = match motion {
-                    // A page is however many body lines fit, less one so the line you were
-                    // reading is still there afterwards.
-                    Motion::Page(_) => {
-                        let fit = f64::from(self.dom.pane.client_height()) / self.faces.body.height;
-                        (fit as isize - 1).max(1)
-                    }
-                    _ => 1,
-                };
-                // Remembered across a run of Down presses, which is what `goal_x` is for.
-                let goal = match self.goal_x.get() {
-                    Some(x) => x,
-                    None => self.app.caret_x(caret, &faces).unwrap_or(0.0),
-                };
-                self.goal_x.set(Some(goal));
-                self.app
-                    .caret_line(caret, steps as isize * lines, goal, &faces)
-                    .ok()
-            }
-            Motion::LineStart | Motion::LineEnd => self
-                .app
-                .caret_line_bounds(caret, &faces)
-                .ok()
-                .map(|(start, end)| match motion {
-                    Motion::LineStart => start,
-                    _ => end,
-                }),
             Motion::DocStart => Some(grind_text::caret::START),
             Motion::DocEnd => Some(grind_text::caret::end(&self.app)),
+            _ => self.go_on_pages(motion, caret),
         };
         let Some(moved) = moved else { return };
         if !matches!(motion, Motion::Line(_) | Motion::Page(_)) {
@@ -2028,8 +1645,8 @@ impl Ui {
         self.set_caret(moved);
     }
 
-    /// A motion by lines, a screenful or to a line's end, answered by the printed pages when the
-    /// document is shown as them; `None` for every other motion, and with no pages.
+    /// A motion by lines, a screenful or to a line's end, answered by the printed pages; `None`
+    /// before they are set.
     fn go_on_pages(&self, motion: Motion, caret: Caret) -> Option<Caret> {
         let paged = self.paged.borrow();
         let paged = paged.as_ref()?;
@@ -2083,30 +1700,6 @@ impl Ui {
 
     fn block_len(&self, index: usize) -> usize {
         grind_text::caret::block_len(&self.app, index)
-    }
-
-    /// How each block is set — this pane's [`grind_text::Faces`], rebuilt per question because
-    /// the flow's width is read from the DOM and can change under a resize between two of them.
-    fn column(&self) -> Column<'_> {
-        let viewport = self.app.get_viewport(0..self.app.block_count());
-        self.column_over(&viewport)
-    }
-
-    /// [`Ui::column`] over a viewport the caller already read — the renderer's, which reads the
-    /// whole document anyway.
-    fn column_over(&self, viewport: &grind_text::Viewport) -> Column<'_> {
-        let width = self.width();
-        Column {
-            faces: &self.faces,
-            width,
-            cells: table::measures(
-                &viewport
-                    .iter()
-                    .map(|block| (block.index, block.cell.as_ref()))
-                    .collect::<Vec<_>>(),
-                width,
-            ),
-        }
     }
 
     // --- editing ---
@@ -2232,41 +1825,11 @@ impl Ui {
             let y = f64::from(event.client_y()) - flow.top();
             return Ok(paged.hit(x, y));
         }
-        let Some(target) = event.target().and_then(|t| t.dyn_into::<Element>().ok()) else {
-            return Ok(None);
-        };
-        let (Some(row), Some(block)) = (target.closest(".line")?, target.closest("[data-block]")?)
-        else {
-            return Ok(None);
-        };
-        let (Some(line), Some(index)) = (
-            attribute(&row, "data-line"),
-            attribute(&block, "data-block"),
-        ) else {
-            return Ok(None);
-        };
-        // Through the same lookup a motion uses, so a click and a Down-arrow cannot disagree
-        // about which face this block is set in.
-        let column = self.column();
-        let block = self.block_at(index);
-        let kind = block
-            .as_ref()
-            .map_or(BlockKind::Paragraph, |block| block.kind.clone());
-        let style = block.as_ref().and_then(|block| block.style.clone());
-        let (width, face) = grind_text::Faces::of(&column, index, &kind, style.as_deref());
-        let Ok(layout) = self.app.layout_block(index, width, face) else {
-            return Ok(None);
-        };
-        let x = f64::from(event.client_x()) - row.get_bounding_client_rect().left();
-        Ok(Some(Caret {
-            block: index,
-            offset: layout.offset_at(line, x as f32),
-        }))
+        Ok(None)
     }
 }
 
-/// Which CSS class a block is drawn with. Structure only — the font is inline, from the face
-/// that measured it.
+/// Which CSS class a block is given in the reader layer: its structure.
 fn class_of(block: &BlockView) -> String {
     let mut class = match &block.kind {
         BlockKind::Paragraph => "block p".to_owned(),
@@ -2324,18 +1887,6 @@ fn base64(bytes: &[u8]) -> String {
         }
     }
     out
-}
-
-/// How far a block's text is indented — a list's nesting, and nothing else.
-fn indent_of(kind: &BlockKind) -> f64 {
-    match kind {
-        BlockKind::ListItem { depth } => f64::from(*depth) * INDENT * BODY_PX,
-        _ => 0.0,
-    }
-}
-
-fn attribute(element: &Element, name: &str) -> Option<usize> {
-    element.get_attribute(name)?.parse().ok()
 }
 
 /// Where a picture's alt chip puts the caret: `data-alt` is `block:offset`, the picture's own.
@@ -2466,24 +2017,6 @@ fn describe(kind: &BlockKind, style: Option<&str>) -> String {
     }
 }
 
-/// The space under a block, and the extra above a heading — written into the page once, so
-/// the stylesheet and this file cannot disagree about it.
-pub fn declare_spacing(document: &Document) -> Result<(), JsValue> {
-    let Some(root) = document
-        .document_element()
-        .and_then(|e| e.dyn_into::<HtmlElement>().ok())
-    else {
-        return Ok(());
-    };
-    let style = root.style();
-    style.set_property("--block-gap", &format!("{}px", (GAP * BODY_PX).round()))?;
-    style.set_property(
-        "--heading-gap",
-        &format!("{}px", (HEADING_GAP * BODY_PX).round()),
-    )?;
-    style.set_property("--measure", &format!("{}px", (BODY_PX * 38.0).round()))
-}
-
 /// Nothing here is reachable without a browser, so what is testable on the host is the
 /// vocabulary: which class a block gets, and how far it is indented.
 #[cfg(test)]
@@ -2586,15 +2119,5 @@ mod tests {
         );
         // A PNG's own first bytes, which is what this is actually for.
         assert_eq!(base64(&[0x89, b'P', b'N', b'G']), "iVBORw==");
-    }
-
-    #[test]
-    fn only_a_list_item_is_indented_and_it_is_by_its_depth() {
-        assert_eq!(indent_of(&BlockKind::Paragraph), 0.0);
-        assert_eq!(indent_of(&BlockKind::Heading { level: 1 }), 0.0);
-        assert_eq!(
-            indent_of(&BlockKind::ListItem { depth: 2 }),
-            2.0 * INDENT * BODY_PX
-        );
     }
 }

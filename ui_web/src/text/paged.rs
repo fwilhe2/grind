@@ -208,6 +208,12 @@ impl Paged {
             let Some(canvas) = self.canvases.get(page) else {
                 continue;
             };
+            // A page with no 2d context to draw on (a headless host) keeps its place and its
+            // marks; only its pixels are missing.
+            let Some(context) = canvas.get_context("2d")? else {
+                continue;
+            };
+            let context: CanvasRenderingContext2d = context.dyn_into()?;
             let sheet = call(
                 &self.pages,
                 "render",
@@ -227,10 +233,6 @@ impl Paged {
                 .map_or_default(|bytes| js_sys::Uint8Array::new(&bytes).to_vec());
             canvas.set_width(width);
             canvas.set_height(height);
-            let context: CanvasRenderingContext2d = canvas
-                .get_context("2d")?
-                .ok_or_else(|| JsValue::from_str("no 2d context"))?
-                .dyn_into()?;
             // A page is opaque — white paper under everything — so its premultiplied pixels are
             // the straight ones a canvas expects.
             let image = web_sys::ImageData::new_with_u8_clamped_array_and_sh(

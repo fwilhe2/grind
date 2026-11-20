@@ -492,11 +492,14 @@ input[type="text"] {
 }
 
 .flow {
-  max-width: var(--measure, 640px);
-  margin: 2rem auto 6rem;
-  /* A word processor is not a UI: the reader's own text settings decide nothing
-     here, because what is on screen has to be what would be printed. */
   color: CanvasText;
+}
+
+/* Before the print module has set the pages. */
+.flow.waiting {
+  margin: 2rem auto;
+  text-align: center;
+  opacity: 0.6;
 }
 
 /* The document as its printed pages (ui_web/src/text/paged.rs): a strip as wide and tall as the
@@ -565,88 +568,24 @@ input[type="text"] {
   padding-left: 0.5em;
 }
 
-.block {
-  margin: 0 0 var(--block-gap, 14px);
-}
-
-/* A table: a grid of cells with a rule round each, the columns equal shares of the measure
-   (`text/table.rs`). The rules are drawn by the cells' right and bottom edges and the grid's
-   own top and left, so two neighbours share one line rather than doubling it. */
-.table {
-  display: grid;
-  margin: 0 0 var(--block-gap, 14px);
-  border-top: 1px solid var(--line);
-  border-left: 1px solid var(--line);
-}
-
-.tcell {
-  padding: 6px;
-  border-right: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  min-width: 0;
-}
-
-/* Inside a cell the paragraph gap is between paragraphs only. */
-.tcell > .block:last-child {
-  margin-bottom: 0;
-}
-
-.tcell > .h {
-  margin-top: 0;
-}
-
-/* Collapsed against the gap the block above already left — the same rule the GTK
-   shell's flow applies, so a document has one shape in both. */
-.h {
-  margin-top: calc(var(--heading-gap, 24px) - var(--block-gap, 14px));
-}
-
-/* The two named paragraph styles this shell gives a face to. The font itself is
-   inline, from the face that measured the text; these are only the space around
-   them, which no measurement decides. */
-.title {
-  margin-bottom: calc(var(--block-gap, 14px) / 2);
-}
-
-.subtitle {
-  margin-bottom: var(--heading-gap, 24px);
-  opacity: 0.75;
-}
-
- /* A fenced code paragraph — ODF's `Preformatted Text`, which ``` sets. The *font* is a
-   run's own property and is drawn inline; this is the block around it. */
-.pre {
-  background: var(--faint);
-  border-radius: 4px;
-  padding: 0.1rem 0.4rem;
-}
-
-.picture {
-  display: block;
-  max-width: 100%;
-  height: auto;
-  margin-bottom: 0.5rem;
-  border-radius: 3px;
+/* What the pages say in words (`ui_web/src/text/mod.rs`, `Ui::reader`): for a screen reader and
+   the browser's find, never seen. */
+.reader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: pre-wrap;
 }
 
 /* The picture's own way to its alt text: a chip over its corner, quiet when the text is there
    and asking when it is not. A button, so it is reachable without a pointer as well. */
-/* One grid cell holding both, so a picture smaller than its chip grows to hold it rather
-   than the chip wrapping over the text around it. */
-.figure {
-  display: grid;
-  width: fit-content;
-  max-width: 100%;
-}
 
-.figure > * {
-  grid-area: 1 / 1;
-}
-
+/* Over the picture's corner on its page. */
 .alt-badge {
-  align-self: end;
-  justify-self: start;
-  margin: 0 0 1rem 0.5rem;
+  position: absolute;
+  pointer-events: auto;
   white-space: nowrap;
   padding: 0.15rem 0.5rem;
   border: none;
@@ -657,11 +596,11 @@ input[type="text"] {
   background: rgb(0 0 0 / 55%);
   backdrop-filter: blur(6px);
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.6;
   transition: opacity 120ms ease;
 }
 
-.figure:hover .alt-badge,
+.alt-badge:hover,
 .alt-badge:focus-visible,
 .alt-badge.missing {
   opacity: 1;
@@ -794,55 +733,8 @@ input[type="text"] {
   font-weight: 600;
 }
 
-.li {
-  position: relative;
-  list-style: none;
-}
-
-/* A list item's mark — its number or its style's bullet, `BlockView::mark` — ending a little
-   before the item's text, however wide it is. */
-.li::before {
-  content: attr(data-label);
-  position: absolute;
-  right: 100%;
-  margin-right: 0.35em;
-  white-space: nowrap;
-  opacity: 0.55;
-}
-
-.line {
-  /* The core decided where this line ends; the browser must not decide again. */
-  white-space: pre;
-}
-
-/* A run's own formatting, drawn as the document asked for it. Colour and
-   background are inline — those are values the document chose. */
-.run.b {
-  font-weight: 700;
-}
-
-.run.i {
-  font-style: italic;
-}
-
-/* A grammar finding (`doc/grammar.md`): the accent's wavy line, never spelling's red; a
-   typography or style finding a quiet dotted one. Spelling's `.wrong` is declared after, so a
-   misspelt word inside a finding keeps its red. */
-.run.gram {
-  text-decoration: underline wavy #3584e4;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
-  text-decoration-skip-ink: none;
-}
-
-.run.gram.quiet {
-  text-decoration: underline dotted #888;
-}
-
 /* A word the spell checker does not know (`doc/spelling.md`): a wavy red line under it and
-   nothing else — it never changes the text or the metrics, so the caret stays where it is. The
-   cells of a grid draw the same line under the same words. */
-.run.wrong,
+   nothing else, as the pages mark it. */
 .cell .wrong {
   text-decoration: underline wavy #d6342c;
   text-decoration-thickness: 1px;
@@ -850,31 +742,7 @@ input[type="text"] {
   text-decoration-skip-ink: none;
 }
 
-.run.u {
-  text-decoration: underline;
-}
-
-.run.s {
-  text-decoration: line-through;
-}
-
-.run.u.s {
-  text-decoration: underline line-through;
-}
-
-.run.link {
-  color: AccentColor;
-  text-decoration: underline;
-}
-
-/* The selection, drawn per line-piece rather than with the browser's own — the
-   core owns where it starts and ends. */
-.sel {
-  background: var(--pick);
-}
-
-/* Between two pieces of text rather than at a measured x, so the browser places it
-   against its own kerning. `width: 0` plus a border, so it takes no room. */
+/* The caret over the pages: a two-pixel stroke that takes no room. */
 .caret {
   display: inline-block;
   width: 0;

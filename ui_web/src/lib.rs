@@ -157,7 +157,6 @@ pub fn start() -> Result<(), JsValue> {
     });
 
     // The page's own two "declared in Rust, used in CSS" numbers — see each function.
-    text::declare_spacing(&document)?;
 
     wire_toolbar(&shell)?;
     wire_file_input(&shell)?;
@@ -1101,7 +1100,6 @@ impl Shell {
 
     /// Start showing text documents as their printed pages, once: the print module and the fonts
     /// are fetched the first time a text document is on screen (`doc/page-model.md` decision 3).
-    /// Not on a page that cannot load the module, which keeps drawing lines.
     fn load_pages(&self) {
         let can = web_sys::window()
             .and_then(|window| js_sys::Reflect::get(&window, &"grindPrint".into()).ok())

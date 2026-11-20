@@ -285,10 +285,12 @@ cargo test -p grind-web                              # the palette, the keymaps,
 
 `cargo test -p grind-web` is everything that runs without a browser, and it is deliberately a
 lot: the command table and its fuzzy match (`command.rs`), both keymaps, the viewport and track
-arithmetic (`sheet/layout.rs`), the chart's own geometry and escaping (`sheet/chart.rs`), and
-the line-cutting that turns formatting, a selection and a caret into `<span>`s
-(`text/runs.rs`). Everything a browser is actually needed for is in `smoke.js` and
-`smoke-embed.js`.
+arithmetic (`sheet/layout.rs`), a chart's marks as SVG (`sheet/chart.rs`), and the cutting that
+turns a block's formatting and marks into the reader layer's `<span>`s (`text/runs.rs`).
+Everything a browser is actually needed for is in `smoke.js` and `smoke-embed.js`, which hands
+the page the node build of the print module so the text pane shows its pages there too: jsdom
+draws no pixels, and the caret, the selection, the marks and the reader layer are what it
+checks.
 
 ## Deployment
 

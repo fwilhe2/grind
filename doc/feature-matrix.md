@@ -560,8 +560,8 @@ depths; there is no Tab.
 coordinate of the cell it is in (`grind_text::Cell`), so `p12` is the twelfth block whether it is
 in a table or not — every caret motion, every formatting edit and every address already worked
 inside a cell before any client knew tables existed. **Every client now also draws the grid.**
-`grind-web` stacked a cell's blocks like any other paragraph until its UX pass
-(`ui_web/src/text/table.rs`), and `grind-win32` did until the pass after that
+`grind-web` stacked a cell's blocks like any other paragraph until its UX pass, and draws the
+printed pages now, and `grind-win32` did until the pass after that
 (`ui_win32/src/text/geom.rs`'s `across` and `lay_out_table`, `ui_text_gtk`'s answers carried over
 to GDI — and both desktop windows' copies are one `grind_text::flow` since the macOS shell's M1).
 ᵠ Box-drawing rules, every column the same width. `grind_text::Faces` is handed a block's kind
