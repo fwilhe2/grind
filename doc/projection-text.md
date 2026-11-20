@@ -153,7 +153,7 @@ and `Document::footer` — the master page's — and `Document::char_styles` and
 same reason: it is read and never written. The envelope carries `office:master-styles` and the
 page layouts out of an `.fodt` byte for byte, a `.grind` has no envelope, and a document read
 from one prints on A4 like any document that states no page (`doc/pdf-export.md` P2). The page
-can be set now (`App::set_page`, `grind text page-setup`, `doc/page-model.md` PM8), and a `.grind`
+can be set now (`App::set_page`, `grind text page-setup`, `doc/page-model.md`), and a `.grind`
 still has no `page` node: what a page setup writes is the master page's layout, which a projection
 has no envelope to carry, and a page set on a document saved as a projection is not kept. The node
 waits for the day a script or a hand-written `.grind` needs to choose its paper.

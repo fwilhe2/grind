@@ -300,7 +300,7 @@ The day they are added, the `spctl` assertion in M10 flips from "rejected, as ex
 
 ## The page model (2026-11-15)
 
-The page view shows the document's **printed pages** (`doc/page-model.md` PM7): `grind_print`
+The page view shows the document's **printed pages** (`doc/page-model.md`): `grind_print`
 sets them, each is drawn from its raster as an `Op::Pixels` (`render.rs` makes a `CGImage` over
 the pixels), and the selection, the dots, bookmark names, marked text and the caret go over them
 from `grind_print::view`. A view point is a page's point; the scroll view's magnification is the
@@ -530,7 +530,7 @@ input method's composition, laid out as if typed).
 | `text/face.rs` | portable | A block's role and a run's own formatting resolved into one `Font` — the font panel's reading of the selection |
 | `text/state.rs` | portable | The caret, the selection and the composition; every motion and edit the page makes, over a real `grind_text::App` |
 | `text/input.rs` | portable | `NSTextInputClient`'s arithmetic: the caret's block as the string an input method sees, and every UTF-16 range converted once |
-| `text/pages.rs` | portable | A frame of the page view as `Op`s (`doc/page-model.md` PM7): each printed page in view as its raster from `grind_print`, on a desk, and over them the selection, the spelling and grammar dots, bookmark names, marked text at the caret and the caret, placed by `grind_print::view` |
+| `text/pages.rs` | portable | A frame of the page view as `Op`s (`doc/page-model.md`): each printed page in view as its raster from `grind_print`, on a desk, and over them the selection, the spelling and grammar dots, bookmark names, marked text at the caret and the caret, placed by `grind_print::view` |
 | `keys.rs` | portable | The page's selector table beside the grid's, and `PAGE_UNANSWERED` with its reasons |
 | `page_view.rs` | Mac | The page in its scroll view, the input client, clicks by the count, the standard Edit selectors, and the core's notification held back while the view's own edit runs |
 | `watch.rs` | Mac | The observer registry `grid_view.rs` had, behind a trait, for both panes |

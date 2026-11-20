@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! How long a document takes to set and a page to draw — the numbers `doc/page-model.md` §6
+//! How long a document takes to set and a page to draw — the numbers `doc/page-model.md` §4
 //! holds: `cargo run --release -p grind-print --example timing -- report.odt [page]`.
 
 use std::path::Path;

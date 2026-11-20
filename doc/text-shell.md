@@ -22,7 +22,7 @@ than discovered, and every line of it is a thing the CLI can already do.
 | | `grind-text-gtk` (S9) | `grind-web`'s document pane (S10) |
 |---|---|---|
 | Open, save | `.odt` and `.fodt`, file dialog and recent files | bytes in through the File API, out as a download — no path anywhere (rule 5) |
-| Draw | custom widget, `snapshot()`: the pages as they print, `grind_print`'s raster, with the caret and marks over it (`doc/page-model.md` PM5) | the pages as they print too, a canvas each, once the print module has loaded (PM7); one `<div>` per **laid-out line** until then |
+| Draw | custom widget, `snapshot()`: the pages as they print, `grind_print`'s raster, with the caret and marks over it (`doc/page-model.md`) | the pages as they print too, a canvas each, once the print module has loaded (PM7); one `<div>` per **laid-out line** until then |
 | Pages | **Page Setup…** in the menu's paper section (`page_setup.rs`): A3–A6 or the page's own size, landscape, four margins, through `App::set_page`; Ctrl+Enter starts a page (`App::break_page`) | Ctrl+Enter starts a page; *Page setup…* in the palette takes the page in words |
 | Caret motion | arrows, Home/End, Page, Ctrl+Home/End — all answered by the core | the same set |
 | Editing | type, Enter, Backspace, Delete | the same four |
