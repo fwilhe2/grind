@@ -414,42 +414,23 @@ impl GridGeom {
     }
 
     /// The header boundary under a client-space point, if one is within a few pixels of it: the
-    /// right edge of a column in the column band, the bottom edge of a row in the row band. A
-    /// hidden track has no edge to grab (it takes no room), and the boundary a point is nearer to
-    /// wins, so two narrow columns can each be reached.
+    /// right edge of a column in the column band, the bottom edge of a row in the row band
+    /// ([`Sizes::edge_near`]: the nearer boundary wins, and a hidden track has none).
     pub fn edge_at(&self, x: f64, y: f64) -> Option<Edge> {
         let body = self.body();
         let grab = scale(EDGE_GRAB, self.dpi);
         let top = self.header_top();
         if y >= top && y < body.y && x >= body.x {
-            let along = x - body.x + self.scroll_x();
-            let col = self.cols.at(along);
-            let near = |c: u32| {
-                let edge = self.cols.offset_of(c + 1);
-                (self.cols.size_of(c) > 0.0 && (edge - along).abs() <= grab)
-                    .then_some((c, (edge - along).abs()))
-            };
-            let before = col.checked_sub(1).and_then(near);
-            return [near(col), before]
-                .into_iter()
-                .flatten()
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|(c, _)| Edge::Col(c));
+            return self
+                .cols
+                .edge_near(x - body.x + self.scroll_x(), grab)
+                .map(Edge::Col);
         }
         if x >= 0.0 && x < body.x && y >= body.y && y < body.y + body.h {
-            let along = y - body.y + self.scroll_y();
-            let row = self.rows.at(along);
-            let near = |r: u32| {
-                let edge = self.rows.offset_of(r + 1);
-                (self.rows.size_of(r) > 0.0 && (edge - along).abs() <= grab)
-                    .then_some((r, (edge - along).abs()))
-            };
-            let before = row.checked_sub(1).and_then(near);
-            return [near(row), before]
-                .into_iter()
-                .flatten()
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|(r, _)| Edge::Row(r));
+            return self
+                .rows
+                .edge_near(y - body.y + self.scroll_y(), grab)
+                .map(Edge::Row);
         }
         None
     }

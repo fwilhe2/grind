@@ -205,6 +205,28 @@ impl Sizes {
             .find(|i| !self.is_hidden(*i))
     }
 
+    /// The track whose far edge is within `grab` of `at` — the nearer one when two are, and never
+    /// a hidden one, which has no edge of its own: a hidden track between shares its neighbour's.
+    /// What a header band's resize drag picks up.
+    #[must_use]
+    pub fn edge_near(&self, at: f64, grab: f64) -> Option<u32> {
+        let inside = self.at(at.max(0.0));
+        let before = inside.checked_sub(1).and_then(|at| self.prev_visible(at));
+        [before, Some(inside)]
+            .into_iter()
+            .flatten()
+            .filter(|&track| track < self.count && !self.is_hidden(track))
+            .map(|track| {
+                (
+                    track,
+                    (self.offset_of(track) + self.size_of(track) - at).abs(),
+                )
+            })
+            .filter(|&(_, distance)| distance <= grab)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(track, _)| track)
+    }
+
     /// The nearest visible track to `index`, looking `forward` first, then back: a cursor on a
     /// hidden track cannot be seen. Falls back to `index` when everything is hidden.
     #[must_use]
@@ -260,6 +282,18 @@ impl Sizes {
 mod tests {
     use super::*;
     use crate::MAX_COLS;
+
+    #[test]
+    fn an_edge_is_picked_up_from_either_side_and_a_hidden_track_has_none() {
+        // A 72, B 100, C hidden, D 72, …
+        let sizes = Sizes::new(72.0, 10, vec![(1, 100.0), (2, 0.0)]);
+        assert_eq!(sizes.edge_near(72.0, 3.0), Some(0));
+        assert_eq!(sizes.edge_near(70.0, 3.0), Some(0), "just inside A");
+        assert_eq!(sizes.edge_near(74.5, 3.0), Some(0), "just inside B");
+        assert_eq!(sizes.edge_near(120.0, 3.0), None, "the middle of B");
+        // B's end and the hidden C's are one line; the edge is B's.
+        assert_eq!(sizes.edge_near(172.0, 3.0), Some(1));
+    }
 
     /// 96-dpi pixels to a millimetre — the unit `ui_win32` hands in at 100% scaling.
     const PX_PER_MM: f64 = 96.0 / 25.4;

@@ -36,23 +36,10 @@ pub enum Axis {
     Rows,
 }
 
-/// The track whose far edge is within [`GRAB`] of `at` along a band, of the first `shown` —
-/// the nearer one when two are, and never a hidden one, which has no edge of its own to drag.
+/// The track whose far edge is within [`GRAB`] of `at` along a band, of the first `shown`
+/// ([`Sizes::edge_near`]).
 pub fn edge(sizes: &Sizes, shown: u32, at: f64) -> Option<u32> {
-    let inside = sizes.at(at.max(0.0));
-    // The track before is the last *shown* one: a hidden track between shares its edge.
-    let before = inside.checked_sub(1).and_then(|at| sizes.prev_visible(at));
-    [before, Some(inside)]
-        .into_iter()
-        .flatten()
-        .filter(|track| *track < shown && sizes.size_of(*track) > 0.0)
-        .map(|track| {
-            let end = sizes.offset_of(track) + sizes.size_of(track);
-            (track, (end - at).abs())
-        })
-        .filter(|(_, distance)| *distance <= GRAB)
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(track, _)| track)
+    sizes.edge_near(at, GRAB).filter(|&track| track < shown)
 }
 
 /// A track picked up by its edge: where the pointer was and how big the track was then.
@@ -118,15 +105,9 @@ mod tests {
     }
 
     #[test]
-    fn an_edge_is_picked_up_from_either_side_and_a_hidden_track_has_none() {
-        let sizes = columns();
-        assert_eq!(edge(&sizes, 10, 72.0), Some(0));
-        assert_eq!(edge(&sizes, 10, 70.0), Some(0), "just inside A");
-        assert_eq!(edge(&sizes, 10, 74.5), Some(0), "just inside B");
-        assert_eq!(edge(&sizes, 10, 120.0), None, "the middle of B");
-        // B's end and the hidden C's are one line; the edge is B's.
-        assert_eq!(edge(&sizes, 10, 172.0), Some(1));
-        assert_eq!(edge(&sizes, 1, 172.0), None, "past what is shown");
+    fn an_edge_past_what_is_shown_is_not_picked_up() {
+        assert_eq!(edge(&columns(), 10, 172.0), Some(1));
+        assert_eq!(edge(&columns(), 1, 172.0), None);
     }
 
     #[test]
