@@ -944,7 +944,7 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("the palette offers the outline", paletteRows().some((row) => row.includes("A Heading")), true);
   palette("Escape");
 
-  // The code view (doc/dsl.md §6, D9): the document as its projection, the caret's own line
+  // The code view (doc/dsl.md §6): the document as its projection, the caret's own line
   // drawn as current, and clicking a line putting the caret in the block it projects.
   await command("source");
   const codeLines = () => [...document.querySelectorAll("#code .code-line")];
@@ -968,7 +968,7 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("running it again puts the document back", byId("code").hidden, true);
   check("and the pane is showing", byId("page").hidden, false);
 
-  // The problems pane (doc/dsl.md §4.3, D6): `grind lint`'s findings, and a row that goes
+  // The problems pane (doc/dsl.md §4.3): `grind lint`'s findings, and a row that goes
   // where it points. This document is a text one, so the rules that can fire are the word
   // processor's — what is checked here is the pane, not which rule spoke.
   await command("Check the document");

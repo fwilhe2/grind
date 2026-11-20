@@ -616,14 +616,14 @@ count is `grind_sheet::numfmt::overflow`, the rule every client draws (`doc/feat
 
 ## The gaps, written down
 
-**The code view is read-only** (`doc/dsl.md` §6, D9), and is the one thing in this window that
+**The code view is read-only** (`doc/dsl.md` §6), and is the one thing in this window that
 arrived after M10. Ctrl+Shift+U, *Show the Source* in the View menu, or the palette:
 the document's projection on the other page of a `gtk::Stack`, with the active cell's own line
 marked and moving the cursor in it selecting the cell that line projects. A stack rather than a
 paned split — §6.2 is right that a split is what a person eventually wants, and it is also a
 second viewport to keep in step. Editing it is gated in §6.4.
 
-**Check Document** — `grind lint`'s findings, as a list (`doc/dsl.md` §4.3, D6). F8, the
+**Check Document** — `grind lint`'s findings, as a list (`doc/dsl.md` §4.3). F8, the
 primary menu, or the palette: a dialog of rows, each an icon, a message, the
 address it is about and the rule id that said it — the id because that is the word
 `grind sheet lint --off <rule>` takes, and a diagnostic nobody can name is one nobody can

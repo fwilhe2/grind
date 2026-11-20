@@ -438,7 +438,7 @@ feature is: **nothing new is being represented, only read.**
 |---|---|
 | **Baking the roles into a document** — `grind sheet bake-roles`, one explicit verb writing real cell styles | When somebody has to send a coloured model to a person without `grind`. It is a *conversion*, must be spelled as one, and must never be what the view mode does implicitly — the moment it is automatic, §1's point 4 is back and the colours can go stale again |
 | **Magic literals inside formula text** (`=[.B2]*0.2`) | `grind lint`, `doc/dsl.md` §4.3. A different analysis over a different structure, with a different fix |
-| **Roles in the projection's code view** | `doc/dsl.md` D9. It reads the same core answer, so this is a rendering question in one shell rather than a feature |
+| **Roles in the projection's code view** | `doc/dsl.md` §6. It reads the same core answer, so this is a rendering question in one shell rather than a feature |
 
 ---
 

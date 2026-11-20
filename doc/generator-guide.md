@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Generating a spreadsheet — the generator guide
 
-**`doc/dsl.md` §7, D14.** This is the *guide*: from a five-line script to
+**`doc/dsl.md`.** This is the *guide*: from a five-line script to
 `examples/timesheet/timesheet.rhai`, in the order the problems arrive. It is not the specification —
 `doc/generator-spec.md` is, exhaustively, and it is checked against the engine in both
 directions. When this file and that one disagree about what is legal, that one is right.
@@ -213,7 +213,7 @@ Adding a row to the budget is adding a row to `CATEGORIES`. Every formula, forma
 follows without being touched, and nothing below the loop knows how many categories there are.
 
 `examples/budget.rhai` is the full version — the same table with its formats, styles, widths,
-named ranges and a second sheet that reaches across to the first. It is D7's exit criterion:
+named ranges and a second sheet that reaches across to the first. It is
 `examples/sample-sheet.sh`'s household budget, said once.
 
 ---

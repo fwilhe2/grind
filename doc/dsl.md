@@ -6,33 +6,12 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The projection — documents as plain text, a generator that writes them, and a view that shows it
 
-**Status: layer 0 is built for both document types, and layer 1 has begun. D0–D7, D9, D10's
-first row, D12, D13 and D14 are done** —
-`core/src/projection/`, `sheet/src/projection/` and `text/src/projection/` exist; **loop F is
-green over 359/359 of loop A's spreadsheet corpus and 1755/1755 of its text corpus, with
-nothing differing** (`sheet/tests/loop_f.rs`, `text/tests/loop_f.rs`); each grammar is held to
-its own scope line by `doc/projection-sheet.md` and `doc/projection-text.md` with a test apiece;
-and the projection is a `Form` — a third physical form beside the package and the flat file,
-reached by `grind convert` and by every shell's save dialog rather than by an export verb of its
-own; and **R6 holds for it** — `grind sheet set book.grind B1 4300` rewrites that value and
-nothing else in the file, comments and hand alignment included, in both applications; and **every
-shell shows the projection** (D9) — the grid or the page on one tab and its source on the other,
-with the line the selection is on marked and moving in it selecting what that line projects.
-**Layer 1 has its first half** (D7): `grind build model.rhai -o model.fods` runs a Rhai script
-that *returns* a document and writes it — `grind-build`, the only crate in the workspace an
-evaluator reaches, and the CLI is the only binary that links it (R11, checked). A script has no
-filesystem, no network, no clock and no randomness, and is bounded; the same source produces the
-same bytes, asserted by building `examples/budget.rhai` twice. **And its second half** (D8):
-`grind test model.rhai` builds the same script, recalculates it, and calls every `test_` function
-in it with the document it built — `examples/budget.rhai` asserts its own totals, in CI.
-**Three of the four documents §7 says the two languages owe are written** — the generator's
-specification (`doc/generator-spec.md`, D13) and both guides (`doc/projection-guide.md` and
-`doc/generator-guide.md`, D12 and D14), each with the mechanical check its genre allows, plus
-`doc/editor-setup.md`, which the guides turned out to need. The projection's *specification*
-(D11) is the one still owed.
-§7's milestone table below records where each piece stands. `doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2
-is the argument that the feature does not contradict either. Phase 11 is spoken for
-(`doc/xlsx-import.md`); the rest of this is a candidate for **phase 12**.
+**Status: built** — the projection for both document types (loop F green over the whole
+corpus, R6 holding for it, a third `Form`), the code view in every shell, `grind lint`,
+`grind build` and `grind test`, and the specification and guides in `doc/generator-spec.md`,
+`doc/projection-guide.md` and `doc/generator-guide.md`. §7 is what is not built.
+`doc/plan.md`'s requirements and `doc/not-doing.md` outrank this document, and §2 is the argument
+that the feature does not contradict either.
 
 ---
 
@@ -74,8 +53,8 @@ The generator is a **source file that is compiled into a document**. `grind buil
 **The layer boundary is also what makes the language choice reversible.** The generator's
 only output is a projection tree. Replacing Rhai with something else later changes one crate
 and no file format, because the artefact was never the script — a property worth more than
-picking the perfect language on the first try, and the reason §7's milestones ship layer 0
-alone.
+picking the perfect language on the first try, and the reason layer 0 was built and shipped
+alone first.
 
 And layer 0 pays for itself twice. It is a *file format* on disk, and it is a **view** of an
 open document — the same function, called on a document nobody saved. §6 is that half, and it
@@ -110,7 +89,7 @@ the same kind of mechanical guard R8 has:
 > the only binaries that link it. Checked the way R8 is checked (`core/tests/generic.rs`): a
 > test reads the manifests and fails if any of them names it.
 
-**Built with D7, in `build/tests/manifest.rs`**, and with one part the sentence above did not
+**Built, in `build/tests/manifest.rs`**, and with one part the sentence above did not
 ask for: the test also reads the *workspace's* member list and fails when a member is in
 neither of its two lists. A shell added and not checked would leave the guard passing while
 covering one crate fewer, which is how a ratchet quietly stops. `grind-cli` is the one crate
@@ -163,7 +142,7 @@ format, with the same honest limit — a *structural* change regenerates and los
 Nine transitive crates, Apache-2.0 — **four**, as it resolved when it was actually added
 (`kdl`, `miette`, `winnow`, `unicode-width`).
 
-**What D5 found when it built that.** The promise above holds and the *route* to it was not the
+**What building it found when it built that.** The promise above holds and the *route* to it was not the
 obvious one, which is worth writing down because the obvious one looks like it works:
 
 * **`kdl`'s mutation API does not reprint what you change.** Setting an entry's value leaves the
@@ -171,7 +150,7 @@ obvious one, which is worth writing down because the obvious one looks like it w
   that text wins. `clear_format()` forces a reprint and also drops the whitespace around the
   value, so `row "North"  4200` comes back as `row "North" 4300` — a one-line diff that has eaten
   the alignment the file was keeping.
-* **So D5 splices bytes**, at the spans `kdl` reports. That is the machinery
+* **So the projection splices bytes**, at the spans `kdl` reports. That is the machinery
   `sheet/src/odf/source.rs` and `text/src/odf/source.rs` already are, it needs no second document
   model in memory, and it keeps `kdl` as the authority on the two things it is actually best at:
   where the spans are, and how a value is spelled.
@@ -267,7 +246,7 @@ p #"a literal ** stays literal, and    four spaces survive"#
 p "name\tvalue\nsecond line"
 ```
 
-**What D2 changed about this sketch, and why.** Two things, both because the model won an
+**What building it changed about this sketch, and why.** Two things, both because the model won an
 argument the sketch had not had yet — `doc/projection-text.md` is the built grammar:
 
 * **A list is flat.** The sketch nested `li` inside a `list`. `model.rs` does not: the body is
@@ -275,8 +254,7 @@ argument the sketch had not had yet — `doc/projection-text.md` is the built gr
   reader has to invent and the writer has to fold. The reader still takes `list { li … }`,
   because somebody hand-writing a list will type it — the second spelling of one state, exactly
   as `at`/`row` and `cell` are on the sheet's side — and the writer only ever emits `li 2 "…"`.
-* **There is no `image` node**, and that is the milestone's one named gap. See §3.8 below, which
-  D2 amends.
+* **There is no `image` node**, the text projection's one named gap; see §3.8 below.
 
 Three things fall out of KDL's string rules that would otherwise each be a decision:
 
@@ -317,7 +295,7 @@ document must come back as a literal `**`). Raw strings cover the common case; a
 mixes literal asterisks *and* formatting in one paragraph needs a backslash escape. This is
 where the projection actually touches existing code, and it is the piece to prototype first.
 
-**What D2 found when it did.** Three things, and the first is a correction to the sentence
+**What building it found when it did.** Three things, and the first is a correction to the sentence
 above:
 
 * **`markdown.rs` did *not* become bidirectional.** The other direction lives in
@@ -381,13 +359,13 @@ being written.
   real cost. The alternative, a `data:` URI, is honest and unreadable. Sidecar, and named as a
   cost.
 
-  **D4 took that answer away, and D2 records it rather than working around it.** A sidecar needs
-  a *path*, and D4 made the projection a `Form` — reached through `write_bytes` and `read_bytes`,
+  **Making the projection a `Form` took that answer away.** A sidecar needs a *path*, and a
+  `Form` is reached through `write_bytes` and `read_bytes`,
   bytes and no path. Rule 5 says every `*_file` has a `*_bytes` twin, and `grind-web` is that
   rule's honest test: a browser tab cannot write a sidecar and cannot read one. So a form that
   only works when there is a directory to put things beside is not a form this project can have.
   All three options are now real — `data:` (unreadable), sidecar (needs a path), bytes-only and
-  drop images (what D2 ships) — and choosing between them is an open question, written up in
+  drop images (what is built) — and choosing between them is an open question, written up in
   `doc/projection-text.md` and failing loudly the day it changes.
 - **Number formats.** `numfmt::Format` is an ordered sequence of `Part`s, not a format string
   (deliberately — `doc/ods-format.md` §5.2). The projection must spell the parts, not invent
@@ -413,7 +391,7 @@ the macro shape §2 rules out. It returns a tree; `grind build` writes it.
 
 ### 4.2 The recommendation: Rhai
 
-**Built — D7.** `grind build model.rhai -o model.fods`, in `build/` (`grind-build`), reached
+**Built.** `grind build model.rhai -o model.fods`, in `build/` (`grind-build`), reached
 from the CLI and from nowhere else. The sketch below is what this section proposed; the
 subsection after it is what changed when it was built, and why.
 
@@ -451,7 +429,7 @@ Why Rhai, against the measured field in §5:
    which would otherwise be a second mechanism. Rhai gets a different function set per verb:
    `build` gets the builders, `test` gets the assertions and a read-only document.
 
-#### What D7 found when it built that
+#### What building it found
 
 **The dependency was 13 crates, not 26** — `rhai` with `default-features = false` and
 `features = ["std", "no_time"]`, which is what `Cargo.lock` gained. Both flags are load-bearing
@@ -515,11 +493,11 @@ projection is line-oriented enough to template well. It loses on the value model
 the interesting rules are about documents, not about scripts. No third-party linter knows what
 a heading is.
 
-**Built — D6.** The table below is the rule list, and it is *executable*: `cli/tests/lint.rs`
+**Built.** The table below is the rule list, and it is *executable*: `cli/tests/lint.rs`
 reads this section and checks every id against `grind_sheet::lint::RULES` and
 `grind_text::lint::RULES`, in both directions. A rule with no row fails the build, and so does a
 row naming a rule nothing implements — the mechanism `doc/small-group.md` uses against
-`funcs::implemented()`, which is D6's exit criterion ("every rule named in a table and covered
+`funcs::implemented()` (the check it was held to: "every rule named in a table and covered
 by a test") made mechanical rather than promised.
 
 | Rule | Id | Applies to |
@@ -579,7 +557,7 @@ test "the total is the sum of the regions" {
 A spreadsheet whose totals are checked by a test that runs in CI is a genuinely new thing to
 have, and it is the clearest single answer to *why bother with a generator at all*.
 
-**As built (D8), the sketch above is not the syntax**: `test "name" { … }` is not Rhai, and
+**As built, the sketch above is not the syntax**: `test "name" { … }` is not Rhai, and
 making it Rhai would mean custom syntax — a second grammar in a crate whose argument is that the
 language is somebody else's. A test is a function in the model's own script, `fn test_total(d)
 { … }`, called with the document the script built; `grind build` never calls one, so the model
@@ -634,12 +612,12 @@ the MPS idea arriving where it started: one document, two projections, both live
 
 ### 6.1 What it costs, which is close to nothing
 
-The projection *writer* is D1 and D2. A code view is that writer plus a widget that shows text,
+The projection *writer* exists. A code view is that writer plus a widget that shows text,
 and every shell already shows text:
 
 | Shell | The view | Effort |
 |---|---|---|
-| `grind-cli` | `grind sheet project` / `grind text project` — the same bytes, printed | Exists the moment D1 lands. This is the R9 twin, and it lands *before* any shell |
+| `grind-cli` | `grind sheet project` / `grind text project` — the same bytes, printed | The R9 twin |
 | `grind-tui` | a pane, toggled by a key | Small — it renders text for a living |
 | `grind-sheet-gtk`, `grind-text-gtk` | a `GtkTextView` in a `GtkStack`, with the stack switcher as the Delphi tab | Small |
 | `grind-web` | a `<pre>` of `<span>`s, which `ui_web`'s line-cutting already builds for the text pane | Small |
@@ -692,7 +670,7 @@ tension is real and resolves the same way the grid's did:
 - **The view is an `Observer`** (rule 3): the core pushes after dropping the write lock, and the
   view re-projects. It never polls, and it never holds a copy of anything.
 
-*ponytail:* D9 may project the whole document once and cache it, invalidating on every
+*ponytail:* the view projects the whole document once and caches it, invalidating on every
 mutation — correct, obvious, and fine up to documents far larger than anyone hand-edits. The
 ceiling is a document big enough that a keystroke re-serialises visibly; the upgrade is
 projecting by range, keyed off the code view's own viewport, which the span map already makes
@@ -741,8 +719,8 @@ makes a rename touching three hundred formulas one undo step — the argument
 | **Extract** | a repeated formula into a named expression | Named expressions exist; finding the repetition is the new part |
 | **Inline** | a named expression back into the formulas using it | **Done** — `formula::rename::inline_name`, the same walk as `rename_name` with the definition's tree where the new name would go, and the printer brackets it by precedence (`rate*2` becomes `(0.2+[.A1])*2`). `App::inline_name` (`grind sheet name <name> --inline`) rewrites every formula and every other name and deletes the definition in one batch, keeping cached values: a name is evaluated as its definition at the using cell, so the inlined tree is what was already computed. Refused when the name uses itself, and when a formula this build cannot parse spells it — deleting the definition would leave that one `#NAME?` |
 | **Fold** | a section by outline level; a sheet | `Document::section()` and `outline()` already compute the extents |
-| **Diagnostics, inline** | `grind lint` (§4.3) drawn under the line that caused it | D6 plus the span map, and nothing else |
-| **Format document** | the writer's canonical spelling of what is already there | D1, free |
+| **Diagnostics, inline** | `grind lint` (§4.3) drawn under the line that caused it | lint plus the span map, and nothing else |
+| **Format document** | the writer's canonical spelling of what is already there | the writer, free |
 | **Symbol tree** | the outline | Exists; `grind-text-gtk` has the dialog and `grind-web` the palette |
 
 **So the answer to "this seems like a lot of effort" is that it is not one project.** It is one
@@ -791,100 +769,25 @@ permanent consequence: a generator produces a document, and the browser opens th
 
 **R10 is about document types, not features.** A shell that has no code view yet is a *named
 gap*, which R10 permits and `doc/web-shell.md` and `doc/text-shell.md` already keep lists of.
-So D9 can land in one shell first and finish in the others without failing a build — unlike
-D4, where a shell that could not open a `.grind` at all *would*.
+So a shell may lack the code view without failing a build — unlike opening a `.grind`, which
+every shell must.
 
 ---
 
-## 7. Milestones
+## 7. What is not built
 
-Layer 0 ships alone and is useful alone. The generator is a late milestone on purpose:
-its language choice is reversible (§1) and layer 0's bijection is not.
-
-| | What | Done when | Status |
-|---|---|---|---|
-| **D0** | This document, plus the grammar note derived from the two scope lines (§3.7) | The names are settled and the vocabulary check is designed | **done** — `doc/projection-sheet.md` and `doc/projection-text.md`, with `sheet/tests/projection_scope.rs` and `text/tests/projection_scope.rs`. The two are checked *differently*, and the note under §3.7 is why |
-| **D1** | `core/src/projection/` (generic) + `sheet/src/projection/`: KDL ⇄ `grind_sheet::Document` (§3.2) | Loop F green over `sheet/tests/data/kb/` and `data/samples/`; `core/tests/generic.rs` still passes | **done** — and `generic.rs` gained a third guard, `no_projection_node_name_is_spelled_in_the_shared_crate` |
-| **D2** | `text/src/projection/`, including the bidirectional inline notation (§3.6) | Loop F green over `text/tests/data/` | **done** — and green over `sw/qa` too: 1755/1755, nothing differing. The notation went beside `markdown.rs` rather than into it, and §3.6 records why. Images are the one named gap, and §3.8 records what took its answer away |
-| **D3** | Corpus scale | Loop F over loop A's whole corpus — 359 sheets, 1755 texts — with a `FLOOR` that ratchets | **done** — 359/359 and 1755/1755, nothing differing, `FLOOR = 359` and `FLOOR = 1755` |
-| **D4** | `grind_core::kind` sniffs it; `App::open_bytes` accepts it; `grind convert` reaches all three forms | Every shell opens a `.grind` with no shell change (rule 5, R10) | **done** — `Form::Projection` is the third arm of the form enum, so `grind convert book.fods book.grind` and back both work, for either application. No shell needed a change to *open* one; the two that pick a file gained a pattern so the user can reach it |
-| **D5** | R6 for the projection: splice at the spans `kdl-rs` reports | One cell edited changes one line; comments survive | **done**, both document types — `grind_core::projection::Source` plus a splice per app. An untouched save returns the bytes that were read, over both corpora. Not through `kdl-rs`'s *mutation* API, and §3.1 records why |
-| **D6** | `grind lint`, suite level, rules per app (§4.3) | Every rule named in a table and covered by a test | **done**, both applications — eight rules, five per app with two shared, each in §4.3's table and each with a test. `grind sheet lint` / `grind text lint`, plus `grind lint` at the suite level, which reads the kind out of the file. What a diagnostic *is* is `grind_core::lint` (R8); every rule is asked through machinery that already answers its question, so the linter cannot disagree with the document's own behaviour |
-| **D7** | `grind build` — Rhai, the host API, the R11 manifest check | `examples/sample-sheet.sh`'s document, generated | **done** — `build/` (`grind-build`), `grind build model.rhai -o model.fods`, **both document types**. `examples/budget.rhai` is the exit criterion: the budget's table, its formulas, formats, styles, widths, names and second sheet, with the categories as data and a loop for the rows, asserted in `cli/tests/cli.rs` and run by `examples/sample-sheet.sh`. The host vocabulary is `doc/projection-sheet.md`'s, `sum_above()` lost the argument the sketch gave it, styles layer where the core's replace, and the dependency was 13 crates rather than 26 — §4.2's own subsection is the record |
-| **D8** | `grind test` (§4.4) | A generated document's totals asserted in CI | **Done (2026-09-21).** `examples/budget.rhai` asserts its totals, their display and its second sheet; `cli/tests/cli.rs` runs it and a copy with one number wrong, which fails at the assertion's line |
-| **D9** | The **read-only code view** and the span map (§6) | Every shell shows it, selection syncs both ways, and `grind <app> project` is its CLI twin | **done, all four shells.** `grind <app> project` was the CLI half; `:source` in `grind-tui`, *Show the source* in `grind-web`, and Ctrl+Shift+U on the other page of a `gtk::Stack` in both GTK windows. Selection syncs both ways in each. Editing it is still gated (§6.4) |
-| **D10** | Refactorings, **one at a time**, starting with rename-a-sheet (§6.5) | Each one is an `Action`, reachable from the CLI, undone by one Ctrl+Z | **first row done** — rename-a-sheet, which closed a documented bug rather than adding a feature. One `Action::Batch` reached from `grind sheet rename` and from all four shells, undone by one Ctrl+Z, and it counts what it rewrote so a document-wide edit is visible. Since then a named expression renames the same way (`App::rename_name`) and inlines (`App::inline_name`), CLI-only so far. The rest of §6.5's table is open and moves one row at a time, on evidence |
-| **D11** | The projection's **specification** — the language, not the vocabulary (below) | Every production has an example a test runs; somebody with only that file can hand-write a `.grind` that opens | not started |
-| **D12** | The projection's **guide** — writing one by hand, keeping it in git, what converting to it drops | Every snippet is a real command with its real output, and the page runs top to bottom | **done** — `doc/projection-guide.md`, built on `examples/quote.grind`: a joinery quote, hand-written, whose formulas carry no answers until `grind sheet recalc` fills them in. `cli/tests/cli.rs` asserts that document cell by cell — including the two properties the guide is *for*, that one edit is one line of diff and that an untouched save returns the bytes that were read — and `cli/tests/editor.rs` fails when the guide names a file that has moved. What no test covers is that each output shown is today's, and the guide says so |
-| **D13** | The generator's **specification** — the Rhai dialect, its limits, and the whole host API | The API reference is checked against what `engine()` registers, in `doc/small-group.md`'s shape, both directions | **done** — `doc/generator-spec.md`, with `build/tests/spec.rs` holding it to the code in three ways: every registered function has a row, every documented function is registered, and every limit in §2.4 carries the constant's own value. §7 of it is the list of what a generator cannot say and what to do instead |
-| **D14** | The generator's **guide** — from a first script to `examples/budget.rhai` | Every script in it is a file under `examples/` that `cli/tests/cli.rs` builds | **done** — `doc/generator-guide.md`, from `examples/first.rhai` (six lines) to `examples/timesheet/timesheet.rhai` (four sheets that have to agree with each other, out of `examples/timesheet/timesheet.json`). `cli/tests/editor.rs` builds every script it names; `cli/tests/cli.rs` asserts the big one's SUMIFs cover ranges the script *measured* rather than counted. The *editor* half landed with it and went further than §8 promised: `grind definitions --snippets` writes a VS Code snippet file from the same engine metadata, because the published Rhai extension turns out not to run a language server at all — `doc/editor-setup.md` is what was measured |
-
-D1–D5 are the feature. D6–D8 are the reason to want it. **D9 is the cheapest milestone on the
-list and possibly the most visible** — it needs no new dependency, no new format and no core
-change beyond one range-taking method, because D1 already wrote the hard part.
-
-D10 is not a milestone in the sense the others are: it is an open table (§6.5) whose rows move
-by `doc/not-doing.md`'s rule, on evidence, one at a time.
-
-### D11–D14 — the two languages owe a specification and a guide each
-
-**This project invented two languages and documented neither of them as a language.** Three of
-the four documents below are now written (D11 is not), and this section is the record of what
-each is for. What existed before them was a design record: this file argues *why* they are
-shaped as they are,
-`doc/projection-sheet.md` and `doc/projection-text.md` hold each grammar's vocabulary to the
-model, and the doc comments in `*/src/projection/` and `build/src/` say what each function
-does. None of that is what somebody writing a `.grind` or a `.rhai` needs. A person who wants
-to hand-write a projection has to read a Rust module to find out whether `#true` is spelled
-that way, and a person writing a generator has to read `build/src/sheet.rs` to find out that
-`format("currency")` exists at all.
-
-**Two documents per language, and they are different documents on purpose.** A specification
-answers *what is legal and what does it mean*, exhaustively, for somebody implementing against
-it or arguing with an edge case. A guide answers *how do I do the thing I came here to do*, by
-example, in the order a person meets the problems. Merging them produces a document that is
-too long to read and too vague to settle an argument, which is the failure mode
-`doc/cli-recipes-sheet.md` and `doc/cli-parity-sheet.md` already avoid by being two files.
-
-**The house rule applies to all four: a document that nothing checks drifts.** So each one
-carries the mechanical check its genre allows, in the shape §3.7 and §4.3 already use — an
-example that is executed rather than illustrated, a vocabulary read out of the source, or a
-snippet whose output is the real one.
-
-| | What | Done when |
-|---|---|---|
-| **D11** | **The projection's specification** — `doc/projection-spec.md`. The *language*, which the two grammar notes deliberately are not: the KDL subset in use and what is excluded from it, the `grind <kind>` header line, how a node, an argument and a property map onto the model, the value spellings (`#true`, `#null`, a number, a quoted string, a bare word) and which is required where, addresses and ranges, the inline notation's escaping rule from both sides (§3.6), what a reader must reject rather than tolerate, and the bijectivity contract with its two named gaps. It **references** `doc/projection-sheet.md` and `-text.md` for the vocabulary rather than restating it — one scope line, still | Every production has an example the test runs, in `doc/projection-sheet.md`'s shape; the escaping rule's table is executed against `inline.rs` in both directions; a reader who has only this file can write a `.grind` that opens |
-| **D12** ✅ | **The projection's guide** — `doc/projection-guide.md`, written. Task-shaped and short: write one by hand, keep it in git and read the diff, edit one cell and see one line change, convert to and from the other two forms, open it in every shell, and the honest list of what converting *to* it drops. The audience is somebody who liked `doc/flat-first.md`'s argument and wants to act on it | Every snippet is a real command with its real output, as `doc/cli-recipes-sheet.md` is; the whole thing is runnable top to bottom |
-| **D13** ✅ | **The generator's specification** — `doc/generator-spec.md`, written. Two halves. The *dialect*: which Rhai (version, the features taken and left), which constructs a script may use, every limit with its value, and exactly what determinism is promised and on what it rests. The *host API*: every registered function with its arity, its argument types, its return, and its errors — plus the rules that are not visible in a signature, which are the value-mapping table, the two-pass materialisation order, the layering of styles, and `sum_above()`'s run | The API reference is checked against what `engine()` actually registers, the way `doc/small-group.md` is checked against `funcs::implemented()`: a function documented and not registered fails the build, and so does one registered and not documented. Every limit's value is read from `build/src/engine.rs` rather than retyped |
-| **D14** ✅ | **The generator's guide** — `doc/generator-guide.md`, written. From a first six-line script to `examples/budget.rhai`, in the order the problems arrive: data at the top, a loop for the rows, a function for a repeated shape, formatting, several sheets, a text document, and reading an error message with a line number in it. It ends where §2 does — what a script may not do, and why that is the feature rather than the limitation | Every script in it is a file under `examples/` that `cli/tests/cli.rs` builds, so a guide that stops working fails the build rather than the reader |
-
-**D13's check was the load-bearing one**, and it is why these were started in that order: the
-host API is the surface most likely to grow a function nobody writes down, because adding one is
-three lines in `register()`. The projection had §3.7's guard already; the generator had nothing
-equivalent, and D13 is where it got one. Written and passing — and it bites, which was checked
-the only way worth checking: by breaking it three ways and watching each one fail.
-
-**What the two guides found when they were written**, since neither was a transcription of what
-was already known:
-
-* **The examples were too small to make the case.** `examples/budget.rhai` is one table from a
-  list, which demonstrates a loop and not a *reason*. `examples/timesheet/timesheet.rhai` is the reason —
-  four sheets that have to agree with each other, whose cross-sheet ranges are measured from
-  tables another loop wrote — and `examples/quote.grind` is the projection's, a document
-  somebody would actually keep in git and edit by hand. Writing a guide is how you find out that
-  the worked example does not work.
-* **The two vocabularies disagree about one word.** The projection spells a percentage
-  `percentage`, after ODF's element name; the generator spells it `percent`, after
-  `numfmt::preset`'s. Both guides now warn about it. It is the kind of thing only a person
-  writing in both notices, and it is a candidate for D11 to settle rather than to document.
-* **§8's editor answer was wrong**, and finding out took reading the extension rather than its
-  description. `doc/editor-setup.md` is the third document these two turned out to need, and
-  `grind definitions --snippets` is the code it needed: the same engine metadata in the form an
-  editor reads with no language server at all, shipped in `.vscode/` and held current by
-  `cli/tests/editor.rs`.
-
-**D11 is not scheduled.** One at a time, by `doc/not-doing.md`'s rule — and the two guides are
-the evidence for what a specification would have to settle, which is the right order for it.
+* **The projection's specification**, `doc/projection-spec.md`: the *language*, which the two
+  grammar notes deliberately are not — the KDL subset in use, the `grind <kind>` header, how a
+  node, an argument and a property map onto the model, the value spellings and which is required
+  where, addresses and ranges, the inline notation's escaping rule from both sides (§3.6), what a
+  reader must reject, and the bijectivity contract with its two named gaps. It would reference
+  `doc/projection-sheet.md` and `-text.md` for the vocabulary, with every production an example a
+  test runs. Not scheduled: the two guides are the evidence for what it would have to settle.
+* **The two vocabularies disagree about one word**: the projection spells a percentage
+  `percentage`, after ODF's element name, and the generator `percent`, after `numfmt::preset`.
+  Both guides warn about it; the specification is where it would be settled.
+* **Refactorings beyond renaming a sheet** (§6.5's table), one at a time, by
+  `doc/not-doing.md`'s rule.
 
 ---
 
@@ -953,8 +856,7 @@ decorative, and if it turns out not to be mechanisable, this feature is a mainte
 rather than a differentiator.
 
 **The inline notation is the piece most likely to hurt.** Making `markdown.rs` bidirectional
-adds an escaping rule to a module whose current simplicity comes from having none. Prototype
-it in D2 before committing to D3.
+adds an escaping rule to a module whose current simplicity comes from having none.
 
 **Two formats to keep in sync as the subset evolves.** Mitigated by §3.7, not eliminated —
 every new element is now two pieces of work, and the second one is easy to forget until CI

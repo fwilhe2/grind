@@ -77,7 +77,7 @@ sheet Budget {
 }
 ```
 
-`grind sheet recalc` fills them in, and D5's splice makes that one line of diff per cell — the
+`grind sheet recalc` fills them in, and R6's splice makes that one line of diff per cell — the
 comments and the alignment are untouched, so a hand-written model stays hand-written after its
 first recalculation.
 

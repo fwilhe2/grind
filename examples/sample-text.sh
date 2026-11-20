@@ -250,7 +250,7 @@ say "convert: the same document as a package"
 "$GRIND" info "$out/sample.odt"
 
 # --- the projection: the whole document as plain text ------------------------------------------
-# `doc/dsl.md` layer 0, milestone D2. The same document a third way — after the package and the
+# `doc/dsl.md` layer 0. The same document a third way — after the package and the
 # flat form — spelled as something a person writes in any editor and a diff can read. A block is
 # a node; character formatting is the notation this build already reads while you *type*
 # (`**bold**`), so there is no fifth spelling of `**` anywhere in the suite.
@@ -423,7 +423,7 @@ text correct "$grammar" p1+9 ' the' ''
 text grammar "$grammar"
 
 # --- build: a document generated from a script -------------------------------------------------
-# `doc/dsl.md` layer 1, D7. `examples/report.rhai` says a section per region once and lets the
+# `doc/dsl.md` layer 1. `examples/report.rhai` says a section per region once and lets the
 # loop write them, with the same inline notation this document was typed with. The arrow points
 # one way: a script produces a document and is never recovered from one.
 

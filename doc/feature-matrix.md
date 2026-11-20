@@ -61,8 +61,8 @@ ones.
 | New document of the *other* kind, in place | — ⁱ | ○ | ○ | ● ᵗⁿ | ● | ● | ● ² |
 | Undo / redo — spreadsheet | ◐ ᵇ | ● | — | ● | ● | ● | ● |
 | Undo / redo — text | ○ ᶜ | — | ● | ● | ● | ● | ● |
-| Code view — the projection, read-only (D9) | ● | ● | ● | ● | ● | ● | ● |
-| Check Document — `lint` findings, each a jump (D6) | ● | ● | ● | ● | ● | ● | ● ³ |
+| Code view — the projection, read-only | ● | ● | ● | ● | ● | ● | ● |
+| Check Document — `lint` findings, each a jump | ● | ● | ● | ● | ● | ● | ● ³ |
 | Go to an address | ● | ● | ● | ● | ● | ● | ● ⁴ |
 | Key list / help | ● | ● | ● | ● | ● ᵈ | ● | ● ⁵ |
 | About / build stamp | ● | ● | ● | ● ʰ | ● ʷᵃ | ● | ● ⁶ |
@@ -312,7 +312,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | | CLI | Sheet GTK | TUI | Web | Win32 | Mac |
 |---|---|---|---|---|---|---|
 | Add / rename / delete a sheet | ● | ● | ● | ● | ● | ● |
-| Rename carries every reference with it (D10) | ● | ● | ● | ● | ● | ● |
+| Rename carries every reference with it | ● | ● | ● | ● | ● | ● |
 | Set a column width or row height | ● | ● | ● | ● ᵖᵃ | ● | ● |
 | Drag a track edge to resize | — | ● | ○ | ● ʷʰ | ● ʷᵈ | ● |
 | Autofit a column | ● ᶜᶦ | ● ᵍᶠ | ● ᶠⁱ | ● ʷᶠ | ● ᶠᶜ | ● ᵐᶠ |
@@ -695,7 +695,7 @@ the last of which is gated on `doc/odt-format.md` §5's unanswered question abou
 Writer table's formula is OpenFormula at all.
 
 **Both.** Pagination as an editing view, and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
-Editing the code view (`doc/dsl.md` §6.4). `grind test` is built (D8) and, like `grind build`,
+Editing the code view (`doc/dsl.md` §6.4). `grind test` is built and, like `grind build`,
 is the CLI's alone by R11: no shell links the generator.
 
 ## 10. How to re-derive this

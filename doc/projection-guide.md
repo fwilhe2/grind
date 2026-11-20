@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Writing a spreadsheet by hand — the projection guide
 
-**`doc/dsl.md` §7, D12.** This is the *guide*: how to write a `.grind` file, in the order the
+**`doc/dsl.md`.** This is the *guide*: how to write a `.grind` file, in the order the
 problems arrive. It is not the specification — `doc/dsl.md` is the design record and
 `doc/projection-sheet.md` is the grammar, node by node, with an example the build executes for
 every one. When this file and that one disagree about what is legal, that one is right.

@@ -562,7 +562,7 @@ say "project --anchors: which cell each piece of that text is"
 sheet project "$book" --anchors
 
 # It is a *form* as much as a view, so the verb that moves a document between forms reaches it
-# — no `export` verb, because an export is one-way and this is not (`doc/dsl.md` D4).
+# — no `export` verb, because an export is one-way and this is not (`doc/dsl.md` §3).
 say "convert: the same document a third way"
 "$GRIND" convert "$book" "$out/sample.grind" >/dev/null   # suite level, like info
 
@@ -581,7 +581,7 @@ sheet set "$out/sample.grind" B2 9999 >/dev/null
 diff -u "$out/sample-before.grind" "$out/sample.grind" | tail -n +3 || true
 
 # --- rename: a refactoring, not a relabelling ----------------------------------------------
-# `doc/dsl.md` §6.5's first row, D10. Renaming a sheet used to leave every formula naming it
+# `doc/dsl.md` §6.5's first row. Renaming a sheet used to leave every formula naming it
 # pointing at nothing; now the rename carries them — formulas, named expressions and chart
 # ranges alike — in one undo step. It is an AST rewrite re-serialised by the printer, never a
 # textual substitution, so a name that needs quoting comes back quoted and a string that happens
@@ -608,7 +608,7 @@ sheet name "$out/renamed.fods" biggestBudget --inline >/dev/null
 sheet view "$out/renamed.fods" J2:J2 --formulas
 
 # --- lint: what the document says about itself ---------------------------------------------
-# `doc/dsl.md` §4.3, D6. The rules are about *documents*, which is why no third-party linter can
+# `doc/dsl.md` §4.3. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is
 # gone or reading a cell that is empty, and — the row that earns the feature — anything a
 # `.grind` of this document would not carry, by name and by address. Nothing is written.
@@ -654,7 +654,7 @@ run correct "$spelling" A2 Recieved Received
 sheet get "$spelling" A2
 
 # --- build: the same table, generated ------------------------------------------------------
-# `doc/dsl.md` layer 1, D7. The document above was written a cell at a time; `examples/budget.rhai`
+# `doc/dsl.md` layer 1. The document above was written a cell at a time; `examples/budget.rhai`
 # says the same table once, with the categories as data and a loop for the rows. The arrow
 # points one way — a script produces a document and is never recovered from one — which is why
 # this is `build` and not a form `convert` reaches.

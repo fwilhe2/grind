@@ -82,7 +82,7 @@ because a page has no icon theme to ask.
 | Paper | — | Ctrl+K → *Export as PDF* (Ctrl+Shift+E) downloads `grind_print::export`'s PDF; *Print preview* is a sixth pane of every page drawn onto a canvas from the same display list; *Print (opens the PDF)* (Ctrl+P) opens the PDF in a tab of its own, where the browser's viewer prints it. All three run in **a second wasm module** (`ui_web_print`, `grind-web-print`), imported the first time anything is put on paper, with the bundled fonts fetched from `fonts/` beside the page at the same moment — so the font stack and the PDF writer cost a visit nothing until they are used (`doc/pdf-export.md` §7) |
 | Assertable output | `ui_web/smoke.js` — the real wasm module against the real page, in jsdom, no browser | the same |
 
-**Check the document** — `grind lint`'s findings as a fourth surface (`doc/dsl.md` §4.3, D6),
+**Check the document** — `grind lint`'s findings as a fourth surface (`doc/dsl.md` §4.3),
 from the palette like every other verb. One row per finding, carrying the address it is about;
 clicking a row goes there and puts the document back. A pane rather than a dialog, which is this
 shell's one design decision applied again: a browser tab has no window manager to keep a second

@@ -128,7 +128,7 @@ same shape `ui_text_gtk/src/view.rs`'s `Column` has, and it is required rather t
 Every cell is then laid out at its **own** measure, which is what makes `j` inside a cell land
 where the ink is.
 
-**`:lint`** — `grind lint`'s findings in a pane (`doc/dsl.md` §4.3, D6), `:lint hints` for the
+**`:lint`** — `grind lint`'s findings in a pane (`doc/dsl.md` §4.3), `:lint hints` for the
 house-style ones. `j`/`k` moves, `Enter` goes to the finding, any other key closes — the pane
 vocabulary this shell already has. `problems.rs` is **shared by both halves**, like `code.rs`
 and for a stronger reason: a diagnostic is document-type-neutral by construction, so the two

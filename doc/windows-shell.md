@@ -692,9 +692,9 @@ ui_win32/
       draw.rs        [~]* laid-out blocks painted onto an HDC, run by run — and, portable beside
                           it, how a line is cut into runs, which part of it is selected, and the
                           two characters that are measured and never drawn
-    code.rs           *   the "Show Source" list (D9) — every line of `App::project`'s text
+    code.rs           *   the "Show Source" list — every line of `App::project`'s text
                           form, over a modal `dialog::choose` rather than a drawn pane (W6)
-    problems.rs       *   the "Check Document" list (D6) — every `App::lint` finding, worst
+    problems.rs       *   the "Check Document" list — every `App::lint` finding, worst
                           first, the same way (W6)
     welcome.rs       [~]* W11: the welcome screen — the three choices and what each is called,
                           where the cards go, which one a point is in and which one a key moves

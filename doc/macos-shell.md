@@ -121,10 +121,10 @@ these surfaces, each with a membership rule:
 |---|---|---|
 | **The menu bar** | every verb. It is the surface that grows, as on Windows (`doc/windows-shell.md` decision 4). **Help ▸ Search finds any menu item**, so the menu bar is also this platform's command palette, for nothing | `ui_sheet_gtk`'s ⌘K palette |
 | **The toolbar** (`NSToolbar`) | a *property of the selection* only, which is the format bar's admission test, bounded by `CellStyle`, `numfmt::Format` and `CharStyle`. Every item also has a menu twin, because a Mac user may hide the toolbar, and a test holds that | the drawn format strip |
-| **The sidebar** (`NSSplitViewController`, a source list) | *where you can go*: sheets and defined names, or headings and bookmarks, plus a **Problems** section (D6) whose every row is a jump | Win32's go-to, outline and lint dialogs |
+| **The sidebar** (`NSSplitViewController`, a source list) | *where you can go*: sheets and defined names, or headings and bookmarks, plus a **Problems** section whose every row is a jump | Win32's go-to, outline and lint dialogs |
 | **The titlebar accessory** (`NSTitlebarAccessoryViewController`, bottom) | the name box and the formula field, which are the two read-outs of *where* and *what* | Win32's strip |
 | **Context menus** | built from the menu table, so a row and its menu-bar twin cannot disagree | — |
-| **The source pane** | D9's projection, as a trailing split item with a read-only `NSTextView`, toggled by View ▸ Show Source (⌥⌘U, Safari's key for the same idea) | Win32's modal listbox |
+| **The source pane** | The projection (`doc/dsl.md` §6), as a trailing split item with a read-only `NSTextView`, toggled by View ▸ Show Source (⌥⌘U, Safari's key for the same idea) | Win32's modal listbox |
 
 A notice (a recalculation refused, a parse error) is a banner under the accessory. It is still
 a *state*, never an event, and `notice.rs` holds every sentence, as in `ui_win32`.

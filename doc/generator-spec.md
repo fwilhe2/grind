@@ -12,7 +12,7 @@ This is the *reference*: what a script may say, what each thing means, and what 
 `doc/dsl.md` outranks it on any question of intent; on a question of behaviour, the check in §9
 outranks both, because it asks the engine.
 
-A guide is a different document, and it is **`doc/generator-guide.md`** (`doc/dsl.md` §7, D14) —
+A guide is a different document, and it is **`doc/generator-guide.md`** (`doc/dsl.md`) —
 from a first script to a four-sheet model, in the order the problems arrive. This one is for
 somebody arguing with an edge case, not for somebody learning. Everything here is true of the
 build in this repository; `examples/first.rhai`, `examples/budget.rhai`, `examples/prices/prices.rhai`,
@@ -622,7 +622,7 @@ executes most of them, and by the examples.
 
 ## 10. Testing — `grind test`
 
-`doc/dsl.md` §4.4, D8. **A test is a function in the model's own script** whose name starts
+`doc/dsl.md` §4.4. **A test is a function in the model's own script** whose name starts
 with `test_` and which takes one parameter, the document:
 
 ```rhai

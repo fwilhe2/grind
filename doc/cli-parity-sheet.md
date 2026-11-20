@@ -114,7 +114,7 @@ stops ratcheting.
   offers: the first `SheetN` no sheet already has, compared without regard to case
 - `rename_sheet` — `grind sheet rename <sheet> <name>`, which carries every reference that named
   the old sheet with it: formulas, named expressions and chart ranges, in one `Action::Batch` so
-  `grind sheet undo` takes the whole rename back (`doc/dsl.md` §6.5, D10). It returns how many
+  `grind sheet undo` takes the whole rename back (`doc/dsl.md` §6.5). It returns how many
   references were rewritten, and the command says so on stderr — stdout stays the report a
   script parses
 - `remove_sheet` — `grind sheet remove <sheet>`
