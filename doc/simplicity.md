@@ -96,7 +96,16 @@ by byte-identical `--render-to` frames:
 
 Done so far: one motion is applied the same way in every grid (`nav::apply`), and what a key does
 to the active cell is one table (`nav::motion_for`); the browser's copies of the core's
-selection and motion types are gone, and a double-clicked word is `word::around` everywhere.
+selection and motion types are gone, and a double-clicked word is `word::around` everywhere. A
+text selection's two ends are `caret::selection`; the ignored grammar rules are the checker's
+(`grind_grammar::checker`); a colour blend is `color::mix`; the header edge a pointer picks up
+is `Sizes::edge_near`.
+
+Left, and why: the rest of the grid's geometry follows each shell's scroll model — GTK and the
+browser scroll by pixels, Windows by whole tracks, the Mac through `NSScrollView` — so sharing
+it means changing how three of them scroll, each proved by frames. The text shells' editor state
+(caret, anchor, goal column, the style pending for the next character) is the Mac's `Page` in
+portable form and could be the core's; it touches every motion in four shells.
 
 1. **Input.** A portable `Key`/`Mods`, one `Intent` vocabulary and the CUA table per document
    type. The terminal keeps its vi table and emits the same intents.
