@@ -6,11 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Where layout lives — the decision `grind text` turns on
 
-> **Status: DECIDED — Path C.** `doc/suite.md`'s fork was closed on Path A at S7, reopened
-> immediately on the objection below, and settled on **Path C: line layout in the core, font
-> metrics injected, pagination gated.** The five open questions are answered in "The decision"
-> at the end, and those answers are as normative as the path itself. This document outranks
-> `doc/suite.md`'s fork section, which is now the record of an argument rather than the answer.
+> **Status: decided — Path C, built.** **Line layout in the core, font metrics injected**;
+> pagination came later and lives in `grind-print` (`doc/page-model.md`). The five questions are
+> answered in "The decision" at the end, and those answers are as normative as the path itself.
+> This document outranks `doc/suite.md`'s fork section.
 
 This is the largest single decision left in the project. It decides what `grind text` *is*,
 how much of it exists in `core/`, whether the terminal shell is possible, and roughly whether
@@ -209,24 +208,6 @@ Three ways out, in order of preference:
 The first is the recommendation. **The exit criterion for core line layout is agreement between
 shells, not agreement with LibreOffice** — the second is a pagination question.
 
-### 4. It is a real milestone, not a refactor
-
-Rough shape, in the plan's idiom:
-
-| | What | Size |
-|---|---|---|
-| **L1** | `Metrics`, `unicode-linebreak`, the greedy breaker, the `Layout` type. Synthetic-provider tests | medium |
-| **L2** | Caret by line, hit-testing, selection extents, on `App` and on the CLI (`--width`) | medium |
-| **L3** | S8's terminal shell drives it with cell widths — the proof that injection works | (S8) |
-| **L4** | S9's GTK shell drives it with Pango | (S9) |
-| **L5** | S10's web shell drives it | (S10) |
-| **L6** | Pagination, behind its own gate and loop D | very large |
-
-L1+L2 sit **before** S8 rather than after it, which is a reordering of `doc/suite.md`'s
-milestone list and the main scheduling consequence of choosing C.
-
----
-
 ## The case for Path A, stated fairly
 
 It should not be dismissed, and it has three real points:
@@ -348,24 +329,12 @@ The GTK shell implements `Metrics` over Pango once, and both its grid and (at S9
 use it. This is what makes question 3's answer load-bearing rather than aspirational, and it is
 the migration that proves injection works against a real shaping engine.
 
-### What this changes in the plan
+### Pagination
 
-`doc/suite.md`'s milestone list gains L1–L2 **before** S8, because the terminal shell is only a
-pure renderer if the engine it renders exists first. That reordering is the main scheduling
-consequence, and it is the point: S8 was going to discover this.
-
-### What stays gated, unchanged
-
-Pagination *as an editing view* — **until 2026-11-14, when `doc/page-model.md` opened it**: a
-text document in a graphical shell is measured by `grind-print`'s `Typesetter` behind this same
-trait, and the shell's own metrics stay for the terminal, the CLI and the spreadsheet.
-`doc/not-doing.md` §2. **Pagination as an output** (PDF and
-its preview) is being built by `doc/pdf-export.md`, which amends this section: pages are derived
-when asked for, never stored, and the differential once called loop D here is loop G there,
-since the xlsx filter has used D since phase 11. Otherwise Path C is line layout and nothing
-more — page boxes, widows, orphans, headers, footers and footnote placement are all still out,
-and the exit criterion for *this* work is agreement between shells, not agreement with
-LibreOffice.
+Pagination is `doc/page-model.md`'s and `doc/pdf-export.md`'s. A text document in a graphical
+shell is set by `grind-print`'s `Typesetter` behind this same trait, and its pages are derived
+when asked for, never stored; the shell's own metrics stay for the terminal, the CLI and the
+spreadsheet.
 
 ---
 
