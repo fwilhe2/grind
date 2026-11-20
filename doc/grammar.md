@@ -6,8 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Grammar and style
 
-**Status: G0–G7 built (2026-10-31): every client checks grammar; see §10 for what is left.
-The LanguageTool integration was built (G5) and removed on 2026-11-07 (§5).** One checker, the
+**Status: built** — every client checks grammar, in English and German; §9 is what is left.
+The LanguageTool integration was built and removed on 2026-11-07 (§5). One checker, the
 **built-in** one: rules written here in plain Rust with no dependencies, small, always available,
 and on or off. This supersedes `doc/spelling.md` decision 7 ("No grammar checker") and answers
 each of its three reasons (§2).
@@ -63,7 +63,7 @@ two words is noise. Spelling covers them; grammar does not.
    This is how a German quotation in an English letter avoids English rules. It also closes
    part of spelling's first named gap, so `Common` moves somewhere both can reach it: into
    `grind_core::spell`, or a small module of `grind-spell` that the grammar crate depends on
-   without the dictionaries. Which one is settled at G1.
+   without the dictionaries. Which one was settled when the core half was built.
 
 5. **Ignoring is the person's, never the document's** (spelling's decision 5 again). *Ignore
    once* is for the session. *Ignore this rule* is remembered in
@@ -252,22 +252,7 @@ The code is in git history before the removal commit, for reading rather than re
 `doc/feature-matrix.md` gets a *Grammar* row and `doc/cli-parity-text.md` the verbs, so
 `cli/tests/parity.rs` holds them.
 
-## 8. Milestones
-
-| | What | Done when |
-|---|---|---|
-| **G0** | This document; spelling's decision 7 points here | done, 2026-10-30: §9's questions answered |
-| **G1** | Core: `Finding`, `Checker`, findings cached per paragraph, `Viewport::flagged`, `App::replace_span`, `App::grammar_found`; `Common` reachable (decision 4) | A fake checker's findings reach the viewport, survive an unrelated edit, vanish with an edit inside them, and a stale answer is dropped |
-| **G2** | `grind-grammar` with the language-neutral rules and English; `grind text grammar`; lint rules | Fixtures per rule; corpus precision measured and recorded; `sample-text.sh` gains a line |
-| **G3** | German rules | As G2, on German text — which needs a German corpus first, the gov.uk one being English |
-| **G4** | GTK text shell | Rendered by `--render-to`; the popover's actions walked |
-| **G5** | `grind-languagetool`, the default feature, `--languagetool`, `grind grammar --check-server`, the public server's throttle and notice | Built 2026-10-30, **removed 2026-11-07** (§5) |
-| **G6** | Loop G′ | The report over the corpus, a first `FLOOR`, and the backlog in §10 |
-| **G7** | TUI, Windows, Mac, browser | A filled feature-matrix row each |
-
-G1–G4 make a useful product without LanguageTool, which is what is left after §5.
-
-## 9. Open questions
+## 8. Open questions
 
 1. ~~Which LanguageTool servers~~ — **decided 2026-10-30**: self-hosted, public and Premium;
    **superseded 2026-11-07** by §5: none.
@@ -280,7 +265,7 @@ G1–G4 make a useful product without LanguageTool, which is what is left after 
 
 None is open.
 
-## 10. Gaps, named
+## 9. Gaps, named
 
 - **The Mac has never run it**: type-checked and its portable half tested, like the rest of
   that shell, until a run on GitHub's macOS runners (`scripts/mac-remote.sh`).
