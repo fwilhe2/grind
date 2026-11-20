@@ -257,6 +257,72 @@
         "xlsx": 12747
       },
       "docs": 19216
+    },
+    {
+      "commit": "a5bb513",
+      "date": "2026-11-18",
+      "time": "2026-11-18T21:32:38+01:00",
+      "tag": "",
+      "files": 505,
+      "tests": 34908,
+      "crates": {
+        "build": 4734,
+        "cli": 13414,
+        "core": 10150,
+        "docx": 8224,
+        "grammar": 1474,
+        "lsp": 1425,
+        "ooxml": 1438,
+        "open": 304,
+        "print": 14495,
+        "server": 1440,
+        "sheet": 49616,
+        "spell": 1327,
+        "suite": 6,
+        "text": 27378,
+        "ui_mac": 21853,
+        "ui_sheet_gtk": 16186,
+        "ui_text_gtk": 7703,
+        "ui_tui": 13777,
+        "ui_web": 14337,
+        "ui_web_print": 421,
+        "ui_win32": 25977,
+        "xlsx": 12952
+      },
+      "docs": 20300
+    },
+    {
+      "commit": "63fa305",
+      "date": "2026-11-20",
+      "time": "2026-11-20T21:21:04+01:00",
+      "tag": "",
+      "files": 503,
+      "tests": 34618,
+      "crates": {
+        "build": 4734,
+        "cli": 13469,
+        "core": 10163,
+        "docx": 8059,
+        "grammar": 1525,
+        "lsp": 1425,
+        "ooxml": 1438,
+        "open": 286,
+        "print": 14496,
+        "server": 1440,
+        "sheet": 50127,
+        "spell": 1327,
+        "suite": 6,
+        "text": 27394,
+        "ui_mac": 21822,
+        "ui_sheet_gtk": 15045,
+        "ui_text_gtk": 7679,
+        "ui_tui": 13736,
+        "ui_web": 13070,
+        "ui_web_print": 421,
+        "ui_win32": 25874,
+        "xlsx": 12505
+      },
+      "docs": 18395
     }
   ]
 }
