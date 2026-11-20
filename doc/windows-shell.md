@@ -859,8 +859,8 @@ track (`keymap::onto_visible`, above), which was the urgent half, and a hit-test
 one pixel wide is a chrome question rather than a navigation one. No **autoscroll on a drag**
 past the edge of the window — a drag stops at the last visible cell, and Shift+arrow, which does
 scroll, is the way to select further. No **zoom** before W8. No **point mode** — arrow keys
-building a reference into a half-typed formula, and the last piece of `doc/sheet-shell.md`'s M6
-this shell does not have. ~~No autocomplete or signature hints~~ — **built in W9**, as a drawn
+building a reference into a half-typed formula, the one piece of the GNOME
+window's formula entry (`doc/sheet-shell.md`) this shell does not have. ~~No autocomplete or signature hints~~ — **built in W9**, as a drawn
 band rather than a popup (`sheet/assist.rs` says why), over the pure half hoisted into
 `grind_sheet::formula::assist` so this window and the GNOME one cannot disagree about which
 argument the caret is in. **The autofilter is built**: Data ▸ *Autofilter* is the on/off switch

@@ -4,16 +4,13 @@ SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# The GTK shell — phase 9's native shell, planned
+# The GTK spreadsheet shell
 
-This is the work plan for `ui_sheet_gtk/`, phase 9's first shell, and the document that holds it
-to the rules once building starts. It is a plan with decisions in it, not a wish list: the
-open questions were closed before writing (formula syntax, recalculation policy, widths),
-and each milestone names the check that ends it. The worked example is
-[fwilhe2/editor](https://github.com/fwilhe2/editor)'s GTK shell and its
-`doc/shared-core-native-shell.md`; where a spreadsheet diverges from a text editor — a
-grid is not a `GtkTextView`, and formula entry is the whole game — the divergence is
-designed here rather than discovered later.
+The design of `ui_sheet_gtk/` and the rules it is held to. **Status: built**; "The gaps, written
+down" is what it does not do. The worked example was
+[fwilhe2/editor](https://github.com/fwilhe2/editor)'s GTK shell; where a spreadsheet diverges from
+a text editor — a grid is not a `GtkTextView`, and formula entry is the whole game — the
+divergence is designed here.
 
 Three decisions taken up front:
 
@@ -443,95 +440,6 @@ invisible to assistive technology; full grid a11y is a future milestone of its o
 recorded here rather than pretended.
 
 ---
-
-## Part III — milestones
-
-Ordered on one insight: **the read-only grid is the highest-risk item and needs zero new
-core API** — `get_viewport` exists — so it goes first, de-risking the custom widget while
-core work proceeds. Every milestone lands green: `cargo test`, clippy clean, `reuse
-lint`, the loops, parity.
-
-| # | Milestone | Contents | Exit criterion |
-|---|---|---|---|
-| M0 | Plan + CI prep — *done* | this document; CLAUDE.md/README rows; root `ci.yml` build job switches `--workspace` → named crates (`editor`'s system-libs trap); new `gtk.yml` (apt `libgtk-4-dev libadwaita-1-dev`, `cargo test -p grind-sheet-gtk`, release artifact) | CI green before any shell code |
-| M1 | **Read-only grid** — *done* | `ui_sheet_gtk` skeleton, window + open (argv), grid widget, `geom.rs` + tests, ScrolledWindow, theme palette, overflow/`###`, alignment | open any corpus file; smooth scroll; layout matches LibreOffice by eye (unstyled) |
-| M2 | Core prep A — *done* | C1 a1-into-core, C2 display form + spans (corpus round-trip test), C3 `enter`, C4 `preview` + contract test, C5 `clear_range`, C6 `enter_range` — CLI + parity + sample-sheet.sh each | corpus display round-trip green; `sheet eval`, `set --recalc`, range `clear`, `paste` in sample-sheet.sh |
-| M3 | Selection + navigation — *done* | keymap.rs Ready mode, header click/drag selection, Ctrl+arrows, status-bar aggregates | keyboard-only navigation of a corpus file feels right |
-| M4 | Editing v1 + chrome — *done* | `state.rs` Enter/Edit, in-cell editor + formula bar (shared buffer), commit/cancel, undo/redo, auto-recalc + banners, Delete, sheet tabs (+ undo toast), name-box navigation, save/save-as/close-confirm | the values and formulas of `examples/sample-sheet.sh` are typeable by hand in the GUI; its formats and styles wait for M7 |
-| M5 | Clipboard — *done* | copy TSV / paste TSV via `gdk::Clipboard`, cut = copy + `clear_range`, `enter_range` under it | copy in the GUI → paste into LibreOffice, and back |
-| M6 | Formula UX — *done* | Point mode, F4, Tab memory, span coloring (day-one `gtk::Text` attributes spike), autocomplete (C9 lands here, core-first), signature hints, live preview | `=SUM(` + drag B2:B4 + `)` + Enter → colored, previewed, committed; one Ctrl+Z reverts edit + ripple |
-| M7 | Styles + formatting UI — *done* | C7 getters (`style_at`, `format_at`, `sheet style\|format --show`) + C8 viewport styles, styled grid rendering (background, borders, weight/slant/size, both alignments, wrap), the format strip (`formatting.rs`), whose colour buttons offer `style::PALETTE` — the clrs.cc palette, in the core so `sheet style --color navy` writes the same attribute — with a dialog behind *Custom…* and *Automatic* to remove the colour | GUI- and CLI-formatted documents identical for the same operations — both build their `Format` from `numfmt::preset` and their `CellStyle` field by field, and `Format::preset_params`/`is_preset` are in the core so neither shell derives "how many decimals is this" for itself |
-| M8 | Widths & heights — *done* | C10 end-to-end, `ColWidths` prefix sums in geom, header-edge drag, double-click autofit (shell measures, core stores) | a drag survives save + LibreOffice round-trip; real documents render with their true layout |
-| M9 | Packaging & polish — *done* | `.desktop`, icon, AppStream metainfo, shortcuts dialog, recent files, the a11y floor, the gap list below kept true; flatpak manifest as stretch | installs and launches from a desktop environment |
-| M10 | Row auto-height & zoom — *done* | a row without a height of its own is measured from what is in it; Ctrl+wheel and Ctrl+`+`/`-`/`0` scale the view; the in-cell editor draws in the cell's font | a wrapped cell and a 28pt cell are drawn whole; the grid at 1.6× is the same grid, bigger, editor included |
-
-M9 landed as: `ui_sheet_gtk/data/` carries the `.desktop` file, an AppStream metainfo document and a
-scalable icon, none built by anything — this is a pure Cargo workspace, so there is no build
-system to register them with yet; a shortcuts dialog (`gtk::ShortcutsWindow`, built from the
-same `actions()` table the window wires up plus `keymap.rs`'s own vocabulary, so it cannot
-list a binding the keyboard does not have); recent files, which needed no widget of its
-own — `gtk::FileDialog`'s "Recent" section already reads `GtkRecentManager`, so open and save
-only call `RecentManager::add_item`; and the a11y floor — `Grid::announce_active_cell`, hung
-off the same `set_selection` choke-point everything else about a moved selection already goes
-through, speaking the cell's address and, if it has one, its display text via
-`gtk::Accessible::announce` (GTK 4.14, which is why `ui_sheet_gtk/Cargo.toml`'s `gtk4` feature moved
-from `v4_12`). The flatpak manifest is the one item named "stretch" in the plan and was
-skipped — nothing here needs it before the packaging files above have a build system to sit
-in.
-
-M10 closed two of M7's four gaps, and both fell out of the geometry rather than being drawn
-around. **A row is fitted to what is in it** unless the document gave it a height of its own,
-which still wins and still clips — `Grid::measure_rows` lays out only the cells that *can*
-overflow a default row (one that wraps, or one whose style asks for a bigger font; a cell
-with no style of its own is skipped without being laid out), and the result is handed to
-`Sizes` beside the document's own heights. It is measured once per document change rather
-than per frame, because a row above the view displaces the ones below it and the pass
-therefore cannot be limited to what is on screen; `AUTO_HEIGHT_CELLS` is the ceiling on how
-much sheet is measured at all, past which every row keeps the default height. **Zoom** is one
-factor in `Grid::geom`: `Sizes::scaled` for both axes, the metrics and the header band
-multiplied, and the font scaled by a Pango *scale* attribute so a cell that set its own size
-zooms with everything else. Nothing measured is stored zoomed — a natural row height, an
-autofit width and a resize drag all become document lengths at 1×, which is what keeps a
-document saved at 200% identical to the same document saved at 100%.
-
-It also closed M7's third gap on the way, because zoom made it visible: **the in-cell editor
-draws in the cell's font**. It is a real `gtk::Text` child rather than something this widget
-draws, so it is told what the cell looks like instead of inheriting it — as Pango attributes,
-not CSS, since attributes are what the grid uses for the same cell and what the reference
-colouring already speaks, and the two therefore merge into one list. The font only: weight,
-slant, size and the zoom. The *colour* stays the theme's, because the reference colouring owns
-the foreground while a formula is being typed and a cell colour underneath it would be a
-second opinion about the same bytes. The cell's padding scales with everything else.
-
-After M10, two polish passes changed what the plan above says about the chrome, and this
-paragraph is the record. **Motion**: zoom anchors on the pointer (Ctrl+wheel), a pinch
-gesture, or the view centre (keyboard), with a status-bar readout away from 100%; long
-programmatic jumps glide ~150ms (off with the system's animation setting) and land with a
-track of context; a resize drag shows the length it is choosing; the active cell and
-reference outlines have softened corners; selected header labels are bold and accented; the
-palette follows dark/accent changes at runtime via `adw::StyleManager` notifications (GTK
-does not expose the `css_changed` vfunc); the routine "Saved" toast is gone — the subtitle
-clearing is the confirmation. **Chrome**: the format strip became the Format page of a
-mode-switched tool row (`chrome::tools`) — Format · Calculate · View, plain linked toggles
-over a `gtk::Stack` (`AdwToggleGroup` is 1.7; the pin is 1.5), where Calculate holds
-Recalculate · Explain · Calculations… · Names… · Copy Value and
-View holds the zoom group, Fit Content
-and the Friendly Formulas toggle. The mode never switches itself: auto-appearing contextual
-tabs are the one ribbon behaviour deliberately not copied, being both the legally
-distinctive part of that design and the HIG's least favourite. Every button activates a
-`win.` action the window already owns, so the strip adds reachability, never capability.
-The primary menu slimmed to files · sheets · Keyboard Shortcuts · About, which is the HIG's
-idea of one. *(That tool row is gone: "Four surfaces" below replaced it, and is what this
-window does now. The paragraph stays because the section that replaced it is an argument
-against this design, and an argument with the losing side deleted is not one.)*
-**Fill**: the Fill Down / Fill Right buttons then left that row again, replaced
-by the convention every other spreadsheet has — a handle on the selection's bottom-right
-corner (`geom::GridGeom::fill_handle`), dragged in any of the four directions, outlining
-where it is pointing until the pointer is released (`keymap::fill_target` /
-`keymap::fill_rect`, both pure and tested). The source is the selection's edge facing the
-drag, which is what makes dragging *up* or *left* mean anything. Ctrl+D / Ctrl+R and the
-`win.fill-down` / `win.fill-right` actions behind them are untouched, so nothing became
-mouse-only.
 
 ## Four surfaces — normative for this window's chrome
 
