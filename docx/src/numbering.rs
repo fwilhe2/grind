@@ -48,12 +48,6 @@ impl List {
     pub fn level(&self, ilvl: usize) -> Option<&Level> {
         self.levels.get(ilvl)
     }
-
-    /// Whether every level is a bullet — the question "is this a bulleted list?" asks.
-    #[must_use]
-    pub fn is_bulleted(&self) -> bool {
-        self.levels.first().is_some_and(|l| l.format == "bullet")
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -285,8 +279,8 @@ mod tests {
         assert_eq!(one.level(0).unwrap().left, Some(720));
         assert_eq!(one.level(0).unwrap().hanging, Some(360));
         assert_eq!(one.level(1).unwrap().format, "lowerLetter");
-        assert!(!one.is_bulleted());
-        assert!(n.lists[&2].is_bulleted());
+        assert_ne!(one.levels[0].format, "bullet");
+        assert_eq!(n.lists[&2].levels[0].format, "bullet");
         assert_eq!(bullet(&n.lists[&2].level(0).unwrap().text), '•');
         assert_eq!(
             n.lists[&3].level(0).unwrap().start,

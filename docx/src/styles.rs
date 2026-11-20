@@ -17,7 +17,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
-use crate::props::{self, Fonts, ParaProps, Props};
+use crate::props::{self, Fonts, ParaProps};
 use crate::xml::{Handled, Reader, Word as _, WordAttrs as _};
 
 /// Which kind of style (`w:type`, §17.18.83).
@@ -488,12 +488,6 @@ pub fn resolved(styles: &Styles, id: &str) -> ParaProps {
         out.layer(&style.props);
     }
     out
-}
-
-/// The text properties a character style chain sets — used for a hyperlink run, which names one.
-#[must_use]
-pub fn text_props(styles: &Styles, id: &str) -> Props {
-    resolved(styles, id).text
 }
 
 #[cfg(test)]

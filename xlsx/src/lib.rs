@@ -22,10 +22,10 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! Values and the two date systems ([`dates`]), formulas ([`formula`]), number formats
-//! ([`numfmt`]), the look ([`styles`], [`color`], [`theme`]) with track sizes, and the document
+//! Values and the two date systems (`dates`), formulas ([`formula`]), number formats
+//! ([`numfmt`]), the look (`styles`, `color`, `theme`) with track sizes, and the document
 //! level — names, sheet names, autofilters, merges, rules, and the parts beside a sheet
-//! ([`parts`]). What the model cannot hold is a named class, counted and never approximated. A
+//! (`parts`). What the model cannot hold is a named class, counted and never approximated. A
 //! shell opens a workbook through [`open`], [`suggested_name`] and [`Report::summary`].
 
 use std::path::Path;
@@ -33,25 +33,24 @@ use std::path::Path;
 use grind_sheet::model::Document;
 
 pub mod address;
-pub mod color;
-pub mod controls;
-pub mod dates;
+mod color;
+mod controls;
+mod dates;
 pub mod formula;
 pub mod numfmt;
-pub mod parts;
+mod parts;
 pub mod report;
-pub mod rules;
+mod rules;
 pub mod sheet;
-pub mod strings;
-pub mod styles;
-pub mod tables;
-pub mod theme;
-pub mod workbook;
-pub mod xml;
+mod strings;
+mod styles;
+mod tables;
+mod theme;
+mod workbook;
+mod xml;
 
-// The container layer, hoisted into `grind-ooxml` when the word processor's filter wanted it,
-// and re-exported under the paths this crate always used.
-pub use grind_ooxml::{mce, names, package};
+// The container layer, shared with the word processor's filter, under the paths this crate uses.
+use grind_ooxml::{names, package};
 
 pub use names::Flavour;
 pub use report::{Dropped, Report};

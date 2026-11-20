@@ -4,13 +4,13 @@
 
 //! The OOXML family's container layer, shared by the Excel and Word import filters: **OPC**
 //! ([`package`] — the zip, relationships, part names and the caps a converter eating strangers'
-//! files needs), **markup compatibility** ([`mce`]), the **tolerant walker** ([`xml`] — an
+//! files needs), **markup compatibility** (`mce`), the **tolerant walker** ([`xml`] — an
 //! unrecognised element takes its subtree with it) and the **namespace and relationship tables**
 //! ([`names`], both flavours). Cells, formulas, paragraphs and runs stay in each filter.
 
 use std::fmt;
 
-pub mod mce;
+mod mce;
 pub mod names;
 pub mod package;
 pub mod xml;

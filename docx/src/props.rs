@@ -31,10 +31,6 @@ impl Props {
         self.0.get(key).map(String::as_str)
     }
 
-    pub fn remove(&mut self, key: &str) {
-        self.0.remove(key);
-    }
-
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()

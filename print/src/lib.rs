@@ -6,18 +6,18 @@
 //! here and nowhere else: `grind-core` stays font-free (`doc/text-layout.md`, decision 2), and so
 //! does any build without this crate.
 
-pub mod faces;
+mod faces;
 pub mod fonts;
-pub mod hyphen;
+mod hyphen;
 mod metafile;
-pub mod metrics;
+mod metrics;
 pub mod ops;
 pub mod pdf;
 pub mod place;
 pub mod raster;
 pub mod session;
 pub mod strip;
-pub mod svg;
+mod svg;
 pub mod text;
 pub mod view;
 

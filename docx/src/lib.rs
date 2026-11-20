@@ -13,7 +13,7 @@
 //! - **The report is part of the output** ([`Report`]).
 //!
 //! Unlike the spreadsheet's filter, this one writes ODF rather than a model: one flat text
-//! document ([`emit`]), which `grind_text` then reads like any other.
+//! document (`emit`), which `grind_text` then reads like any other.
 //!
 //! ```no_run
 //! let bytes = std::fs::read("letter.docx")?;
@@ -28,14 +28,14 @@ use std::path::Path;
 use grind_ooxml::names::{Ns, RelType, Seen};
 use grind_ooxml::package::Package;
 
-pub mod body;
-pub mod emit;
-pub mod numbering;
-pub mod props;
-pub mod report;
-pub mod section;
-pub mod styles;
-pub mod xml;
+mod body;
+mod emit;
+mod numbering;
+mod props;
+mod report;
+mod section;
+mod styles;
+mod xml;
 
 pub use grind_ooxml::{Error, Flavour, Result};
 pub use report::{Dropped, Report};

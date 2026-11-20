@@ -65,7 +65,7 @@ pub struct Context<'a> {
     pub strings: &'a [Item],
     pub styles: &'a Styles,
     /// `workbookPr/@date1904`. In the 1904 system serials already agree with the document's
-    /// null date and are carried unchanged; in the 1900 system a date needs [`dates::correct`].
+    /// null date and are carried unchanged; in the 1900 system a date needs `dates::correct`.
     pub date_1904: bool,
     /// The document's null date, for `t="d"`'s ISO spelling.
     pub null_date: i64,

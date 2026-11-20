@@ -24,6 +24,7 @@ pub struct Patterns {
 impl Patterns {
     /// Read a `.dic` file. Its first level only: a `NEXTLEVEL` (compound words) ends what is
     /// read, and a non-standard pattern (one that changes letters, with `/`) is left out.
+    #[cfg(feature = "bundled-hyphenation")]
     #[must_use]
     pub fn parse(bytes: &[u8]) -> Patterns {
         let first = bytes
@@ -64,6 +65,7 @@ impl Patterns {
         patterns
     }
 
+    #[cfg(feature = "bundled-hyphenation")]
     fn add(&mut self, pattern: &str) {
         let mut letters = String::new();
         let mut digits = vec![0u8];
