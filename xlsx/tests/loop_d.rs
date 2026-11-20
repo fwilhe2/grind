@@ -33,8 +33,6 @@
 //! choosing differently — the disagreement is a named [`Divergence`], a construct and never a file
 //! name, asserted to still occur, so one LibreOffice stops having fails and is deleted.
 //!
-//! The comparison and the runs are `oracle/mod.rs`'s, shared with `loop_d_euro_office.rs`.
-//!
 //! cargo test -p grind-xlsx --test `loop_d` -- --nocapture
 
 mod oracle;
@@ -441,7 +439,7 @@ fn convert(cache: &Path, pending: &[(String, PathBuf)]) {
 }
 
 #[test]
-fn our_import_agrees_with_the_oracles() {
+fn our_import_agrees_with_the_oracle() {
     oracle::run(&LIBREOFFICE, FLOOR);
 }
 

@@ -26,7 +26,6 @@
 //!
 //! Needs `soffice` on `PATH` and skips with a notice without one, as loop C and the
 //! spreadsheet's loop D do. Its answers are cached under the temp directory by content hash.
-//! The comparison and the run are `oracle/mod.rs`'s, shared with `loop_d_euro_office.rs`.
 
 mod oracle;
 
@@ -126,6 +125,6 @@ fn convert(cache: &Path, pending: &[(String, PathBuf)]) {
 }
 
 #[test]
-fn our_import_agrees_with_the_oracles() {
+fn our_import_agrees_with_the_oracle() {
     oracle::run(&LIBREOFFICE);
 }

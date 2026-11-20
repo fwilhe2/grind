@@ -2,13 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Loop D's machinery, shared by its two oracles (`loop_d.rs`, LibreOffice;
-//! `loop_d_euro_office.rs`, Euro-Office): the cell, style and track comparison, and the two
-//! runs over the vendored corpus and over a directory from elsewhere. What differs per oracle is
-//! how it is invoked and its list of [`Divergence`]s.
-
-// Each test binary uses its own part of this module.
-#![allow(dead_code)]
+//! Loop D's machinery: the cell, style and track comparison, and the two runs over the vendored
+//! corpus and over a directory from elsewhere. `loop_d.rs` says how the oracle is invoked and
+//! lists its [`Divergence`]s.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
@@ -95,7 +91,7 @@ pub struct Defaults {
 impl Defaults {
     /// The document's default cell style's attributes, read out of the oracle's text. A
     /// substring search rather than a parse, because our own reader deliberately does not keep
-    /// the style. LibreOffice names it `Default`, Euro-Office `Normal`, in either attribute order.
+    /// the style. LibreOffice names it `Default`, in either attribute order.
     pub fn of(text: &str) -> Self {
         // What the named default leaves unsaid, the default style says.
         let fallback = Self::in_element(text, "<style:default-style ", |_| true);
@@ -104,10 +100,7 @@ impl Defaults {
                 open.contains(&format!(r#" style:name="{name}""#))
             })
         };
-        let own = [named("Default"), named("Normal")]
-            .into_iter()
-            .find(|d| d.size.is_some() || d.color.is_some())
-            .unwrap_or_default();
+        let own = named("Default");
         Defaults {
             size: own.size.or(fallback.size),
             color: own.color.or(fallback.color),
@@ -149,14 +142,6 @@ impl Defaults {
 /// onto styles that set none of them, where this import writes nothing; both are the same cell.
 pub fn normalise(style: Option<&CellStyle>, defaults: &Defaults) -> Option<CellStyle> {
     let mut s = style?.clone();
-    // The schema's `color` is `#[0-9a-fA-F]{6}`, either case; Euro-Office writes upper case.
-    for v in [&mut s.color, &mut s.background]
-        .into_iter()
-        .chain(s.borders.iter_mut())
-        .flatten()
-    {
-        *v = v.to_ascii_lowercase();
-    }
     let clear = |field: &mut Option<String>, plain: &[&str]| {
         if field.as_deref().is_some_and(|v| plain.contains(&v)) {
             *field = None;
@@ -488,7 +473,7 @@ pub fn tracks(mine: &Sheet, other: &Sheet) -> Vec<Track> {
 /// `<cache>/<digest>.<output>` and leaves no output for a file it cannot convert.
 pub struct Oracle {
     pub name: &'static str,
-    /// Below the system temp directory, which is what the containerised oracles mount.
+    /// Below the system temp directory, which is what the containerised oracle mounts.
     pub cache: &'static str,
     pub output: &'static str,
     pub version: fn() -> Option<String>,

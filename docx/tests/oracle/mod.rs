@@ -2,13 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Loop D″'s machinery, shared by its two oracles (`loop_d.rs`, LibreOffice;
-//! `loop_d_euro_office.rs`, Euro-Office): the block comparison and the run over the vendored
-//! documents and, with `GRIND_LO_CORPUS`, LibreOffice's Word import tests. What differs per
-//! oracle is how it is invoked, its divergences and its floor.
-
-// Each test binary uses its own part of this module.
-#![allow(dead_code)]
+//! Loop D″'s machinery: the block comparison and the run over the vendored documents and, with
+//! `GRIND_LO_CORPUS`, LibreOffice's Word import tests. `loop_d.rs` says how the oracle is
+//! invoked, its divergences and its floor.
 
 use std::path::{Path, PathBuf};
 
@@ -16,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// `<cache>/<digest>.<output>` and leaves no output for a file it cannot convert.
 pub struct Oracle {
     pub name: &'static str,
-    /// Below the system temp directory, which is what the containerised oracles mount.
+    /// Below the system temp directory, which is what the containerised oracle mounts.
     pub cache: &'static str,
     pub output: &'static str,
     pub version: fn() -> Option<String>,
@@ -255,7 +251,7 @@ pub fn run(oracle: &Oracle) {
     }
 }
 
-// ---- constructs both oracles show differently ----
+// ---- constructs the oracle shows differently ----
 
 /// A field kept as Word's last result, against the oracle's field element whose text the reader
 /// does not show: theirs is ours with characters missing, block for block.

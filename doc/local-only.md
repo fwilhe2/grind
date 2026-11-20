@@ -34,8 +34,8 @@ SPDX-License-Identifier: CC-BY-4.0
   it are relative `api/v1/` paths from one module, `ui_web/src/server.rs`. The guard holds all of
   it: one bind, with the loopback address written into it, and `tiny_http` depended on by
   `grind-server` alone.
-- **Tests and tools** are not what grind ships. The LibreOffice and Euro-Office oracles run in
-  containers, the corpora are downloaded by scripts, CI fetches crates. A test may serve itself
+- **Tests and tools** are not what grind ships. The LibreOffice oracle runs in a
+  container, the corpora are downloaded by scripts, CI fetches crates. A test may serve itself
   on loopback; the guard leaves `tests/` directories alone.
 
 ## What it removed

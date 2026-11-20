@@ -138,7 +138,6 @@ spelled it (`text/tests/diffable.rs`).
 | **Fixtures** | packages assembled from XML a reviewer can read: each construct above, what it becomes in the document `grind_text` reads back | `docx/tests/fixtures.rs` |
 | **Loop A″** — import tolerance | every `.docx`/`.docm`/`.dotx` in `sw/qa` imports without an error or a panic, reads back, and saves in both forms (`FLOOR`) | `docx/tests/corpus_read.rs` |
 | **Loop D″** — import fidelity | our import against the oracle's conversion, block by block (kind, cell, text), over the vendored documents (all must agree) and Word's own (`sw/qa/extras/ooxmlimport/data`, `FLOOR`), with named divergences | `docx/tests/loop_d.rs` |
-| **Loop D″, Euro-Office** | the same, with Euro-Office's `x2t` as the oracle (`doc/xlsx-import.md`, "A second oracle"); per-block divergences besides the per-document ones, since its documents combine several | `docx/tests/loop_d_euro_office.rs` |
 | **Editing** | an import opened as a shell opens it takes typing, Enter, Backspace and bold, and saves in both forms | `docx/tests/editing.rs` |
 
 Scoreboard on 2026-10-06, LibreOffice 26.8 and the pinned 26.2 alike: loop A″ 2159 of 2167
@@ -151,8 +150,9 @@ last because a text box's text is shown here and not by the oracle's frame) and 
 paragraph, page breaks inside a table cell, Hebrew list numbers computed by fields, a
 bibliography — each a construct rather than a crash.
 
-On 2026-11-06, with Euro-Office as a second oracle, five documents both oracles read differently
-from this filter were fixed or explained, and loop D″ stands at 157 of 169 (108 agree):
+On 2026-11-06, five documents a second oracle (Euro-Office's `x2t`, since removed) and
+LibreOffice both read differently from this filter were fixed or explained, and loop D″ stands
+at 157 of 169 (108 agree):
 - outline levels outside 0–9 are ignored (`doc/docx-format.md` §3.2);
 - body level stops a heading style's numbering (§4.6);
 - rows inside nested content controls are read (§6.5);
