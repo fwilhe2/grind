@@ -8131,8 +8131,8 @@ fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
     }
 }
 
-/// A double click selects the word under it — the one gesture a text pane owes that a grid does
-/// not, and it is [`text::keymap::word_boundary`] twice rather than a rule of its own.
+/// A double click selects the word under it — [`grind_text::word::around`], what every shell
+/// selects.
 fn text_double_click(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
     // SAFETY: one borrow; nothing inside dispatches.
@@ -8142,35 +8142,20 @@ fn text_double_click(hwnd: HWND, lparam: LPARAM) {
                 return;
             };
             let line = text.block_text(at.block);
-            let start = text::keymap::word_boundary(&line, at.offset, false).unwrap_or(0);
-            let end = text::keymap::word_boundary(&line, start, true)
-                .unwrap_or_else(|| line.chars().count());
+            let (start, end) = grind_text::word::around(&line, at.offset);
             text.anchor = Caret {
                 block: at.block,
                 offset: start,
             };
             text.caret = Caret {
                 block: at.block,
-                // A word motion forward stops at the *next* word's start, so trailing spaces
-                // would come with it; the selection stops where the word does.
-                offset: trim_trailing_spaces(&line, start, end),
+                offset: end,
             };
             text.goal_x = None;
             text.caret_on = true;
         });
         let _ = InvalidateRect(Some(hwnd), None, false);
     }
-}
-
-/// Where the word starting at `start` really ends, given that word motion stops at the beginning
-/// of the next one.
-fn trim_trailing_spaces(text: &str, start: usize, end: usize) -> usize {
-    let chars: Vec<char> = text.chars().collect();
-    let mut at = end.min(chars.len());
-    while at > start && chars[at - 1].is_whitespace() {
-        at -= 1;
-    }
-    at
 }
 
 /// A verb in the text pane, exhaustive on [`Command`] like the grid's. The spreadsheet's verbs are
