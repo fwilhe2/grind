@@ -6,13 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The formula workbench — a formula you can take apart, try and put back
 
-**Status: F0 to F3 done.** F0 is this document and `doc/ods-format.md` §4.2, the
-measurement of when moving a sub-expression into its own cell changes what a formula means.
-F1 is the trace: `parse::parse_spanned`, `display::parse_display`, `formula::trace`,
-`App::trace` and `grind sheet eval --trace`, held to loop B's corpus by
-`sheet/tests/corpus_trace.rs`. F2 is the *what if*: `trace::Overlay`, `App::overlay` and
-`eval --with`. F3 is the layout: `serialize::pretty`, `display::pretty`, `Trace::by_line`
-and `eval --pretty`. Nothing from F4 on is built. **Experimental**: it ships behind the palette and the CLI, and it
+**Status: the trace, the *what if* and the layout are built** (§3.1–§3.4, `grind sheet eval
+--trace`, `--with` and `--pretty`, the trace held to loop B's corpus by
+`sheet/tests/corpus_trace.rs`); extraction and the panes are not (§8). `doc/ods-format.md` §4.2
+measures when moving a sub-expression into its own cell changes what a formula means. **Experimental**: it ships behind the palette and the CLI, and it
 changes no existing verb.
 
 ## 1. What it is
@@ -86,7 +83,7 @@ What already exists and is reused unchanged:
 
 What has to be added, all in `grind-sheet`:
 
-### 3.1 Spans on the tree (F1, built)
+### 3.1 Spans on the tree
 
 The workbench needs every node's byte range in the *display* text: to highlight a node, to put
 a value beside it, and to let somebody select a sub-expression by selecting its text. Built as
@@ -102,7 +99,7 @@ omitted parameter is an empty range where it would have been.
 **Held to the corpus**: for all 76,068 formulas of loop B that survive display form, every
 node's text cut out and parsed alone is that node's subtree exactly.
 
-### 3.2 `App::trace` (F1, built)
+### 3.2 `App::trace`
 
 ```rust
 pub fn trace(&self, sheet: usize, pos: Pos, formula: &str) -> Result<formula::trace::Trace>
@@ -129,7 +126,7 @@ traces (the first fifty formulas of each of 879 documents — each builds its ow
 the workbench's will) have the evaluator's answer at the root; the four that differ are in
 documents calling `NOW()`, counted rather than failed.
 
-### 3.3 `Overlay` (F2, built)
+### 3.3 `Overlay`
 
 ```rust
 pub struct Overlay { values: HashMap<Address, Value> }   // set, clear, get, is_empty
@@ -149,7 +146,7 @@ could recompute, so no dependent can be stale. The cost is that a trace evaluate
 formula's whole precedent cone fresh, which is `preview`'s cost today. Overriding a formula
 cell's value is allowed, since that is what "what if this subtotal were 0" means.
 
-### 3.4 The layout (F3, built)
+### 3.4 The layout
 
 `serialize::pretty(expr, width)`, and `display::pretty(text, width)` in front of it. A node
 that fits in `width` at its indent is printed flat by the one printer (`Bare`). A call that
@@ -172,7 +169,7 @@ this and for a shell's drawing.
 reads back to the same tree, its spans hold in the laid-out text, and laying it out again
 changes nothing.
 
-### 3.5 `App::extract` (F4)
+### 3.5 `App::extract` (not built)
 
 ```rust
 pub fn extract(&self, sheet: usize, at: Pos, node: Range<usize>, to: Target) -> Result<Extracted>
@@ -281,8 +278,8 @@ a cell while it is open inserts a reference, as point mode does.
   footer shows the formula's answer before and after the overrides.
 - **It is where *Explain This Formula* grows up.** Ctrl+Shift+E unfolds a formula read-only
   today (`friendly::explain`), which is the workbench's layout without the values, the inputs
-  or the editor. The open question for F5 is whether Explain *becomes* the workbench on that
-  key, or stays as the quick read-only popover with the workbench one click from it. The
+  or the editor. The open question for the GTK pane is whether Explain *becomes* the workbench
+  on that key, or stays as the quick read-only popover with the workbench one click from it. The
   second is the default: a popover and a pane are different weights.
 - Friendly mode (`friendly::explain_inline`) is a toggle on the expression, as in the formula
   bar, and is never what is applied.
@@ -291,21 +288,14 @@ The other clients, in the order `formula::assist` reached them: `ui_win32` (a do
 decision 8's grounds, not a popup), `ui_web` (a side panel, Ctrl+K), `ui_tui` (`:workbench`, the
 three columns stacked), `ui_mac`. Each gets a row in `doc/feature-matrix.md`.
 
-## 8. Milestones
+## 8. What is not built
 
-| | Builds | Done when |
-|---|---|---|
-| **F0** | This document and `doc/ods-format.md` §4.2 | done, 2026-10-12 |
-| **F1** | Spans, `App::trace`, `eval --trace` | done, 2026-10-12: every span over loop B's corpus, the root against the evaluator, and a branch not taken never evaluated |
-| **F2** | `Overlay`, `--with` | done, 2026-10-12: an override two formulas away, into a range, on a formula cell and as a blank; the CLI's file unchanged |
-| **F3** | `display::pretty`, `--pretty` | done, 2026-10-12: the corpus round trip, its spans and its idempotence |
-| **F4** | `App::extract`, `grind sheet extract`, every row of §5 | Each §4.2 row is a test that is refused, warned or allowed as §5 says. Undo restores the bytes. Loop C holds an extracted document |
-| **F5** | The GTK pane, examples moved into a shared table | Rendered by `--render-to`, and the palette and context-menu entries walked by `chrome_tests` |
-| **F6** | The other clients | A row in `doc/feature-matrix.md` filled for each |
-
-F1–F3 are useful alone (`--trace` already does more than a step-through dialog) and risk
-nothing, because they write nothing. F4 is where the risk is, and the reason F0 measured before
-anything was built.
+* **Extraction**: `App::extract`, `grind sheet extract`, every row of §5 — each §4.2 row a test
+  that is refused, warned or allowed as §5 says, undo restoring the bytes, loop C holding an
+  extracted document. It is where the risk is, which is why §4.2 was measured first.
+* **The GTK pane**, its examples in a shared table, rendered by `--render-to` and its palette
+  and context-menu entries walked by `chrome_tests`.
+* **The other clients**, each a row in `doc/feature-matrix.md`.
 
 ## 9. Open, and named
 

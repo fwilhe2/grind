@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The workbench's trace, held to loop B's corpus (`doc/formula-workbench.md` F1).
+//! The workbench's trace, held to loop B's corpus (`doc/formula-workbench.md` §3.2).
 //!
 //! Three claims, over every formula the world wrote that survives display form:
 //!
