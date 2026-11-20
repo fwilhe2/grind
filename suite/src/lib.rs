@@ -3,5 +3,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! The suite's meta-package, which is not code. `Cargo.toml` is the whole of it: a `.deb` and an
-//! `.rpm` that install nothing and depend on the four applications (`doc/suite.md`, S11). This
+//! `.rpm` that install nothing and depend on the four applications (`doc/suite.md`, "Packaging"). This
 //! file exists because a crate must have a target.

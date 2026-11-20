@@ -6,9 +6,9 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The suite — a word processor beside the spreadsheet
 
-This is the work plan for turning one ODF-native spreadsheet into an ODF-native **suite**, and
-the document that holds it to the rules once building starts. It is normative for **phase 10**
-the way `doc/sheet-shell.md` is for phase 9 and `doc/xlsx-import.md` is for what is now phase 11.
+How one ODF-native spreadsheet became an ODF-native **suite**, and the rules that hold it. It is
+normative for **phase 10** the way `doc/sheet-shell.md` is for phase 9 and `doc/xlsx-import.md`
+for phase 11. **Status: built.**
 
 It answers five questions, in this order because each one constrains the next:
 
@@ -19,9 +19,8 @@ It answers five questions, in this order because each one constrains the next:
    which is R10 and is not negotiable per shell.
 5. **How it is packaged** — binaries, desktop entries, mime types, `.deb`/`.rpm`, containers.
 
-And it names the one product decision this phase cannot make by itself: **whether the word
-processor paginates.** That fork is in "The layout fork" below, and everything after it in the
-milestone list is contingent on the answer.
+The one product decision this phase could not make by itself — **whether the word processor
+paginates** — is `doc/text-layout.md`'s, and `doc/page-model.md` built the answer.
 
 ---
 
@@ -707,75 +706,10 @@ retention per document is what gives the phase a number to beat.
 
 ---
 
-## The layout fork — **reopened; see `doc/text-layout.md`**
+## The layout fork
 
-**This was the product decision this document could not make, and everything from S7 onward
-depends on it.** Both branches below are real; they lead to different programs.
-
-It was closed on Path A at S7 and **reopened immediately**, on an objection this section did
-not weigh: `CLAUDE.md`'s architecture rule puts all logic in the core, and line layout is not
-rendering — Down-arrow, Home/End, click-to-caret and selection extents are all defined in terms
-of a *line*, so Path A puts a piece of the editing model in three shells that will disagree.
-**`doc/text-layout.md` is now the normative document for this decision**, it identifies a third
-path this section missed (line layout in the core with metrics injected, pagination still
-gated), and it recommends that one. Everything below is kept as the record of the argument
-rather than as the answer.
-
-**What being decided means, concretely.** Pagination moved to `doc/not-doing.md` §2 — *not yet,
-with a named gate* — rather than being deleted or left implicit; `README.md` says what the
-program is not, before it says what it is; and the core gained no layout, no font metrics and
-no new dependency. What it gained instead is the part of an editor that is *not* layout: the
-caret. `grind_text::App`'s `insert_text`, `erase`, `split_block` and `join_block` are the four
-operations a cursor performs, in the core because three shells would otherwise each answer
-"what happens when you press Return at the end of a heading?" separately and disagree. Wrapping
-belongs to whichever shell is drawing, and that is the whole of Path A's cost to the core.
-
-### Path A — continuous flow, no page model *(recommended)*
-
-The editor shows one reflowed column. Page size, margins, `fo:break-before`, headers, footers
-and footnote placement are **read, preserved, round-tripped and never rendered as pages**.
-Printing and PDF go through the platform, exactly as the spreadsheet already plans.
-
-- **Layout lives in the shell, not the core.** GTK gets Pango for free; the web shell gets the
-  browser; the CLI needs none. The core carries no font metrics and no new dependencies, and
-  rule 6 ("no filesystem assumptions", and its spirit: no platform assumptions) survives intact.
-- **Cost:** weeks, not years. **Delivers:** a usable structured document editor.
-- **The honest label:** people will say it is a rich-text editor rather than a word processor,
-  and they will be partly right. `README.md` should say so first, in the same voice
-  `doc/not-doing.md` uses. A program that says what it is not is the whole thesis here.
-- Every differentiator below works without a page model. None of them needs one.
-
-### Path B — paginated
-
-A real page model in the core: line breaking, font metrics, tab stops, widow and orphan control,
-footnote placement, table splitting.
-
-- **The terminal is the constraint that keeps this branch honest.** A core layout engine
-  hard-wired to font metrics cannot render into character cells, so R10's terminal shell forces
-  the engine to be parameterised by a metric provider from the start. Discover that at S8, not
-  at S10.
-- **Layout must move into the core**, because the CLI, the wasm shell and any future shell all
-  need the same answer — which means taking on a shaping and metrics stack (`rustybuzz` +
-  `fontdb` + `unicode-linebreak`, or `cosmic-text` over all three; all MIT/Apache and therefore
-  AGPL-compatible). The project's existing ladder applies cleanly: **shaping and UAX #14 line
-  break opportunities are neutral plumbing and can be reused; how `fo:` properties become layout
-  constraints is semantics and gets written.**
-- **Exit criterion is loop D**, and loop D is what makes this branch tractable at all: render a
-  corpus document with our engine, render it with the pinned LibreOffice container to PDF,
-  compare line-break positions and page boundaries within a tolerance, and ratchet the
-  percentage exactly as loop B does. **The oracle being pinned to a container image by digest
-  pays off twice here** — the digest pins the *fonts* as well as the renderer, and without
-  pinned fonts a layout differential is noise.
-- **Cost:** the largest single item in the project's history, larger than phase 4. **Risk:**
-  this is the "thirty years of accreted edge cases" the project was founded to avoid, met head
-  on.
-
-### The recommendation
-
-Build Path A, ship it, and put pagination in `doc/not-doing.md` §2 as *not yet, with a named
-gate*: it moves when a real week of use proves the continuous view insufficient, and its exit
-criterion is loop D at a stated floor. That is the same gate every other deferred capability
-here has, and it keeps a feature list that ends.
+Decided in `doc/text-layout.md`: line layout in the core with font metrics injected, and the
+printed pages set by `grind-print` (`doc/page-model.md`). The fork as first posed is in git.
 
 ---
 

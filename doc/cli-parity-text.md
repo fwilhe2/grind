@@ -65,7 +65,7 @@ what a person expects.
 The five operations a cursor performs, as opposed to the ones a script performs. They are in
 the core rather than in a shell because the terminal, GTK and web shells would otherwise each
 answer "what happens when you press Return at the end of a heading?" separately and disagree
-(`doc/suite.md` S7); they are on the CLI because rule 4 does not make an exception for the
+(`doc/text-layout.md`); they are on the CLI because rule 4 does not make an exception for the
 operations that feel like they belong to a UI.
 
 - `insert_text` — `grind text type <at> <text>`, or `-` for stdin. The text takes the style of

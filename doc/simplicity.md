@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Simple, not easy
 
-**Status: decided 2026-11-20. Phases 0 to 3 done; phase 4 next.**
+**Status: decided 2026-11-20. Phases 0 to 3 done; phases 4 and 5 under way.**
 
 *Simple* is one concept in one place doing one job; *easy* is near at hand. Most of the
 accidental complexity here came from easy steps: a decision copied into the next shell, a feature
@@ -94,6 +94,10 @@ and are asked as phase 4 touches them. clerk (`../clerk`) is checked before each
 One layer at a time, GTK first, each shell deleting its copy as it is ported, each step proved
 by byte-identical `--render-to` frames:
 
+Done so far: one motion is applied the same way in every grid (`nav::apply`), and what a key does
+to the active cell is one table (`nav::motion_for`); the browser's copies of the core's
+selection and motion types are gone, and a double-clicked word is `word::around` everywhere.
+
 1. **Input.** A portable `Key`/`Mods`, one `Intent` vocabulary and the CUA table per document
    type. The terminal keeps its vi table and emits the same intents.
 2. **Editor state.** Selection, caret and edit mode, and what an intent does to them, in the core.
@@ -106,6 +110,14 @@ by byte-identical `--render-to` frames:
 Each design document rewritten to its decisions and their reasons; journals, evidence logs and
 dated status cells dropped (git has them). `CLAUDE.md` to about half its length; `AGENTS.md` a
 pointer to it.
+
+Done for the page model, PDF export, the Windows, macOS and GTK spreadsheet shells, the
+projection, `grind init`, the docx filter, the formula workbench, the grammar checker, the view
+modes, the server and loop E: each says what is built and what is not, and nothing cites a
+milestone by number. `doc/xlsx-import.md` keeps its milestone labels: `xlsx/tests/ooxmlgen.rs` and the
+corpus's README classify every fixture by them, so they are a vocabulary the tests check rather
+than history. Left: `doc/suite.md`'s prose, which is written around its milestones,
+and `CLAUDE.md`.
 
 ### Phase 6 — the big files
 

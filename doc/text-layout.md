@@ -342,7 +342,7 @@ spreadsheet.
 
 | | Where |
 |---|---|
-| The fork as originally posed | `doc/suite.md`, "The layout fork" |
+| The fork as originally posed | `doc/suite.md`, in git |
 | The architecture rule the objection rests on | `CLAUDE.md`, "Architecture"; [fwilhe2/editor](https://github.com/fwilhe2/editor)'s `doc/shared-core-native-shell.md` |
 | Pagination's named gate | `doc/not-doing.md` §2 |
 | The caret edits that survive every path | `text/src/lib.rs`, `doc/cli-parity-text.md` |
