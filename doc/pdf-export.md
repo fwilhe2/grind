@@ -102,7 +102,7 @@ lazy; semantics never are"):
 
 **Recommendation: krilla, `default-features = false`, pinned to an exact version** (it is pre-1.0),
 with `harfrust` doing our own shaping, so that measuring and drawing go through **one engine**.
-That is the rule `doc/windows-shell.md` W5a learned from bugs: measure with one engine and draw
+That is the rule the Windows shell learned from bugs: measure with one engine and draw
 with another, and the caret lands where the ink is not. Here the "caret" is every glyph
 position on the page.
 
@@ -395,7 +395,7 @@ and P9 is what keeps that claim honest.
 | The path this extends | `doc/text-layout.md`, Path C and "The decision" |
 | The gates this amends | `doc/not-doing.md` §2 (Print to PDF; Pagination), `doc/text-core.md` (Styles; Fields) |
 | Derived, never stored | `doc/view-modes.md` |
-| One engine measures and draws | `doc/windows-shell.md`, W5a |
+| One engine measures and draws | §2 |
 | A display list executed by a backend | `ui_mac/src/ops.rs`, `doc/macos-shell.md` decision 3 |
 | A filter's report as part of its output | `doc/xlsx-import.md` |
 | `style:page-layout`, `style:page-layout-properties` | rng:12213, rng:12248 |

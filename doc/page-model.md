@@ -177,7 +177,7 @@ All seven taken as recommended, 2026-11-14.
 | Line layout in the core, metrics injected | `doc/text-layout.md` |
 | Pagination, fonts, the display list, the preview | `doc/pdf-export.md` |
 | Derived, never stored | `doc/view-modes.md` §1 |
-| One engine measures and draws | `doc/windows-shell.md`, W5a |
+| One engine measures and draws | `doc/pdf-export.md` |
 | The gates this reverses | `doc/not-doing.md` §2 |
 | `fo:letter-spacing`, `style:letter-kerning` | rng:13532, rng:13705 |
 | `fo:hyphenate`, remain and push counts, keep, ladder | rng:13773, rng:13778, rng:13783, rng:12533, rng:12541 |
