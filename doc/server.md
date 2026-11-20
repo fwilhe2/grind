@@ -6,8 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # A server behind the browser shell
 
-**Status: SV0–SV3 built 2026-11-08 (§11); SV4 onwards a plan.** §10's questions are answered
-there.
+**Status: the store, its history and the deployment are built (§11); live editing and the rest
+are a plan (§7).** §10's questions are answered there.
 `doc/web-shell.md` stays normative for `ui_web/`. `doc/plan.md`'s R1–R7 and the architecture
 rules in `CLAUDE.md` outrank every word here.
 
@@ -262,22 +262,18 @@ verb is plain HTTP that `curl` reaches. Two more are cheap and worth it:
 `doc/feature-matrix.md` gains a *server* column; the desktop shells could join a live session later
 (they are Rust and link the same core), but nothing here promises it.
 
-## 7. Milestones
+## 7. Not built: the plan
 
 | | What | Exit criterion |
 |---|---|---|
-| **SV0** | `grind-server` crate, `grind serve DIR` serving `dist/` and `api/v1/hello`; the page's probe and the `Backend` seam | The page on `python -m http.server` and on `grind serve` both pass `ui_web/smoke.sh`; the first shows no server UI, the second shows the probe's answer |
-| **SV1** | Tier 1: list, open, save (`If-Match`), create, rename, delete; library pane; the server's own `save_bytes` | Two browsers, one saves first, the other gets 412 and a choice; a document saved from the page is byte-identical to the same edit made by `grind sheet set` (R6 holds) |
-| **SV2** | Tier 2: git history, view a version, restore | Twenty saves are twenty commits, each one line of diff for a one-cell edit |
-| **SV3** | Deployment: image, `compose.yaml` with a volume, size measured in `artifacts.yml` | `docker compose up` on a clean machine, a document survives `down`/`up` |
 | **SV4** | Core prep: `SheetId`; text operations finer than `SetBlock`; `grind_core::collab` (versions, pending, rebase); position mapping | **Convergence test**: N simulated clients, random operations, random delivery delays, all end with byte-identical `save_bytes` — a loop-F-shaped property over the vendored documents |
 | **SV5** | Live sessions over WebSocket: the actor, broadcast, rebase in the page, op log, flush | Two pages typing in one paragraph lose no keystroke; killing the server mid-session loses nothing after restart |
 | **SV6** | Presence and per-user undo | Carets of others drawn in both panes; Ctrl+Z never undoes someone else's edit |
 | **SV7** | Tier 3: search and lint across the library, `?doc=` proxy, share links | — |
 | **SV8** | Auth: trusted header, read-only links | — |
 
-SV1–SV3 are useful on their own and change nothing in the core. SV4 is the real decision: it is
-where the core gains a layer, and it should not start until SV1 has been lived with.
+SV4 is the real decision: it is where the core gains a layer, and it should not start until the
+store has been lived with.
 
 ## 8. Testing
 
@@ -305,7 +301,7 @@ where the core gains a layer, and it should not start until SV1 has been lived w
 
 ## 10. Open questions — answered 2026-11-08
 
-1. **The store first**: SV0–SV3 are built; live editing waits until the store has been lived
+1. **The store first**: it is built; live editing waits until the store has been lived
    with.
 2. **Same origin only.** A page hosted elsewhere talking to a home server is not planned.
 3. **`server` is on by default** in `grind` — §2's measurement.
@@ -314,7 +310,7 @@ where the core gains a layer, and it should not start until SV1 has been lived w
 6. **The person's own computer.** The server is loopback-only by R12; anything wider is their
    reverse proxy.
 
-## 11. As built (SV0–SV3)
+## 11. As built
 
 `server/` (`grind-server`), reached as `grind serve DIR [--port N] [--page DIST] [--host NAME]`.
 `Server::handle` is a function from a request value to a response value, so `server/tests/api.rs`
