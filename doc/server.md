@@ -8,10 +8,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 **Status: SV0–SV3 built 2026-11-08 (§11); SV4 onwards a plan.** §10's questions are answered
 there.
-`doc/web-shell.md` stays normative for `ui_web/`; `doc/web-storage.md` is the record of what the
-page can keep *without* a server, and this document is the other half of its *Remote storage,
-later* and *What neither option does* sections. `doc/plan.md`'s R1–R7 and the architecture rules
-in `CLAUDE.md` outrank every word here.
+`doc/web-shell.md` stays normative for `ui_web/`. `doc/plan.md`'s R1–R7 and the architecture
+rules in `CLAUDE.md` outrank every word here.
 
 ## 1. The one rule: the server is found, never required
 
@@ -68,11 +66,10 @@ In the order it should be built, each tier useful without the next.
 ### Tier 1 — a place documents live (the store)
 
 - **A directory of flat ODF files** is the store — `DIR`, nothing else. Not a database and not the
-  model: `doc/web-storage.md`'s *store ODF bytes, never the model* and `doc/flat-first.md` both
-  say so, and it buys the thing no database would: **every other client opens the same files**.
-  `grind sheet set DIR/budget.fods A1 1`, the GNOME window, `git diff` — they already work on it.
-- Stable ids in a sidecar (`DIR/.grind/index.json`: id → path), because a name is not a key
-  (`doc/web-storage.md`, *cheap now, expensive later*).
+  model: the store keeps ODF bytes, as `doc/flat-first.md` says, and that buys the thing no
+  database would: **every other client opens the same files**. `grind sheet set DIR/budget.fods
+  A1 1`, the GNOME window, `git diff` — they already work on it.
+- Stable ids in a sidecar (`DIR/.grind/index.json`: id → path), because a name is not a key.
 - **List, open, save, create, rename, delete** over plain HTTP: `GET /api/v1/docs`,
   `GET /api/v1/docs/{id}` (bytes + `ETag`), `PUT` with `If-Match` (412 when somebody else saved
   first — whole-document conflict detection, never a merge, at this tier), `POST`, `DELETE`.
@@ -85,9 +82,8 @@ In the order it should be built, each tier useful without the next.
   file changed on disk while a session has it open is a conflict notice (`notify` crate for
   inotify/FSEvents, or a cheap mtime check on every request at first).
 - In the page: a **library** pane on the welcome screen (Open from server / New on server), Save
-  writing back instead of downloading, Download still there. This is `doc/web-storage.md`'s
-  option B with remote storage, and it answers that document's open question 1: a second device
-  sees the documents.
+  writing back instead of downloading, Download still there. A second device sees the
+  documents.
 
 ### Tier 2 — history
 
@@ -106,9 +102,8 @@ In the order it should be built, each tier useful without the next.
 Most of what a server usually adds the page already does itself — `.xlsx`/`.docx` import,
 spelling, PDF export and preview all run in wasm. What is genuinely new:
 
-- **Search across documents**: every cell and every block of every file, indexed on save. This is
-  `doc/sqlite.md` Part III's workspace index, and the server is the first place it has a reason
-  to exist.
+- **Search across documents**: every cell and every block of every file, indexed on save. The
+  server is the first place such an index has a reason to exist.
 - **Lint the library**: `grind lint` over every file, findings in the library pane.
 - **Fetch a URL** for `?doc=` that does not send CORS headers.
 - **Sharing a link**: `…/d/{id}` opens that document from the server — read-only or editable, per

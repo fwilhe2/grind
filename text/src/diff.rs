@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What changed between two text documents, block by block and, inside a changed block, word by
-//! word (`grind diff`, `doc/ideas.md` §1).
+//! word (`grind diff`).
 //!
 //! Blocks are matched by kind and text along a longest common subsequence, so an insertion above
 //! does not make every later block a change. What is left between two matches is paired by

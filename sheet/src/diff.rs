@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 //! What changed between two spreadsheets, by what the cells mean rather than by the XML that
-//! carries them (`grind diff`, `doc/ideas.md` §1).
+//! carries them (`grind diff`).
 //!
 //! A cell whose formula or typed value changed is an edit. A formula that is the same and computes
 //! something else is a consequence of the edits, and kept apart so a one-cell change does not read
