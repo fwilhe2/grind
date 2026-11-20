@@ -45,13 +45,7 @@ impl Rgb {
     /// cell is" is an opaque colour computed first — in portable code, so a wash over a document's
     /// red is testable without a device context.
     pub fn blend(self, other: Rgb, t: f64) -> Rgb {
-        let t = t.clamp(0.0, 1.0);
-        let mix = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * t).round() as u8;
-        Rgb(
-            mix(self.0, other.0),
-            mix(self.1, other.1),
-            mix(self.2, other.2),
-        )
+        grind_core::color::mix(self.into(), other.into(), t).into()
     }
 
     /// A colour parsed from `#rrggbb`, which is the only form ODF stores (§5.1).

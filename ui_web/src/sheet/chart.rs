@@ -40,13 +40,6 @@ impl Metrics for Estimate {
     }
 }
 
-/// `share` of `a` over `b` — the stylesheet's `color-mix(in srgb, …)`.
-fn mix(a: Rgb, b: Rgb, share: f64) -> Rgb {
-    let channel =
-        |x: u8, y: u8| (f64::from(x) * share + f64::from(y) * (1.0 - share)).round() as u8;
-    (channel(a.0, b.0), channel(a.1, b.1), channel(a.2, b.2))
-}
-
 /// The page's colours in the scheme the browser paints: the hairlines are the stylesheet's
 /// `--line`.
 fn colours(dark: bool) -> Colours {
@@ -54,7 +47,7 @@ fn colours(dark: bool) -> Colours {
     Colours {
         page,
         ink: text,
-        grid: mix(text, page, 0.2),
+        grid: grind_core::color::mix(page, text, 0.2),
         accent: (0x1c, 0x71, 0xd8),
         dark,
     }

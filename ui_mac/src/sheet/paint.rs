@@ -633,12 +633,6 @@ fn spill(
 /// How wide the margin is that the role overlay reserves at a cell's leading edge.
 pub const MARKER_W: f64 = 12.0;
 
-/// `a` moved `by` of the way towards `b`.
-fn mix(a: Rgb, b: Rgb, by: f64) -> Rgb {
-    let one = |a: u8, b: u8| (f64::from(a) + (f64::from(b) - f64::from(a)) * by).round() as u8;
-    (one(a.0, b.0), one(a.1, b.1), one(a.2, b.2))
-}
-
 /// The colour a role's marker is drawn in: `CellRole::hue`, with a palette colour lifted to be
 /// legible on a dark page the way a document's own colour is (`color::document_ink`), the ink
 /// as the page's own, and a quieter ink for a label.
@@ -651,7 +645,7 @@ pub fn role_color(role: CellRole, palette: &Palette) -> Option<Rgb> {
                 color::document_ink(Some(hue), None, palette.page, palette.ink, palette.dark)
             }),
         Hue::Ink => Some(palette.ink),
-        Hue::Quiet => Some(mix(palette.ink, palette.page, 0.4)),
+        Hue::Quiet => Some(color::mix(palette.ink, palette.page, 0.4)),
     }
 }
 
@@ -675,7 +669,7 @@ fn marker(role: CellRole, cell: Rect, ink: Rgb, metrics: &dyn Metrics) -> Op {
 /// way to the page — a label on the document's own structure, quieter than the selection, which
 /// is a thing to act on. `names` is empty whenever the read did not ask for them.
 fn name_outlines(grid: &Grid, view: &Rect, names: &[NameAnchor], palette: &Palette) -> Vec<Op> {
-    let muted = mix(palette.ink, palette.page, 0.55);
+    let muted = color::mix(palette.ink, palette.page, 0.55);
     let mut ops = Vec::new();
     for anchor in names {
         let (Some(last_row), Some(last_col)) = (
@@ -1561,7 +1555,7 @@ mod tests {
         app.set_name("rate", "[$Sheet1.$B$2]").unwrap();
         let grid = Grid::of(&app, 0);
         let view = Rect::new(0.0, 0.0, 500.0, 200.0);
-        let muted = mix(Palette::LIGHT.ink, Palette::LIGHT.page, 0.55);
+        let muted = color::mix(Palette::LIGHT.ink, Palette::LIGHT.page, 0.55);
         let count = |look: &Look| {
             cells(&app, 0, &grid, view, Selection::default(), look)
                 .iter()

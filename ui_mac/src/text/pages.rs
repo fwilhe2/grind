@@ -69,14 +69,7 @@ impl Palette {
 
     /// The ink most of the way to the page — a label that is present and not read.
     pub fn muted(&self) -> Rgb {
-        let mix = |page: u8, ink: u8| {
-            (f64::from(page) + (f64::from(ink) - f64::from(page)) * 0.45).round() as u8
-        };
-        (
-            mix(self.page.0, self.ink.0),
-            mix(self.page.1, self.ink.1),
-            mix(self.page.2, self.ink.2),
-        )
+        grind_core::color::mix(self.page, self.ink, 0.45)
     }
 }
 

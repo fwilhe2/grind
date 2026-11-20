@@ -99,6 +99,14 @@ pub fn from_hsl(h: f64, s: f64, l: f64) -> Rgb {
     (byte(r), byte(g), byte(b))
 }
 
+/// `a` moved toward `b` by `t`, from 0 (all `a`) to 1 (all `b`), per channel.
+#[must_use]
+pub fn mix(a: Rgb, b: Rgb, t: f64) -> Rgb {
+    let t = t.clamp(0.0, 1.0);
+    let channel = |x: u8, y: u8| (f64::from(x) + (f64::from(y) - f64::from(x)) * t).round() as u8;
+    (channel(a.0, b.0), channel(a.1, b.1), channel(a.2, b.2))
+}
+
 /// The ink for text the document did not colour, on a ground the document did choose — ODF's
 /// automatic colour: the theme's `ink` where it reads, else black or white, whichever reads
 /// better. Without the fallback, a dark theme's near-white text on a document's pale heading row
@@ -156,6 +164,15 @@ pub fn legible(color: Rgb, ground: Rgb, floor: f64) -> Rgb {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mix_moves_from_one_colour_toward_the_other() {
+        let (black, white) = ((0, 0, 0), (255, 255, 255));
+        assert_eq!(mix(black, white, 0.0), black);
+        assert_eq!(mix(black, white, 1.0), white);
+        assert_eq!(mix(black, white, 0.2), (51, 51, 51));
+        assert_eq!(mix(black, white, 7.0), white, "clamped");
+    }
 
     #[test]
     fn a_documents_ink_follows_the_four_rules() {
