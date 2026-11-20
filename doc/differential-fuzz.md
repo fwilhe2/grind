@@ -185,16 +185,18 @@ than loop C's rule and never will — ULP-level divergence is invisible to it, p
 That is a property of the oracle's serialiser, not a loosening we chose, and it is the same
 one already written down in `doc/ods-format.md` §3.4.
 
-## Milestones
+## What is not built
 
-| # | Milestone | Contents | Exit criterion |
-|---|---|---|---|
-| F0 | **The harness** — *done* | flat-XML emitter, data block, `soffice` driver reused from loop C, both-sides read, `agrees` from loop B, scoreboard + `FLOOR` | one seeded run, green, with a per-function scoreboard |
-| F1 | **The generator** — *done* | signature parsing (arity, optionality, type words), the awkward-value pool, references and ranges into the data block | every catalog function appears in a run |
-| F2 | **Triage** | each disagreement either fixed or written into `doc/ods-format.md` as a divergence with LO's behaviour cited by probe | `wrong` reaches zero and `FLOOR` rises to the run's total |
-| F3 | **Nesting** | arguments that are themselves generated calls, one level deep — where an error propagates through, which is §4.6 territory | the scoreboard holds at one level of nesting |
+* **Triage.** Each disagreement either fixed or written into `doc/ods-format.md` as a divergence,
+  LibreOffice's behaviour cited by probe, until `wrong` reaches zero and `FLOOR` is the run's
+  total. The classes are below.
+* **Nesting.** Arguments that are themselves generated calls, one level deep — where an error
+  propagates through, which is §4.6 territory.
+* **`cargo-fuzz` targets** for `lex`, `parse` and `display`, whose property needs no oracle: no
+  panic on any input, and `parse → serialize → parse` stable. They want nightly and a
+  dev-dependency, so they land on their own.
 
-## The first run, and what F2 inherits
+## The first run, and its disagreements
 
 Seed `0x5EED`, 1000 formulas, on the pinned image: **913 match, 87 disagree**, which is
 `FLOOR` in `sheet/tests/loop_e.rs`. (It was 911 against the Ubuntu 24.04 package this used to
@@ -202,7 +204,7 @@ pin — a borderline `AVERAGEIF`/`NPV`/`SUMIF` case moves by exactly one across 
 release, which is why the pin is a digest and why the number is only meaningful beside one.
 Since the pin is now an image rather than a distribution package, a local run and a CI run
 are the same binary and should print the same figure.) The disagreements are not yet
-triaged, and they are not evenly spread — the recurring classes, for whoever picks up F2:
+triaged, and they are not evenly spread — the recurring classes:
 
 - **A logical cell used as text.** `TRIM([.C2])` on a `office:value-type="boolean"` cell is
   `"1"` in LO and `"TRUE"` here; `LOWER`, `REPT`, `SUBSTITUTE`, `MID` all repeat it. This is a
@@ -221,10 +223,6 @@ the same seed against LibreOffice 26.8 is 917 of 1000. What its 26 functions dis
 the logical-in-a-range class above (`MEDIAN`, `SMALL`, `RANK`, `SUMIFS`, `COUNTIFS` over the
 boolean column), §6.3.14's `"TRUE"` in `CONCATENATE` (a decision, `doc/ods-format.md` §4.1),
 and degenerate parameters — a rate of −1, a negative `Nper`, a logical as `WORKDAY`'s offset.
-
-Part II, not built: `cargo-fuzz` targets for `lex`, `parse` and `display`, whose property
-needs no oracle — no panic on any input, and `parse → serialize → parse` stable. It wants
-nightly and a dev-dependency, so it lands on its own rather than inside this.
 
 ## Running it
 
