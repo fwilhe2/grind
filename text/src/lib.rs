@@ -19,8 +19,8 @@
 mod app;
 
 // The document and what changes it.
-pub mod action;
-pub mod changes;
+mod action;
+mod changes;
 pub mod loc;
 pub mod marginal;
 pub mod model;

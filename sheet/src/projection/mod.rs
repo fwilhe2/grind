@@ -51,7 +51,7 @@
 //! and style definitions: converting to a projection drops them.
 
 pub mod read;
-pub mod write;
+pub(crate) mod write;
 
 /// `grind_core::projection`'s container types, under this crate's path.
 pub use grind_core::projection::{Anchor, Emitter, Projection, Token, TokenKind};

@@ -958,7 +958,7 @@ pub struct Document {
     pub source: Option<Box<crate::odf::source::Source>>,
     /// The projection this document was read from, if it was one (`doc/dsl.md` §3.1). A second
     /// slot because the two keep different things — XML elements beside
-    /// [`crate::odf::source::Source`], an address-to-range map here — and a document has at most
+    /// `odf::source::Source`, an address-to-range map here — and a document has at most
     /// one.
     pub projection_source: Option<Box<grind_core::projection::Source>>,
     /// What has changed since. See [`Edits`].

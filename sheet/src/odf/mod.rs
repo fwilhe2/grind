@@ -6,8 +6,8 @@
 //! the spreadsheet half of styles (§5), on `grind-core`'s generic modules, re-exported below.
 
 pub mod read;
-pub mod source;
-pub mod write;
+pub(crate) mod source;
+pub(crate) mod write;
 
 /// `grind-core`'s generic modules, under the paths this crate's reader and writer use.
 pub use grind_core::odf::{Form, context, names, package};

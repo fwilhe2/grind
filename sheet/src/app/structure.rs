@@ -242,7 +242,7 @@ impl App {
 
     /// Format a rectangle as a table: an autofilter, alternating row shading, an optional totals
     /// row and a named range, as one undo step; returns the name. ODF has no table object, so
-    /// these are ordinary edits ([`table_format`]) and undoing them is clearing each. Bounded by
+    /// these are ordinary edits (`table_format`) and undoing them is clearing each. Bounded by
     /// [`MAX_FORMATTED_CELLS`].
     pub fn format_table(
         &self,

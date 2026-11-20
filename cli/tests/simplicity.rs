@@ -43,7 +43,7 @@ fn sources(dir: &str) -> Vec<(PathBuf, String)> {
 /// calls into it.
 const PUB_MODS: &[(&str, usize)] = &[
     ("build", 8),
-    ("core", 25),
+    ("core", 24),
     ("docx", 0),
     ("grammar", 1),
     ("lsp", 0),
@@ -51,9 +51,9 @@ const PUB_MODS: &[(&str, usize)] = &[
     ("open", 0),
     ("print", 9),
     ("server", 1),
-    ("sheet", 53),
+    ("sheet", 44),
     ("spell", 2),
-    ("text", 34),
+    ("text", 29),
     ("xlsx", 5),
 ];
 

@@ -5,7 +5,7 @@
 //! The OpenFormula engine (ODF 1.4 Part 4). [`value`] is the value model everything else inherits
 //! its correctness from.
 
-pub mod array;
+pub(crate) mod array;
 pub mod assist;
 pub mod date;
 pub mod display;
@@ -15,11 +15,11 @@ pub mod funcs;
 pub mod lex;
 pub mod parse;
 pub mod rename;
-pub mod serialize;
+pub(crate) mod serialize;
 pub mod shift;
 pub mod trace;
 pub mod value;
-pub mod wildcard;
+pub(crate) mod wildcard;
 
 /// What typing a formula refuses, with what to write instead: a formula that does not parse, a
 /// cell address without its brackets, which would parse as a name `defined` does not know, and

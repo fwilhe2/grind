@@ -6,7 +6,7 @@
 //! generic modules, re-exported below; `source` keeps the file a document came from for splicing.
 
 pub mod read;
-pub mod source;
+pub(crate) mod source;
 pub mod write;
 
 /// The generic modules, re-exported so this crate's reader reaches them by one path.

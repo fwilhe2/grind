@@ -30,9 +30,9 @@
 //! their bytes would need a sidecar directory, and a form must work as bytes alone (rule 5;
 //! `doc/projection-text.md`). Footnotes and fields are spelled as the text they show.
 
-pub mod inline;
+pub(crate) mod inline;
 pub mod read;
-pub mod write;
+pub(crate) mod write;
 
 /// `grind_core::projection`'s container types, under this crate's path.
 pub use grind_core::projection::{Anchor, Emitter, Projection, Token, TokenKind};

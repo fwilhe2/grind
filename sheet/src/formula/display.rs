@@ -122,7 +122,7 @@ pub fn from_display(text: &str) -> Result<String, DisplayError> {
     Ok(format!("={expr}"))
 }
 
-/// A display-form formula laid over several lines for reading — [`super::serialize::pretty`]
+/// A display-form formula laid over several lines for reading — `serialize::pretty`
 /// behind its `=`. Still one formula: [`from_display`] reads it back to the same tree, so a
 /// workbench can trace the laid-out text itself and give every line its own answer
 /// ([`super::trace::Trace::by_line`]).

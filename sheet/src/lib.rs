@@ -22,12 +22,12 @@ pub mod chart;
 pub mod filter;
 pub mod formula;
 pub mod graph;
-pub mod grid;
+mod grid;
 pub mod model;
 pub mod numfmt;
 pub mod rule;
 pub mod style;
-pub mod table_format;
+mod table_format;
 
 // In and out: ODF, CSV, the projection, and lint.
 pub mod csv;
@@ -47,7 +47,7 @@ pub mod format;
 pub mod look;
 pub mod nav;
 pub mod place;
-pub mod reading;
+mod reading;
 pub mod spell;
 pub mod summary;
 pub mod tracks;
@@ -1689,7 +1689,7 @@ pub struct EnterOutcome {
     /// what it would have changed — what a banner offers.
     pub recalc: Option<Recalc>,
     /// The first number read in a way worth telling the person about — the other decimal sign, or
-    /// an ambiguous thousands separator ([`reading`]). A shell shows its [`Reading::sentence`]
+    /// an ambiguous thousands separator (`reading`). A shell shows its [`Reading::sentence`]
     /// once.
     pub reading: Option<Reading>,
     /// How many cells were read that way, of which `reading` is the first.

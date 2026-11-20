@@ -24,7 +24,7 @@ pub struct BlockId(pub u64);
 /// What kind of block this is. Lists are flattened into the sequence: a `text:list-item` becomes a
 /// block with its depth, so `p12` is the twelfth block whatever it is, the model matches the
 /// body's flatness, and the writer rebuilds `text:list` nesting from depth changes as a fold. A
-/// list read from a file keeps its element's attributes ([`crate::odf::source::Source::lists`]); a
+/// list read from a file keeps its element's attributes (`odf::source::Source::lists`); a
 /// new one has none.
 ///
 /// ponytail: a `List` block owning its items is the alternative, at the cost of recursive
@@ -359,7 +359,7 @@ pub fn coalesce(runs: &mut Vec<Run>) {
 /// edit, `#intro`, `§2.1.3` and the span map work inside tables with no table-specific code.
 ///
 /// A table read from a file keeps its own styling through a regenerate
-/// ([`crate::odf::source::TableSource`]); a new table has none. A table nested in a cell is read
+/// (`odf::source::TableSource`); a new table has none. A table nested in a cell is read
 /// as paragraphs of the cell holding it: its text survives, its structure does not.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Cell {
@@ -623,9 +623,9 @@ pub struct Document {
     /// The projection this document was read from, if it was one (`doc/dsl.md` §3.1), and where
     /// each block sits in it. A document has at most one of this and `source`.
     pub projection_source: Option<Box<grind_core::projection::Source>>,
-    /// What has changed since it was read. See [`crate::odf::source::Edits`].
+    /// What has changed since it was read. See `odf::source::Edits`.
     pub edits: crate::odf::source::Edits,
-    /// Which blocks changed lately, for a reader that set them before ([`crate::changes`]).
+    /// Which blocks changed lately, for a reader that set them before (`changes`).
     pub changes: crate::changes::Changes,
 }
 

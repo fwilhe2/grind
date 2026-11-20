@@ -20,7 +20,7 @@ pub mod kind;
 pub mod layout;
 pub mod lint;
 pub mod locale;
-pub mod observer;
+mod observer;
 pub mod odf;
 pub mod page;
 pub mod projection;
