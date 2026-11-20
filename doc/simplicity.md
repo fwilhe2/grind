@@ -108,8 +108,9 @@ selection and motion types are gone, and a double-clicked word is `word::around`
 ### Phase 5 — docs in the present tense
 
 Each design document rewritten to its decisions and their reasons; journals, evidence logs and
-dated status cells dropped (git has them). `CLAUDE.md` to about half its length; `AGENTS.md` a
-pointer to it.
+dated status cells dropped (git has them). `CLAUDE.md` kept true rather than cut to a length —
+read on 2026-11-20, it was current but for one claim, and what it lacked was a command;
+`AGENTS.md` a pointer to it.
 
 Done for the page model, PDF export, the Windows, macOS and GTK spreadsheet shells, the
 projection, `grind init`, the docx filter, the formula workbench, the grammar checker, the view
@@ -117,7 +118,7 @@ modes, the server and loop E: each says what is built and what is not, and nothi
 milestone by number. `doc/xlsx-import.md` keeps its milestone labels: `xlsx/tests/ooxmlgen.rs` and the
 corpus's README classify every fixture by them, so they are a vocabulary the tests check rather
 than history. Left: `doc/suite.md`'s prose, which is written around its milestones,
-and `CLAUDE.md`.
+and `AGENTS.md`.
 
 ### Phase 6 — the big files
 

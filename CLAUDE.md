@@ -21,7 +21,8 @@ phase 10.
   Markdown in and out, PDF export, page breaks and page setup. Every graphical shell edits on the
   printed pages themselves (`doc/page-model.md`): `grind-print` sets them and its raster is the
   screen. Not built: a session (no `undo` across CLI invocations), table styles and
-  `table:formula`, footnotes, fields, style definitions, RTL.
+  `table:formula`, editing footnotes and fields (both are read and printed), style definitions,
+  RTL.
 - **Import filters**, one way in and never out: `.xlsx` (`grind-xlsx`), `.docx` (`grind-docx`).
 - **Shells**: GTK (one per document type), terminal, browser, Windows, macOS.
   `doc/feature-matrix.md` is which client can do what.
@@ -82,7 +83,9 @@ cargo test -- repeated_columns                 # one test by name substring
 cargo clippy --workspace --all-targets         # CI gates on it, warnings as errors, with
                                                #   the root Cargo.toml's [workspace.lints]
 cargo fmt --all                                # CI gates on --check
-RUSTDOCFLAGS=-D warnings cargo doc --no-deps   # CI gates on it
+RUSTDOCFLAGS=-D warnings cargo doc --no-deps   # CI gates on it, per target as well: Windows,
+                                               #   macOS and GTK each have their own run —
+                                               #   `grep -rn 'cargo doc' .github/workflows/`
 reuse lint                                     # CI gates on it
 ```
 
