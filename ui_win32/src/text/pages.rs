@@ -112,49 +112,16 @@ impl Shown {
     }
 }
 
-/// An input method's composition, set into the document at `at` (`App::compose`): how many
-/// characters it is and where the input method's caret is in it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Composing {
-    pub at: Caret,
-    pub len: usize,
-    pub cursor: usize,
-}
-
-impl Composing {
-    /// `text` composed at `at`, its caret `cursor` UTF-16 units in — the IME's own count.
-    pub fn new(at: Caret, text: &str, cursor: usize) -> Self {
-        let len = text.chars().count();
-        let mut units = 0;
-        let cursor = text
-            .chars()
-            .take_while(|c| {
-                units += c.len_utf16();
-                units <= cursor
-            })
-            .count();
-        Composing {
-            at,
-            len,
-            cursor: cursor.min(len),
-        }
-    }
-
-    /// Where the caret is drawn.
-    pub fn caret(self) -> Caret {
-        Caret {
-            offset: self.at.offset + self.cursor,
-            ..self.at
-        }
-    }
-
-    /// One past its last character.
-    pub fn end(self) -> Caret {
-        Caret {
-            offset: self.at.offset + self.len,
-            ..self.at
-        }
-    }
+/// How many characters the first `units` UTF-16 units of `text` are — an IME counts its caret in
+/// units, the document in characters.
+pub fn chars_in(text: &str, units: usize) -> usize {
+    let mut seen = 0;
+    text.chars()
+        .take_while(|c| {
+            seen += c.len_utf16();
+            seen <= units
+        })
+        .count()
 }
 
 #[cfg(test)]
@@ -230,14 +197,7 @@ mod tests {
     /// The IME counts its caret in UTF-16 units, a character outside the BMP as two.
     #[test]
     fn a_composition_counts_its_caret_in_characters() {
-        let at = Caret {
-            block: 2,
-            offset: 5,
-        };
-        let composing = Composing::new(at, "a\u{1f600}b", 3);
-        assert_eq!(composing.cursor, 2);
-        assert_eq!(composing.caret().offset, 7);
-        assert_eq!(composing.end().offset, 8);
-        assert_eq!(Composing::new(at, "ab", 9).cursor, 2);
+        assert_eq!(chars_in("a\u{1f600}b", 3), 2);
+        assert_eq!(chars_in("ab", 9), 2, "never past the end");
     }
 }

@@ -2,32 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Which key means what in the text pane, and where a word ends — pure functions, **no Windows
-//! types** and no second virtual-key table: [`crate::sheet::keymap::key_for`] makes the [`Key`],
-//! and this starts there.
-//!
-//! The selection is presentation state: an anchor and an active caret, reaching `App` as two
-//! [`Caret`](grind_text::Caret)s when something is done to it — copied, erased, formatted.
+//! Which key means what in the text pane — a pure function, **no Windows types** and no second
+//! virtual-key table: [`crate::sheet::keymap::key_for`] makes the [`Key`], and this starts there.
+//! Where a motion lands, and what an edit does to the selection, is `grind_text::caret::Editor`'s.
+
+use grind_text::caret::Motion;
 
 use crate::sheet::keymap::{Key, Mods};
-
-/// What a motion moves by. Every one but the two by characters is defined in terms of a **line**,
-/// which is why line breaking is `grind_core::layout`'s (`doc/text-layout.md`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Motion {
-    /// One character left or right, across a block boundary at either end.
-    Char(i8),
-    /// One word left or right — Ctrl+Left and Ctrl+Right.
-    Word(i8),
-    /// N lines down (positive) or up — the arrows, and Page Up/Down with a bigger number.
-    Line(isize),
-    /// The visual ends of the caret's own line, which on a wrapped line are not the paragraph's.
-    LineStart,
-    LineEnd,
-    /// The first and last caret position in the document — Ctrl+Home and Ctrl+End.
-    DocStart,
-    DocEnd,
-}
 
 /// What a keystroke asked the pane to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,9 +36,8 @@ pub enum Action {
 }
 
 /// What a key means, or `None` for one this pane does not claim, which goes back to
-/// `DefWindowProc` so Alt+F4, the system menu and Windows' accelerators work. `page` is how many
-/// lines Page Up/Down moves, which the window knows.
-pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
+/// `DefWindowProc` so Alt+F4, the system menu and Windows' accelerators work.
+pub fn action_for(key: Key, mods: Mods) -> Option<Action> {
     if mods.alt {
         return None;
     }
@@ -66,12 +46,12 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
     match (key, mods.ctrl) {
         (Key::Left, false) => motion(Motion::Char(-1)),
         (Key::Right, false) => motion(Motion::Char(1)),
-        (Key::Left, true) => motion(Motion::Word(-1)),
-        (Key::Right, true) => motion(Motion::Word(1)),
+        (Key::Left, true) => motion(Motion::WordStart(-1)),
+        (Key::Right, true) => motion(Motion::WordStart(1)),
         (Key::Up, _) => motion(Motion::Line(-1)),
         (Key::Down, _) => motion(Motion::Line(1)),
-        (Key::PageUp, _) => motion(Motion::Line(-page)),
-        (Key::PageDown, _) => motion(Motion::Line(page)),
+        (Key::PageUp, _) => motion(Motion::Page(-1)),
+        (Key::PageDown, _) => motion(Motion::Page(1)),
         // Ctrl+Home and Ctrl+End are the document's ends everywhere on this platform; without
         // Ctrl they are the line's, which on a wrapped line is the *visual* line.
         (Key::Home, true) => motion(Motion::DocStart),
@@ -85,61 +65,6 @@ pub fn action_for(key: Key, mods: Mods, page: isize) -> Option<Action> {
         (Key::Return, true) => Some(Action::PageBreak),
         (Key::Tab, false) => Some(Action::Tab { back: mods.shift }),
         _ => None,
-    }
-}
-
-/// Where the word boundary is, `offset` characters into `text`, one way or the other — Windows'
-/// rule: **right** stops at the next word's start, **left** at the start of the word the caret is
-/// in or just past, and punctuation counts as a word, so `a, b` does not skip the comma. `None` at
-/// the block's end in that direction, the cue to carry into the neighbour, as
-/// [`grind_text::App::caret_line`] does.
-pub fn word_boundary(text: &str, offset: usize, forward: bool) -> Option<usize> {
-    let chars: Vec<char> = text.chars().collect();
-    let mut at = offset.min(chars.len());
-    if forward {
-        if at >= chars.len() {
-            return None;
-        }
-        // Out of whatever the caret is in the middle of, then across the space after it.
-        let kind = class(chars[at]);
-        while at < chars.len() && class(chars[at]) == kind {
-            at += 1;
-        }
-        while at < chars.len() && class(chars[at]) == Class::Space {
-            at += 1;
-        }
-        Some(at)
-    } else {
-        if at == 0 {
-            return None;
-        }
-        while at > 0 && class(chars[at - 1]) == Class::Space {
-            at -= 1;
-        }
-        if at == 0 {
-            return Some(0);
-        }
-        let kind = class(chars[at - 1]);
-        while at > 0 && class(chars[at - 1]) == kind {
-            at -= 1;
-        }
-        Some(at)
-    }
-}
-
-/// What kind of character this is, as far as word motion cares.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Class {
-    Space,
-    Word,
-    Punctuation,
-}
-
-fn class(c: char) -> Class {
-    match c {
-        c if c.is_whitespace() => Class::Space,
-        c if c.is_alphanumeric() || c == '_' => Class::Word,
-        _ => Class::Punctuation,
     }
 }
 
@@ -157,7 +82,7 @@ mod tests {
 
     #[test]
     fn the_arrows_move_and_shift_extends() {
-        let plain = action_for(Key::Right, mods(false, false), 20);
+        let plain = action_for(Key::Right, mods(false, false));
         assert_eq!(
             plain,
             Some(Action::Move {
@@ -165,7 +90,7 @@ mod tests {
                 extend: false
             })
         );
-        let held = action_for(Key::Down, mods(false, true), 20);
+        let held = action_for(Key::Down, mods(false, true));
         assert_eq!(
             held,
             Some(Action::Move {
@@ -178,35 +103,23 @@ mod tests {
     #[test]
     fn control_turns_a_character_into_a_word_and_a_line_into_the_document() {
         assert_eq!(
-            action_for(Key::Left, mods(true, false), 20),
+            action_for(Key::Left, mods(true, false)),
             Some(Action::Move {
-                motion: Motion::Word(-1),
+                motion: Motion::WordStart(-1),
                 extend: false
             })
         );
         assert_eq!(
-            action_for(Key::Home, mods(true, false), 20),
+            action_for(Key::Home, mods(true, false)),
             Some(Action::Move {
                 motion: Motion::DocStart,
                 extend: false
             })
         );
         assert_eq!(
-            action_for(Key::Home, mods(false, false), 20),
+            action_for(Key::Home, mods(false, false)),
             Some(Action::Move {
                 motion: Motion::LineStart,
-                extend: false
-            })
-        );
-    }
-
-    /// A page is the window's answer, not this table's — a taller window pages further.
-    #[test]
-    fn a_page_is_as_many_lines_as_the_window_holds() {
-        assert_eq!(
-            action_for(Key::PageDown, mods(false, false), 37),
-            Some(Action::Move {
-                motion: Motion::Line(37),
                 extend: false
             })
         );
@@ -224,7 +137,6 @@ mod tests {
                         alt: true,
                         ..mods(false, false)
                     },
-                    20
                 ),
                 None
             );
@@ -233,50 +145,10 @@ mod tests {
 
     #[test]
     fn a_key_this_pane_does_not_own_goes_back_to_windows() {
-        assert_eq!(action_for(Key::F5, mods(false, false), 20), None);
-        assert_eq!(action_for(Key::Other, mods(false, false), 20), None);
+        assert_eq!(action_for(Key::F5, mods(false, false)), None);
+        assert_eq!(action_for(Key::Other, mods(false, false)), None);
         // Ctrl+C is the clipboard's, and the clipboard's verbs arrive as menu commands.
-        assert_eq!(action_for(Key::Char('C'), mods(true, false), 20), None);
-    }
-
-    #[test]
-    fn moving_right_by_a_word_lands_on_the_next_beginning() {
-        let text = "the quick  brown";
-        assert_eq!(word_boundary(text, 0, true), Some(4));
-        assert_eq!(
-            word_boundary(text, 4, true),
-            Some(11),
-            "two spaces, one step"
-        );
-        assert_eq!(word_boundary(text, 11, true), Some(16), "up to the end");
-        assert_eq!(word_boundary(text, 16, true), None, "and no further");
-    }
-
-    #[test]
-    fn moving_left_by_a_word_lands_on_the_beginning_behind_the_caret() {
-        let text = "the quick  brown";
-        assert_eq!(word_boundary(text, 16, false), Some(11));
-        assert_eq!(
-            word_boundary(text, 11, false),
-            Some(4),
-            "across both spaces"
-        );
-        assert_eq!(word_boundary(text, 2, false), Some(0), "inside the first");
-        assert_eq!(word_boundary(text, 0, false), None);
-    }
-
-    /// Punctuation is a word of its own, so `a, b` has a stop at the comma rather than skipping
-    /// it — which is what makes Ctrl+Shift+Right a usable way to select an argument.
-    #[test]
-    fn punctuation_is_a_word() {
-        assert_eq!(word_boundary("a, b", 0, true), Some(1));
-        assert_eq!(word_boundary("a, b", 1, true), Some(3));
-    }
-
-    #[test]
-    fn word_motion_counts_characters_and_not_bytes() {
-        // Four characters, six bytes: an offset is a caret's unit, and `Caret::offset` is chars.
-        assert_eq!(word_boundary("héllo wörld", 0, true), Some(6));
+        assert_eq!(action_for(Key::Char('C'), mods(true, false)), None);
     }
 
     /// Tab and Shift+Tab are the same key, told apart only by `back` — `win.rs`'s `text_indent`
@@ -284,11 +156,11 @@ mod tests {
     #[test]
     fn tab_and_shift_tab_carry_their_own_direction() {
         assert_eq!(
-            action_for(Key::Tab, mods(false, false), 20),
+            action_for(Key::Tab, mods(false, false)),
             Some(Action::Tab { back: false })
         );
         assert_eq!(
-            action_for(Key::Tab, mods(false, true), 20),
+            action_for(Key::Tab, mods(false, true)),
             Some(Action::Tab { back: true })
         );
     }

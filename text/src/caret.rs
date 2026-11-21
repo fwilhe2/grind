@@ -7,8 +7,8 @@
 //! and [`App::caret_line_bounds`].
 //!
 //! Word motion differs by platform — Ctrl+Right on Windows stops at the start of the next word, ⌥→
-//! on a Mac at the end of this one — so each shell keeps its platform's rule; [`word`] is the
-//! GNOME window's and the Mac's, over [`crate::word`]'s definition of a word.
+//! on a Mac at the end of this one — so both rules are here, over [`crate::word`]'s definition of
+//! a word: [`word`] is the GNOME window's and the Mac's, [`word_start`] Windows'.
 
 use grind_core::layout::Layout;
 
@@ -109,6 +109,25 @@ pub fn word(app: &App, at: Caret, delta: i32) -> Caret {
         Some(offset) => here(offset),
         None if delta > 0 && at.offset < len => here(len),
         None if delta < 0 && at.offset > 0 => here(0),
+        None => step(app, at, delta),
+    }
+}
+
+/// One word right (`delta` positive) or left as Windows moves: the start of the next word, or of
+/// the word the caret is in or just past; at the block's edge, one character into the neighbour,
+/// which is where its first word begins.
+pub fn word_start(app: &App, at: Caret, delta: i32) -> Caret {
+    let text = app.input_text(at.block).unwrap_or_default();
+    let within = if delta > 0 {
+        crate::word::next_start(&text, at.offset)
+    } else {
+        crate::word::start_before(&text, at.offset)
+    };
+    match within {
+        Some(offset) => Caret {
+            block: at.block,
+            offset,
+        },
         None => step(app, at, delta),
     }
 }

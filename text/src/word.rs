@@ -72,6 +72,48 @@ pub(crate) fn previous_start(text: &str, offset: usize) -> Option<usize> {
     Some(at)
 }
 
+/// Where Ctrl+Right lands on Windows from `offset`: the start of the next word, a run of
+/// punctuation counting as one, so `a, b` stops at the comma. `None` at the end — go on to the next
+/// block.
+#[must_use]
+pub(crate) fn next_start(text: &str, offset: usize) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = offset.min(chars.len());
+    if at == chars.len() {
+        return None;
+    }
+    let here = unit(&chars, at);
+    while at < chars.len() && unit(&chars, at) == here {
+        at += 1;
+    }
+    while at < chars.len() && unit(&chars, at) == Unit::Space {
+        at += 1;
+    }
+    Some(at)
+}
+
+/// Where Ctrl+Left lands on Windows from `offset`: the start of the word the caret is in or just
+/// past, punctuation counting as a word. `None` only at the block's start.
+#[must_use]
+pub(crate) fn start_before(text: &str, offset: usize) -> Option<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = offset.min(chars.len());
+    if at == 0 {
+        return None;
+    }
+    while at > 0 && unit(&chars, at - 1) == Unit::Space {
+        at -= 1;
+    }
+    if at == 0 {
+        return Some(0);
+    }
+    let here = unit(&chars, at - 1);
+    while at > 0 && unit(&chars, at - 1) == here {
+        at -= 1;
+    }
+    Some(at)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Unit {
     Word,
@@ -163,5 +205,28 @@ mod tests {
     fn a_closing_quote_is_not_an_apostrophe() {
         assert_eq!(pick("'quoted'", 3), "quoted");
         assert_eq!(pick("'quoted'", 0), "'");
+    }
+
+    /// Ctrl+Right and Ctrl+Left as Windows moves: to the next word's start forward, a run of
+    /// punctuation a word of its own, counted in characters rather than bytes.
+    #[test]
+    fn windows_moves_to_word_starts() {
+        let text = "the quick  brown";
+        assert_eq!(next_start(text, 0), Some(4));
+        assert_eq!(next_start(text, 4), Some(11), "two spaces, one step");
+        assert_eq!(next_start(text, 11), Some(16), "up to the end");
+        assert_eq!(next_start(text, 16), None, "and no further");
+        assert_eq!(start_before(text, 16), Some(11));
+        assert_eq!(start_before(text, 11), Some(4), "across both spaces");
+        assert_eq!(start_before(text, 2), Some(0), "inside the first");
+        assert_eq!(start_before(text, 0), None);
+        assert_eq!(next_start("a, b", 0), Some(1));
+        assert_eq!(next_start("a, b", 1), Some(3));
+        assert_eq!(next_start("héllo wörld", 0), Some(6));
+        assert_eq!(
+            next_start("don't stop", 0),
+            Some(6),
+            "an inner apostrophe is the word's"
+        );
     }
 }

@@ -123,7 +123,7 @@ use crate::welcome;
 use grind_core::DocumentKind;
 use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
-use grind_text::caret::START;
+use grind_text::caret::Editor;
 use grind_text::{Caret, markdown};
 use windows::Win32::UI::WindowsAndMessaging::{
     HTMENU, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN,
@@ -850,13 +850,10 @@ struct Text {
     /// Each page's raster as last drawn, and the rasteriser that keeps glyphs between them.
     tiles: RefCell<HashMap<usize, Tile>>,
     rasteriser: RefCell<Option<(Rc<grind_print::Typesetter>, grind_print::raster::Rasteriser)>>,
-    /// The caret and the other end of the selection. Presentation state: the core is never told
-    /// about it, exactly as the grid's `Selection` is never told to `grind_sheet::App`.
-    caret: Caret,
-    anchor: Caret,
-    /// The page x Down and Up aim for, in points, kept across a run of vertical keystrokes and
-    /// dropped when the caret moves horizontally (`grind_print::place::step`).
-    goal_x: Option<f32>,
+    /// The caret, the selection, the goal column, the style pending for the next character and
+    /// an IME's composition, and every edit at them. Presentation state: the core is never told
+    /// about the selection, exactly as the grid's `Selection` is never told to `grind_sheet::App`.
+    editor: Editor,
     /// Whether a drag is extending the selection.
     dragging: bool,
     /// Whether a caret is drawn by the paint — only for `render`'s windowless frame, which has no
@@ -864,15 +861,10 @@ struct Text {
     /// this stays `true`, ignored.
     caret_on: bool,
     banner: Option<String>,
-    /// What [`grind_text::App::type_markdown`] said the next character must be set in — the style
-    /// a completed `**bold**` leaves behind, carried across keystrokes.
-    resume: Option<grind_text::CharStyle>,
     /// A `WM_CHAR` high surrogate waiting for its low half — `Sheet::surrogate`'s twin, and the
     /// one that matters every keystroke rather than only at the start of an edit: this pane has
     /// no native control to assemble a pair for it.
     surrogate: Option<u16>,
-    /// What the IME is composing, set into the document at the caret (`text_compose`).
-    composing: Option<text::pages::Composing>,
     /// `doc/view-modes.md`'s name overlay, this pane's own — `:names`' equivalent, a bookmark
     /// drawn beside the text it anchors. Presentation state, exactly like `Sheet::overlays`.
     show_names: bool,
@@ -1037,10 +1029,10 @@ impl Text {
     fn set_zoom(&mut self, zoom: f64) {
         let levels = grind_print::strip::ZOOMS;
         let zoom = zoom.clamp(levels[0], levels[levels.len() - 1]);
-        let before = self.shown().spot(self.caret, 1.0);
+        let before = self.shown().spot(self.editor.caret, 1.0);
         self.zoom = zoom;
         let shown = self.shown();
-        if let (Some(before), Some((x, y, _))) = (before, shown.spot_in_strip(self.caret)) {
+        if let (Some(before), Some((x, y, _))) = (before, shown.spot_in_strip(self.editor.caret)) {
             let body = self.page.body();
             if body.contains(before.x, before.y) {
                 self.scroll_x = x - (before.x - body.x);
@@ -1053,12 +1045,15 @@ impl Text {
 
     /// Whether anything is selected at all.
     fn has_selection(&self) -> bool {
-        self.anchor != self.caret
+        self.editor.selection().is_some()
     }
 
-    /// The selection's two ends in document order — what every verb over a range is given.
+    /// The selection's two ends in document order — what every verb over a range is given; the
+    /// caret twice when nothing is selected.
     fn range(&self) -> (Caret, Caret) {
-        grind_text::caret::ordered(self.anchor, self.caret)
+        self.editor
+            .selection()
+            .unwrap_or((self.editor.caret, self.editor.caret))
     }
 
     /// How many characters a block holds. Asked of the viewport rather than remembered, because
@@ -1067,14 +1062,10 @@ impl Text {
         grind_text::caret::block_len(&self.app, index)
     }
 
-    fn last_caret(&self) -> Caret {
-        grind_text::caret::end(&self.app)
-    }
-
     /// Scroll the least it takes to put the caret's own line on screen, and no more.
     fn reveal(&mut self) {
         let shown = self.shown();
-        let Some((x, y, height)) = shown.spot_in_strip(self.caret) else {
+        let Some((x, y, height)) = shown.spot_in_strip(self.editor.caret) else {
             return;
         };
         let (width, down) = shown.strip().size();
@@ -1085,17 +1076,12 @@ impl Text {
             grind_print::strip::follow(self.scroll_x, body.w, width, x - room, 2.0 * room);
     }
 
-    /// The caret's x on its page, in points — what Down and Up aim for.
-    fn caret_x(&self) -> Option<f32> {
-        grind_print::place::locate(self.shown().set(), self.caret).map(|spot| spot.x)
-    }
-
     /// Where the caret is drawn, in client pixels, and its size. `position_ime_composition` wants
     /// the point, so an IME's candidate list appears at the caret; `place_system_caret` wants all
     /// four, since `CreateCaret` takes a size and a heading's caret is taller.
     fn caret_geometry(&self) -> Option<(i32, i32, i32, i32)> {
         let width = scale(text::draw::CARET_W, self.page.dpi).max(1.0);
-        let spot = self.shown().spot(self.shown_caret(), width)?;
+        let spot = self.shown().spot(self.editor.shown_caret(), width)?;
         let body = self.page.body();
         if spot.y + spot.h < body.y || spot.y > body.y + body.h {
             return None;
@@ -1108,12 +1094,6 @@ impl Text {
         ))
     }
 
-    /// Where the caret is drawn: inside a composition, where the IME puts it.
-    fn shown_caret(&self) -> Caret {
-        self.composing
-            .map_or(self.caret, text::pages::Composing::caret)
-    }
-
     /// One block's plain text, for the questions that are about characters rather than about
     /// lines — word motion, and how long a block is.
     fn block_text(&self, index: usize) -> String {
@@ -1123,73 +1103,35 @@ impl Text {
             .map_or_default(|view| view.text.clone())
     }
 
-    /// Where a motion lands, without moving anything. Every answer about lines is the printed
-    /// pages' (`grind_print::place`); the one about characters is the core's.
-    fn moved(&self, motion: text::keymap::Motion, goal: f32) -> Caret {
-        use text::keymap::Motion;
-        let at = self.caret;
-        match motion {
-            // Off the end of a block is the start of the next one: a document is one flow, not a
-            // list of boxes.
-            Motion::Char(step) => grind_text::caret::step(&self.app, at, i32::from(step)),
-            Motion::Word(step) => {
-                let forward = step > 0;
-                let text = self.block_text(at.block);
-                match text::keymap::word_boundary(&text, at.offset, forward) {
-                    Some(offset) => Caret {
-                        block: at.block,
-                        offset,
-                    },
-                    // At the block's own end in that direction, carry one character into the
-                    // neighbour — which is where the next word begins.
-                    None => self.moved(Motion::Char(step), goal),
-                }
-            }
-            Motion::Line(delta) => grind_print::place::step(self.shown().set(), at, delta, goal),
-            Motion::LineStart | Motion::LineEnd => {
-                match grind_print::place::line_bounds(self.shown().set(), at) {
-                    Some((start, end)) => match motion {
-                        Motion::LineStart => start,
-                        _ => end,
-                    },
-                    None => at,
-                }
-            }
-            Motion::DocStart => START,
-            Motion::DocEnd => self.last_caret(),
-        }
-    }
-
-    /// Move the caret, extending or collapsing the selection. The **goal column** survives a run
-    /// of vertical keystrokes, so walking Down through a short line comes back to the column it
-    /// started in.
-    fn navigate(&mut self, motion: text::keymap::Motion, extend: bool) {
-        let vertical = matches!(motion, text::keymap::Motion::Line(_));
-        let goal = if vertical {
-            self.goal_x.or_else(|| self.caret_x())
-        } else {
-            None
-        };
-        self.resume = None;
-        self.caret = self.moved(motion, goal.unwrap_or(0.0));
-        if !extend {
-            self.anchor = self.caret;
-        }
-        self.goal_x = goal;
+    /// Move the caret, extending or collapsing the selection: `Editor::navigate` over the printed
+    /// pages, a page being as many lines as the body holds.
+    fn navigate(&mut self, motion: grind_text::caret::Motion, extend: bool) {
+        let shown = self.shown();
+        let page = self.page_lines();
+        self.editor
+            .navigate(&self.app, shown.set(), motion, extend, page);
         self.reveal();
     }
 
     /// Put the caret somewhere, forgetting the goal column, the selection (unless `extend`) and
     /// any style pending for the next character — a Bold pressed with nothing selected belongs to
-    /// where it was pressed. Typing sets the style again after placing the caret (`text_type`).
+    /// where it was pressed.
     fn place(&mut self, at: Caret, extend: bool) {
-        self.resume = None;
-        self.caret = at;
-        if !extend {
-            self.anchor = at;
-        }
-        self.goal_x = None;
+        self.editor.place(at, extend);
         self.reveal();
+    }
+
+    /// What an edit through the editor ended in: the banner cleared and the caret shown, or the
+    /// core's sentence on the banner.
+    fn edited(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => {
+                self.reveal();
+                self.caret_on = true;
+                self.say(None);
+            }
+            Err(error) => self.say(Some(error)),
+        }
     }
 
     /// The caret a point in the window means — the page under it, or the nearer of two, and on
@@ -1202,7 +1144,7 @@ impl Text {
     /// one, keeping a line of context across the jump.
     fn page_lines(&self) -> isize {
         let shown = self.shown();
-        let line = grind_print::place::locate(shown.set(), self.caret)
+        let line = grind_print::place::locate(shown.set(), self.editor.caret)
             .map_or(20.0, |spot| f64::from(spot.height) * shown.strip().scale());
         ((self.page.body().h / line.max(1.0)) as isize - 1).max(1)
     }
@@ -1338,17 +1280,13 @@ fn opened_text(path: Option<PathBuf>, theme: Theme) -> Result<Text, String> {
         scroll_x: 0.0,
         tiles: RefCell::default(),
         rasteriser: RefCell::default(),
-        caret: START,
-        anchor: START,
-        goal_x: None,
+        editor: Editor::default(),
         dragging: false,
         // On, so that a document opened and immediately rendered shows its caret — and so that
         // two `--render-to` frames of one document are identical, which is what that flag is for.
         caret_on: true,
         banner: None,
-        resume: None,
         surrogate: None,
-        composing: None,
         show_names: false,
         needle: String::new(),
         hover: None,
@@ -2292,7 +2230,7 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             with_text(hwnd, |text| {
                 text.checked?;
                 let caret = if keyboard {
-                    text.caret
+                    text.editor.caret
                 } else {
                     text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
@@ -2306,7 +2244,7 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let picture = unsafe {
             with_text(hwnd, |text| {
                 let caret = if keyboard {
-                    text.caret
+                    text.editor.caret
                 } else {
                     text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
@@ -2333,7 +2271,7 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         let finding = unsafe {
             with_text(hwnd, |text| {
                 let caret = if keyboard {
-                    text.caret
+                    text.editor.caret
                 } else {
                     text.caret_at(f64::from(client.x), f64::from(client.y))?
                 };
@@ -3231,22 +3169,11 @@ fn text_compose(hwnd: HWND, composing: Option<(String, usize)>) {
     // SAFETY: one borrow. `compose` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            let Some((composed, cursor)) = composing.filter(|(composed, _)| !composed.is_empty())
-            else {
-                if let Some(composing) = text.composing.take() {
-                    let _ = text.app.compose(composing.at, "", None);
-                }
-                return;
-            };
-            if text.composing.is_none() {
-                text_drop_selection(text);
-            }
-            let at = text.composing.map_or(text.caret, |composing| composing.at);
-            match text.app.compose(at, &composed, text.resume.as_ref()) {
-                Ok(()) => {
-                    text.composing = Some(text::pages::Composing::new(at, &composed, cursor));
-                }
-                Err(error) => text.say(Some(error.to_string())),
+            let (composed, cursor) = composing.unwrap_or_default();
+            let cursor = text::pages::chars_in(&composed, cursor);
+            let result = text.editor.mark(&text.app, &composed, cursor..cursor);
+            if let Err(error) = result {
+                text.say(Some(error));
             }
         });
     }
@@ -3256,7 +3183,8 @@ fn text_compose(hwnd: HWND, composing: Option<(String, usize)>) {
 /// A composition the caret leaves is dropped, in the line and in the IME.
 fn text_cancel_composition(hwnd: HWND) {
     // SAFETY: one borrow, for one field.
-    let composing = unsafe { with_text(hwnd, |text| text.composing.is_some()) }.unwrap_or(false);
+    let composing =
+        unsafe { with_text(hwnd, |text| text.editor.composing.is_some()) }.unwrap_or(false);
     if !composing {
         return;
     }
@@ -5222,7 +5150,11 @@ fn lint(pane: &mut Pane) -> Option<grind_core::lint::Report> {
 fn current_address(hwnd: HWND) -> Option<String> {
     if is_text(hwnd) {
         // SAFETY: one borrow; nothing inside dispatches.
-        return unsafe { with_text(hwnd, |text| grind_text::loc::format(text.caret.block)) };
+        return unsafe {
+            with_text(hwnd, |text| {
+                grind_text::loc::format(text.editor.caret.block)
+            })
+        };
     }
     // SAFETY: one borrow; nothing inside dispatches.
     unsafe {
@@ -5971,7 +5903,7 @@ fn text_next_misspelling(hwnd: HWND) {
             };
             let all = text.app.misspellings(0..usize::MAX);
             let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
-            let (_, at) = grind_text::caret::ordered(text.anchor, text.caret);
+            let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
                 text.say(Some(notice::none_misspelt(&choice.describe())));
@@ -6471,7 +6403,7 @@ fn text_next_grammar(hwnd: HWND) {
         with_text(hwnd, |text| {
             let all = text.grammar_flags(0..usize::MAX);
             let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
-            let (_, at) = grind_text::caret::ordered(text.anchor, text.caret);
+            let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
             let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
             else {
                 text.say(Some("No grammar findings".to_owned()));
@@ -7827,9 +7759,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
         text_go_to(hwnd);
         return true;
     }
-    // SAFETY: one borrow, for the page size; nothing inside dispatches.
-    let page = unsafe { with_text(hwnd, |text| text.page_lines()) }.unwrap_or(20);
-    let Some(action) = text::keymap::action_for(key, mods, page) else {
+    let Some(action) = text::keymap::action_for(key, mods) else {
         return false;
     };
     match action {
@@ -7850,10 +7780,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
             // SAFETY: one borrow; nothing inside dispatches.
             unsafe {
                 with_text(hwnd, |text| {
-                    text.anchor = START;
-                    text.resume = None;
-                    text.caret = text.last_caret();
-                    text.goal_x = None;
+                    text.editor.select_all(&text.app);
                     text.reveal();
                 });
                 let _ = InvalidateRect(Some(hwnd), None, false);
@@ -7880,83 +7807,25 @@ fn text_char(hwnd: HWND, c: char) -> bool {
 }
 
 /// Type through `App::type_markdown`, so `**bold**` is read as it is typed — a character, or
-/// what an IME commits, which takes its composition out first. A selection is dropped first, as
-/// [`text_insert`] drops one, since `type_markdown` only inserts.
+/// what an IME commits, which takes its composition out first and replaces a selection.
 fn text_type(hwnd: HWND, typed: &str) {
-    // SAFETY: one borrow. `type_markdown` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.composing = None;
-            text_drop_selection(text);
-            let at = text.caret;
-            match text.app.type_markdown(at, typed, text.resume.as_ref()) {
-                Ok(typed) => {
-                    text.place(typed.caret, false);
-                    text.resume = typed.resume;
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
-            }
-        });
-    }
-    refresh(hwnd);
+    text_edit(hwnd, |editor, app| editor.type_text(app, typed));
 }
 
-/// Type text at the caret, replacing the selection. Erase and insert are two undo steps — `App`
-/// has no "replace", and one would be a core change.
-fn text_insert(hwnd: HWND, what: &str) {
-    // SAFETY: one borrow. `insert_text` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            text_drop_selection(text);
-            let at = text.caret;
-            match text.app.insert_text(at, what) {
-                Ok(()) => {
-                    text.place(
-                        Caret {
-                            block: at.block,
-                            offset: at.offset + what.chars().count(),
-                        },
-                        false,
-                    );
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
-            }
-        });
-    }
-    refresh(hwnd);
-}
-
-/// Backspace and Delete.
+/// Backspace and Delete: a selection, or one character — at a block's edge, the break between
+/// two blocks.
 fn text_erase(hwnd: HWND, forward: bool) {
     // SAFETY: one borrow. `erase` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            if text_drop_selection(text) {
-                text.caret_on = true;
-                return;
-            }
-            let at = text.caret;
-            // At a block's edge the character to remove is the *break* between two blocks, which
-            // is `erase` across the boundary rather than a join: one verb, one undo step, and no
-            // second rule about what happens to the kinds.
-            let other = grind_text::caret::step(&text.app, at, if forward { 1 } else { -1 });
-            if other == at {
-                // The very start or the very end of the document: nothing to erase, and nothing
-                // to say about it either.
-                return;
-            }
-            match grind_text::caret::erase_to(&text.app, at, other) {
-                Ok(from) => {
-                    text.place(from, false);
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
-            }
+            let shown = text.shown();
+            let result = text.editor.erase(
+                &text.app,
+                shown.set(),
+                grind_text::caret::Unit::Char,
+                forward,
+            );
+            text.edited(result);
         });
     }
     refresh(hwnd);
@@ -7964,73 +7833,37 @@ fn text_erase(hwnd: HWND, forward: bool) {
 
 /// The Return key: one block becomes two, and the caret goes to the front of the second.
 fn text_split(hwnd: HWND) {
-    // SAFETY: one borrow. `split_block` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            text_drop_selection(text);
-            let at = text.caret;
-            match text.app.split_block(at) {
-                Ok(()) => {
-                    text.place(
-                        Caret {
-                            block: at.block + 1,
-                            offset: 0,
-                        },
-                        false,
-                    );
-                    text.resume = None;
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
-            }
-        });
-    }
-    refresh(hwnd);
+    text_edit(hwnd, Editor::split);
 }
 
 /// Ctrl+Enter: the split Return makes, the second block starting a page (`App::break_page`).
 fn text_page_break(hwnd: HWND) {
-    // SAFETY: one borrow. `break_page` notifies, and the observer posts rather than sends.
+    text_edit(hwnd, Editor::break_page);
+}
+
+/// One edit through the editor, its refusal on the banner.
+fn text_edit(hwnd: HWND, edit: impl FnOnce(&mut Editor, &grind_text::App) -> Result<(), String>) {
+    // SAFETY: one borrow. Every edit notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            text_drop_selection(text);
-            let at = text.caret;
-            match text.app.break_page(at) {
-                Ok(()) => {
-                    text.place(
-                        Caret {
-                            block: at.block + 1,
-                            offset: 0,
-                        },
-                        false,
-                    );
-                    text.resume = None;
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
-            }
+            let result = edit(&mut text.editor, &text.app);
+            text.edited(result);
         });
     }
     refresh(hwnd);
 }
 
 /// Erase whatever is selected, leaving the caret where it was; `true` when there was something.
-/// Every edit begins with it: typing over a selection replaces it.
 fn text_drop_selection(text: &mut Text) -> bool {
-    if !text.has_selection() {
-        return false;
-    }
-    let (from, to) = text.range();
-    match text.app.erase(from, to) {
-        Ok(_) => {
-            text.place(from, false);
-            text.say(None);
-            true
+    match text.editor.drop_selection(&text.app) {
+        Ok(dropped) => {
+            if dropped {
+                text.say(None);
+            }
+            dropped
         }
         Err(error) => {
-            text.say(Some(error.to_string()));
+            text.say(Some(error));
             false
         }
     }
@@ -8103,7 +7936,7 @@ fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
                 return hovered;
             }
             match text.caret_at(x, y) {
-                Some(at) if at != text.caret => {
+                Some(at) if at != text.editor.caret => {
                     text.place(at, true);
                     true
                 }
@@ -8129,17 +7962,7 @@ fn text_double_click(hwnd: HWND, lparam: LPARAM) {
             let Some(at) = text.caret_at(x, y) else {
                 return;
             };
-            let line = text.block_text(at.block);
-            let (start, end) = grind_text::word::around(&line, at.offset);
-            text.anchor = Caret {
-                block: at.block,
-                offset: start,
-            };
-            text.caret = Caret {
-                block: at.block,
-                offset: end,
-            };
-            text.goal_x = None;
+            text.editor.select_word(&text.app, at);
             text.caret_on = true;
         });
         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -8419,7 +8242,7 @@ fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
             let hits = find::hits(&text.app, &text.needle);
             // From the selection's start when there is one — usually the last hit — and the
             // caret otherwise.
-            let (at, _) = grind_text::caret::ordered(text.anchor, text.caret);
+            let (at, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
             let said = match find::step(&hits, at, towards) {
                 Some(index) => {
                     let from = hits[index];
@@ -8522,7 +8345,12 @@ const STRIP_BUTTONS: [markdown::Emphasis; 5] = [
 /// next character would carry.
 fn text_style_here(text: &Text) -> grind_text::CharStyle {
     let selection = text.has_selection().then(|| text.range());
-    grind_text::format::here(&text.app, selection, text.caret, text.resume.as_ref())
+    grind_text::format::here(
+        &text.app,
+        selection,
+        text.editor.caret,
+        text.editor.resume.as_ref(),
+    )
 }
 
 /// Which of the strip's five toggles should be drawn pressed in, for [`text::draw::paint`].
@@ -8550,14 +8378,14 @@ fn text_format(hwnd: HWND, change: grind_text::format::Change) {
             let landed = grind_text::format::apply(
                 &text.app,
                 selection,
-                text.caret,
-                text.resume.as_ref(),
+                text.editor.caret,
+                text.editor.resume.as_ref(),
                 &change,
             );
             match landed {
                 Ok(grind_text::format::Landed::Written) => text.say(None),
                 Ok(grind_text::format::Landed::Pending(style)) => {
-                    text.resume = Some(style);
+                    text.editor.resume = Some(style);
                     text.say(None);
                 }
                 Err(error) => text.say(Some(error.to_string())),
@@ -8659,7 +8487,7 @@ fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
     // sends.
     unsafe {
         with_text(hwnd, |text| {
-            let index = text.caret.block;
+            let index = text.editor.caret.block;
             let viewport = text.app.get_viewport(index..index + 1);
             let Some(block) = viewport.get(index) else {
                 return;
@@ -8688,29 +8516,7 @@ fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
 /// (`grind_text::indent_kind`); a literal tab mid-sentence. Shift+Tab with nothing to un-nest
 /// types nothing.
 fn text_indent(hwnd: HWND, back: bool) {
-    let by = if back { -1 } else { 1 };
-    // SAFETY: one borrow. `set_kind` notifies, and the observer posts rather than sends.
-    let handled = unsafe {
-        with_text(hwnd, |text| {
-            let index = text.caret.block;
-            let viewport = text.app.get_viewport(index..index + 1);
-            let Some(block) = viewport.get(index) else {
-                return false;
-            };
-            let Some(kind) = grind_text::indent_kind(&block.kind, text.caret.offset, by) else {
-                return false;
-            };
-            if let Err(error) = text.app.set_kind(index, kind) {
-                text.say(Some(error.to_string()));
-            }
-            true
-        })
-    };
-    match handled {
-        Some(true) => refresh(hwnd),
-        _ if !back => text_insert(hwnd, "\t"),
-        _ => {}
-    }
+    text_edit(hwnd, |editor, app| editor.tab(app, back));
 }
 
 /// The deepest list item the block-kind chooser offers. Every kind is listed rather than a key per
@@ -8758,7 +8564,7 @@ fn text_insert_picture(hwnd: HWND) {
     // sends.
     let outcome = unsafe {
         with_text(hwnd, |text| {
-            grind_text::picture::insert_below(&text.app, text.caret.block, &mime, data)
+            grind_text::picture::insert_below(&text.app, text.editor.caret.block, &mime, data)
                 .map_err(|error| error.to_string())
         })
     };
@@ -8793,9 +8599,10 @@ fn text_alt_text(hwnd: HWND) {
     // SAFETY: one borrow, released before the dialog.
     let here = unsafe {
         with_text(hwnd, |text| {
-            let block = text.caret.block;
+            let block = text.editor.caret.block;
             let viewport = text.app.get_viewport(block..block + 1);
-            let (offset, image) = grind_text::picture::at(viewport.get(block)?, text.caret.offset)?;
+            let (offset, image) =
+                grind_text::picture::at(viewport.get(block)?, text.editor.caret.offset)?;
             Some((Caret { block, offset }, image.clone()))
         })
     }
@@ -8853,16 +8660,18 @@ fn text_insert_table(hwnd: HWND) {
     // SAFETY: one borrow, after the dialog. `insert_table` notifies; the observer posts.
     let outcome = unsafe {
         with_text(hwnd, |text| {
-            grind_text::table::insert_below(&text.app, text.caret.block, rows, columns).map(|at| {
-                text.place(
-                    Caret {
-                        block: at,
-                        offset: 0,
-                    },
-                    false,
-                );
-                text.caret_on = true;
-            })
+            grind_text::table::insert_below(&text.app, text.editor.caret.block, rows, columns).map(
+                |at| {
+                    text.place(
+                        Caret {
+                            block: at,
+                            offset: 0,
+                        },
+                        false,
+                    );
+                    text.caret_on = true;
+                },
+            )
         })
     };
     match outcome {
@@ -8886,7 +8695,7 @@ fn text_bookmark(hwnd: HWND) {
     let outcome = unsafe {
         with_text(hwnd, |text| {
             text.app
-                .set_bookmark(&name, Some(text.caret.block))
+                .set_bookmark(&name, Some(text.editor.caret.block))
                 .map(|moved| {
                     text.show_names = true;
                     let said = if moved {
@@ -8914,7 +8723,7 @@ fn text_paragraph_style(hwnd: HWND) {
     // SAFETY: one borrow, released before the prompt.
     let Some(current) = (unsafe {
         with_text(hwnd, |text| {
-            let (from, _) = grind_text::caret::ordered(text.anchor, text.caret);
+            let (from, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
             text.app
                 .get_viewport(from.block..from.block + 1)
                 .get(0)
@@ -8936,7 +8745,7 @@ fn text_paragraph_style(hwnd: HWND) {
     // SAFETY: a fresh borrow, after the dialog.
     let outcome = unsafe {
         with_text(hwnd, |text| {
-            let (from, to) = grind_text::caret::ordered(text.anchor, text.caret);
+            let (from, to) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
             text.app.set_style(
                 from.block..to.block + 1,
                 (!name.is_empty()).then(|| name.clone()),
@@ -8950,55 +8759,16 @@ fn text_paragraph_style(hwnd: HWND) {
     }
 }
 
-/// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
-fn text_blocks(text: &Text) -> std::ops::RangeInclusive<usize> {
-    let (from, to) = grind_text::caret::ordered(text.anchor, text.caret);
-    from.block..=to.block
-}
-
-/// Format ▸ Move Paragraph Up / Down — `grind_text::blocks::shift`, the caret and selection going
+/// Format ▸ Move Paragraph Up / Down — `Editor::move_paragraphs`, the caret and selection going
 /// with the paragraphs.
 fn text_move_paragraphs(hwnd: HWND, up: bool) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            match grind_text::blocks::shift(&text.app, text_blocks(text), up) {
-                Ok(()) => {
-                    let step = |caret: &mut Caret| {
-                        if up {
-                            caret.block -= 1;
-                        } else {
-                            caret.block += 1;
-                        }
-                    };
-                    step(&mut text.caret);
-                    step(&mut text.anchor);
-                    text.say(None);
-                }
-                Err(why) => text.say(Some(why)),
-            }
-        });
-    }
-    refresh(hwnd);
+    text_edit(hwnd, |editor, app| editor.move_paragraphs(app, up));
 }
 
-/// Format ▸ Delete Paragraph — `grind_text::blocks::remove`, the caret at the start of what
+/// Format ▸ Delete Paragraph — `Editor::delete_paragraphs`, the caret at the start of what
 /// followed.
 fn text_delete_paragraphs(hwnd: HWND) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            match grind_text::blocks::remove(&text.app, text_blocks(text)) {
-                Ok(block) => {
-                    text.place(Caret { block, offset: 0 }, false);
-                    text.caret_on = true;
-                    text.say(None);
-                }
-                Err(why) => text.say(Some(why)),
-            }
-        });
-    }
-    refresh(hwnd);
+    text_edit(hwnd, Editor::delete_paragraphs);
 }
 
 /// File ▸ Import Markdown… — a markdown file read in before the caret's block, one undo step
@@ -9023,7 +8793,7 @@ fn text_import_markdown(hwnd: HWND) {
     // SAFETY: one borrow, taken after the dialog has closed.
     unsafe {
         with_text(hwnd, |text| {
-            let block = text.caret.block;
+            let block = text.editor.caret.block;
             let resolve = grind_text::commonmark::beside(&path);
             match text.app.import_markdown(block, &markdown, &resolve) {
                 Ok(count) => {
@@ -9061,11 +8831,11 @@ fn text_export_markdown(hwnd: HWND) {
     // SAFETY: one borrow, taken after the dialog has closed.
     let written = unsafe {
         with_text(hwnd, |text| {
-            let blocks = if text.anchor == text.caret {
-                0..text.app.block_count()
-            } else {
-                let blocks = text_blocks(text);
+            let blocks = if text.has_selection() {
+                let blocks = text.editor.blocks();
                 *blocks.start()..*blocks.end() + 1
+            } else {
+                0..text.app.block_count()
             };
             // The pictures go in a directory beside it (`notes.images\`), named for their bytes.
             let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
@@ -9275,21 +9045,10 @@ fn text_history(hwnd: HWND, undo: bool) {
     // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
-            let did = if undo {
-                text.app.undo()
-            } else {
-                text.app.redo()
-            };
-            if did {
-                // Whatever the banner said was about the document as it was — and the caret may
-                // now be past the end of a block that shrank.
+            // Whatever the banner said was about the document as it was.
+            if text.editor.history(&text.app, undo) {
                 text.say(None);
-                let block = text
-                    .caret
-                    .block
-                    .min(text.app.block_count().saturating_sub(1));
-                let offset = text.caret.offset.min(text.block_len(block));
-                text.place(Caret { block, offset }, false);
+                text.reveal();
             }
         });
     }
@@ -9349,43 +9108,7 @@ fn text_paste(hwnd: HWND) {
     let Some(what) = clipboard::get_text(hwnd) else {
         return;
     };
-    // `\r\n` and a bare `\n` both mean the same thing, and a document that came from any other
-    // program may carry either.
-    let lines: Vec<&str> = what
-        .split('\n')
-        .map(|line| line.trim_end_matches('\r'))
-        .collect();
-    // SAFETY: one borrow. Every call inside notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            text_drop_selection(text);
-            for (index, line) in lines.iter().enumerate() {
-                if index > 0 {
-                    let at = text.caret;
-                    if text.app.split_block(at).is_err() {
-                        break;
-                    }
-                    text.caret = Caret {
-                        block: at.block + 1,
-                        offset: 0,
-                    };
-                }
-                if line.is_empty() {
-                    continue;
-                }
-                let at = text.caret;
-                if text.app.insert_text(at, line).is_err() {
-                    break;
-                }
-                text.caret = Caret {
-                    block: at.block,
-                    offset: at.offset + line.chars().count(),
-                };
-            }
-            text.place(text.caret, false);
-        });
-    }
-    refresh(hwnd);
+    text_edit(hwnd, |editor, app| editor.paste(app, &what));
 }
 
 /// Everything one frame of the text pane needs, drawn onto a device context — an `HDC` and the
@@ -9423,7 +9146,7 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .app
         .misspellings(blocks.clone())
         .into_iter()
-        .filter(|m| from != to || !m.being_typed(state.shown_caret()))
+        .filter(|m| from != to || !m.being_typed(state.editor.shown_caret()))
         .flat_map(|m| shown.bands(at(m.block, m.offset), at(m.block, m.offset + m.len)))
         .collect();
     let flagged: Vec<(Rect, bool)> = state
@@ -9431,7 +9154,8 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
         .into_iter()
         .filter(|f| {
             from != to
-                || !(f.block == state.caret.block && f.finding.range.end == state.caret.offset)
+                || !(f.block == state.editor.caret.block
+                    && f.finding.range.end == state.editor.caret.offset)
         })
         .flat_map(|f| {
             let range = &f.finding.range;
@@ -9473,23 +9197,28 @@ fn draw_text_frame(dc: HDC, state: &Text, system_caret: bool) {
     let caret = (state.caret_on && !system_caret && from == to)
         .then(|| {
             shown.spot(
-                state.shown_caret(),
+                state.editor.shown_caret(),
                 scale(text::draw::CARET_W, state.page.dpi),
             )
         })
         .flatten();
-    let composed = state
-        .composing
-        .map_or_default(|composing| shown.bands(composing.at, composing.end()));
+    let at = state.editor.caret;
+    let composed = state.editor.composing.as_ref().map_or_default(|composing| {
+        let end = Caret {
+            offset: at.offset + composing.text.chars().count(),
+            ..at
+        };
+        shown.bands(at, end)
+    });
 
     let here = state
         .app
-        .get_viewport(state.caret.block..state.caret.block + 1)
-        .get(state.caret.block)
+        .get_viewport(state.editor.caret.block..state.editor.caret.block + 1)
+        .get(state.editor.caret.block)
         .map_or_default(|block| text::status::describe(&block.kind, block.style.as_deref()));
     // The language is the picker's to say, at the bar's end (`Page::status_picker`).
     let mut status = text::status::status_line(&here, selected_chars(state), state.app.counts());
-    if let Some(spot) = grind_print::place::locate(shown.set(), state.caret) {
+    if let Some(spot) = grind_print::place::locate(shown.set(), state.editor.caret) {
         status = format!(
             "Page {} of {} \u{00b7} {}% \u{00b7} {status}",
             spot.page + 1,

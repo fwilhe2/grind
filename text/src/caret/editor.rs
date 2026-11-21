@@ -21,6 +21,9 @@ pub enum Motion {
     Char(i8),
     /// One word: to the end of one going right, the start of one going left.
     Word(i8),
+    /// One word as Windows moves: to the start of the next going right, of this one or the one
+    /// before going left ([`super::word_start`]).
+    WordStart(i8),
     /// Lines down (positive) or up, by the laid-out line.
     Line(isize),
     /// Pages down or up — a screenful of lines, less one.
@@ -157,6 +160,7 @@ impl Editor {
         match motion {
             Motion::Char(step) => caret::step(app, at, i32::from(step)),
             Motion::Word(step) => caret::word(app, at, i32::from(step)),
+            Motion::WordStart(step) => caret::word_start(app, at, i32::from(step)),
             Motion::Line(lines) => vertical(lines),
             Motion::Page(pages) => vertical(pages * page.max(1)),
             Motion::LineStart | Motion::LineEnd => match lines.bounds(at) {
