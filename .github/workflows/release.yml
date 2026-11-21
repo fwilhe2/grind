@@ -13,8 +13,8 @@ name: Release
 #   3. creates the release as a draft, its notes the section that was cut;
 #   4. builds from the tag: `grind` and `grind-tui` per platform, then everything
 #      artifacts.yml builds — the Linux packages (the GTK shells among them), the Windows
-#      shell, Grind.pkg and Grind.dmg — and the container images; each is checked to say it
-#      is this version from this commit, and attached;
+#      shell, Grind.pkg and Grind.dmg, the VS Code extension — and the container images; each
+#      is checked to say it is this version from this commit, and attached;
 #   5. attests every file attached as built here, and publishes the draft once all of it
 #      succeeded.
 #
@@ -226,8 +226,9 @@ jobs:
             .github/scripts/check-version.sh "$VERSION" "$DIR/${bin}${{ runner.os == 'Windows' && '.exe' || '' }}"
           done
 
-  # The Linux packages, the Windows shell, the Mac app and its installer: built, checked and
-  # uploaded as this run's artifacts by the workflow that builds them for every push to main.
+  # The Linux packages, the Windows shell, the Mac app and its installer, the VS Code extension:
+  # built, checked and uploaded as this run's artifacts by the workflow that builds them for
+  # every push to main.
   artifacts:
     needs: version
     permissions:
@@ -250,7 +251,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: '{deb-packages,rpm-packages,grind-win32-x64,grind-mac-dmg-macos-15}'
+          pattern: '{deb-packages,rpm-packages,grind-win32-x64,grind-mac-dmg-macos-15,grind-vscode}'
           path: artifacts
       - name: Attach them
         run: |
@@ -259,6 +260,7 @@ jobs:
           mv artifacts/grind-win32-x64/grind-win32.exe "release/grind-win32-$VERSION-x86_64.exe"
           mv artifacts/grind-mac-dmg-macos-15/Grind.pkg "release/Grind-$VERSION.pkg"
           mv artifacts/grind-mac-dmg-macos-15/Grind.dmg "release/Grind-$VERSION.dmg"
+          mv "artifacts/grind-vscode/grind-${VERSION%%-*}.vsix" "release/grind-vscode-$VERSION.vsix"
           ls -l release
           gh release upload "v$VERSION" release/*
 

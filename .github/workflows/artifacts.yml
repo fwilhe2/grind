@@ -818,8 +818,8 @@ jobs:
           if-no-files-found: error
 
   # The VS Code client for `grind lsp` (doc/init.md I6), as a .vsix: packaged on every push so
-  # the extension cannot quietly stop building, and offered as an artifact rather than
-  # published — where it is published is the author's decision. No Rust here: the client starts
+  # the extension cannot quietly stop building, and attached to each release by release.yml; no
+  # marketplace, which is the author's decision. No Rust here: the client starts
   # whatever `grind` the user has, so it has nothing of this build's to carry.
   vscode:
     runs-on: ubuntu-latest
