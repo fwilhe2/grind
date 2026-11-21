@@ -22,7 +22,8 @@ lands, and the release workflow publishes the section as it stands.
   version for Linux, Windows and macOS on the project's releases page.
 - On macOS, an installer puts Grind in your own Applications folder, without asking for an
   administrator's password, where Spotlight and Launchpad find it.
-- Smaller downloads: every program in the suite is built for size.
+- Smaller downloads, and a little faster: every program in the suite is built with whole-program
+  optimisation.
 
 ### Fixes
 
