@@ -10,6 +10,8 @@
 #
 #   * the two slices joined with `lipo`, and both are there (decision 11's universal2);
 #   * the Info.plist is `grind-mac --info-plist`'s, and `plutil -lint` passes it;
+#   * the app and its Info.plist say they are the crate's version, the app a release build from
+#     this commit with nothing changed (check-version.sh);
 #   * the icon is ui_mac/data/Grind.icns, packed in the tree by make-icns.py;
 #   * `codesign --verify --strict` passes the ad-hoc signature (decision 12);
 #   * `otool -L` lists only /System/Library and /usr/lib — the Mac's version of the Windows
@@ -69,6 +71,12 @@ esac
 "$arm" --info-plist > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist" > /dev/null || fail "plutil rejects the Info.plist"
 say "Info.plist: plutil -lint passes"
+version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+.github/scripts/check-version.sh "$version" "$app/Contents/MacOS/grind-mac" > /dev/null \
+    || fail "grind-mac --version is not $version from this commit"
+shown="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+[ "$shown" = "${version%%-*}" ] || fail "Finder would show Grind.app as $shown, not ${version%%-*}"
+say "version: $version, shown as $shown"
 printf 'APPL????' > "$app/Contents/PkgInfo"
 cp ui_mac/data/Grind.icns "$app/Contents/Resources/Grind.icns"
 
