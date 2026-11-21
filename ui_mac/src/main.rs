@@ -271,7 +271,7 @@ fn render_to(opening: &Opening) -> Result<(), String> {
             let palette = if *dark { Palette::DARK } else { Palette::LIGHT };
             // The caret where a window opens with it, at the top, and drawn: the page has the
             // keyboard in a new window.
-            let state = text::state::Page::default();
+            let state = grind_text::caret::Editor::default();
             let ops = text::pages::frame(&Frame {
                 app: &app,
                 shown: &shown,

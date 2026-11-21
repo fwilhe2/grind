@@ -15,6 +15,10 @@ use grind_core::layout::Layout;
 use crate::flow::Flow;
 use crate::{App, Caret};
 
+mod editor;
+
+pub use editor::{Composing, Editor, Lines, Motion, Unit};
+
 /// How many characters the block at `index` holds, or zero for a block that is not there.
 pub fn block_len(app: &App, index: usize) -> usize {
     app.input_text(index).map_or(0, |text| text.chars().count())

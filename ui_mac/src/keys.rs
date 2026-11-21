@@ -32,7 +32,7 @@
 
 use grind_sheet::nav::{Dir, Motion};
 
-use crate::text::state::{Motion as Caret, Unit};
+use grind_text::caret::{Motion as Caret, Unit};
 
 /// What a selector does on the grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -16,10 +16,10 @@ use grind_text::{App, Caret};
 
 use super::face;
 use super::geom::CARET_W;
-use super::state::Page;
 use crate::metrics::{Family, Font};
 use crate::ops::Op;
 use crate::sheet::geom::Rect;
+use grind_text::caret::Editor;
 
 /// The gap a bookmark's name keeps from the end of its line.
 pub const NAME_GAP: f64 = 6.0;
@@ -89,7 +89,7 @@ pub struct Frame<'a> {
     pub view: Rect,
     /// Page `n`'s raster at the scale the view is seen at, drawn or kept.
     pub raster: &'a dyn Fn(usize) -> Option<Raster>,
-    pub state: &'a Page,
+    pub state: &'a Editor,
     /// Whether the caret is drawn — off while the view is not the key view.
     pub caret: bool,
     /// View ▸ Names: each bookmark named past the end of its line.
@@ -281,7 +281,7 @@ pub fn frame(frame: &Frame) -> Vec<Op> {
 
 /// Where the caret is drawn, in the view's coordinates — for the input method's candidate window
 /// and for scrolling it into view.
-pub fn caret_rect(shown: &Shown, state: &Page) -> Option<Rect> {
+pub fn caret_rect(shown: &Shown, state: &Editor) -> Option<Rect> {
     let stroke = shown.stroke(state.shown_caret())?;
     Some(Rect::new(stroke.x, stroke.y, CARET_W, stroke.height))
 }
@@ -305,7 +305,7 @@ mod tests {
         app
     }
 
-    fn ops(app: &App, shown: &Shown, state: &Page, view: Rect) -> Vec<Op> {
+    fn ops(app: &App, shown: &Shown, state: &Editor, view: Rect) -> Vec<Op> {
         let raster = |_: usize| {
             Some(Raster {
                 width: 2,
@@ -330,7 +330,7 @@ mod tests {
     fn the_pages_in_view_are_drawn_from_their_rasters_and_the_caret_over_them() {
         let app = app();
         let shown = shown(&app);
-        let state = Page::default();
+        let state = Editor::default();
         let all = ops(&app, &shown, &state, Rect::new(0.0, 0.0, 800.0, 5000.0));
         let pixels = all
             .iter()
@@ -356,7 +356,7 @@ mod tests {
     fn a_selection_is_washed_and_hides_the_caret() {
         let app = app();
         let shown = shown(&app);
-        let mut state = Page::default();
+        let mut state = Editor::default();
         state.place(
             Caret {
                 block: 0,

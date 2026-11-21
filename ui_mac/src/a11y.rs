@@ -18,7 +18,7 @@ use std::ops::Range;
 use grind_sheet::nav::Selection;
 use grind_text::Caret;
 
-use crate::text::state::Page;
+use grind_text::caret::Editor;
 
 /// The page's `accessibilityValue`: every block's text, a newline between each.
 pub fn page_value(app: &grind_text::App) -> String {
@@ -49,13 +49,13 @@ fn units_at(app: &grind_text::App, caret: Caret) -> usize {
 }
 
 /// The page's `accessibilitySelectedTextRange`: the selection, or the caret as an empty range.
-pub fn page_range(app: &grind_text::App, page: &Page) -> Range<usize> {
+pub fn page_range(app: &grind_text::App, page: &Editor) -> Range<usize> {
     let (from, to) = page.selection().unwrap_or((page.caret, page.caret));
     units_at(app, from)..units_at(app, to)
 }
 
 /// The page's `accessibilityInsertionPointLineNumber`.
-pub fn page_line(page: &Page) -> usize {
+pub fn page_line(page: &Editor) -> usize {
     page.caret.block
 }
 
@@ -88,7 +88,7 @@ mod tests {
         app.set_text(0, "a😀b").unwrap();
         app.insert(1, BlockKind::Paragraph, "second").unwrap();
         assert_eq!(page_value(&app), "a😀b\nsecond");
-        let mut page = Page::default();
+        let mut page = Editor::default();
         page.place(
             Caret {
                 block: 0,

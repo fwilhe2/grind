@@ -262,6 +262,21 @@ pub fn selection_on(
     out
 }
 
+/// The printed pages are what a window's caret moves over by lines.
+impl grind_text::caret::Lines for Document {
+    fn x(&self, at: Caret) -> Option<f32> {
+        locate(self, at).map(|spot| spot.x)
+    }
+
+    fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret {
+        step(self, at, delta, goal)
+    }
+
+    fn bounds(&self, at: Caret) -> Option<(Caret, Caret)> {
+        line_bounds(self, at)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

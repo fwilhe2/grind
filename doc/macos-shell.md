@@ -301,7 +301,7 @@ sets them, each is drawn from its raster as an `Op::Pixels` (`render.rs` makes a
 the pixels), and the selection, the dots, bookmark names, marked text and the caret go over them
 from `grind_print::view`. A view point is a page's point; the scroll view's magnification is the
 zoom, and a page is rasterised at the screen's pixels times it, so it stays sharp. Motions by lines
-are the pages' (`text/state.rs`'s `Lines`), a click is `view::Shown::hit`, and
+are the pages' (`grind_text::caret::Lines`, over `grind_print::place`), a click is `view::Shown::hit`, and
 `firstRectForCharacterRange:` is the caret's stroke on its page. CoreText `Metrics`, the flow and
 the inline composition are gone; marked text is drawn over the page at the caret until committed
 (a `ponytail:`). `--render-to` draws the same frame. Type-checked and linted here; the runner's

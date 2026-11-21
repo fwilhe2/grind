@@ -11,7 +11,7 @@
 //! **Keys arrive as an input method's**: the view is an `NSTextInputClient`, so a key goes to
 //! `interpretKeyEvents:` and comes back as `insertText:replacementRange:`, as a selector through
 //! `doCommandBySelector:` (read by `keys.rs`'s page table, so a `DefaultKeyBinding.dict` works as
-//! in TextEdit), or as **marked text**, which `text/state.rs` holds and `text/pages.rs` draws at
+//! in TextEdit), or as **marked text**, which `grind_text::caret::Editor` holds and `text/pages.rs` draws at
 //! the caret until committed. Every range an input method names is converted in `text/input.rs`.
 //!
 //! **The core pushes** (rule 3): an edit's notification lays the document out again, and an edit
@@ -55,8 +55,8 @@ use crate::text::geom;
 use crate::text::input::{self, NOT_FOUND};
 use crate::text::pages::Palette;
 use crate::text::pages::{self, Frame, Raster};
-use crate::text::state::{Lines, Page, Refused};
 use crate::watch::Turn;
+use grind_text::caret::{Editor, Lines};
 
 /// One page's raster as last drawn: kept until the page or the scale it is seen at changes.
 struct Tile {
@@ -70,7 +70,7 @@ struct Tile {
 pub struct TextPane {
     pub app: Arc<App>,
     pub text: CoreText,
-    pub state: RefCell<Page>,
+    pub state: RefCell<Editor>,
     /// The document's pages, set again when the core says it changed.
     session: grind_print::session::Session,
     /// Each page's raster as last drawn, and the rasteriser that keeps glyphs between them.
@@ -134,7 +134,7 @@ impl TextPane {
         let pane = Rc::new(TextPane {
             app,
             text: CoreText::new(BASE_PT),
-            state: RefCell::new(Page::default()),
+            state: RefCell::new(Editor::default()),
             session: grind_print::session::Session::new(false),
             tiles: RefCell::default(),
             rasteriser: RefCell::default(),
@@ -364,7 +364,7 @@ impl TextPane {
     }
 
     /// Where the caret is drawn, in the page's own coordinates.
-    fn caret_rect(&self, state: &Page) -> Option<Rect> {
+    fn caret_rect(&self, state: &Editor) -> Option<Rect> {
         pages::caret_rect(&self.shown(), state)
     }
 
@@ -401,7 +401,7 @@ impl TextPane {
     /// the caret went. The core's notification of an edit waits until `f` is done.
     pub(crate) fn act_on(
         &self,
-        f: impl FnOnce(&mut Page, &App, &dyn Lines) -> Result<(), Refused>,
+        f: impl FnOnce(&mut Editor, &App, &dyn Lines) -> Result<(), String>,
     ) {
         self.busy.set(true);
         let done = {

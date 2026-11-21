@@ -103,9 +103,10 @@ is `Sizes::edge_near`.
 
 Left, and why: the rest of the grid's geometry follows each shell's scroll model — GTK and the
 browser scroll by pixels, Windows by whole tracks, the Mac through `NSScrollView` — so sharing
-it means changing how three of them scroll, each proved by frames. The text shells' editor state
-(caret, anchor, goal column, the style pending for the next character) is the Mac's `Page` in
-portable form and could be the core's; it touches every motion in four shells.
+it means changing how three of them scroll, each proved by frames. A text view's editor state
+(caret, anchor, goal column, the style pending for the next character, a composition) and every
+edit at it is `grind_text::caret::Editor`, which the Mac holds; GTK, Windows and the browser
+still keep their own, each with its own copy of where a motion lands.
 
 1. **Input.** A portable `Key`/`Mods`, one `Intent` vocabulary and the CUA table per document
    type. The terminal keeps its vi table and emits the same intents.

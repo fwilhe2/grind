@@ -10,14 +10,14 @@
 //! once, through `grind_core::utf16`.
 //!
 //! **A selection across blocks** shows as the caret alone, since one block cannot hold it; typing
-//! still replaces the whole selection (`Page::type_text`).
+//! still replaces the whole selection (`Editor::type_text`).
 
 use std::ops::Range;
 
 use grind_core::utf16;
 use grind_text::{App, Caret};
 
-use super::state::{Page, Refused};
+use grind_text::caret::Editor;
 
 /// `NSNotFound`, which is `NSIntegerMax` — how AppKit says "no range" in a location.
 pub const NOT_FOUND: usize = isize::MAX as usize;
@@ -39,13 +39,13 @@ pub fn offset(text: &str, units: usize) -> usize {
 
 /// The string the input method is shown: the caret's block, with the marked text in it, as
 /// `App::compose` set it.
-pub fn seen(app: &App, page: &Page) -> String {
+pub fn seen(app: &App, page: &Editor) -> String {
     app.input_text(page.caret.block).unwrap_or_default()
 }
 
 /// `selectedRange`: the selection inside the caret's block, or the caret where the selection
 /// leaves it; inside the marked text, the input method's own selection there.
-pub fn selected_range(app: &App, page: &Page) -> Range<usize> {
+pub fn selected_range(app: &App, page: &Editor) -> Range<usize> {
     let text = seen(app, page);
     let (from, to) = match (&page.composing, page.selection()) {
         (Some(composing), _) => (
@@ -59,7 +59,7 @@ pub fn selected_range(app: &App, page: &Page) -> Range<usize> {
 }
 
 /// `markedRange`: where the marked text is in [`seen`], or `None` when nothing is marked.
-pub fn marked_range(app: &App, page: &Page) -> Option<Range<usize>> {
+pub fn marked_range(app: &App, page: &Editor) -> Option<Range<usize>> {
     let composing = page.composing.as_ref()?;
     let text = seen(app, page);
     let at = page.caret.offset;
@@ -67,7 +67,7 @@ pub fn marked_range(app: &App, page: &Page) -> Option<Range<usize>> {
 }
 
 /// `setMarkedText:selectedRange:`'s range, which counts UTF-16 units of the marked text itself,
-/// as the characters [`Page::mark`] takes.
+/// as the characters [`Editor::mark`] takes.
 pub fn marked_selection(marked: &str, range: Range<usize>) -> Range<usize> {
     offset(marked, range.start)..offset(marked, range.end.max(range.start))
 }
@@ -77,7 +77,7 @@ pub fn marked_selection(marked: &str, range: Range<usize>) -> Range<usize> {
 /// menu is the everyday case: the `e` already typed is the range, and `é` replaces it.
 ///
 /// A location of [`NOT_FOUND`] names nothing and changes nothing.
-pub fn replace(app: &App, page: &mut Page, range: Range<usize>) {
+pub fn replace(app: &App, page: &mut Editor, range: Range<usize>) {
     if range.start == NOT_FOUND {
         return;
     }
@@ -93,7 +93,7 @@ pub fn replace(app: &App, page: &mut Page, range: Range<usize>) {
 }
 
 /// `insertText:replacementRange:` — the input method's commit, over what it asked to replace.
-pub fn insert(app: &App, page: &mut Page, text: &str, range: Range<usize>) -> Result<(), Refused> {
+pub fn insert(app: &App, page: &mut Editor, text: &str, range: Range<usize>) -> Result<(), String> {
     if page.composing.is_none() {
         replace(app, page, range);
     }
@@ -104,11 +104,11 @@ pub fn insert(app: &App, page: &mut Page, text: &str, range: Range<usize>) -> Re
 /// of it the input method has selected.
 pub fn mark(
     app: &App,
-    page: &mut Page,
+    page: &mut Editor,
     text: &str,
     selected: Range<usize>,
     range: Range<usize>,
-) -> Result<(), Refused> {
+) -> Result<(), String> {
     if page.composing.is_none() {
         replace(app, page, range);
     }
@@ -117,7 +117,7 @@ pub fn mark(
 
 /// `attributedSubstringForProposedRange:actualRange:`'s text and the range it really covers — the
 /// proposal cut to what [`seen`] holds, and never between the two halves of a character.
-pub fn substring(app: &App, page: &Page, range: Range<usize>) -> Option<(String, Range<usize>)> {
+pub fn substring(app: &App, page: &Editor, range: Range<usize>) -> Option<(String, Range<usize>)> {
     let text = seen(app, page);
     let total = units(&text, text.chars().count());
     if range.start == NOT_FOUND || range.start > total {
@@ -134,7 +134,7 @@ pub fn substring(app: &App, page: &Page, range: Range<usize>) -> Option<(String,
 /// The caret a unit of [`seen`] is at, for `firstRectForCharacterRange:` — which asks where a
 /// range is drawn so the candidate window can sit under it. Inside the marked text the answer is
 /// in the composition, which `text/paint.rs::caret_rect` places.
-pub fn caret_at(app: &App, page: &Page, units: usize) -> Caret {
+pub fn caret_at(app: &App, page: &Editor, units: usize) -> Caret {
     let text = seen(app, page);
     Caret {
         block: page.caret.block,
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn the_input_method_sees_the_carets_block_and_its_selection() {
         let app = app(&["first", "héllo world"]);
-        let mut page = Page::default();
+        let mut page = Editor::default();
         page.place(at(1, 6), false);
         page.place(at(1, 11), true);
         assert_eq!(seen(&app, &page), "héllo world");
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn marked_text_is_part_of_what_the_input_method_sees() {
         let app = app(&["caf"]);
-        let mut page = Page::default();
+        let mut page = Editor::default();
         page.place(at(0, 3), false);
         mark(&app, &mut page, "\u{b4}", 1..1, NOT_FOUND..NOT_FOUND).unwrap();
         assert_eq!(seen(&app, &page), "caf\u{b4}");
@@ -208,7 +208,7 @@ mod tests {
     #[test]
     fn a_replacement_range_replaces_what_it_names() {
         let app = app(&["cafe"]);
-        let mut page = Page::default();
+        let mut page = Editor::default();
         page.place(at(0, 4), false);
         insert(&app, &mut page, "é", 3..4).unwrap();
         assert_eq!(app.input_text(0).unwrap(), "café");
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn a_substring_is_cut_to_what_there_is() {
         let app = app(&["a😀b"]);
-        let page = Page::default();
+        let page = Editor::default();
         assert_eq!(substring(&app, &page, 1..3), Some(("😀".to_owned(), 1..3)));
         assert_eq!(
             substring(&app, &page, 2..99),
