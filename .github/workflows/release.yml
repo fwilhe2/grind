@@ -136,6 +136,12 @@ jobs:
           next="$major.$minor.$((patch + 1))-dev"
           scripts/set-version.sh "$next"
           scripts/release-notes.py open
+          # The draft starts again empty, and its lines live on under the release's heading.
+          drafted="$(awk '/^## /{in_draft = ($0 == "## Unreleased")} in_draft && /^- /' CHANGELOG.md)"
+          if [ -n "$drafted" ] || ! grep -q "^## $VERSION — " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md's Unreleased was not cut into $VERSION: ${drafted:-no $VERSION heading}"
+            exit 1
+          fi
           git commit -am "Start $next"
 
           { echo "## grind $VERSION, then $next"; echo; cat "$RUNNER_TEMP/notes.md"; } >> "$GITHUB_STEP_SUMMARY"
