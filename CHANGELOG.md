@@ -9,11 +9,7 @@ What changed for the people who use grind, release by release. `## Unreleased` i
 the next release's notes: every change someone using grind would notice adds a line there as it
 lands, and the release workflow publishes the section as it stands.
 
-## Unreleased
-
-### Breaking changes
-
-### Changes
+## 0.1.1 — 2026-11-21
 
 ### Fixes
 
