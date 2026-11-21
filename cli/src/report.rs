@@ -109,6 +109,7 @@ impl From<&grind_core::third_party::Component> for ComponentReport {
                 Kind::Text => "text",
                 Kind::Runtime => "runtime",
                 Kind::Dictionary => "dictionary",
+                Kind::Library => "library",
             },
         }
     }
