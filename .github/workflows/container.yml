@@ -34,6 +34,10 @@ on:
         description: The release version, tagged alongside latest
         type: string
         required: true
+      dry_run:
+        description: Build and check the images, push nothing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -65,7 +69,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to ghcr.io
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -116,13 +120,18 @@ jobs:
         run: .github/scripts/image-size.sh local "$IMAGE:$TAG-${{ matrix.arch }}"
 
       - name: Push architecture image
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
         run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
 
   cli-manifest:
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
     needs: cli-image
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     env:
       IMAGE: ghcr.io/fwilhe2/grind
       TAG: ${{ inputs.version || 'dev' }}
@@ -143,10 +152,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish multi-arch manifest
+        id: manifest
         run: |
           tags=(--tag "$IMAGE:$TAG")
           if [ -n "${{ inputs.version }}" ]; then tags+=(--tag "$IMAGE:latest"); fi
           docker buildx imagetools create "${tags[@]}" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # A release's image, signed as built by this workflow from the tag:
+      # `gh attestation verify oci://ghcr.io/fwilhe2/grind:<version> -R fwilhe2/grind`.
+      - name: Attest the release's image
+        if: ${{ inputs.version }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
 
       # What a `docker pull ghcr.io/fwilhe2/grind:$TAG` costs, per architecture,
       # read back off the registry: the build jobs' figure is whatever the daemon
@@ -178,7 +200,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to ghcr.io
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
@@ -221,13 +243,18 @@ jobs:
         run: .github/scripts/image-size.sh local "$IMAGE:$TAG-${{ matrix.arch }}"
 
       - name: Push architecture image
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
         run: docker push "$IMAGE:$TAG-${{ matrix.arch }}"
 
   web-manifest:
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' && !inputs.dry_run }}
     needs: web-image
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
     env:
       IMAGE: ghcr.io/fwilhe2/grind-web
       TAG: ${{ inputs.version || 'dev' }}
@@ -248,10 +275,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish multi-arch manifest
+        id: manifest
         run: |
           tags=(--tag "$IMAGE:$TAG")
           if [ -n "${{ inputs.version }}" ]; then tags+=(--tag "$IMAGE:latest"); fi
           docker buildx imagetools create "${tags[@]}" "$IMAGE:$TAG-amd64" "$IMAGE:$TAG-arm64"
+          digest="$(docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # A release's image, signed as built by this workflow from the tag:
+      # `gh attestation verify oci://ghcr.io/fwilhe2/grind:<version> -R fwilhe2/grind`.
+      - name: Attest the release's image
+        if: ${{ inputs.version }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
 
       - name: Measure published image size
         run: .github/scripts/image-size.sh remote "$IMAGE:$TAG"
