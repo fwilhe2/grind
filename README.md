@@ -16,7 +16,9 @@ I know, many people will close this repo once they discover it is 'slop'. I don'
 
 # Project Status
 
-No release exists yet. A spreadsheet and a word processor are included, the spreadsheet is more complete, both are serviceable for my own personal use.
+This project has been in development for a few months now and the author is using it on a regular basis. I consider it quite mature at this point in time. I'd love to hear some feedback.
+
+Download the [latest release from github](https://github.com/fwilhe2/grind/releases/latest).
 
 # Approach
 
