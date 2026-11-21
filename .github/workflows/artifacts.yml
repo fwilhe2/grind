@@ -251,6 +251,9 @@ jobs:
       # **This step REBUILDS AND REPLACES the binaries measured and packaged above**, which is
       # fine only because it is last. See the header.
       - name: What went into each binary
+        # The release profile strips; cargo bloat needs the symbols back.
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: "false"
         run: |
           {
             echo '## What is in each Linux binary'
@@ -631,6 +634,8 @@ jobs:
       # covered — the job went green with a full red linker error inside it, which reads as a
       # broken build to anyone who opens the log.
       - name: What went into it
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: "false"
         run: |
           $bloat = cargo bloat --release -p grind-win32 --crates -n 20
           if ($LASTEXITCODE -ne 0) { throw "cargo bloat failed with $LASTEXITCODE" }
