@@ -322,6 +322,17 @@ const EXTRAS: &[Extra] = &[
             notice.to_owned()
         },
     },
+    // The allocator of the static Linux build, which `libmimalloc-sys` compiles from its own
+    // copy of the C sources; the crate's entry names only the crate's author.
+    Extra {
+        name: "mimalloc",
+        version: "3.3.2",
+        licence: "MIT",
+        source: "https://github.com/microsoft/mimalloc",
+        kind: "Library",
+        paths: &[],
+        notice: |root| mit(root, "2018-2025 Microsoft Corporation, Daan Leijen"),
+    },
     Extra {
         name: "Rust standard library",
         version: "",
