@@ -7,13 +7,12 @@ SPDX-License-Identifier: CC-BY-4.0
 # The word processor's windows — S9 and S10
 
 What the GTK and browser shells for `grind text` do, what they deliberately do not, and what
-building them proved about the layout decision. Normative for those two milestones the way
-`doc/sheet-shell.md` is for phase 9; `doc/suite.md` is still normative for the phase around
+building them proved about the layout decision. Normative for those two shells the way
+`doc/sheet-shell.md` is for the spreadsheet's; `doc/suite.md` is normative for the suite around
 them.
 
-Both shells are **minimal on purpose**. `doc/suite.md` sizes S9 as "large" and describes a
-milestone-by-milestone shell mirroring the spreadsheet's nine. This is not that: it is the
-floor R10 asks for — *a document type that only has a window is a product decision nobody
+Both shells are **minimal on purpose**: not a shell mirroring the spreadsheet's feature by
+feature, but the floor R10 asks for — *a document type that only has a window is a product decision nobody
 made*, and so is one that has no window. What each shell does not do is listed below rather
 than discovered, and every line of it is a thing the CLI can already do.
 
@@ -257,9 +256,8 @@ or set a column width — the model carries a span and draws one, and only a fil
 the size ladder and the family list are a shell's, so a document that
 sets `fo:font-size` in `cm` shows *Default* in the drop-down while keeping its own value in the
 file; and Cut/Copy/Paste are plain text, so formatting does not survive a round trip through the
-clipboard even within this window. Then the plumbing: no `grind-ui` crate — `doc/suite.md` says to
-extract the shared GTK plumbing "on evidence, at S9, when the second shell shows the seam", and
-one *minimal* shell is not that evidence; this one copied the observer bridge, the `--render-to`
+clipboard even within this window. Then the plumbing: no `grind-ui` crate — `doc/suite.md` extracts a
+seam when a second caller pulls on it, and one *minimal* shell is not that evidence; this one copied the observer bridge, the `--render-to`
 harness and the window-close latch, which is three data points and the right time to look again
 is when either shell grows. No a11y beyond the floor
 (`Accessible::announce` on every caret move, as M9 requires). The document is re-laid-out in

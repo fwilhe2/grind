@@ -2,11 +2,10 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# The suite's meta-package (`doc/suite.md`, "Packaging", S11): `apt install grind` installs
-# every application. A crate only because both packagers build *from* one — `cargo deb` and
-# `cargo generate-rpm` have no other input — so this is the stub crate that document
-# recommends over a hand-written control stanza in a workflow: one mechanism for all five
-# packages, checked by the same test (`cli/tests/packaging.rs`).
+# The suite's meta-package (`doc/suite.md`, "Packaging"): `apt install grind` installs every
+# application. A crate only because both packagers build *from* one — `cargo deb` and
+# `cargo generate-rpm` have no other input — so one mechanism builds all five packages, checked
+# by the same test (`cli/tests/packaging.rs`).
 #
 # It contains no code and ships no binary; `src/lib.rs` exists because a crate must have a
 # target, and says so.

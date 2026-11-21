@@ -7,8 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # CLI parity — `grind text`
 
 > **Whatever any GUI can do, the CLI can do. A UI-only feature is a bug.**
-> — `doc/plan.md` rule 4, `CONTRIBUTING.md` §4, and `doc/suite.md`'s **R9** once there is more
-> than one application
+> — `doc/plan.md` rule 4, `CONTRIBUTING.md` §4, and `doc/suite.md`'s **R9**, per application
 
 This file is that rule made mechanical, **for the word processor**. Every public method of
 `grind_text::App` appears below exactly once, with the command that reaches it or the reason it

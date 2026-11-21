@@ -4,10 +4,10 @@
 
 //! R8's guard: **no document type's vocabulary appears in the shared crate.**
 //!
-//! A shared crate with no mechanical guard becomes a dumping ground within two milestones —
-//! that is every shared-core project's failure mode, and `doc/suite.md` names it as the risk
-//! this test exists to answer. So the rule is checked the way `doc/cli-parity.md` and
-//! `doc/small-group.md` are checked: a test that reads the source and fails the build.
+//! A shared crate with no mechanical guard becomes a dumping ground — every shared-core
+//! project's failure mode (`doc/suite.md`, R8). So the rule is checked the way
+//! `doc/cli-parity-*.md` and `doc/small-group.md` are: a test that reads the source and fails
+//! the build.
 //!
 //! Two halves, because the rule has two ways to break:
 //!

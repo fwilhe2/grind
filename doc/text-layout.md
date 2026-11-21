@@ -9,7 +9,7 @@ SPDX-License-Identifier: CC-BY-4.0
 > **Status: decided — Path C, built.** **Line layout in the core, font metrics injected**;
 > pagination came later and lives in `grind-print` (`doc/page-model.md`). The five questions are
 > answered in "The decision" at the end, and those answers are as normative as the path itself.
-> This document outranks `doc/suite.md`'s fork section.
+> On layout this document outranks `doc/suite.md`.
 
 This is the largest single decision left in the project. It decides what `grind text` *is*,
 how much of it exists in `core/`, whether the terminal shell is possible, and roughly whether

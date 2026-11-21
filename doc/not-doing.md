@@ -90,7 +90,7 @@ The full list is `doc/text-core.md`; these are the ones worth stating twice.
 
 | Not doing | Because |
 |---|---|
-| **Sections and multi-column layout** | A section exists to give a run of content its own page geometry. It is layout, and there is no page model — `doc/suite.md`'s fork was settled on Path A, with pagination itself moved to §2 under a named gate |
+| **Sections and multi-column layout** | A section exists to give a run of content its own page geometry. Pages are set by `grind-print` (`doc/page-model.md`), one column wide, their geometry changing only where a master page does; content flowing in columns, or a region with its own geometry inside a page, is a page-layout program |
 | **Text frames, a drawing canvas** | Positioned boxes with flow-around are a page-layout program |
 | **Generated indices** — six of `text-content`'s sixteen alternatives | Each is a derivation with its own numbering and update rules, over content nobody edits by hand. Read and preserved; never authored |
 | **Mail merge, forms, bibliography, master documents** | Each is a second product with its own data model |
