@@ -109,9 +109,9 @@ jobs:
 
   # `grind` and `grind-tui`, one archive per target with a checksum beside it, each built on a
   # runner of its own architecture. Linux is musl, statically linked, so one binary runs on
-  # every distribution whatever its glibc. Plain cargo rather than cross: nothing here
-  # compiles C, and inside cross's container `core/build.rs` cannot read the commit it stamps
-  # into `--version`.
+  # every distribution whatever its glibc, with mimalloc as its allocator (musl's own is slow),
+  # compiled by musl-gcc. Plain cargo rather than cross: inside cross's container
+  # `core/build.rs` cannot read the commit it stamps into `--version`.
   binaries:
     needs: version
     permissions:
@@ -140,6 +140,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - name: A C compiler for musl
+        if: contains(matrix.target, 'musl')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: release-${{ matrix.target }}
