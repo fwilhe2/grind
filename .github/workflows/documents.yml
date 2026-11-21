@@ -4,7 +4,7 @@
 name: Documents
 
 # A worked example of building documents in CI with nothing installed but Docker:
-# `ghcr.io/fwilhe2/grind:latest` creates, edits, converts and checks both document
+# `ghcr.io/fwilhe2/grind:dev` creates, edits, converts and checks both document
 # types, and the results leave as workflow artifacts. Copy this file into another
 # repository and it runs there unchanged — the only thing it needs from this one is
 # the published image.
@@ -38,10 +38,11 @@ permissions:
 
 env:
   # The published image is public, so no registry login is needed to pull it.
-  # `latest` is a multi-arch manifest and follows `main`; a pipeline whose output
-  # has to be reproducible should pin the digest instead —
-  # ghcr.io/fwilhe2/grind@sha256:… — exactly as this workflow pins its actions.
-  GRIND_IMAGE: ghcr.io/fwilhe2/grind:latest
+  # `dev` is a multi-arch manifest and follows `main`, which is what this checks;
+  # another repository wants `latest`, the newest release, or better a version or
+  # the digest — ghcr.io/fwilhe2/grind@sha256:… — exactly as this workflow pins
+  # its actions.
+  GRIND_IMAGE: ghcr.io/fwilhe2/grind:dev
 
 jobs:
   spreadsheet:
