@@ -20,7 +20,7 @@ This plan overturns written decisions, so it names them first:
 
 | Written today | Where | What this plan does to it |
 |---|---|---|
-| "A paginated *editing* view" gated on a week of use | `doc/not-doing.md` §2, `doc/pdf-export.md` §1 and §5, `doc/text-layout.md` "What stays gated" | **Reversed.** The page view is the editing view of every graphical shell |
+| "A paginated *editing* view" gated on a week of use | `doc/not-doing.md` §2, `doc/pdf-export.md` §1 and §5, `doc/text-layout.md` (in git) | **Reversed.** The page view is the editing view of every graphical shell |
 | "The accepted cost: the screen and the paper can break lines differently" | `doc/pdf-export.md` §1 | **Removed.** One engine sets both |
 | Font metrics are the shell's, behind `Metrics` | `doc/text-layout.md` Path C | **Narrowed.** For a text document every graphical shell answers with `grind_print::Typesetter`. The trait stays: the terminal, the CLI's `--width` and the spreadsheet's cells still use their own |
 | "No screen draws an aligned line" | `print/src/align.rs` | **Reversed.** Alignment moves into `grind_core::layout`, as that file says it must |

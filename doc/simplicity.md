@@ -126,9 +126,8 @@ projection, `grind init`, the docx filter, the formula workbench, the grammar ch
 modes, the server and loop E: each says what is built and what is not, and nothing cites a
 milestone by number. `doc/xlsx-import.md` keeps its milestone labels: `xlsx/tests/ooxmlgen.rs` and the
 corpus's README classify every fixture by them, so they are a vocabulary the tests check rather
-than history. `AGENTS.md` points at `CLAUDE.md`. `doc/suite.md` says what the suite is and
-why, without its milestone table. Left: `doc/text-layout.md`, still written as the argument
-before the decision, with a status paragraph calling its own documentation provisional.
+than history. `AGENTS.md` points at `CLAUDE.md`. `doc/suite.md` and `doc/text-layout.md` say
+what was decided and why, without the milestones and the argument that preceded it.
 
 ### Phase 6 — the big files
 

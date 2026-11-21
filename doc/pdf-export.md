@@ -16,7 +16,7 @@ This plan overturns two written decisions, so it says which ones first:
 | Written today | Where | What this plan does to it |
 |---|---|---|
 | "**Print to PDF** — via the platform, so it needs a platform" | `doc/not-doing.md` §2 | **Reversed.** The core writes the PDF, and a platform only *prints* one (§3) |
-| "Pagination — gated, loop D at a stated floor, and a week of use proving the continuous view insufficient" | `doc/not-doing.md` §2, `doc/text-layout.md` "What stays gated" | **Split in two.** Pagination *as an output* (PDF, preview) comes in, with its own differential as the gate it always named. A paginated *editing view* stays gated, on the same condition as before |
+| "Pagination — gated, loop D at a stated floor, and a week of use proving the continuous view insufficient" | `doc/not-doing.md` §2, `doc/text-layout.md` (in git) | **Split in two.** Pagination *as an output* (PDF, preview) comes in, with its own differential as the gate it always named. A paginated *editing view* stays gated, on the same condition as before |
 | "Loop D" as pagination's differential | `doc/not-doing.md`, `doc/text-layout.md` | **Renamed loop G.** The xlsx filter has used loop D since phase 11 |
 | Named paragraph styles "kept as a name, never resolved" | `doc/text-core.md`, Styles | **Narrowed**. They are *resolved for layout* and still never authored |
 
