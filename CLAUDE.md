@@ -284,6 +284,11 @@ update: check `../clerk` for callers, and name the change in the commit message.
 
 ## Conventions
 
+- **Release notes are kept as work lands.** A change someone using grind would notice adds a
+  line to `CHANGELOG.md`'s `## Unreleased`, under *Breaking changes*, *Changes* or *Fixes*, in
+  the same commit: what changes for that person, in their words — no crate names, paths, R-ids
+  or internals, one line per change, related lines merged. Refactors, tests and CI get none. A
+  release (`.github/workflows/release.yml`) publishes the section as it stands.
 - **Simple, not easy** (`doc/simplicity.md`): a migration ends with the old path deleted; a
   decision two shells hold moves into the core; no cargo feature or setting without someone who
   needs the other answer; no `pub` without an outside caller. `cli/tests/simplicity.rs` holds
