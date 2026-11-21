@@ -22,6 +22,7 @@ GRIND=${GRIND:-$root/target/debug/grind}
 
 [ -x "$GRIND" ] || (cd "$root" && cargo build -q -p grind-cli)
 [ -d "$here/node_modules" ] || (cd "$here" && npm ci --no-audit --no-fund)
+(cd "$here" && npm run -s vscode:prepublish)
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
