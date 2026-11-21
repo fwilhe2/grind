@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-lsp"
-version = "0.0.0"
+version.workspace = true
 description = "A language server for the projection (.grind) and the generator (.rhai) — doc/init.md I5"
 edition.workspace = true
 license.workspace = true

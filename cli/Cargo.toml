@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-cli"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native office suite for the command line"
 edition.workspace = true
 license.workspace = true

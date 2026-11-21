@@ -307,6 +307,30 @@ fn the_meta_package_installs_every_application() {
     }
 }
 
+/// The meta-package pins its applications at the workspace's own version as packaged — `-dev`
+/// as `~dev`, which dpkg and rpm sort before the release, and the release `-1` — by
+/// `scripts/set-version.sh`. A version changed by hand and not there leaves `grind` uninstallable.
+#[test]
+fn the_meta_package_pins_the_workspace_version() {
+    let version = WORKSPACE
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("the workspace declares its version");
+    let pinned = format!("{}-1", version.replacen('-', "~", 1));
+    for crate_ in PACKAGED {
+        for pin in [
+            format!("{} (= {pinned})", crate_.package),
+            format!("{} = \"= {pinned}\"", crate_.package),
+        ] {
+            assert!(
+                META.contains(&pin),
+                "suite/Cargo.toml lacks `{pin}`: run scripts/set-version.sh {version}"
+            );
+        }
+    }
+}
+
 /// The vacuity guard, [`build/tests/manifest.rs`]'s second test in this file's terms: a new
 /// shell added to the workspace and to neither list here would leave this file passing while
 /// checking one crate fewer, which is how a ratchet quietly stops.

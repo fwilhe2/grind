@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-text-gtk"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native word processor for GNOME"
 edition.workspace = true
 license.workspace = true
