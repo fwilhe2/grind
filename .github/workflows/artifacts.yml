@@ -460,6 +460,15 @@ jobs:
             exit 1
           }
           Write-Host "Manifest: Common Controls 6, PerMonitorV2"
+          # The version Properties shows, and the number with a fourth part that installers compare.
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages[0].version
+          $number = ($version -split '-')[0] + ".0"
+          Write-Host "ProductVersion:   $($info.ProductVersion)"
+          Write-Host "FileVersion:      $($info.FileVersion)"
+          if ($info.ProductVersion -ne $version -or $info.FileVersion -ne $number) {
+            Write-Error "$exe says $($info.ProductVersion) ($($info.FileVersion)), not $version ($number)"
+            exit 1
+          }
 
       # The assertion that makes a drawing refactor provable (W2, `doc/windows-shell.md`
       # decision 5).
