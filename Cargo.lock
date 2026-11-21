@@ -1207,11 +1207,11 @@ dependencies = [
 
 [[package]]
 name = "grind"
-version = "0.0.0"
+version = "0.1.0-dev"
 
 [[package]]
 name = "grind-build"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "grind-cli"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "clap",
  "grind-build",
@@ -1236,6 +1236,7 @@ dependencies = [
  "grind-spell",
  "grind-text",
  "grind-xlsx",
+ "mimalloc",
  "serde",
  "serde_json",
  "signal-hook 0.4.6",
@@ -1243,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "grind-core"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "base64 0.23.1",
  "kdl",
@@ -1257,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "grind-docx"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1268,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "grind-grammar"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-spell",
@@ -1276,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "grind-lsp"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1288,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "grind-mac"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -1310,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "grind-ooxml"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "quick-xml",
@@ -1319,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "grind-open"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-docx",
@@ -1330,7 +1331,7 @@ dependencies = [
 
 [[package]]
 name = "grind-print"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "foldhash",
  "fontdb 0.24.0",
@@ -1351,7 +1352,7 @@ dependencies = [
 
 [[package]]
 name = "grind-server"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1363,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "grind-sheet"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "quick-xml",
@@ -1374,7 +1375,7 @@ dependencies = [
 
 [[package]]
 name = "grind-sheet-gtk"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "async-channel",
  "grind-core",
@@ -1387,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "grind-spell"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1397,7 +1398,7 @@ dependencies = [
 
 [[package]]
 name = "grind-text"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1407,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "grind-text-gtk"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "async-channel",
  "grind-core",
@@ -1422,7 +1423,7 @@ dependencies = [
 
 [[package]]
 name = "grind-tui"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-grammar",
@@ -1431,13 +1432,14 @@ dependencies = [
  "grind-sheet",
  "grind-spell",
  "grind-text",
+ "mimalloc",
  "ratatui",
  "unicode-width 0.2.3",
 ]
 
 [[package]]
 name = "grind-web"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1455,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "grind-web-print"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-core",
  "grind-print",
@@ -1466,7 +1468,7 @@ dependencies = [
 
 [[package]]
 name = "grind-win32"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "embed-resource",
  "grind-core",
@@ -1481,7 +1483,7 @@ dependencies = [
 
 [[package]]
 name = "grind-xlsx"
-version = "0.0.0"
+version = "0.1.0-dev"
 dependencies = [
  "grind-ooxml",
  "grind-sheet",
@@ -1976,6 +1978,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.49"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a45a52f43e1c16f667ccfe4dd8c85b7f7c204fd5e3bf46c5b0db9a5c3c0b8e9"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "line-clipping"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2100,6 +2111,15 @@ checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
 dependencies = [
  "cfg-if",
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.52"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d4139bb28d14ad1facf21d5eb8825051b326e172d216b39f6d31df53cc97862"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]

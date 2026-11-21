@@ -35,6 +35,9 @@ default-members = ["core", "sheet", "text", "build", "cli", "xlsx", "ooxml", "do
 resolver = "3"
 
 [workspace.package]
+# The suite's one version, every crate's by inheritance. `-dev` between releases; only
+# `scripts/set-version.sh` changes it, and the release workflow is what runs that.
+version = "0.1.0-dev"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/fwilhe2/grind"
@@ -97,3 +100,12 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.foldhash]
 opt-level = 3
+
+# Speed first, then size: one codegen unit and whole-program LTO inline across crates and drop
+# what no binary reaches — 12% smaller and a little faster than without, at twice the build
+# time. `opt-level = "z"` saved 17% more and was 1.5–2x slower. Nobody debugs a release build
+# from its symbols; `cargo bloat` (artifacts.yml) turns stripping back off for its own build.
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

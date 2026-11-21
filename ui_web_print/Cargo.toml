@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-web-print"
-version = "0.0.0"
+version.workspace = true
 description = "The browser shell's PDF export and print preview, as a module loaded on first use"
 edition.workspace = true
 license.workspace = true

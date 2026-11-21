@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-server"
-version = "0.0.0"
+version.workspace = true
 description = "A directory of documents behind the browser shell, on the loopback address only — doc/server.md"
 edition.workspace = true
 license.workspace = true

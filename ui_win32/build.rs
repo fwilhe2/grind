@@ -31,10 +31,11 @@ fn main() {
         // about, since the former is every host but `windows-latest` and the latter would mean
         // `grind.rc` itself is broken.
         // What `grind.rc` pulls in, which `embed_resource` does not know to watch.
-        for input in ["data/grind.manifest", "data/grind.ico"] {
+        for input in ["data/grind.rc", "data/grind.manifest", "data/grind.ico"] {
             println!("cargo:rerun-if-changed={input}");
         }
-        let result = embed_resource::compile("data/grind.rc", embed_resource::NONE);
+        let rc = filled_in(&std::env::var("CARGO_PKG_VERSION").expect("cargo sets it"));
+        let result = embed_resource::compile(&rc, embed_resource::NONE);
         // Printed unconditionally, not only on failure: `manifest_optional()` swallows
         // `Ok` and `NotAttempted` alike, so a run where the resource silently failed to embed
         // left no warning anywhere to explain why the version check after it failed.
@@ -43,4 +44,28 @@ fn main() {
             println!("cargo:warning=grind.rc failed to compile: {failed}");
         }
     }
+}
+
+/// `data/grind.rc` with this version in it, written to `OUT_DIR`, its two files named by absolute
+/// path from there. Rewritten only when it changed, since `embed_resource` watches it.
+fn filled_in(version: &str) -> std::path::PathBuf {
+    let number = version
+        .split_once('-')
+        .map_or(version, |(number, _)| number);
+    let data = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets it"))
+        .join("data");
+    let data = data.to_str().expect("a UTF-8 path").replace('\\', "/");
+    let rc = std::fs::read_to_string("data/grind.rc")
+        .expect("data/grind.rc")
+        .replace("@NUMBERS@", &format!("{},0", number.replace('.', ",")))
+        .replace("@NUMBER@", &format!("{number}.0"))
+        .replace("@VERSION@", version)
+        .replace("\"grind.ico\"", &format!("\"{data}/grind.ico\""))
+        .replace("\"grind.manifest\"", &format!("\"{data}/grind.manifest\""));
+    let out =
+        std::path::Path::new(&std::env::var("OUT_DIR").expect("cargo sets it")).join("grind.rc");
+    if std::fs::read_to_string(&out).ok().as_deref() != Some(rc.as_str()) {
+        std::fs::write(&out, rc).expect("OUT_DIR is writable");
+    }
+    out
 }

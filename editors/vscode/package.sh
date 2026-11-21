@@ -6,7 +6,7 @@
 # Build the extension into a .vsix (doc/init.md I6):
 #
 #   editors/vscode/package.sh [out-dir]       # default: target/
-#   code --install-extension target/grind-0.0.1.vsix
+#   code --install-extension target/grind-<version>.vsix
 #
 # Nothing is published: where the extension is offered is the author's decision. The licence
 # is copied in from LICENSES/ for the package's sake and never kept here, so the tree holds one

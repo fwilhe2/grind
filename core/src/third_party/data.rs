@@ -1374,13 +1374,22 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[117],
     },
     Component {
+        name: "libmimalloc-sys",
+        version: "0.1.49",
+        licence: "MIT",
+        copyright: "Copyright 2019 Octavian Oncescu",
+        source: "https://github.com/purpleprotocol/mimalloc_rust/tree/master/libmimalloc-sys",
+        kind: Kind::Crate,
+        notices: &[118],
+    },
+    Component {
         name: "line-clipping",
         version: "0.3.8",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright 2024 Josh McKinney",
         source: "https://github.com/ratatui/line-clipping",
         kind: Kind::Crate,
-        notices: &[118, 119],
+        notices: &[119, 120],
     },
     Component {
         name: "linux-raw-sys",
@@ -1389,7 +1398,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `linux-raw-sys` project are retained by their contributors.",
         source: "https://github.com/sunfishcode/linux-raw-sys",
         kind: Kind::Crate,
-        notices: &[120, 3, 121, 2],
+        notices: &[121, 3, 122, 2],
     },
     Component {
         name: "litrs",
@@ -1398,7 +1407,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Project Developers",
         source: "https://github.com/LukasKalbertodt/litrs",
         kind: Kind::Crate,
-        notices: &[8, 122],
+        notices: &[8, 123],
     },
     Component {
         name: "lock_api",
@@ -1425,7 +1434,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Jerome Froelich",
         source: "https://github.com/jeromefroe/lru-rs.git",
         kind: Kind::Crate,
-        notices: &[123],
+        notices: &[124],
     },
     Component {
         name: "lsp-server",
@@ -1443,7 +1452,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Markus Westerlind",
         source: "https://github.com/gluon-lang/lsp-types",
         kind: Kind::Crate,
-        notices: &[124],
+        notices: &[125],
     },
     Component {
         name: "mac_address",
@@ -1452,7 +1461,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2018 Wesley Norris",
         source: "https://github.com/rep-nop/mac_address",
         kind: Kind::Crate,
-        notices: &[125, 126],
+        notices: &[126, 127],
     },
     Component {
         name: "memchr",
@@ -1470,7 +1479,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2020 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/memmap2-rs",
         kind: Kind::Crate,
-        notices: &[127, 128],
+        notices: &[128, 129],
     },
     Component {
         name: "memmem",
@@ -1488,7 +1497,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Gilad Naaman",
         source: "https://github.com/Gilnaa/memoffset",
         kind: Kind::Crate,
-        notices: &[129],
+        notices: &[130],
     },
     Component {
         name: "miette",
@@ -1500,13 +1509,31 @@ pub(super) const COMPONENTS: &[Component] = &[
         notices: &[11],
     },
     Component {
+        name: "mimalloc",
+        version: "0.1.52",
+        licence: "MIT",
+        copyright: "Copyright 2019 Octavian Oncescu",
+        source: "https://github.com/purpleprotocol/mimalloc_rust",
+        kind: Kind::Crate,
+        notices: &[118],
+    },
+    Component {
+        name: "mimalloc",
+        version: "3.3.2",
+        licence: "MIT",
+        copyright: "Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen",
+        source: "https://github.com/microsoft/mimalloc",
+        kind: Kind::Library,
+        notices: &[131],
+    },
+    Component {
         name: "minimal-lexical",
         version: "0.2.1",
         licence: "MIT/Apache-2.0",
         copyright: "Copyright (c) 2009 The Go Authors.",
         source: "https://github.com/Alexhuszagh/minimal-lexical",
         kind: Kind::Crate,
-        notices: &[19, 2, 130],
+        notices: &[19, 2, 132],
     },
     Component {
         name: "miniz_oxide",
@@ -1515,7 +1542,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[131, 70, 132, 133],
+        notices: &[133, 70, 134, 135],
     },
     Component {
         name: "miniz_oxide",
@@ -1524,7 +1551,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2013-2014 RAD Game Tools and Valve Software",
         source: "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
         kind: Kind::Crate,
-        notices: &[131, 70, 132, 133],
+        notices: &[133, 70, 134, 135],
     },
     Component {
         name: "mio",
@@ -1533,7 +1560,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Carl Lerche and other MIO contributors",
         source: "https://github.com/tokio-rs/mio",
         kind: Kind::Crate,
-        notices: &[134],
+        notices: &[136],
     },
     Component {
         name: "nix",
@@ -1542,7 +1569,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[137],
     },
     Component {
         name: "nix",
@@ -1551,7 +1578,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Carl Lerche + nix-rust Authors",
         source: "https://github.com/nix-rust/nix",
         kind: Kind::Crate,
-        notices: &[135],
+        notices: &[137],
     },
     Component {
         name: "nom",
@@ -1560,7 +1587,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2019 Geoffroy Couprie",
         source: "https://github.com/Geal/nom",
         kind: Kind::Crate,
-        notices: &[136],
+        notices: &[138],
     },
     Component {
         name: "num-conv",
@@ -1569,7 +1596,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt",
         source: "https://github.com/jhpratt/num-conv",
         kind: Kind::Crate,
-        notices: &[70, 137],
+        notices: &[70, 139],
     },
     Component {
         name: "num-derive",
@@ -1596,7 +1623,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 Jacob Pratt",
         source: "https://github.com/jhpratt/num_threads",
         kind: Kind::Crate,
-        notices: &[138, 139],
+        notices: &[140, 141],
     },
     Component {
         name: "objc2",
@@ -1605,7 +1632,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[140],
+        notices: &[142],
     },
     Component {
         name: "objc2-app-kit",
@@ -1614,7 +1641,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-app-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[141],
+        notices: &[143],
     },
     Component {
         name: "objc2-core-foundation",
@@ -1623,7 +1650,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[142],
+        notices: &[144],
     },
     Component {
         name: "objc2-core-graphics",
@@ -1632,7 +1659,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-graphics authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[143],
+        notices: &[145],
     },
     Component {
         name: "objc2-core-text",
@@ -1641,7 +1668,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-core-text authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[144],
+        notices: &[146],
     },
     Component {
         name: "objc2-encode",
@@ -1650,7 +1677,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Mads Marquart <mads@marquart.dk>",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[145],
+        notices: &[147],
     },
     Component {
         name: "objc2-foundation",
@@ -1659,7 +1686,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-foundation authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[146],
+        notices: &[148],
     },
     Component {
         name: "objc2-io-surface",
@@ -1668,7 +1695,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-io-surface authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[147],
+        notices: &[149],
     },
     Component {
         name: "objc2-pdf-kit",
@@ -1677,7 +1704,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the objc2-pdf-kit authors",
         source: "https://github.com/madsmtm/objc2",
         kind: Kind::Crate,
-        notices: &[148],
+        notices: &[150],
     },
     Component {
         name: "once_cell",
@@ -1704,7 +1731,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © OASIS Open 2025 .",
         source: "https://docs.oasis-open.org/office/OpenDocument/v1.4/",
         kind: Kind::Text,
-        notices: &[149],
+        notices: &[151],
     },
     Component {
         name: "ordered-float",
@@ -1713,7 +1740,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Jonathan Reem",
         source: "https://github.com/reem/rust-ordered-float",
         kind: Kind::Crate,
-        notices: &[150],
+        notices: &[152],
     },
     Component {
         name: "palette",
@@ -1722,7 +1749,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 151],
+        notices: &[3, 153],
     },
     Component {
         name: "palette_derive",
@@ -1731,7 +1758,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 151],
+        notices: &[3, 153],
     },
     Component {
         name: "palette_math",
@@ -1740,7 +1767,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Erik Hedvall",
         source: "https://github.com/Ogeon/palette",
         kind: Kind::Crate,
-        notices: &[3, 151],
+        notices: &[3, 153],
     },
     Component {
         name: "pango",
@@ -1767,7 +1794,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014-2020 The Rust Project Developers",
         source: "https://github.com/smol-rs/parking",
         kind: Kind::Crate,
-        notices: &[3, 2, 152],
+        notices: &[3, 2, 154],
     },
     Component {
         name: "parking_lot",
@@ -1839,7 +1866,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[153],
+        notices: &[155],
     },
     Component {
         name: "phf_generator",
@@ -1848,7 +1875,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[153],
+        notices: &[155],
     },
     Component {
         name: "phf_macros",
@@ -1857,7 +1884,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[153],
+        notices: &[155],
     },
     Component {
         name: "phf_shared",
@@ -1866,7 +1893,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi",
         source: "https://github.com/rust-phf/rust-phf",
         kind: Kind::Crate,
-        notices: &[153],
+        notices: &[155],
     },
     Component {
         name: "pico-args",
@@ -1875,7 +1902,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/pico-args",
         kind: Kind::Crate,
-        notices: &[154],
+        notices: &[156],
     },
     Component {
         name: "pin-project-lite",
@@ -1893,7 +1920,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 nwin",
         source: "https://github.com/image-rs/image-png",
         kind: Kind::Crate,
-        notices: &[3, 155],
+        notices: &[3, 157],
     },
     Component {
         name: "Polish dictionary (pl_PL)",
@@ -1902,7 +1929,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) 2008 Marek Futrega, Marcin Miłkowski and the Polish Native Lang Project.",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/pl",
         kind: Kind::Dictionary,
-        notices: &[156],
+        notices: &[158],
     },
     Component {
         name: "polycool",
@@ -1929,7 +1956,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 Jacob Pratt et al.",
         source: "https://github.com/jhpratt/powerfmt",
         kind: Kind::Crate,
-        notices: &[157, 158],
+        notices: &[159, 160],
     },
     Component {
         name: "proc-macro-crate",
@@ -1956,7 +1983,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2015 Google Inc.",
         source: "https://github.com/raphlinus/pulldown-cmark",
         kind: Kind::Crate,
-        notices: &[159],
+        notices: &[161],
     },
     Component {
         name: "quick-error",
@@ -1965,7 +1992,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The quick-error Developers",
         source: "http://github.com/tailhook/quick-error",
         kind: Kind::Crate,
-        notices: &[9, 160],
+        notices: &[9, 162],
     },
     Component {
         name: "quick-xml",
@@ -1974,7 +2001,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Johann Tuffe",
         source: "https://github.com/tafia/quick-xml",
         kind: Kind::Crate,
-        notices: &[161],
+        notices: &[163],
     },
     Component {
         name: "quote",
@@ -1992,7 +2019,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[162],
+        notices: &[164],
     },
     Component {
         name: "r-efi",
@@ -2001,7 +2028,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) the r-efi authors",
         source: "https://github.com/r-efi/r-efi",
         kind: Kind::Crate,
-        notices: &[162],
+        notices: &[164],
     },
     Component {
         name: "rand",
@@ -2010,7 +2037,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[163, 164, 165],
+        notices: &[165, 166, 167],
     },
     Component {
         name: "rand_core",
@@ -2019,7 +2046,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the Rand project are retained by their contributors.",
         source: "https://github.com/rust-random/rand",
         kind: Kind::Crate,
-        notices: &[163, 166, 165],
+        notices: &[165, 168, 167],
     },
     Component {
         name: "ratatui",
@@ -2028,7 +2055,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[167],
+        notices: &[169],
     },
     Component {
         name: "ratatui-core",
@@ -2037,7 +2064,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[167],
+        notices: &[169],
     },
     Component {
         name: "ratatui-crossterm",
@@ -2046,7 +2073,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[167],
+        notices: &[169],
     },
     Component {
         name: "ratatui-macros",
@@ -2055,7 +2082,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2024 Dheepak Krishnamurthy",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[168],
+        notices: &[170],
     },
     Component {
         name: "ratatui-termina",
@@ -2064,7 +2091,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Florian Dehau <work@fdehau.com>, The Ratatui Developers",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[169],
+        notices: &[171],
     },
     Component {
         name: "ratatui-termwiz",
@@ -2073,7 +2100,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[167],
+        notices: &[169],
     },
     Component {
         name: "ratatui-widgets",
@@ -2082,7 +2109,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2022 Florian Dehau",
         source: "https://github.com/ratatui/ratatui",
         kind: Kind::Crate,
-        notices: &[167],
+        notices: &[169],
     },
     Component {
         name: "read-fonts",
@@ -2118,7 +2145,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Redox OS Developers",
         source: "https://gitlab.redox-os.org/redox-os/syscall",
         kind: Kind::Crate,
-        notices: &[170],
+        notices: &[172],
     },
     Component {
         name: "regex",
@@ -2154,7 +2181,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[70, 171],
+        notices: &[70, 173],
     },
     Component {
         name: "rgb",
@@ -2163,7 +2190,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Kornel",
         source: "https://github.com/kornelski/rust-rgb",
         kind: Kind::Crate,
-        notices: &[172],
+        notices: &[174],
     },
     Component {
         name: "rhai",
@@ -2181,7 +2208,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) jhwgh1968, Stephen Chung",
         source: "https://github.com/rhaiscript/rhai",
         kind: Kind::Crate,
-        notices: &[173],
+        notices: &[175],
     },
     Component {
         name: "RLA-ES Spanish dictionary (es_ES)",
@@ -2190,7 +2217,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (C) Santiago Bosio and the RLA-ES contributors. https://github.com/sbosio/rla-es",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/es",
         kind: Kind::Dictionary,
-        notices: &[174],
+        notices: &[176],
     },
     Component {
         name: "roxmltree",
@@ -2199,7 +2226,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 175],
+        notices: &[3, 177],
     },
     Component {
         name: "roxmltree",
@@ -2208,7 +2235,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/roxmltree",
         kind: Kind::Crate,
-        notices: &[3, 175],
+        notices: &[3, 177],
     },
     Component {
         name: "Rust standard library",
@@ -2217,7 +2244,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) The Rust Project contributors",
         source: "https://github.com/rust-lang/rust",
         kind: Kind::Runtime,
-        notices: &[176],
+        notices: &[178],
     },
     Component {
         name: "rustc-hash",
@@ -2235,7 +2262,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyrights in the `rustix` project are retained by their contributors.",
         source: "https://github.com/bytecodealliance/rustix",
         kind: Kind::Crate,
-        notices: &[177, 3, 121, 2],
+        notices: &[179, 3, 122, 2],
     },
     Component {
         name: "rustversion",
@@ -2262,7 +2289,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By David Tolnay <dtolnay@gmail.com>",
         source: "https://github.com/dtolnay/ryu",
         kind: Kind::Crate,
-        notices: &[8, 178],
+        notices: &[8, 180],
     },
     Component {
         name: "scopeguard",
@@ -2271,7 +2298,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016-2019 Ulrik Sverdrup \"bluss\" and scopeguard developers",
         source: "https://github.com/bluss/scopeguard",
         kind: Kind::Crate,
-        notices: &[3, 179],
+        notices: &[3, 181],
     },
     Component {
         name: "SCOWL English dictionary (en_US)",
@@ -2280,7 +2307,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "COPYRIGHT, SOURCES, and CREDITS:",
         source: "https://github.com/wooorm/dictionaries/tree/main/dictionaries/en",
         kind: Kind::Dictionary,
-        notices: &[180],
+        notices: &[182],
     },
     Component {
         name: "serde",
@@ -2334,7 +2361,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2006-2009 Graydon Hoare",
         source: "https://github.com/RustCrypto/hashes",
         kind: Kind::Crate,
-        notices: &[22, 181],
+        notices: &[22, 183],
     },
     Component {
         name: "signal-hook",
@@ -2343,7 +2370,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 182],
+        notices: &[3, 184],
     },
     Component {
         name: "signal-hook",
@@ -2352,7 +2379,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 182],
+        notices: &[3, 184],
     },
     Component {
         name: "signal-hook-mio",
@@ -2361,7 +2388,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 182],
+        notices: &[3, 184],
     },
     Component {
         name: "signal-hook-registry",
@@ -2370,7 +2397,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 tokio-jsonrpc developers",
         source: "https://github.com/vorner/signal-hook",
         kind: Kind::Crate,
-        notices: &[3, 182],
+        notices: &[3, 184],
     },
     Component {
         name: "simd-adler32",
@@ -2379,7 +2406,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Marvin Countryman <me@maar.vin>",
         source: "https://github.com/mcountryman/simd-adler32",
         kind: Kind::Crate,
-        notices: &[183],
+        notices: &[185],
     },
     Component {
         name: "simplecss",
@@ -2388,7 +2415,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/linebender/simplecss",
         kind: Kind::Crate,
-        notices: &[3, 184],
+        notices: &[3, 186],
     },
     Component {
         name: "siphasher",
@@ -2397,7 +2424,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2012-2016 The Rust Project Developers.",
         source: "https://github.com/jedisct1/rust-siphash",
         kind: Kind::Crate,
-        notices: &[185],
+        notices: &[187],
     },
     Component {
         name: "skrifa",
@@ -2424,7 +2451,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Carl Lerche",
         source: "https://github.com/tokio-rs/slab",
         kind: Kind::Crate,
-        notices: &[186],
+        notices: &[188],
     },
     Component {
         name: "slotmap",
@@ -2433,7 +2460,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Orson Peters <orsonpeters@gmail.com>",
         source: "https://github.com/orlp/slotmap",
         kind: Kind::Crate,
-        notices: &[187],
+        notices: &[189],
     },
     Component {
         name: "smallvec",
@@ -2442,7 +2469,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 The Servo Project Developers",
         source: "https://github.com/servo/rust-smallvec",
         kind: Kind::Crate,
-        notices: &[3, 188],
+        notices: &[3, 190],
     },
     Component {
         name: "smartstring",
@@ -2451,7 +2478,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Bodil Stokke <bodil@bodil.org>",
         source: "https://github.com/bodil/smartstring",
         kind: Kind::Crate,
-        notices: &[189],
+        notices: &[191],
     },
     Component {
         name: "spellbook",
@@ -2460,7 +2487,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Michael Davis <mcarsondavis@gmail.com>",
         source: "https://github.com/helix-editor/spellbook",
         kind: Kind::Crate,
-        notices: &[190],
+        notices: &[192],
     },
     Component {
         name: "stable_deref_trait",
@@ -2469,7 +2496,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Robert Grosse",
         source: "https://github.com/storyyeller/stable_deref_trait",
         kind: Kind::Crate,
-        notices: &[3, 191],
+        notices: &[3, 193],
     },
     Component {
         name: "static_assertions",
@@ -2478,7 +2505,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2017 Nikolai Vazquez",
         source: "https://github.com/nvzqz/static-assertions-rs",
         kind: Kind::Crate,
-        notices: &[11, 192],
+        notices: &[11, 194],
     },
     Component {
         name: "strict-num",
@@ -2487,7 +2514,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022 Yevhenii Reizner",
         source: "https://github.com/RazrFalcon/strict-num",
         kind: Kind::Crate,
-        notices: &[193],
+        notices: &[195],
     },
     Component {
         name: "strsim",
@@ -2496,7 +2523,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 Danny Guo",
         source: "https://github.com/rapidfuzz/strsim-rs",
         kind: Kind::Crate,
-        notices: &[194],
+        notices: &[196],
     },
     Component {
         name: "strum",
@@ -2505,7 +2532,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[195],
+        notices: &[197],
     },
     Component {
         name: "strum_macros",
@@ -2514,7 +2541,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Peter Glotfelty",
         source: "https://github.com/Peternator7/strum",
         kind: Kind::Crate,
-        notices: &[195],
+        notices: &[197],
     },
     Component {
         name: "subsetter",
@@ -2523,7 +2550,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/typst/subsetter",
         kind: Kind::Crate,
-        notices: &[8, 101, 196],
+        notices: &[8, 101, 198],
     },
     Component {
         name: "svgtypes",
@@ -2532,7 +2559,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/linebender/svgtypes",
         kind: Kind::Crate,
-        notices: &[3, 197],
+        notices: &[3, 199],
     },
     Component {
         name: "syn",
@@ -2568,7 +2595,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2016 Nika Layzell",
         source: "https://github.com/mystor/synstructure",
         kind: Kind::Crate,
-        notices: &[198],
+        notices: &[200],
     },
     Component {
         name: "termina",
@@ -2577,7 +2604,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2025 Michael Davis",
         source: "https://github.com/helix-editor/termina",
         kind: Kind::Crate,
-        notices: &[199, 190],
+        notices: &[201, 192],
     },
     Component {
         name: "terminfo",
@@ -2586,7 +2613,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By meh. <meh@schizofreni.co>",
         source: "https://github.com/meh/rust-terminfo",
         kind: Kind::Crate,
-        notices: &[200],
+        notices: &[202],
     },
     Component {
         name: "termios",
@@ -2595,7 +2622,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 David Cuddeback",
         source: "https://github.com/dcuddeback/termios-rs",
         kind: Kind::Crate,
-        notices: &[201],
+        notices: &[203],
     },
     Component {
         name: "termwiz",
@@ -2658,7 +2685,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[70, 202],
+        notices: &[70, 204],
     },
     Component {
         name: "time-core",
@@ -2667,7 +2694,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Jacob Pratt et al.",
         source: "https://github.com/time-rs/time",
         kind: Kind::Crate,
-        notices: &[70, 202],
+        notices: &[70, 204],
     },
     Component {
         name: "tiny-keccak",
@@ -2685,7 +2712,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia",
         kind: Kind::Crate,
-        notices: &[203],
+        notices: &[205],
     },
     Component {
         name: "tiny-skia-path",
@@ -2694,7 +2721,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2011 Google Inc.",
         source: "https://github.com/linebender/tiny-skia/tree/master/path",
         kind: Kind::Crate,
-        notices: &[203],
+        notices: &[205],
     },
     Component {
         name: "tiny_http",
@@ -2703,7 +2730,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2019 The tiny-http contributors",
         source: "https://github.com/tiny-http/tiny-http",
         kind: Kind::Crate,
-        notices: &[3, 204],
+        notices: &[3, 206],
     },
     Component {
         name: "tinyvec",
@@ -2712,7 +2739,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Daniel \"Lokathor\" Gee.",
         source: "https://github.com/Lokathor/tinyvec",
         kind: Kind::Crate,
-        notices: &[11, 205, 28],
+        notices: &[11, 207, 28],
     },
     Component {
         name: "toml_datetime",
@@ -2748,7 +2775,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Yevhenii Reizner",
         source: "https://github.com/harfbuzz/ttf-parser",
         kind: Kind::Crate,
-        notices: &[3, 197],
+        notices: &[3, 199],
     },
     Component {
         name: "typed-path",
@@ -2766,7 +2793,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2014 Paho Lurie-Gregg",
         source: "https://github.com/paholg/typenum",
         kind: Kind::Crate,
-        notices: &[206, 207, 208],
+        notices: &[208, 209, 210],
     },
     Component {
         name: "ucd-trie",
@@ -2784,7 +2811,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014-2026 Sean McArthur",
         source: "https://github.com/seanmonstar/unicase",
         kind: Kind::Crate,
-        notices: &[3, 209],
+        notices: &[3, 211],
     },
     Component {
         name: "unicode-bidi",
@@ -2793,7 +2820,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/servo/unicode-bidi",
         kind: Kind::Crate,
-        notices: &[210, 3, 20],
+        notices: &[212, 3, 20],
     },
     Component {
         name: "unicode-bidi-mirroring",
@@ -2838,7 +2865,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-properties",
         kind: Kind::Crate,
-        notices: &[211, 3, 20],
+        notices: &[213, 3, 20],
     },
     Component {
         name: "unicode-script",
@@ -2847,7 +2874,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2021 The Unicode-rs Developers",
         source: "https://github.com/unicode-rs/unicode-script",
         kind: Kind::Crate,
-        notices: &[212, 213],
+        notices: &[214, 215],
     },
     Component {
         name: "unicode-segmentation",
@@ -2856,7 +2883,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-segmentation",
         kind: Kind::Crate,
-        notices: &[211, 3, 20],
+        notices: &[213, 3, 20],
     },
     Component {
         name: "unicode-truncate",
@@ -2865,7 +2892,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Aetf <aetf@unlimitedcodeworks.xyz>",
         source: "https://github.com/Aetf/unicode-truncate",
         kind: Kind::Crate,
-        notices: &[211, 3, 214],
+        notices: &[213, 3, 216],
     },
     Component {
         name: "unicode-vo",
@@ -2874,7 +2901,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/unicode-vo",
         kind: Kind::Crate,
-        notices: &[3, 184],
+        notices: &[3, 186],
     },
     Component {
         name: "unicode-width",
@@ -2883,7 +2910,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[211, 3, 20],
+        notices: &[213, 3, 20],
     },
     Component {
         name: "unicode-width",
@@ -2892,7 +2919,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015 The Rust Project Developers",
         source: "https://github.com/unicode-rs/unicode-width",
         kind: Kind::Crate,
-        notices: &[211, 3, 20],
+        notices: &[213, 3, 20],
     },
     Component {
         name: "usvg",
@@ -2901,7 +2928,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2017 the Resvg Authors",
         source: "https://github.com/linebender/resvg",
         kind: Kind::Crate,
-        notices: &[70, 171],
+        notices: &[70, 173],
     },
     Component {
         name: "utf8parse",
@@ -2910,7 +2937,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2016 Joe Wilm",
         source: "https://github.com/alacritty/vte",
         kind: Kind::Crate,
-        notices: &[8, 215],
+        notices: &[8, 217],
     },
     Component {
         name: "uuid",
@@ -2919,7 +2946,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 The Rust Project Developers",
         source: "https://github.com/uuid-rs/uuid",
         kind: Kind::Crate,
-        notices: &[3, 216],
+        notices: &[3, 218],
     },
     Component {
         name: "vtparse",
@@ -2928,7 +2955,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[217],
+        notices: &[219],
     },
     Component {
         name: "wasi",
@@ -2937,7 +2964,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By The Cranelift Project Developers",
         source: "https://github.com/bytecodealliance/wasi",
         kind: Kind::Crate,
-        notices: &[3, 121, 2],
+        notices: &[3, 122, 2],
     },
     Component {
         name: "wasip2",
@@ -2946,7 +2973,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/bytecodealliance/wasi-rs",
         kind: Kind::Crate,
-        notices: &[3, 121, 2],
+        notices: &[3, 122, 2],
     },
     Component {
         name: "wasm-bindgen",
@@ -3009,7 +3036,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 dAxpeDDa",
         source: "https://github.com/daxpedda/web-time",
         kind: Kind::Crate,
-        notices: &[218, 219],
+        notices: &[220, 221],
     },
     Component {
         name: "weezl",
@@ -3018,7 +3045,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) HeroicKatora 2020",
         source: "https://github.com/image-rs/weezl",
         kind: Kind::Crate,
-        notices: &[3, 220],
+        notices: &[3, 222],
     },
     Component {
         name: "wezterm-bidi",
@@ -3027,7 +3054,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2022-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[221],
+        notices: &[223],
     },
     Component {
         name: "wezterm-blob-leases",
@@ -3036,7 +3063,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2023-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[222],
+        notices: &[224],
     },
     Component {
         name: "wezterm-color-types",
@@ -3045,7 +3072,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[223],
+        notices: &[225],
     },
     Component {
         name: "wezterm-dynamic",
@@ -3054,7 +3081,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-Present Wez Furlong",
         source: "https://github.com/wezterm/wezterm",
         kind: Kind::Crate,
-        notices: &[224],
+        notices: &[226],
     },
     Component {
         name: "wezterm-dynamic-derive",
@@ -3072,7 +3099,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Wez Furlong <wez@wezfurlong.org>",
         source: "https://github.com/wez/wezterm",
         kind: Kind::Crate,
-        notices: &[225],
+        notices: &[227],
     },
     Component {
         name: "winapi",
@@ -3081,7 +3108,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2015-2018 The winapi-rs Developers",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[9, 226],
+        notices: &[9, 228],
     },
     Component {
         name: "winapi-i686-pc-windows-gnu",
@@ -3090,7 +3117,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[227],
+        notices: &[229],
     },
     Component {
         name: "winapi-x86_64-pc-windows-gnu",
@@ -3099,7 +3126,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Peter Atashian <retep998@gmail.com>",
         source: "https://github.com/retep998/winapi-rs",
         kind: Kind::Crate,
-        notices: &[228],
+        notices: &[230],
     },
     Component {
         name: "windows",
@@ -3108,7 +3135,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-collections",
@@ -3117,7 +3144,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-core",
@@ -3126,7 +3153,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-future",
@@ -3135,7 +3162,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-implement",
@@ -3144,7 +3171,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-interface",
@@ -3153,7 +3180,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-link",
@@ -3162,7 +3189,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-numerics",
@@ -3171,7 +3198,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-result",
@@ -3180,7 +3207,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-strings",
@@ -3189,7 +3216,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-sys",
@@ -3198,7 +3225,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-sys",
@@ -3207,7 +3234,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-targets",
@@ -3216,7 +3243,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows-threading",
@@ -3225,7 +3252,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_aarch64_gnullvm",
@@ -3234,7 +3261,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_aarch64_msvc",
@@ -3243,7 +3270,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_i686_gnu",
@@ -3252,7 +3279,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_i686_gnullvm",
@@ -3261,7 +3288,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_i686_msvc",
@@ -3270,7 +3297,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_x86_64_gnu",
@@ -3279,7 +3306,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_x86_64_gnullvm",
@@ -3288,7 +3315,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "windows_x86_64_msvc",
@@ -3297,7 +3324,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) Microsoft Corporation.",
         source: "https://github.com/microsoft/windows-rs",
         kind: Kind::Crate,
-        notices: &[229, 230],
+        notices: &[231, 232],
     },
     Component {
         name: "winnow",
@@ -3306,7 +3333,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[231],
+        notices: &[233],
     },
     Component {
         name: "winnow",
@@ -3315,7 +3342,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/winnow-rs/winnow",
         kind: Kind::Crate,
-        notices: &[231],
+        notices: &[233],
     },
     Component {
         name: "wit-bindgen",
@@ -3324,7 +3351,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "By Alex Crichton <alex@alexcrichton.com>",
         source: "https://github.com/bytecodealliance/wit-bindgen",
         kind: Kind::Crate,
-        notices: &[3, 121, 2],
+        notices: &[3, 122, 2],
     },
     Component {
         name: "write-fonts",
@@ -3342,7 +3369,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019 Reizner Evgeniy",
         source: "https://github.com/RazrFalcon/xmlwriter",
         kind: Kind::Crate,
-        notices: &[232],
+        notices: &[234],
     },
     Component {
         name: "xmp-writer",
@@ -3360,7 +3387,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[233],
+        notices: &[235],
     },
     Component {
         name: "yoke-derive",
@@ -3369,7 +3396,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[233],
+        notices: &[235],
     },
     Component {
         name: "zerocopy",
@@ -3378,7 +3405,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[234, 235, 236],
+        notices: &[236, 237, 238],
     },
     Component {
         name: "zerocopy-derive",
@@ -3387,7 +3414,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2023 The Fuchsia Authors",
         source: "https://github.com/google/zerocopy",
         kind: Kind::Crate,
-        notices: &[234, 235, 236],
+        notices: &[236, 237, 238],
     },
     Component {
         name: "zerofrom",
@@ -3396,7 +3423,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[233],
+        notices: &[235],
     },
     Component {
         name: "zerofrom-derive",
@@ -3405,7 +3432,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright © 2020-2024 Unicode, Inc.",
         source: "https://github.com/unicode-org/icu4x",
         kind: Kind::Crate,
-        notices: &[233],
+        notices: &[235],
     },
     Component {
         name: "zeroize",
@@ -3414,7 +3441,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2018-2026 The RustCrypto Project Developers",
         source: "https://github.com/RustCrypto/utils",
         kind: Kind::Crate,
-        notices: &[11, 237],
+        notices: &[11, 239],
     },
     Component {
         name: "zeroize_derive",
@@ -3423,7 +3450,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2019-2026 The RustCrypto Project Developers",
         source: "https://github.com/RustCrypto/utils",
         kind: Kind::Crate,
-        notices: &[11, 238],
+        notices: &[11, 240],
     },
     Component {
         name: "zip",
@@ -3432,7 +3459,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
         kind: Kind::Crate,
-        notices: &[239],
+        notices: &[241],
     },
     Component {
         name: "zlib-rs",
@@ -3441,7 +3468,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "",
         source: "https://github.com/trifectatechfoundation/zlib-rs",
         kind: Kind::Crate,
-        notices: &[240],
+        notices: &[242],
     },
     Component {
         name: "zmij",
@@ -3459,7 +3486,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright 2011 Google Inc.",
         source: "https://github.com/zopfli-rs/zopfli",
         kind: Kind::Crate,
-        notices: &[241],
+        notices: &[243],
     },
     Component {
         name: "zune-core",
@@ -3468,7 +3495,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image",
         kind: Kind::Crate,
-        notices: &[11, 242, 243],
+        notices: &[11, 244, 245],
     },
     Component {
         name: "zune-jpeg",
@@ -3477,7 +3504,7 @@ pub(super) const COMPONENTS: &[Component] = &[
         copyright: "Copyright (c) zune-image developers",
         source: "https://github.com/etemesi254/zune-image/tree/dev/crates/zune-jpeg",
         kind: Kind::Crate,
-        notices: &[11, 242, 243],
+        notices: &[11, 244, 245],
     },
 ];
 
@@ -11283,6 +11310,31 @@ have been licensed under extremely permissive terms.
 ------------------------------------------------------------------------------
 
 Copyright notices are retained in src/* files where relevant."#,
+    r#"Copyright 2019 Octavian Oncescu
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE."#,
     r#"                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -12273,6 +12325,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE."#,
+    r#"MIT License
+
+Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
+following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
+EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE."#,
     r#"Minimal-lexical is dual licensed under the Apache 2.0 license as well as the MIT
 license. See the LICENCE-MIT and the LICENCE-APACHE files for the licenses.
 

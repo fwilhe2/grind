@@ -26,6 +26,8 @@ pub enum Kind {
     Runtime,
     /// A spelling dictionary compiled into a binary (`doc/spelling.md`).
     Dictionary,
+    /// A C library a crate's build script compiles into a binary.
+    Library,
 }
 
 /// One third-party component.
@@ -133,6 +135,7 @@ mod tests {
         assert!(kinds.contains(&Kind::Font));
         assert!(kinds.contains(&Kind::Runtime));
         assert!(kinds.contains(&Kind::Dictionary));
+        assert!(kinds.contains(&Kind::Library));
         assert!(kinds.contains(&Kind::Crate));
     }
 

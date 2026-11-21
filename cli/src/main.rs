@@ -315,6 +315,11 @@ fn data_root(script: &Path, data: Option<&Path>) -> Result<grind_build::Director
     grind_build::Directory::new(&root).map_err(|e| format!("--data {e}"))
 }
 
+/// musl's own allocator made the static Linux build 1.6–1.8x slower at import and recalc.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let cli = match Cli::try_parse_from(&args) {

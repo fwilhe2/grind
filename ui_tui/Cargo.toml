@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-tui"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native spreadsheet and word processor for the terminal"
 edition.workspace = true
 license.workspace = true
@@ -61,3 +61,7 @@ assets = [
     { source = "target/release/grind-tui", dest = "/usr/bin/grind-tui", mode = "755" },
     { source = "../LICENSES/AGPL-3.0-or-later.txt", dest = "/usr/share/licenses/grind-tui/AGPL-3.0-or-later.txt", mode = "644" },
 ]
+
+# musl's own allocator made the static Linux build 1.6–1.8x slower at import and recalc.
+[target.'cfg(target_env = "musl")'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }

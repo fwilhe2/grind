@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-grammar"
-version = "0.0.0"
+version.workspace = true
 description = "The built-in grammar and style checker (doc/grammar.md)"
 edition.workspace = true
 license.workspace = true

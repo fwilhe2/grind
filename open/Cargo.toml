@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-open"
-version = "0.0.0"
+version.workspace = true
 description = "What opening a file means in every shell: ODF read as it is, anything else imported to flat ODF"
 edition.workspace = true
 license.workspace = true

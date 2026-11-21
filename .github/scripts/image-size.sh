@@ -23,8 +23,8 @@
 #            platform at a time.
 #
 # Usage:
-#   image-size.sh local  ghcr.io/fwilhe2/grind:latest-amd64
-#   image-size.sh remote ghcr.io/fwilhe2/grind:latest
+#   image-size.sh local  ghcr.io/fwilhe2/grind:dev-amd64
+#   image-size.sh remote ghcr.io/fwilhe2/grind:dev
 #
 # Every row goes to stdout and, when running under Actions, to the job summary.
 

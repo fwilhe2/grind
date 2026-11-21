@@ -56,6 +56,11 @@ fn usage() -> String {
     )
 }
 
+/// musl's own allocator made the static Linux build 1.6–1.8x slower at import and recalc.
+#[cfg(target_env = "musl")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() -> ExitCode {
     let mut kind: Option<DocumentKind> = None;
     let mut path: Option<PathBuf> = None;
