@@ -25,6 +25,7 @@ use libadwaita::gtk;
 use libadwaita::prelude::*;
 use libadwaita::subclass::prelude::ObjectSubclassIsExt;
 
+use grind_text::caret::{Editor, Unit};
 use grind_text::{App, Caret};
 use gtk::glib;
 
@@ -67,12 +68,7 @@ impl Doc {
     /// A different document: back to the top, with no goal column carried over.
     pub fn reset(&self) {
         let imp = self.imp();
-        imp.caret.set(Caret {
-            block: 0,
-            offset: 0,
-        });
-        imp.anchor.set(None);
-        imp.goal_x.set(None);
+        imp.editor.replace(Editor::default());
         if let Some(adjustment) = imp.vadjustment.borrow().as_ref() {
             adjustment.set_value(0.0);
         }
@@ -80,7 +76,7 @@ impl Doc {
     }
 
     pub fn caret(&self) -> Caret {
-        self.imp().caret.get()
+        self.imp().caret()
     }
 
     /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6.
@@ -106,46 +102,33 @@ impl Doc {
     /// Select `from..to` with the caret at `to` — a found word, say. Scrolled into view like
     /// any other caret move.
     pub fn select(&self, from: Caret, to: Caret) {
-        let imp = self.imp();
-        imp.anchor.set(Some(from));
-        imp.move_caret(to, true);
+        self.imp().edit(|editor, _| {
+            editor.select(from, to);
+            Ok(())
+        });
     }
 
     /// Select the whole document, first block to last.
     pub fn select_all(&self) {
-        let imp = self.imp();
-        let Some(app) = imp.app() else { return };
-        let count = app.block_count();
-        if count == 0 {
-            return;
-        }
-        let last = count - 1;
-        let end = app.input_text(last).map_or(0, |text| text.chars().count());
-        imp.anchor.set(Some(Caret {
-            block: 0,
-            offset: 0,
-        }));
-        imp.move_caret(
-            Caret {
-                block: last,
-                offset: end,
-            },
-            true,
-        );
+        self.imp().edit(|editor, app| {
+            editor.select_all(app);
+            Ok(())
+        });
     }
 
     /// The style the next character typed will carry, when one is pending — a markdown span
     /// that just closed, or a formatting control pressed with nothing selected.
     pub fn pending(&self) -> Option<grind_text::CharStyle> {
-        self.imp().resume.borrow().clone()
+        self.imp().editor.borrow().resume.clone()
     }
 
     /// Hold `style` for the next character typed at the caret. Forgotten as soon as the caret
-    /// moves anywhere but forward by typing ([`imp::Doc::move_caret`]).
+    /// moves anywhere but forward by typing.
     pub fn set_pending(&self, style: grind_text::CharStyle) {
-        self.imp().resume.replace(Some(style));
+        self.imp().editor.borrow_mut().resume = Some(style);
+        let caret = self.caret();
         for hook in self.imp().on_moved.borrow().iter() {
-            hook(self.imp().caret.get());
+            hook(caret);
         }
     }
 
@@ -297,8 +280,7 @@ impl Doc {
     /// Set the caret from an address the user typed — `p12`, `#intro`, `§2.1.3`. A jump
     /// replaces the caret rather than extending anything, so any selection goes with it.
     pub fn go_to(&self, caret: Caret) {
-        self.imp().anchor.set(None);
-        self.imp().move_caret(caret, true);
+        self.imp().move_caret(caret);
     }
 
     /// One step deeper into a list, or one step out of it. `false` when the caret's block is
@@ -322,7 +304,7 @@ impl Doc {
         if !self.copy() {
             return false;
         }
-        self.imp().erase_back();
+        self.imp().erase(Unit::Char, false);
         true
     }
 
@@ -441,9 +423,10 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{gdk, graphene, gsk};
 
-    use crate::keymap::{self, Action, Key, Mods, Motion};
+    use crate::keymap::{self, Action, Key, Mods};
     use crate::theme::Palette;
     use grind_print::strip::{self, Strip};
+    use grind_text::caret::{Editor, Motion, Unit};
 
     type NoticeHook = Box<dyn Fn(String)>;
     type MovedHook = Box<dyn Fn(Caret)>;
@@ -454,18 +437,9 @@ mod imp {
 
     pub struct Doc {
         pub app: RefCell<Option<Arc<App>>>,
-        pub caret: Cell<Caret>,
-        /// The other end of the selection, when there is one. `None` means "no selection",
-        /// not "a selection at the caret" — see [`Doc::selection`], the one place that turns
-        /// this and the caret into a range.
-        pub anchor: Cell<Option<Caret>>,
-        /// The page x the caret is trying to keep while moving by lines ([`place::step`]).
-        /// Cleared by any horizontal move, which is what makes walking down through a short
-        /// line and out the other side come back where it started.
-        pub goal_x: Cell<Option<f32>>,
-        /// What `App::type_markdown` said the next character must be set in, so a notation
-        /// ends where its closing marker does. Handed straight back and never read here.
-        pub resume: RefCell<Option<grind_text::CharStyle>>,
+        /// The caret, the selection, the goal column, the style pending for the next character
+        /// and the input method's composition, and every edit at them.
+        pub editor: RefCell<Editor>,
         /// The document's pages, kept set between paints and told of every change.
         pub session: grind_print::session::Session,
         /// The pages and where each sits, at the zoom and width they were last asked for.
@@ -515,10 +489,6 @@ mod imp {
         /// The grammar finding the right-click menu was opened on — what `grammar.correct` and
         /// `grammar.ignore` act on.
         pub grammar_spot: RefCell<Option<grind_text::grammar::Flag>>,
-        /// The grammar rules the person ignores, which are not drawn.
-        /// What the input method is composing and has not committed, set into the document at
-        /// its caret (`App::compose`).
-        pub preedit: Cell<Option<Composing>>,
         /// What the find bar looks for, and where it is, in document order.
         pub needle: RefCell<Option<String>>,
         pub found: RefCell<Vec<(Caret, Caret)>>,
@@ -531,13 +501,7 @@ mod imp {
         fn default() -> Self {
             Doc {
                 app: RefCell::new(None),
-                caret: Cell::new(Caret {
-                    block: 0,
-                    offset: 0,
-                }),
-                anchor: Cell::new(None),
-                goal_x: Cell::new(None),
-                resume: RefCell::new(None),
+                editor: RefCell::default(),
                 session: grind_print::session::Session::new(false),
                 shown: RefCell::new(None),
                 tiles: RefCell::new(HashMap::new()),
@@ -563,7 +527,6 @@ mod imp {
                 speller: RefCell::new(None),
                 spot: RefCell::new(None),
                 grammar_spot: RefCell::new(None),
-                preedit: Cell::new(None),
                 needle: RefCell::new(None),
                 found: RefCell::new(Vec::new()),
             }
@@ -1095,12 +1058,18 @@ mod imp {
         ) {
             let palette = self.palette();
             let (set, strip) = (&shown.set, &shown.strip);
-            let composing = self.preedit.get();
-            // Inside a composition the caret is where the input method says.
-            let caret = composing.map_or(self.caret.get(), |composing| Caret {
-                block: composing.at.block,
-                offset: composing.at.offset + composing.cursor,
-            });
+            let (caret, composing) = {
+                let editor = self.editor.borrow();
+                // Inside a composition the caret is where the input method says.
+                let composing = editor.composing.as_ref().map(|composing| {
+                    let end = Caret {
+                        offset: editor.caret.offset + composing.text.chars().count(),
+                        ..editor.caret
+                    };
+                    (editor.caret, end)
+                });
+                (editor.shown_caret(), composing)
+            };
             let selection = self.selection();
             // A run of text as rectangles in the strip, one per line it crosses.
             let bands = |from: Caret, to: Caret| {
@@ -1136,12 +1105,8 @@ mod imp {
                 }
             }
             // The composition is underlined until it is committed.
-            if let Some(composing) = composing {
-                let end = Caret {
-                    block: composing.at.block,
-                    offset: composing.at.offset + composing.len,
-                };
-                for (x, y, w, h) in bands(composing.at, end) {
+            if let Some((start, end)) = composing {
+                for (x, y, w, h) in bands(start, end) {
                     snapshot.append_color(&palette.on_paper, &rect(x, y + h - 2.0, w, 1.0));
                 }
             }
@@ -1258,16 +1223,14 @@ mod imp {
                 Action::Move(motion) => self.go(motion, mods.shift),
                 Action::Split => self.split(),
                 Action::PageBreak => self.page_break(),
-                Action::EraseBack => self.erase_back(),
-                Action::EraseForward => self.erase_forward(),
-                Action::EraseWord(delta) => self.erase_word(delta),
+                Action::EraseBack => self.erase(Unit::Char, false),
+                Action::EraseForward => self.erase(Unit::Char, true),
+                Action::EraseWord(delta) => self.erase(Unit::Word, delta > 0),
                 // Tab is structural where there is structure to change — it nests a list item, it
                 // indents a block from its front — and a `text:tab` mid-sentence. Shift+Tab with
                 // nothing to un-nest does nothing.
                 Action::Indent(by) => {
-                    if !self.indent(by) && by > 0 {
-                        self.type_text("\t");
-                    }
+                    self.edit(|editor, app| editor.tab(app, by < 0));
                 }
             }
             glib::Propagation::Stop
@@ -1278,13 +1241,13 @@ mod imp {
         /// mean a tab character.
         pub fn indent(&self, by: i32) -> bool {
             let Some(app) = self.app() else { return false };
-            let index = self.caret.get().block;
+            let caret = self.caret();
+            let index = caret.block;
             let viewport = app.get_viewport(index..index + 1);
             let Some(block) = viewport.get(index) else {
                 return false;
             };
-            let Some(kind) = grind_text::indent_kind(&block.kind, self.caret.get().offset, by)
-            else {
+            let Some(kind) = grind_text::indent_kind(&block.kind, caret.offset, by) else {
                 return false;
             };
             if let Err(error) = app.set_kind(index, kind) {
@@ -1293,81 +1256,45 @@ mod imp {
             true
         }
 
-        /// Every motion, routed to the core. `extend` is Shift: it grows the selection from
-        /// wherever the caret was rather than replacing it, the way every other editor's
-        /// Shift+arrow does.
+        /// Every motion, routed to the core's editor over the pages. `extend` is Shift: it grows
+        /// the selection from wherever the caret was. A page is however many of the caret's lines
+        /// fit, less one, so the line you were reading is still on screen after the jump.
         pub fn go(&self, motion: Motion, extend: bool) {
-            let Some(app) = self.app() else { return };
-            if app.block_count() == 0 {
-                return;
-            }
-            let caret = self.caret.get();
-            match extend {
-                true if self.anchor.get().is_none() => self.anchor.set(Some(caret)),
-                false => self.anchor.set(None),
-                true => {}
-            }
-            match motion {
-                Motion::Char(delta) => {
-                    self.goal_x.set(None);
-                    self.move_caret(self.stepped(&app, delta), true);
-                }
-                Motion::Word(delta) => {
-                    self.goal_x.set(None);
-                    self.move_caret(self.word_stepped(&app, delta), true);
-                }
-                Motion::Line(steps) | Motion::Page(steps) => {
-                    let Some(shown) = self.shown() else { return };
-                    let spot = place::locate(&shown.set, caret);
-                    // A page is however many of the caret's lines fit, less one so that the line
-                    // you were reading is still on screen after the jump.
-                    let lines = match (motion, spot) {
-                        (Motion::Page(_), Some(spot)) => {
-                            let line = f64::from(spot.height) * shown.strip.scale();
-                            ((f64::from(self.obj().height()) / line.max(1.0)) as isize - 1).max(1)
-                        }
-                        _ => 1,
-                    };
-                    // Remembered across a run of Down presses, which is what `goal_x` is for.
-                    let goal = self.goal_x.get().or(spot.map(|spot| spot.x)).unwrap_or(0.0);
-                    self.goal_x.set(Some(goal));
-                    let delta = steps as isize * lines;
-                    self.move_caret(place::step(&shown.set, caret, delta, goal), false);
-                }
-                Motion::LineStart | Motion::LineEnd => {
-                    self.goal_x.set(None);
-                    let bounds = self
-                        .shown()
-                        .and_then(|shown| place::line_bounds(&shown.set, caret));
-                    if let Some((start, end)) = bounds {
-                        self.move_caret(
-                            match motion {
-                                Motion::LineStart => start,
-                                _ => end,
-                            },
-                            true,
-                        );
-                    }
-                }
-                Motion::DocStart => self.move_caret(grind_text::caret::START, true),
-                Motion::DocEnd => self.move_caret(grind_text::caret::end(&app), true),
-            }
+            let Some(shown) = self.shown() else { return };
+            let page = place::locate(&shown.set, self.caret()).map_or(1, |spot| {
+                let line = f64::from(spot.height) * shown.strip.scale();
+                ((f64::from(self.obj().height()) / line.max(1.0)) as isize - 1).max(1)
+            });
+            self.end_composition();
+            self.edit(|editor, app| {
+                editor.navigate(app, &*shown.set, motion, extend, page);
+                Ok(())
+            });
         }
 
-        /// One character left or right, rolling onto the neighbouring block at either end —
-        /// `grind_text::caret::step`, which every shell's page shares.
-        fn stepped(&self, app: &App, delta: i32) -> Caret {
-            grind_text::caret::step(app, self.caret.get(), delta)
+        /// The caret, where an edit lands.
+        pub fn caret(&self) -> Caret {
+            self.editor.borrow().caret
         }
 
-        /// Where a word motion from the caret lands — `grind_text::caret::word`, the rule this
-        /// window and the Mac share.
-        fn word_stepped(&self, app: &App, delta: i32) -> Caret {
-            grind_text::caret::word(app, self.caret.get(), delta)
-        }
-
-        fn block_len(&self, app: &App, index: usize) -> usize {
-            grind_text::caret::block_len(app, index)
+        /// One change to the editor, then everything a changed caret asks for ([`Doc::settle`]);
+        /// a refusal is the core's sentence, told to the listeners.
+        pub fn edit<T>(
+            &self,
+            change: impl FnOnce(&mut Editor, &App) -> Result<T, String>,
+        ) -> Option<T> {
+            let app = self.app()?;
+            let result = change(&mut self.editor.borrow_mut(), &app);
+            match result {
+                Ok(value) => {
+                    self.settle(&app);
+                    Some(value)
+                }
+                Err(error) => {
+                    self.notice(error);
+                    None
+                }
+            }
         }
 
         /// The caret a point in the widget means: the page under it, or the nearer of two, and
@@ -1389,12 +1316,11 @@ mod imp {
             let Some(caret) = self.caret_at(x, y) else {
                 return;
             };
-            match shift {
-                true if self.anchor.get().is_none() => self.anchor.set(Some(self.caret.get())),
-                false => self.anchor.set(Some(caret)),
-                true => {}
-            }
-            self.move_caret(caret, true);
+            self.end_composition();
+            self.edit(|editor, _| {
+                editor.place(caret, shift);
+                Ok(())
+            });
         }
 
         /// How many presses in a row this one makes: one more than the last when it came within
@@ -1430,27 +1356,18 @@ mod imp {
         /// [`grind_text::word::around`]'s, so every shell that selects one agrees on where it
         /// ends.
         pub fn select_around(&self, x: f64, y: f64, block: bool) {
-            let Some(app) = self.app() else { return };
             let Some(caret) = self.caret_at(x, y) else {
                 return;
             };
-            let text = app.input_text(caret.block).unwrap_or_default();
-            let (start, end) = if block {
-                (0, text.chars().count())
-            } else {
-                grind_text::word::around(&text, caret.offset)
-            };
-            self.anchor.set(Some(Caret {
-                block: caret.block,
-                offset: start,
-            }));
-            self.move_caret(
-                Caret {
-                    block: caret.block,
-                    offset: end,
-                },
-                true,
-            );
+            self.end_composition();
+            self.edit(|editor, app| {
+                if block {
+                    editor.select_block(app, caret);
+                } else {
+                    editor.select_word(app, caret);
+                }
+                Ok(())
+            });
         }
 
         /// Open the right-click menu at a point, moving the caret there first unless the point
@@ -1478,8 +1395,7 @@ mod imp {
                     .selection()
                     .is_some_and(|(from, to)| from <= caret && caret <= to);
                 if !inside {
-                    self.anchor.set(None);
-                    self.move_caret(caret, true);
+                    self.move_caret(caret);
                 }
             }
             menu.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
@@ -1533,16 +1449,10 @@ mod imp {
                         .collect()
                 });
             match app.correct(flag.caret(), &covered, with) {
-                Ok(()) => {
-                    self.anchor.set(None);
-                    self.move_caret(
-                        Caret {
-                            offset: range.start + with.chars().count(),
-                            ..flag.caret()
-                        },
-                        true,
-                    );
-                }
+                Ok(()) => self.move_caret(Caret {
+                    offset: range.start + with.chars().count(),
+                    ..flag.caret()
+                }),
                 Err(error) => self.notice(error.to_string()),
             }
         }
@@ -1577,16 +1487,10 @@ mod imp {
                 offset: wrong.offset,
             };
             match app.correct(at, &wrong.word, with) {
-                Ok(()) => {
-                    self.anchor.set(None);
-                    self.move_caret(
-                        Caret {
-                            offset: wrong.offset + with.chars().count(),
-                            ..at
-                        },
-                        true,
-                    );
-                }
+                Ok(()) => self.move_caret(Caret {
+                    offset: wrong.offset + with.chars().count(),
+                    ..at
+                }),
                 Err(error) => self.notice(error.to_string()),
             }
         }
@@ -1630,7 +1534,7 @@ mod imp {
         }
 
         pub fn caret_rect(&self) -> Option<gtk::gdk::Rectangle> {
-            let (x, y, height) = self.point_of(self.caret.get())?;
+            let (x, y, height) = self.point_of(self.caret())?;
             Some(gtk::gdk::Rectangle::new(
                 x as i32,
                 y as i32,
@@ -1656,15 +1560,17 @@ mod imp {
             let Some(caret) = self.caret_at(x, y) else {
                 return;
             };
-            self.move_caret(caret, true);
+            self.edit(|editor, _| {
+                editor.place(caret, true);
+                Ok(())
+            });
         }
 
         // --- selection ---
 
-        /// The selected range in document order. `None` both when nothing was selected and when
-        /// the anchor and caret coincide again.
+        /// The selected range in document order, or `None` when nothing is selected.
         pub fn selection(&self) -> Option<(Caret, Caret)> {
-            grind_text::caret::selection(self.anchor.get(), self.caret.get())
+            self.editor.borrow().selection()
         }
 
         // --- the clipboard ---
@@ -1673,83 +1579,26 @@ mod imp {
         /// block boundary, and `\n` is what every other application means by one.
         pub fn selected_text(&self) -> Option<String> {
             let app = self.app()?;
-            let (from, to) = self.selection()?;
-            let mut out = String::new();
-            for index in from.block..=to.block {
-                let text = app.input_text(index).ok()?;
-                let chars: Vec<char> = text.chars().collect();
-                let start = if index == from.block { from.offset } else { 0 };
-                let end = if index == to.block {
-                    to.offset
-                } else {
-                    chars.len()
-                };
-                if index > from.block {
-                    out.push('\n');
-                }
-                out.extend(&chars[start.min(chars.len())..end.min(chars.len())]);
-            }
-            Some(out)
+            self.editor.borrow().selected_text(&app)
         }
 
         /// Text in at the caret, replacing the selection; a newline splits a block, as pasting two
         /// paragraphs must. Pasted text is **not** read as markdown, unlike [`Doc::type_text`]:
         /// turning somebody's asterisks into bold would be editing what it was handed.
         pub fn paste_text(&self, text: &str) {
-            let Some(app) = self.app() else { return };
-            let mut caret = self.consume_selection(&app);
-            for (index, line) in text.replace("\r\n", "\n").split('\n').enumerate() {
-                if index > 0 {
-                    if let Err(error) = app.split_block(caret) {
-                        return self.notice(error.to_string());
-                    }
-                    caret = Caret {
-                        block: caret.block + 1,
-                        offset: 0,
-                    };
-                }
-                if line.is_empty() {
-                    continue;
-                }
-                match app.insert_text(caret, line) {
-                    Ok(()) => caret.offset += line.chars().count(),
-                    Err(error) => return self.notice(error.to_string()),
-                }
-            }
-            self.move_caret(caret, true);
+            self.end_composition();
+            self.edit(|editor, app| editor.paste(app, text));
         }
 
         // --- editing ---
 
-        /// If there is a selection, erase it and hand back the caret it collapses to —
-        /// what typing a character, or Enter, over a selection does in every editor. Returns
-        /// the caret unchanged when there is nothing selected.
-        fn consume_selection(&self, app: &App) -> Caret {
-            // The anchor goes whether or not it made a selection: a click plants one at the caret
-            // for a drag to grow from, and left there it would turn the next character typed into
-            // a selection the one after replaces (`a_click_then_two_keystrokes_types_both`).
-            let selection = self.selection();
-            self.anchor.set(None);
-            let Some((from, to)) = selection else {
-                return self.caret.get();
-            };
-            match app.erase(from, to) {
-                Ok(_) => from,
-                Err(error) => {
-                    self.notice(error.to_string());
-                    self.caret.get()
-                }
-            }
-        }
-
         /// A typed character, read as markdown-shaped notation as it lands
         /// (`grind_text::markdown`): `**bold**` becomes bold and its markers go, `# ` makes a
-        /// heading, three backticks fence a code paragraph. One `App::type_markdown` action, so one Ctrl+Z
-        /// takes back the whole of `**bold**`.
+        /// heading, three backticks fence a code paragraph. One `App::type_markdown` action, so one
+        /// Ctrl+Z takes back the whole of `**bold**`. The input method's commit arrives here too,
+        /// and its typing takes the composition out of the document.
         pub fn type_text(&self, text: &str) {
             let Some(app) = self.app() else { return };
-            // The commit's typing takes the composition out of the document first.
-            self.preedit.set(None);
             // A document with no blocks at all has nowhere to put a character, and the first
             // thing anybody does with an empty window is type into it.
             if app.block_count() == 0
@@ -1757,119 +1606,37 @@ mod imp {
             {
                 return self.notice(error.to_string());
             }
-            let caret = self.consume_selection(&app);
-            // Cloned out first: a `borrow()` in the scrutinee lives for the whole `match`, and
-            // the arm below takes a `borrow_mut()` of the same cell.
-            let resume = self.resume.borrow().clone();
-            match app.type_markdown(caret, text, resume.as_ref()) {
-                Ok(typed) => {
-                    self.goal_x.set(None);
-                    *self.resume.borrow_mut() = typed.resume;
-                    self.place_caret(typed.caret, true);
-                }
-                Err(error) => self.notice(error.to_string()),
-            }
+            self.edit(|editor, app| editor.type_text(app, text));
         }
 
         pub fn split(&self) {
-            let Some(app) = self.app() else { return };
-            let caret = self.consume_selection(&app);
-            match app.split_block(caret) {
-                Ok(()) => self.move_caret(
-                    Caret {
-                        block: caret.block + 1,
-                        offset: 0,
-                    },
-                    true,
-                ),
-                Err(error) => self.notice(error.to_string()),
-            }
+            self.edit(Editor::split);
         }
 
         /// Ctrl+Enter: the split Enter makes, the second part starting a page
         /// (`App::break_page`). Backspace at the front of that page joins them again.
         pub fn page_break(&self) {
-            let Some(app) = self.app() else { return };
-            let caret = self.consume_selection(&app);
-            match app.break_page(caret) {
-                Ok(()) => self.move_caret(
-                    Caret {
-                        block: caret.block + 1,
-                        offset: 0,
-                    },
-                    true,
-                ),
-                Err(error) => self.notice(error.to_string()),
-            }
+            self.edit(Editor::break_page);
         }
 
-        /// Backspace: erases the selection if there is one, otherwise the character before
-        /// the caret — and at the front of a block the boundary itself, which is what
-        /// [`App::erase`] across one already does.
-        pub fn erase_back(&self) {
-            let Some(app) = self.app() else { return };
-            if let Some((from, to)) = self.selection() {
-                self.anchor.set(None);
-                match app.erase(from, to) {
-                    Ok(_) => self.move_caret(from, true),
-                    Err(error) => self.notice(error.to_string()),
-                }
-                return;
-            }
-            // No selection, but perhaps an anchor a click left at the caret — which an edit
-            // must not leave behind, or the next one erases across it (`consume_selection`).
-            self.anchor.set(None);
-            self.erase_to(&app, self.stepped(&app, -1));
-        }
-
-        /// Erase from the caret to where a motion landed, and put the caret at the earlier end.
-        fn erase_to(&self, app: &App, other: Caret) {
-            let caret = self.caret.get();
-            match grind_text::caret::erase_to(app, caret, other) {
-                Ok(at) if at != caret => self.move_caret(at, true),
-                Ok(_) => {}
-                Err(error) => self.notice(error.to_string()),
-            }
-        }
-
-        /// Ctrl+Backspace and Ctrl+Delete: erase as far as the word motion the same way would
-        /// land — or, over a selection, just the selection, as the plain keys do.
-        pub fn erase_word(&self, delta: i32) {
-            let Some(app) = self.app() else { return };
-            if self.selection().is_some() {
-                return if delta > 0 {
-                    self.erase_forward();
-                } else {
-                    self.erase_back();
-                };
-            }
-            self.anchor.set(None);
-            self.erase_to(&app, self.word_stepped(&app, delta));
-        }
-
-        pub fn erase_forward(&self) {
-            let Some(app) = self.app() else { return };
-            if let Some((from, to)) = self.selection() {
-                self.anchor.set(None);
-                match app.erase(from, to) {
-                    Ok(_) => self.move_caret(from, true),
-                    Err(error) => self.notice(error.to_string()),
-                }
-                return;
-            }
-            self.anchor.set(None);
-            self.erase_to(&app, self.stepped(&app, 1));
+        /// Backspace and Delete, by a character or a word: the selection if there is one,
+        /// otherwise as far as that motion goes — and at a block's edge the boundary itself.
+        pub fn erase(&self, unit: Unit, forward: bool) {
+            let Some(shown) = self.shown() else { return };
+            self.end_composition();
+            self.edit(|editor, app| editor.erase(app, &*shown.set, unit, forward));
         }
 
         // --- the caret ---
 
-        /// Put the caret somewhere, and forget any style it was holding for the next character: a
-        /// pending Bold belongs to where it was pressed. Typing keeps it, through
-        /// [`Doc::place_caret`].
-        pub fn move_caret(&self, caret: Caret, clear_goal: bool) {
-            self.resume.replace(None);
+        /// Put the caret somewhere with nothing selected, and forget any style it was holding for
+        /// the next character: a pending Bold belongs to where it was pressed.
+        pub fn move_caret(&self, caret: Caret) {
             self.end_composition();
-            self.place_caret(caret, clear_goal);
+            self.edit(|editor, _| {
+                editor.place(caret, false);
+                Ok(())
+            });
         }
 
         /// The input method's text, `cursor` characters into it, set into the document at the
@@ -1877,56 +1644,36 @@ mod imp {
         /// again when `text` is empty.
         pub(super) fn compose(&self, text: &str, cursor: usize) {
             let Some(app) = self.app() else { return };
-            if text.is_empty() {
-                if let Some(composing) = self.preedit.take() {
-                    let _ = app.compose(composing.at, "", None);
-                }
-                self.obj().queue_draw();
-                return;
-            }
-            let at = match self.preedit.get() {
-                Some(composing) => composing.at,
-                None => self.consume_selection(&app),
-            };
-            let resume = self.resume.borrow().clone();
-            match app.compose(at, text, resume.as_ref()) {
+            let result = self.editor.borrow_mut().mark(&app, text, cursor..cursor);
+            match result {
                 Ok(()) => {
-                    let len = text.chars().count();
-                    self.preedit.set(Some(Composing {
-                        at,
-                        len,
-                        cursor: cursor.min(len),
-                    }));
                     self.scroll_into_view();
                     self.obj().queue_draw();
                 }
-                Err(error) => self.notice(error.to_string()),
+                Err(error) => self.notice(error),
             }
         }
 
         /// A composition the caret leaves is dropped, here and in the input method.
         fn end_composition(&self) {
-            if let Some(composing) = self.preedit.take() {
-                self.im.reset();
-                if let Some(app) = self.app() {
-                    let _ = app.compose(composing.at, "", None);
-                }
+            if self.editor.borrow().composing.is_none() {
+                return;
+            }
+            self.im.reset();
+            if let Some(app) = self.app() {
+                self.editor.borrow_mut().end_composing(&app);
             }
         }
 
-        /// The one place the caret changes: keep it inside the document, scroll it into view,
-        /// tell the listeners, repaint. [`Doc::move_caret`] without forgetting the pending style.
-        fn place_caret(&self, caret: Caret, clear_goal: bool) {
-            self.caret.set(caret);
-            if clear_goal {
-                self.goal_x.set(None);
-            }
-            self.clamp_caret();
+        /// Everything a changed caret asks for: inside the document, scrolled into view, told to
+        /// assistive technology and the listeners, blinking again, repainted.
+        fn settle(&self, app: &App) {
+            self.editor.borrow_mut().clamp(app);
             self.scroll_into_view();
             self.announce();
             self.blink();
             self.obj().queue_draw();
-            let caret = self.caret.get();
+            let caret = self.caret();
             for hook in self.on_moved.borrow().iter() {
                 hook(caret);
             }
@@ -2015,10 +1762,7 @@ mod imp {
         /// that exists.
         pub fn clamp_caret(&self) {
             let Some(app) = self.app() else { return };
-            let mut caret = self.caret.get();
-            caret.block = caret.block.min(app.block_count().saturating_sub(1));
-            caret.offset = caret.offset.min(self.block_len(&app, caret.block));
-            self.caret.set(caret);
+            self.editor.borrow_mut().clamp(&app);
         }
 
         pub(super) fn scroll_into_view(&self) {
@@ -2032,7 +1776,7 @@ mod imp {
             // its old end — so the caret stopped a line short of the view. Size it now.
             self.size_scrollbars(widget.width(), widget.height());
             let Some(shown) = self.shown() else { return };
-            let Some((x, y, height)) = spot_of(&shown, self.caret.get()) else {
+            let Some((x, y, height)) = spot_of(&shown, self.caret()) else {
                 return;
             };
             let (across, down) = shown.strip.size();
@@ -2073,7 +1817,7 @@ mod imp {
         /// technology the caret moved, so every move speaks the block's address and text.
         fn announce(&self) {
             let Some(app) = self.app() else { return };
-            let caret = self.caret.get();
+            let caret = self.caret();
             let address = loc::format_offset(caret.block, caret.offset);
             let message = match app.input_text(caret.block) {
                 Ok(text) if !text.is_empty() => format!("{address}: {text}"),
@@ -2102,14 +1846,6 @@ mod imp {
     }
 
     /// One page's pixels, and the page and scale they were drawn from.
-    /// An input method's composition: where it is set, how many characters, and its caret.
-    #[derive(Clone, Copy, Debug)]
-    pub struct Composing {
-        pub at: Caret,
-        pub len: usize,
-        pub cursor: usize,
-    }
-
     pub struct Tile {
         page: std::sync::Arc<grind_print::ops::Page>,
         scale: u32,
@@ -2437,13 +2173,10 @@ mod tests {
     fn typing_enter_and_backspace_reach_the_document() {
         let (doc, app) = shell(&["hello world"]);
         let imp = doc.imp();
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 5,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 5,
+        });
         imp.type_text(" there");
         assert_eq!(text(&app), "hello there world");
         assert_eq!(doc.caret().offset, 11, "the caret follows what was typed");
@@ -2459,7 +2192,7 @@ mod tests {
         );
 
         // Backspace at the front of a block joins it back onto the one above.
-        imp.erase_back();
+        imp.erase(Unit::Char, false);
         assert_eq!(text(&app), "hello there world");
         assert_eq!(doc.caret().offset, 11);
 
@@ -2539,13 +2272,10 @@ mod tests {
         let imp = doc.imp();
         for _ in 0..60 {
             let last = app.block_count() - 1;
-            imp.move_caret(
-                Caret {
-                    block: last,
-                    offset: 0,
-                },
-                true,
-            );
+            imp.move_caret(Caret {
+                block: last,
+                offset: 0,
+            });
             imp.split();
             // What the window's observer does once the edit has released the lock.
             doc.invalidate();
@@ -2567,17 +2297,14 @@ mod tests {
     fn shift_extends_a_selection_and_typing_replaces_it() {
         let (doc, app) = shell(&["hello world"]);
         let imp = doc.imp();
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 0,
+        });
         assert_eq!(doc.selection(), None, "no selection yet");
 
         for _ in 0..5 {
-            imp.go(crate::keymap::Motion::Char(1), true);
+            imp.go(grind_text::caret::Motion::Char(1), true);
         }
         assert_eq!(
             doc.selection(),
@@ -2596,20 +2323,17 @@ mod tests {
 
         // A plain (non-Shift) move drops the selection rather than replacing it with a new
         // one-character one.
-        imp.go(crate::keymap::Motion::Char(1), false);
+        imp.go(grind_text::caret::Motion::Char(1), false);
         assert_eq!(doc.selection(), None);
 
         // Re-select "hello" and type over it: the selection is erased first, same as every
         // other editor's Shift+arrow-then-type.
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 5,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 5,
+        });
         for _ in 0..5 {
-            imp.go(crate::keymap::Motion::Char(-1), true);
+            imp.go(grind_text::caret::Motion::Char(-1), true);
         }
         imp.type_text("goodbye");
         assert_eq!(text(&app), "goodbye world");
@@ -2683,8 +2407,8 @@ mod tests {
 
         let (x, y) = point_of(&doc, 5);
         imp.click(x, y, false);
-        imp.erase_back();
-        imp.erase_back();
+        imp.erase(Unit::Char, false);
+        imp.erase(Unit::Char, false);
         assert_eq!(text(&app), "helxy world", "both Backspaces erase backwards");
     }
 
@@ -2729,7 +2453,7 @@ mod tests {
             block: 0,
             offset: 5,
         };
-        imp.move_caret(end, true);
+        imp.move_caret(end);
         let mut bold = grind_text::CharStyle::default();
         bold.set_bold(true);
         doc.set_pending(bold.clone());
@@ -2749,29 +2473,23 @@ mod tests {
         let mut italic = grind_text::CharStyle::default();
         italic.set_italic(true);
         doc.set_pending(italic);
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 0,
+        });
         assert_eq!(doc.pending(), None, "a caret that moves forgets it");
     }
 
     /// Ctrl+Right to the end of each word, across into the next block, and Ctrl+Backspace
     /// taking back exactly the word before the caret.
     fn ctrl_arrows_move_by_word_and_ctrl_backspace_erases_one() {
-        use crate::keymap::Motion;
+        use grind_text::caret::Motion;
         let (doc, app) = shell(&["don't panic", "now"]);
         let imp = doc.imp();
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 0,
+        });
         let at = |block, offset| Caret { block, offset };
         let mut seen = Vec::new();
         for _ in 0..4 {
@@ -2787,7 +2505,7 @@ mod tests {
         );
 
         doc.go_to(at(0, 11));
-        imp.erase_word(-1);
+        imp.erase(Unit::Word, false);
         assert_eq!(text(&app), "don't \nnow");
     }
 
@@ -2955,23 +2673,23 @@ mod tests {
             "the fixture has to actually wrap or this proves nothing"
         );
 
-        imp.go(crate::keymap::Motion::Line(1), false);
+        imp.go(grind_text::caret::Motion::Line(1), false);
         assert_eq!(doc.caret().block, 0, "still inside the same paragraph");
         assert!(doc.caret().offset > 0, "but further down it");
 
         // Off the end of the last line, the same key carries into the next block — a
         // document is one flow, not a list of boxes.
         for _ in 1..lines {
-            imp.go(crate::keymap::Motion::Line(1), false);
+            imp.go(grind_text::caret::Motion::Line(1), false);
         }
         assert_eq!(doc.caret().block, 1);
         assert_eq!(app.block_count(), 2, "and nothing was edited on the way");
 
         // Home and End are the ends of the placed line.
-        imp.go(crate::keymap::Motion::LineEnd, false);
+        imp.go(grind_text::caret::Motion::LineEnd, false);
         assert_eq!(doc.caret().offset, 5);
         let start = place::line_bounds(&shown.set, doc.caret()).map(|(start, _)| start);
-        imp.go(crate::keymap::Motion::LineStart, false);
+        imp.go(grind_text::caret::Motion::LineStart, false);
         assert_eq!(Some(doc.caret()), start);
     }
 
@@ -2980,13 +2698,10 @@ mod tests {
     fn typing_markdown_formats_the_span() {
         let (doc, app) = shell(&[""]);
         let imp = doc.imp();
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 0,
+        });
         for c in "say **this** now".chars() {
             imp.type_text(&c.to_string());
         }
@@ -3042,13 +2757,10 @@ mod tests {
                 .x
         };
         let two = x_of(4);
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 4,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 4,
+        });
         imp.compose("かな", 1);
         assert_eq!(text(&app), "one かなtwo");
         assert!(x_of(6) > two, "what follows moved along");
@@ -3059,7 +2771,7 @@ mod tests {
         imp.type_text("かな");
         assert_eq!(text(&app), "one かなtwo", "committed once");
         assert_eq!(
-            imp.caret.get(),
+            imp.caret(),
             Caret {
                 block: 0,
                 offset: 6
@@ -3067,15 +2779,12 @@ mod tests {
         );
 
         imp.compose("x", 1);
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 0,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 0,
+        });
         assert_eq!(text(&app), "one かなtwo", "dropped");
-        assert!(imp.preedit.get().is_none());
+        assert!(imp.editor.borrow().composing.is_none());
     }
 
     /// Zooming in about a point leaves the same spot of the same page under it, and the
@@ -3213,13 +2922,10 @@ mod tests {
         );
 
         // Mid-word there is nothing structural to do, and the caller types a tab instead.
-        imp.move_caret(
-            Caret {
-                block: 0,
-                offset: 3,
-            },
-            true,
-        );
+        imp.move_caret(Caret {
+            block: 0,
+            offset: 3,
+        });
         assert!(!imp.indent(1));
         assert_eq!(kind(), BlockKind::Paragraph);
     }
@@ -3229,23 +2935,15 @@ mod tests {
     fn the_clipboards_two_halves_are_plain_text_and_blocks() {
         let (doc, app) = shell(&["first line", "second line"]);
         let imp = doc.imp();
-        imp.move_caret(
+        doc.select(
             Caret {
                 block: 0,
                 offset: 6,
             },
-            true,
-        );
-        imp.anchor.set(Some(Caret {
-            block: 0,
-            offset: 6,
-        }));
-        imp.move_caret(
             Caret {
                 block: 1,
                 offset: 6,
             },
-            true,
         );
         assert_eq!(
             imp.selected_text().as_deref(),

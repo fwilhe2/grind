@@ -226,39 +226,37 @@ impl Editor {
         self.goal_x = goal;
     }
 
+    /// `from..to` selected, the caret at `to` — a found word, say.
+    pub fn select(&mut self, from: Caret, to: Caret) {
+        self.anchor = from;
+        self.caret = to;
+        self.goal_x = None;
+        self.resume = None;
+    }
+
     /// Everything selected, the caret at the end.
     pub fn select_all(&mut self, app: &App) {
-        self.anchor = START;
-        self.caret = caret::end(app);
-        self.goal_x = None;
+        self.select(START, caret::end(app));
     }
 
     /// The word around `at` selected — a double-click. [`crate::word`] owns what a word is.
     pub fn select_word(&mut self, app: &App, at: Caret) {
         let text = app.input_text(at.block).unwrap_or_default();
         let (start, end) = crate::word::around(&text, at.offset);
-        self.anchor = Caret {
+        let here = |offset| Caret {
             block: at.block,
-            offset: start,
+            offset,
         };
-        self.caret = Caret {
-            block: at.block,
-            offset: end,
-        };
-        self.goal_x = None;
+        self.select(here(start), here(end));
     }
 
     /// The whole block `at` is in — a triple-click.
     pub fn select_block(&mut self, app: &App, at: Caret) {
-        self.anchor = Caret {
+        let here = |offset| Caret {
             block: at.block,
-            offset: 0,
+            offset,
         };
-        self.caret = Caret {
-            block: at.block,
-            offset: caret::block_len(app, at.block),
-        };
-        self.goal_x = None;
+        self.select(here(0), here(caret::block_len(app, at.block)));
     }
 
     /// What is selected, as plain text — a block break between two blocks is a newline, which

@@ -12,6 +12,8 @@
 //! Typed characters are not here: they arrive through the input method, so dead keys, compose
 //! sequences and IME candidate windows work.
 
+use grind_text::caret::Motion;
+
 /// A key, as this shell cares about it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -35,26 +37,6 @@ pub enum Key {
 pub struct Mods {
     pub ctrl: bool,
     pub shift: bool,
-}
-
-/// Where a key wants the caret to go, in *document* terms rather than screen ones.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Motion {
-    /// One character, crossing into the neighbouring block at either end.
-    Char(i32),
-    /// Ctrl+Left and Ctrl+Right: to the start of this word or the one before, to the end of
-    /// this word or the next — `grind_text::word`'s boundaries, crossing blocks as `Char` does.
-    Word(i32),
-    /// Whole lines. Answered by the core, in the shell's own units.
-    Line(i32),
-    /// One screenful of lines, however many that turns out to be — the widget knows its
-    /// height, this file does not.
-    Page(i32),
-    /// The visual line's ends, which on a wrapped paragraph are not the paragraph's.
-    LineStart,
-    LineEnd,
-    DocStart,
-    DocEnd,
 }
 
 /// What a keystroke asks for. `None` means the shell does not claim the key, and the event

@@ -280,9 +280,9 @@ or stopping it doing the wrong thing quietly.
 * **Click, then type, lost the first character** — and had since selection was built. A click
   plants the anchor *at* the caret so a drag has somewhere to grow from, typing left it there,
   and the character just typed became a selection the next keystroke replaced; two Backspaces
-  after a click erased one character each side of it. `consume_selection` and the two erase
-  paths drop the anchor now, and `a_click_then_two_keystrokes_types_both` pins it. No test had
-  ever clicked and then typed twice.
+  after a click erased one character each side of it. The window's caret is
+  `grind_text::caret::Editor`'s now, whose every edit leaves the anchor at the caret, and
+  `a_click_then_two_keystrokes_types_both` pins it. No test had ever clicked and then typed twice.
 * **The format bar works with nothing selected.** It used to go insensitive at a bare caret —
   so the bar looked broken at rest, and Bold-then-type, the most common way of asking for bold,
   did nothing. A control pressed there now sets the style the next character typed carries
