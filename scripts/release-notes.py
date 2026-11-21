@@ -53,13 +53,34 @@ def downloads(version: str, repo: str) -> str:
     def cli(target: str, ext: str) -> str:
         return link(target.split("-")[0], f"grind-v{version}-{target}.{ext}")
 
+    def pkg(label: str, name: str) -> str:
+        deb = f"{name}_{version}-1_amd64.deb"
+        rpm = f"{name}-{version}-1.x86_64.rpm"
+        return f"| {label} | {link(deb, deb)} | {link(rpm, rpm)} |"
+
+    pkgs = "\n".join(
+        pkg(label, name)
+        for label, name in [
+            ("Spreadsheet", "grind-sheet-gtk"),
+            ("Word processor", "grind-text-gtk"),
+            ("Command line", "grind-cli"),
+            ("Terminal version", "grind-tui"),
+        ]
+    )
+
     return f"""## Download
 
 **macOS**, Apple silicon and Intel: {link(f"Grind-{version}.pkg", f"Grind-{version}.pkg")} puts Grind in your own Applications folder. It is not notarized, so macOS refuses it the first time: open System Settings ▸ Privacy & Security and choose *Open Anyway*. To drag it in yourself instead: {link(f"Grind-{version}.dmg", f"Grind-{version}.dmg")}.
 
 **Windows**, x64 and Arm: {link(f"grind-win32-{version}-x86_64.exe", f"grind-win32-{version}-x86_64.exe")} is the whole app, no installer. It is not signed, so SmartScreen asks first: *More info* ▸ *Run anyway*.
 
-**Linux**, x86_64: the spreadsheet, the word processor, the command line and the terminal version.
+**Linux**, x86_64: one package per program, Debian and Ubuntu take the `.deb`, Fedora the `.rpm`. Download the ones you want and install them together.
+
+| | Debian, Ubuntu | Fedora |
+|---|---|---|
+{pkgs}
+
+All of them in one command:
 
 ```sh
 v={version} u={base}
@@ -69,7 +90,7 @@ cd "$(mktemp -d)" && curl -fL --remote-name-all "$u"/grind{{,-cli,-tui,-sheet-gt
 sudo dnf install "$u/grind-$v-1.noarch.rpm" "$u"/grind-{{cli,tui,sheet-gtk,text-gtk}}-$v-1.x86_64.rpm
 ```
 
-**Only the command line**, `grind` and `grind-tui` in one archive, nothing to install (the Linux ones run on any distribution):
+**Only the command line**, no spreadsheet or word processor: `grind` and `grind-tui` in one archive, nothing to install (the Linux ones run on any distribution):
 
 | Linux | macOS | Windows |
 |---|---|---|
