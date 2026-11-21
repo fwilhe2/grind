@@ -11,7 +11,8 @@ name: Release
 #      atomic push, so a main that moved meanwhile fails the run before anything is public;
 #   2. creates the release as a draft, its notes the section that was cut;
 #   3. builds the CLI and the terminal shell per platform, Grind.pkg and Grind.dmg for the Mac,
-#      and the container images, all from the tag, and attaches them;
+#      and the container images, all from the tag, checks that each says it is this version
+#      from this commit, and attaches them;
 #   4. publishes the draft once every one of those succeeded.
 #
 # A tag pushed with GITHUB_TOKEN starts no workflow, which is why the builds are jobs of this
@@ -163,6 +164,17 @@ jobs:
           checksum: sha256
           ref: refs/tags/v${{ needs.version.outputs.version }}
           token: ${{ github.token }}
+      # Before publish can make the release public: each binary is this release, from the tag.
+      # The x86_64 Mac slice runs under Rosetta.
+      - name: What the binaries say they are
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          DIR: target/${{ matrix.target }}/release
+        run: |
+          for bin in grind grind-tui; do
+            .github/scripts/check-version.sh "$VERSION" "$DIR/${bin}${{ runner.os == 'Windows' && '.exe' || '' }}"
+          done
 
   # Grind.app, universal, with mac-bundle.sh's checks; then the installer, installed on the
   # runner and checked where it landed.
@@ -193,6 +205,14 @@ jobs:
         run: |
           .github/scripts/mac-bundle.sh target/release/grind-mac \
             target/x86_64-apple-darwin/release/grind-mac bundle
+      - name: What the app says it is
+        run: |
+          .github/scripts/check-version.sh "$VERSION" bundle/Grind.app/Contents/MacOS/grind-mac
+          shown="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' bundle/Grind.app/Contents/Info.plist)"
+          if [ "$shown" != "$VERSION" ]; then
+            echo "::error::Finder would show Grind.app as $shown, not $VERSION"
+            exit 1
+          fi
       - name: Grind.pkg
         run: .github/scripts/mac-pkg.sh bundle/Grind.app "$VERSION" "bundle/Grind-$VERSION.pkg"
       - name: Attach both
