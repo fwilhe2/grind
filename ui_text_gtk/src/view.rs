@@ -15,7 +15,7 @@
 //! Backspace at a block's front [`App::erase`] across the boundary.
 //!
 //! Typing goes through `GtkIMMulticontext`, so dead keys, compose sequences and input methods
-//! work; [`crate::keymap`] never sees a printable character.
+//! work; the key table (`grind_text::caret::intent_for`) never sees a printable character.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -423,10 +423,9 @@ mod imp {
     use gtk::subclass::prelude::*;
     use gtk::{gdk, graphene, gsk};
 
-    use crate::keymap::{self, Action, Key, Mods};
     use crate::theme::Palette;
     use grind_print::strip::{self, Strip};
-    use grind_text::caret::{Editor, Motion, Unit};
+    use grind_text::caret::{Editor, Intent, Key, Motion, Unit, intent_for};
 
     type NoticeHook = Box<dyn Fn(String)>;
     type MovedHook = Box<dyn Fn(Caret)>;
@@ -1210,27 +1209,23 @@ mod imp {
             keyval: gtk::gdk::Key,
             state: gtk::gdk::ModifierType,
         ) -> glib::Propagation {
-            let mods = Mods {
-                ctrl: state.contains(gtk::gdk::ModifierType::CONTROL_MASK),
-                shift: state.contains(gtk::gdk::ModifierType::SHIFT_MASK),
-            };
-            // A modifier chord belongs to the window's actions (Ctrl+S, Ctrl+Z) unless the
-            // map claims it, and Ctrl+Home is the one that is claimed.
-            let Some(action) = keymap::action_for(key_of(keyval), mods) else {
+            let ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
+            let shift = state.contains(gtk::gdk::ModifierType::SHIFT_MASK);
+            // A key the table does not claim travels on — to the window's actions (Ctrl+S,
+            // Ctrl+Z) and to the input method, which turns a keystroke into the text meant.
+            let Some(intent) = key_of(keyval).and_then(|key| intent_for(key, ctrl, shift)) else {
                 return glib::Propagation::Proceed;
             };
-            match action {
-                Action::Move(motion) => self.go(motion, mods.shift),
-                Action::Split => self.split(),
-                Action::PageBreak => self.page_break(),
-                Action::EraseBack => self.erase(Unit::Char, false),
-                Action::EraseForward => self.erase(Unit::Char, true),
-                Action::EraseWord(delta) => self.erase(Unit::Word, delta > 0),
+            match intent {
+                Intent::Move { motion, extend } => self.go(motion, extend),
+                Intent::Split => self.split(),
+                Intent::PageBreak => self.page_break(),
+                Intent::Erase { unit, forward } => self.erase(unit, forward),
                 // Tab is structural where there is structure to change — it nests a list item, it
                 // indents a block from its front — and a `text:tab` mid-sentence. Shift+Tab with
                 // nothing to un-nest does nothing.
-                Action::Indent(by) => {
-                    self.edit(|editor, app| editor.tab(app, by < 0));
+                Intent::Tab { back } => {
+                    self.edit(|editor, app| editor.tab(app, back));
                 }
             }
             glib::Propagation::Stop
@@ -1909,26 +1904,27 @@ mod imp {
         );
     }
 
-    /// A GDK keyval as [`keymap`] spells it. The keypad duplicates matter: a numeric-keypad
-    /// arrow with Num Lock off is a different keyval and the same intent.
-    fn key_of(keyval: gtk::gdk::Key) -> Key {
+    /// A GDK keyval as `grind_text::caret::Key`, or `None` for one a text view does not claim.
+    /// The keypad duplicates matter: a numeric-keypad arrow with Num Lock off is a different
+    /// keyval and the same intent.
+    fn key_of(keyval: gtk::gdk::Key) -> Option<Key> {
         use gtk::gdk::Key as K;
         match keyval {
-            K::Left | K::KP_Left => Key::Left,
-            K::Right | K::KP_Right => Key::Right,
-            K::Up | K::KP_Up => Key::Up,
-            K::Down | K::KP_Down => Key::Down,
-            K::Home | K::KP_Home => Key::Home,
-            K::End | K::KP_End => Key::End,
-            K::Page_Up | K::KP_Page_Up => Key::PageUp,
-            K::Page_Down | K::KP_Page_Down => Key::PageDown,
-            K::Return | K::KP_Enter => Key::Return,
+            K::Left | K::KP_Left => Some(Key::Left),
+            K::Right | K::KP_Right => Some(Key::Right),
+            K::Up | K::KP_Up => Some(Key::Up),
+            K::Down | K::KP_Down => Some(Key::Down),
+            K::Home | K::KP_Home => Some(Key::Home),
+            K::End | K::KP_End => Some(Key::End),
+            K::Page_Up | K::KP_Page_Up => Some(Key::PageUp),
+            K::Page_Down | K::KP_Page_Down => Some(Key::PageDown),
+            K::Return | K::KP_Enter => Some(Key::Return),
             // `ISO_Left_Tab` is what a keyboard sends for Shift+Tab, and a shell that only
             // matched `Tab` would leave Shift+Tab moving the focus out of the document.
-            K::Tab | K::KP_Tab | K::ISO_Left_Tab => Key::Tab,
-            K::BackSpace => Key::Backspace,
-            K::Delete | K::KP_Delete => Key::Delete,
-            _ => Key::Other,
+            K::Tab | K::KP_Tab | K::ISO_Left_Tab => Some(Key::Tab),
+            K::BackSpace => Some(Key::Backspace),
+            K::Delete | K::KP_Delete => Some(Key::Delete),
+            _ => None,
         }
     }
 }
@@ -1953,7 +1949,8 @@ mod tests {
     /// one entry point, each naming itself as it starts.
     ///
     /// **With no display it skips**, as in CI (`gtk.yml` installs GTK but no compositor).
-    /// Everything decidable without one is in `strip.rs`, `keymap.rs` and `grind_print::place`.
+    /// Everything decidable without one is in `strip.rs`, `grind_text::caret` and
+    /// `grind_print::place`.
     #[test]
     fn the_widget() {
         if gtk::init().is_err() {

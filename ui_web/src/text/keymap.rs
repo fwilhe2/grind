@@ -12,7 +12,7 @@
 //! So both are refused here and the text comes from that event ([`Chord::composing`], `wire` in
 //! `super`). `beforeinput` would need an editable host, which this shell deliberately lacks.
 
-use grind_text::caret::{Motion, Unit};
+use grind_text::caret::{Intent, Key, intent_for};
 
 /// A keystroke, in the browser's own vocabulary.
 ///
@@ -33,29 +33,12 @@ pub struct Chord<'a> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action<'a> {
-    /// Move the caret. `extend` is Shift: the anchor stays and the selection grows.
-    Move {
-        motion: Motion,
-        extend: bool,
-    },
+    /// A key the core's table claims ([`intent_for`]): a motion, an erase, Enter, Tab.
+    Edit(Intent),
     /// A character was typed — borrowed from the event (`KeyboardEvent.key`), and a string, since
     /// a composed `é` arrives whole, from `compositionend`. An input method's candidate window
     /// does not arrive (`doc/web-shell.md`).
     Type(&'a str),
-    Split,
-    /// Ctrl+Enter — the same split, the second part starting a page.
-    PageBreak,
-    /// Backspace and Delete, by a character — or with Ctrl, by a word.
-    Erase {
-        unit: Unit,
-        forward: bool,
-    },
-    /// Tab, which means two different things depending on what the caret is in — a list item
-    /// nests, anything else takes a tab character. The pane decides, because this file has no
-    /// document to ask.
-    Tab {
-        back: bool,
-    },
     /// A command, by the id [`crate::command::TEXT`] names it with. Every modifier chord
     /// this shell claims is one of these, so a key and a palette row run the same code.
     Run(&'static str),
@@ -69,15 +52,9 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
     if chord.composing || chord.key == "Dead" {
         return None;
     }
-    let go = |motion| {
-        Some(Action::Move {
-            motion,
-            extend: chord.shift,
-        })
-    };
     // The chrome's shortcuts first: a document that swallowed Ctrl+S would type an `s`.
-    if chord.primary {
-        return match chord.key {
+    let command = if chord.primary {
+        match chord.key {
             "z" | "Z" if chord.shift => Some(Action::Run("doc.redo")),
             "z" | "Z" => Some(Action::Run("doc.undo")),
             "y" | "Y" => Some(Action::Run("doc.redo")),
@@ -98,54 +75,49 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
             "1" => Some(Action::Run("block.h1")),
             "2" => Some(Action::Run("block.h2")),
             "3" => Some(Action::Run("block.h3")),
-            "Home" => go(Motion::DocStart),
-            "End" => go(Motion::DocEnd),
-            "ArrowLeft" => go(Motion::Word(-1)),
-            "ArrowRight" => go(Motion::Word(1)),
-            "Backspace" => Some(Action::Erase {
-                unit: Unit::Word,
-                forward: false,
-            }),
-            "Delete" => Some(Action::Erase {
-                unit: Unit::Word,
-                forward: true,
-            }),
-            "Enter" => Some(Action::PageBreak),
-            // Ctrl+T and F5 still belong to the browser — and so do Ctrl+C, Ctrl+X and
-            // Ctrl+V, whose *events* are how this shell reaches the clipboard at all.
             _ => None,
-        };
+        }
+    } else {
+        match chord.key {
+            "F3" if chord.shift => Some(Action::Run("edit.find-previous")),
+            "F3" => Some(Action::Run("edit.find-next")),
+            _ => None,
+        }
+    };
+    if command.is_some() {
+        return command;
     }
-    match chord.key {
-        "F3" if chord.shift => Some(Action::Run("edit.find-previous")),
-        "F3" => Some(Action::Run("edit.find-next")),
-        "ArrowLeft" => go(Motion::Char(-1)),
-        "ArrowRight" => go(Motion::Char(1)),
-        "ArrowUp" => go(Motion::Line(-1)),
-        "ArrowDown" => go(Motion::Line(1)),
-        "PageUp" => go(Motion::Page(-1)),
-        "PageDown" => go(Motion::Page(1)),
-        "Home" => go(Motion::LineStart),
-        "End" => go(Motion::LineEnd),
-        "Enter" => Some(Action::Split),
-        "Backspace" => Some(Action::Erase {
-            unit: Unit::Char,
-            forward: false,
-        }),
-        "Delete" => Some(Action::Erase {
-            unit: Unit::Char,
-            forward: true,
-        }),
-        // A tab is a character in this model (`text:tab`) — except in a list, where it is
-        // what nests one. The alternative is a key that moves focus out of the document you
-        // are writing in.
-        "Tab" => Some(Action::Tab { back: chord.shift }),
-        // Exactly one character is a typed character; anything longer is a named key this
-        // shell does not claim — "F5", "Escape", "Shift", and "Dead", which the guard at the
-        // top of this function has already turned away for its own reasons.
-        key if key.chars().count() == 1 => Some(Action::Type(key)),
-        _ => None,
+    // The keys every text view shares. A tab is a character in this model (`text:tab`) — except
+    // in a list, where it is what nests one; the alternative is a key that moves focus out of the
+    // document you are writing in.
+    if let Some(key) = named(chord.key) {
+        return intent_for(key, chord.primary, chord.shift).map(Action::Edit);
     }
+    // Exactly one character is a typed character; anything longer is a named key this shell does
+    // not claim — "F5", "Escape", "Shift", and "Dead", which the guard at the top has already
+    // turned away. Ctrl+T and F5 belong to the browser — and so do Ctrl+C, Ctrl+X and Ctrl+V,
+    // whose *events* are how this shell reaches the clipboard at all.
+    let key = chord.key;
+    (!chord.primary && key.chars().count() == 1).then_some(Action::Type(key))
+}
+
+/// `KeyboardEvent.key`'s name for a key a text view claims.
+fn named(key: &str) -> Option<Key> {
+    Some(match key {
+        "ArrowLeft" => Key::Left,
+        "ArrowRight" => Key::Right,
+        "ArrowUp" => Key::Up,
+        "ArrowDown" => Key::Down,
+        "Home" => Key::Home,
+        "End" => Key::End,
+        "PageUp" => Key::PageUp,
+        "PageDown" => Key::PageDown,
+        "Enter" => Key::Return,
+        "Tab" => Key::Tab,
+        "Backspace" => Key::Backspace,
+        "Delete" => Key::Delete,
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -195,33 +167,22 @@ mod tests {
         assert_eq!(ctrl("h"), Some(Action::Run("edit.replace")));
     }
 
+    /// The named keys are the core's table, Ctrl being the browser's primary modifier.
     #[test]
-    fn vertical_is_lines_and_horizontal_is_characters() {
+    fn a_named_key_is_the_cores_intent() {
         assert_eq!(
             plain("ArrowDown"),
-            Some(Action::Move {
-                motion: Motion::Line(1),
-                extend: false
-            })
+            intent_for(Key::Down, false, false).map(Action::Edit)
         );
         assert_eq!(
-            plain("ArrowRight"),
-            Some(Action::Move {
-                motion: Motion::Char(1),
-                extend: false
-            })
+            ctrl("ArrowLeft"),
+            intent_for(Key::Left, true, false).map(Action::Edit)
         );
-    }
-
-    /// Shift extends rather than moving — every motion, not a special list of them.
-    #[test]
-    fn shift_extends_whatever_the_motion_is() {
-        for key in ["ArrowLeft", "ArrowDown", "Home", "End", "PageUp"] {
-            let Some(Action::Move { extend, .. }) = shifted(key) else {
-                panic!("{key} is not a motion");
-            };
-            assert!(extend, "{key}");
-        }
+        assert_eq!(
+            shifted("Tab"),
+            intent_for(Key::Tab, false, true).map(Action::Edit)
+        );
+        assert_eq!(ctrl("Enter"), Some(Action::Edit(Intent::PageBreak)));
     }
 
     #[test]
@@ -309,39 +270,5 @@ mod tests {
             Some(Action::Run("doc.export-pdf"))
         );
         assert_eq!(ctrl("t"), None, "and nothing else is claimed");
-    }
-
-    #[test]
-    fn ctrl_home_is_the_document_and_home_alone_is_the_line() {
-        let motion = |action| match action {
-            Some(Action::Move { motion, .. }) => Some(motion),
-            _ => None,
-        };
-        assert_eq!(motion(plain("Home")), Some(Motion::LineStart));
-        assert_eq!(motion(ctrl("Home")), Some(Motion::DocStart));
-        assert_eq!(motion(ctrl("End")), Some(Motion::DocEnd));
-    }
-
-    #[test]
-    fn the_editing_keys_are_the_three_a_caret_has() {
-        assert_eq!(plain("Enter"), Some(Action::Split));
-        let erase = |unit, forward| Some(Action::Erase { unit, forward });
-        assert_eq!(plain("Backspace"), erase(Unit::Char, false));
-        assert_eq!(plain("Delete"), erase(Unit::Char, true));
-        assert_eq!(ctrl("Backspace"), erase(Unit::Word, false));
-        assert_eq!(ctrl("Delete"), erase(Unit::Word, true));
-        assert_eq!(plain("Tab"), Some(Action::Tab { back: false }));
-        assert_eq!(shifted("Tab"), Some(Action::Tab { back: true }));
-    }
-
-    /// Ctrl+Left and Ctrl+Right move by a word, as in every other client.
-    #[test]
-    fn ctrl_moves_the_arrows_by_a_word() {
-        let moved = |action| match action {
-            Some(Action::Move { motion, .. }) => Some(motion),
-            _ => None,
-        };
-        assert_eq!(moved(ctrl("ArrowLeft")), Some(Motion::Word(-1)));
-        assert_eq!(moved(ctrl("ArrowRight")), Some(Motion::Word(1)));
     }
 }

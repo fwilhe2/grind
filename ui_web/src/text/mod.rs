@@ -33,7 +33,7 @@ use web_sys::{
 
 use crate::command::Entry;
 use crate::{element, listen, request_repaint, set_pressed, set_select, set_swatch};
-use grind_text::caret::{Editor, Motion};
+use grind_text::caret::{Editor, Intent, Motion};
 use keymap::{Action, Chord};
 
 /// How wide and tall the pane is taken to be before the browser has laid it out: jsdom reports
@@ -1457,22 +1457,22 @@ impl Ui {
 
     fn apply(&self, action: Action<'_>) -> Result<(), JsValue> {
         match action {
-            Action::Move { motion, extend } => self.go(motion, extend),
+            Action::Edit(Intent::Move { motion, extend }) => self.go(motion, extend),
             Action::Type(text) => self.type_text(text),
-            Action::Split => {
+            Action::Edit(Intent::Split) => {
                 self.edit(Editor::split);
             }
-            Action::PageBreak => {
+            Action::Edit(Intent::PageBreak) => {
                 self.edit(Editor::break_page);
             }
-            Action::Erase { unit, forward } => {
+            Action::Edit(Intent::Erase { unit, forward }) => {
                 let paged = self.paged.borrow();
                 let pages = paged::Pages(paged.as_ref());
                 self.edit(|editor, app| editor.erase(app, &pages, unit, forward));
             }
             // A tab nests a list item, starts one at a block's front, and types a character
             // anywhere else.
-            Action::Tab { back } => {
+            Action::Edit(Intent::Tab { back }) => {
                 self.edit(|editor, app| editor.tab(app, back));
             }
             // Everything else is a command, and takes the same path a palette row does — the

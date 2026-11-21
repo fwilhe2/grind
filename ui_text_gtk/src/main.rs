@@ -16,7 +16,6 @@ mod alt;
 mod code;
 mod find;
 mod format;
-mod keymap;
 mod licences;
 mod link;
 mod lint;

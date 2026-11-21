@@ -687,7 +687,7 @@ ui_win32/
       geom.rs           * where each block sits down the page, the window's bands, and the whole
                           document measured into a `Flow` — portable, and checked on Linux
                           against what `grind text view --width` breaks (W5a)
-      keymap.rs         * virtual-key codes -> caret operations, and where a word ends
+      keymap.rs         * a key -> grind_text::caret::intent_for, Ctrl+A, Windows' word rule
       status.rs         * what the status bar says: what the caret is in and the document's length
       draw.rs        [~]* laid-out blocks painted onto an HDC, run by run — and, portable beside
                           it, how a line is cut into runs, which part of it is selected, and the
@@ -1015,7 +1015,7 @@ block — no selection needed, unlike the three toggles above. **Title and Subti
 on, hoisted out of `ui_text_gtk`'s own `Ui::set_kind` the same way `indent_kind` was — decides
 whether Paragraph clears `Title`/`Subtitle` or leaves a document's own name (`Quotations`, say)
 exactly as it found it. **Tab now nests a list the same way it does in `grind-text-gtk`**:
-`text::keymap::Action::Tab` carries `back` so Shift+Tab is told from Tab, and `text_indent`
+Shift+Tab is told from Tab (`grind_text::caret::Intent::Tab`), and `Editor::tab`
 answers `grind_text::indent_kind` — nest one level deeper, un-nest one, or start a list at the
 front of a block — before falling back to a literal `text:tab` character, exactly the rule
 `ui_text_gtk`'s `Doc::indent` already had and now shares rather than repeats. **The outline dialog

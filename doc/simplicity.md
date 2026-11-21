@@ -107,10 +107,10 @@ it means changing how three of them scroll, each proved by frames.
 
 Done for text: a text view's editor state (caret, anchor, goal column, the style pending for the
 next character, a composition) and every edit at it is `grind_text::caret::Editor`, which every
-graphical shell holds, with both platforms' word rules (`caret::word`, `caret::word_start`); each
-shell's key table emits the core's `Motion`. Left for text: the CUA key table itself, still one
-per shell (GTK, Windows and the browser agree on it; the Mac reads AppKit's selectors), and the
-terminal's editor, which is vi's.
+graphical shell holds, with both platforms' word rules (`caret::word`, `caret::word_start`); a
+keystroke means what `grind_text::caret::intent_for` says — one table for GTK, Windows and the
+browser, each keeping only its own chords (the menus', Windows' Ctrl+A and word rule). The Mac
+reads AppKit's selectors into the same `Motion`s; the terminal's editor is vi's and stays its own.
 
 1. **Input.** A portable `Key`/`Mods`, one `Intent` vocabulary and the CUA table per document
    type. The terminal keeps its vi table and emits the same intents.

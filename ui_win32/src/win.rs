@@ -123,7 +123,7 @@ use crate::welcome;
 use grind_core::DocumentKind;
 use grind_sheet::clip;
 use grind_sheet::{App, Filter, Pos, RecalcMode, TableOptions, a1, csv, find};
-use grind_text::caret::Editor;
+use grind_text::caret::{Editor, Intent, Unit};
 use grind_text::{Caret, markdown};
 use windows::Win32::UI::WindowsAndMessaging::{
     HTMENU, SC_KEYMENU, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCLBUTTONDOWN,
@@ -7763,7 +7763,7 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
         return false;
     };
     match action {
-        text::keymap::Action::Move { motion, extend } => {
+        text::keymap::Action::Edit(Intent::Move { motion, extend }) => {
             // SAFETY: one borrow; every answer inside is the core's, and none of them dispatches.
             unsafe {
                 with_text(hwnd, |text| {
@@ -7786,10 +7786,12 @@ fn text_key(hwnd: HWND, vk: u32) -> bool {
                 let _ = InvalidateRect(Some(hwnd), None, false);
             }
         }
-        text::keymap::Action::Erase { forward } => text_erase(hwnd, forward),
-        text::keymap::Action::Split => text_split(hwnd),
-        text::keymap::Action::PageBreak => text_page_break(hwnd),
-        text::keymap::Action::Tab { back } => text_indent(hwnd, back),
+        text::keymap::Action::Edit(Intent::Erase { unit, forward }) => {
+            text_erase(hwnd, unit, forward);
+        }
+        text::keymap::Action::Edit(Intent::Split) => text_split(hwnd),
+        text::keymap::Action::Edit(Intent::PageBreak) => text_page_break(hwnd),
+        text::keymap::Action::Edit(Intent::Tab { back }) => text_indent(hwnd, back),
     }
     true
 }
@@ -7812,19 +7814,14 @@ fn text_type(hwnd: HWND, typed: &str) {
     text_edit(hwnd, |editor, app| editor.type_text(app, typed));
 }
 
-/// Backspace and Delete: a selection, or one character — at a block's edge, the break between
-/// two blocks.
-fn text_erase(hwnd: HWND, forward: bool) {
+/// Backspace and Delete: a selection, or as far as `unit` goes — by a character, at a block's
+/// edge the break between two blocks.
+fn text_erase(hwnd: HWND, unit: Unit, forward: bool) {
     // SAFETY: one borrow. `erase` notifies, and the observer posts rather than sends.
     unsafe {
         with_text(hwnd, |text| {
             let shown = text.shown();
-            let result = text.editor.erase(
-                &text.app,
-                shown.set(),
-                grind_text::caret::Unit::Char,
-                forward,
-            );
+            let result = text.editor.erase(&text.app, shown.set(), unit, forward);
             text.edited(result);
         });
     }
@@ -7997,7 +7994,7 @@ fn text_command(hwnd: HWND, command: Command) {
         Command::Paste => text_paste(hwnd),
         // Delete's verb. A selection is erased; with no selection there is nothing to clear,
         // because a document has no cells to empty.
-        Command::ClearCells => text_erase(hwnd, true),
+        Command::ClearCells => text_erase(hwnd, Unit::Char, true),
         Command::Bold => text_emphasise(hwnd, markdown::Emphasis::Bold),
         Command::Italic => text_emphasise(hwnd, markdown::Emphasis::Italic),
         Command::Underline => text_emphasise(hwnd, markdown::Emphasis::Underline),

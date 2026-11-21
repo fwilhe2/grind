@@ -16,8 +16,10 @@ use crate::flow::Flow;
 use crate::{App, Caret};
 
 mod editor;
+mod keys;
 
 pub use editor::{Composing, Editor, Lines, Motion, Unit};
+pub use keys::{Intent, Key, intent_for};
 
 /// How many characters the block at `index` holds, or zero for a block that is not there.
 pub fn block_len(app: &App, index: usize) -> usize {

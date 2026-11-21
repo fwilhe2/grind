@@ -344,8 +344,8 @@ ui_web/build.sh release && ui_web/smoke.sh release   # the browser boundary, in 
 scripts/run.sh web /tmp/grind-demo/sample.fodt       # served next to the page, opened with ?doc=
 ```
 
-`cargo test -p grind-text-gtk` runs two kinds of test. `geom.rs` and `keymap.rs` are pure
-arithmetic and pure key mapping and always run — that is where the column and every binding are
-checked; the stacking and the scrolling are `grind_text::flow`'s, and tested there. The widget tests in `view.rs` need a display and **skip with a
-notice** where there is none, which is where CI runs: `.github/workflows/gtk.yml` installs the
+`cargo test -p grind-text-gtk` runs two kinds of test. What a key does, where a motion lands
+and what an edit does to the selection are `grind_text::caret`'s (`intent_for`, `Editor`), and
+tested there; the pages are `grind_print`'s. The widget tests in `view.rs` need a display and
+**skip with a notice** where there is none, which is where CI runs: `.github/workflows/gtk.yml` installs the
 GTK development packages and no compositor, on purpose.
