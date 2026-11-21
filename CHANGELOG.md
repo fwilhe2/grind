@@ -17,6 +17,9 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- The Linux packages now install on Debian 13 and Ubuntu 24.04, and on other distributions
+  of the same age. 0.1.0's needed a newer system C library than they have.
+
 ## 0.1.0 — 2026-11-21
 
 This is the first release with the initial feature set.

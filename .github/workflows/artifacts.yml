@@ -112,7 +112,12 @@ jobs:
   # names every packaged binary by looking for the first `cargo build --release` in this
   # workflow, and the `windows` job below has one too.
   linux:
-    runs-on: ubuntu-latest
+    # Pinned, never `ubuntu-latest`: the binaries need the glibc of the runner they were built
+    # on, so this runner is the oldest distribution the .deb and .rpm packages install on.
+    # Ubuntu 24.04's glibc 2.39 covers Debian 13, Ubuntu 24.04, EL 10 and Leap 16, and its
+    # GTK 4.14 and libadwaita 1.5 are exactly the `v4_14` and `v1_5` features the shells ask
+    # for. On 26.04 the packages needed glibc 2.43 (atan2f and acosf got new symbol versions).
+    runs-on: ubuntu-24.04
     env:
       PY: python3
     steps:
@@ -138,6 +143,20 @@ jobs:
       # build job, and it matters more here, because these binaries are the ones that leave.
       - name: Build every Linux binary, release
         run: cargo build --release --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
+
+      # The guard on the pin above: a binary that picked up a newer glibc symbol would install
+      # on fewer distributions than the packages promise, and nothing else would notice.
+      - name: glibc floor
+        run: |
+          floor=2.39
+          for bin in grind grind-tui grind-sheet-gtk grind-text-gtk; do
+            needed="$(objdump -T "target/release/$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -uV | tail -1)"
+            echo "$bin needs glibc $needed"
+            if [ "$(printf '%s\n%s\n' "$needed" "$floor" | sort -V | tail -1)" != "$floor" ]; then
+              echo "::error::$bin needs glibc $needed, above the $floor floor"
+              exit 1
+            fi
+          done
 
       - name: What the binaries say they are
         run: |
