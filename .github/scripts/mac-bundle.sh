@@ -112,7 +112,7 @@ done
 others=0
 while IFS= read -r other; do
     plutil -convert xml1 -o - "$other/Contents/Info.plist" 2> /dev/null \
-        | grep -qiE 'comma-separated-values|text/csv|<string>csv</string>' \
+        | grep -iE 'comma-separated-values|text/csv|<string>csv</string>' > /dev/null \
         && others=$((others + 1))
 done < <(sed -n 's/^offered: //p' "$out/handlers.txt" | grep -v 'Grind.app')
 if grep -q '^default: .*Grind.app' "$out/handlers.txt" && [ "$others" -gt 0 ]; then

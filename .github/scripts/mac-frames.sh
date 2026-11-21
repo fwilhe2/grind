@@ -215,7 +215,7 @@ bounded 120 "$mac" "$out/edited.fods" --drive "$out/edit.drive" --out "$out/edit
 [ "$("$grind" sheet view "$out/edited.fods" Z90:Z91 | tr -d ' \r' | paste -sd, -)" = "42,84" ] \
     || fail "the saved document does not hold what was typed: $("$grind" sheet view "$out/edited.fods" Z90:Z91)"
 # Typed in display syntax, stored in ODF's.
-"$grind" sheet project "$out/edited.fods" | grep -F 'formula="=[.Z90]*2"' | grep -q 'cell Z91' \
+"$grind" sheet project "$out/edited.fods" | grep -F 'formula="=[.Z90]*2"' | grep 'cell Z91' > /dev/null \
     || fail "the formula was not stored as a formula"
 say "   a typed number and formula are saved in place, lint clean, and project as typed"
 
@@ -472,7 +472,7 @@ printf 'snap before\nmenu Insert/Chart\nwait 0.5\nsnap after\nkey cmd+s\nwait 2\
     > "$out/chart.drive"
 bounded 120 "$mac" "$out/charted.fods" --drive "$out/chart.drive" --out "$out/charted" \
     > "$out/chart.txt" || fail "the chart drive failed: $(cat "$out/chart.txt")"
-"$grind" sheet chart-list "$out/charted.fods" | grep -q 'Sheet1.B2:Sheet1.B3' \
+"$grind" sheet chart-list "$out/charted.fods" | grep 'Sheet1.B2:Sheet1.B3' > /dev/null \
     || fail "Insert ▸ Chart did not chart B2:B3: $("$grind" sheet chart-list "$out/charted.fods")"
 cmp -s "$out/charted/before.png" "$out/charted/after.png" \
     && fail "the inserted chart was not drawn"
@@ -486,7 +486,7 @@ printf 'snap before\nmenu Edit/Filter\nwait 0.5\nsnap after\nkey cmd+s\nwait 2\n
     > "$out/filter.drive"
 bounded 120 "$mac" "$out/filtered.fods" --drive "$out/filter.drive" --out "$out/filtered" \
     > "$out/filter.txt" || fail "the filter drive failed: $(cat "$out/filter.txt")"
-"$grind" sheet project "$out/filtered.fods" | grep -q 'filter .* A1:B3 ' \
+"$grind" sheet project "$out/filtered.fods" | grep 'filter .* A1:B3 ' > /dev/null \
     || fail "Edit ▸ Filter did not cover A1:B3: $("$grind" sheet project "$out/filtered.fods" | grep filter)"
 cmp -s "$out/filtered/before.png" "$out/filtered/after.png" \
     && fail "the filter's buttons were not drawn"
@@ -525,7 +525,7 @@ say "   Edit ▸ Fill ▸ Across Selection shifts the formula into every cell"
 "$grind" sheet new "$out/problems.fods" > /dev/null
 "$grind" sheet add "$out/problems.fods" Data > /dev/null
 "$grind" sheet set "$out/problems.fods" 'Data.C3' '=[.Z99]*2' > /dev/null
-"$grind" lint "$out/problems.fods" | grep -q 'Data.C3' \
+"$grind" lint "$out/problems.fods" | grep 'Data.C3' > /dev/null \
     || fail "the fixture has no finding at Data.C3: $("$grind" lint "$out/problems.fods")"
 printf 'sidebar Data.C3\nwait 0.5\nsnap problems\n' > "$out/problems.drive"
 bounded 120 "$mac" "$out/problems.fods" --drive "$out/problems.drive" --out "$out/problems" \
