@@ -24,3 +24,4 @@
 
 # What scripts/screenshots.sh writes by default.
 /screenshots/
+scripts/__pycache__/
