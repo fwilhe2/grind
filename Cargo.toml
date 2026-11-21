@@ -37,7 +37,7 @@ resolver = "3"
 [workspace.package]
 # The suite's one version, every crate's by inheritance. `-dev` between releases; only
 # `scripts/set-version.sh` changes it, and the release workflow is what runs that.
-version = "0.1.1"
+version = "0.1.2-dev"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/fwilhe2/grind"
