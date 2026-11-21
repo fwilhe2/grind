@@ -251,3 +251,22 @@ impl Paged {
         self.stale.extend(0..self.canvases.len());
     }
 }
+/// The printed pages, once they are set, are what the caret moves over by lines; before then a
+/// motion by lines goes nowhere.
+pub struct Pages<'a>(pub Option<&'a Paged>);
+
+impl grind_text::caret::Lines for Pages<'_> {
+    fn x(&self, at: Caret) -> Option<f32> {
+        self.0?.spot(at).map(|[.., x]| x as f32)
+    }
+
+    fn step(&self, at: Caret, delta: isize, goal: f32) -> Caret {
+        self.0
+            .and_then(|paged| paged.step(at, delta, f64::from(goal)))
+            .unwrap_or(at)
+    }
+
+    fn bounds(&self, at: Caret) -> Option<(Caret, Caret)> {
+        self.0?.bounds(at)
+    }
+}

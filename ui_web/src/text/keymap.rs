@@ -12,6 +12,8 @@
 //! So both are refused here and the text comes from that event ([`Chord::composing`], `wire` in
 //! `super`). `beforeinput` would need an editable host, which this shell deliberately lacks.
 
+use grind_text::caret::{Motion, Unit};
+
 /// A keystroke, in the browser's own vocabulary.
 ///
 /// `key` is `KeyboardEvent.key`: `"a"`, `"Enter"`, `"ArrowDown"` — the *typed* value rather
@@ -30,18 +32,6 @@ pub struct Chord<'a> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Motion {
-    Char(i32),
-    Line(i32),
-    /// One screenful, in lines — how many is the pane's business, not this file's.
-    Page(i32),
-    LineStart,
-    LineEnd,
-    DocStart,
-    DocEnd,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action<'a> {
     /// Move the caret. `extend` is Shift: the anchor stays and the selection grows.
     Move {
@@ -55,8 +45,11 @@ pub enum Action<'a> {
     Split,
     /// Ctrl+Enter — the same split, the second part starting a page.
     PageBreak,
-    EraseBack,
-    EraseForward,
+    /// Backspace and Delete, by a character — or with Ctrl, by a word.
+    Erase {
+        unit: Unit,
+        forward: bool,
+    },
     /// Tab, which means two different things depending on what the caret is in — a list item
     /// nests, anything else takes a tab character. The pane decides, because this file has no
     /// document to ask.
@@ -107,6 +100,16 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
             "3" => Some(Action::Run("block.h3")),
             "Home" => go(Motion::DocStart),
             "End" => go(Motion::DocEnd),
+            "ArrowLeft" => go(Motion::Word(-1)),
+            "ArrowRight" => go(Motion::Word(1)),
+            "Backspace" => Some(Action::Erase {
+                unit: Unit::Word,
+                forward: false,
+            }),
+            "Delete" => Some(Action::Erase {
+                unit: Unit::Word,
+                forward: true,
+            }),
             "Enter" => Some(Action::PageBreak),
             // Ctrl+T and F5 still belong to the browser — and so do Ctrl+C, Ctrl+X and
             // Ctrl+V, whose *events* are how this shell reaches the clipboard at all.
@@ -125,8 +128,14 @@ pub fn action_for<'a>(chord: &Chord<'a>) -> Option<Action<'a>> {
         "Home" => go(Motion::LineStart),
         "End" => go(Motion::LineEnd),
         "Enter" => Some(Action::Split),
-        "Backspace" => Some(Action::EraseBack),
-        "Delete" => Some(Action::EraseForward),
+        "Backspace" => Some(Action::Erase {
+            unit: Unit::Char,
+            forward: false,
+        }),
+        "Delete" => Some(Action::Erase {
+            unit: Unit::Char,
+            forward: true,
+        }),
         // A tab is a character in this model (`text:tab`) — except in a list, where it is
         // what nests one. The alternative is a key that moves focus out of the document you
         // are writing in.
@@ -316,9 +325,23 @@ mod tests {
     #[test]
     fn the_editing_keys_are_the_three_a_caret_has() {
         assert_eq!(plain("Enter"), Some(Action::Split));
-        assert_eq!(plain("Backspace"), Some(Action::EraseBack));
-        assert_eq!(plain("Delete"), Some(Action::EraseForward));
+        let erase = |unit, forward| Some(Action::Erase { unit, forward });
+        assert_eq!(plain("Backspace"), erase(Unit::Char, false));
+        assert_eq!(plain("Delete"), erase(Unit::Char, true));
+        assert_eq!(ctrl("Backspace"), erase(Unit::Word, false));
+        assert_eq!(ctrl("Delete"), erase(Unit::Word, true));
         assert_eq!(plain("Tab"), Some(Action::Tab { back: false }));
         assert_eq!(shifted("Tab"), Some(Action::Tab { back: true }));
+    }
+
+    /// Ctrl+Left and Ctrl+Right move by a word, as in every other client.
+    #[test]
+    fn ctrl_moves_the_arrows_by_a_word() {
+        let moved = |action| match action {
+            Some(Action::Move { motion, .. }) => Some(motion),
+            _ => None,
+        };
+        assert_eq!(moved(ctrl("ArrowLeft")), Some(Motion::Word(-1)));
+        assert_eq!(moved(ctrl("ArrowRight")), Some(Motion::Word(1)));
     }
 }

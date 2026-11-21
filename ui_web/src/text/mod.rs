@@ -33,7 +33,8 @@ use web_sys::{
 
 use crate::command::Entry;
 use crate::{element, listen, request_repaint, set_pressed, set_select, set_swatch};
-use keymap::{Action, Chord, Motion};
+use grind_text::caret::{Editor, Motion};
+use keymap::{Action, Chord};
 
 /// How wide and tall the pane is taken to be before the browser has laid it out: jsdom reports
 /// every rectangle as zero.
@@ -75,17 +76,9 @@ pub struct Ui {
     paged: RefCell<Option<paged::Paged>>,
     // Everything below is *presentation*. None of it is the document, which is why the core
     // neither knows nor keeps it.
-    caret: Cell<Caret>,
-    /// Where a selection started, if there is one. The caret is its other end, so extending
-    /// with Shift is a move that leaves this alone — the same two-ends shape the grid's own
-    /// `Selection` has, and for the same reason.
-    anchor: Cell<Option<Caret>>,
-    /// The column the caret is trying to keep while moving by lines — see
-    /// [`App::caret_line`]. Cleared by any horizontal move.
-    goal_x: Cell<Option<f32>>,
-    /// What `App::type_markdown` said the next character must be set in, so a notation ends
-    /// where its closing marker does. Handed straight back and never read here.
-    resume: RefCell<Option<CharStyle>>,
+    /// The caret, the selection, the goal column and the style pending for the next character,
+    /// and every edit at them.
+    editor: RefCell<Editor>,
     /// Whether the pointer is down and dragging out a selection.
     dragging: Cell<bool>,
     /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
@@ -118,13 +111,7 @@ impl Ui {
             pending,
             changes,
             paged: RefCell::new(None),
-            caret: Cell::new(Caret {
-                block: 0,
-                offset: 0,
-            }),
-            anchor: Cell::new(None),
-            goal_x: Cell::new(None),
-            resume: RefCell::new(None),
+            editor: RefCell::default(),
             dragging: Cell::new(false),
             names: Cell::new(false),
             images: RefCell::new(HashMap::new()),
@@ -146,13 +133,7 @@ impl Ui {
         self.app
             .open_bytes(name, bytes)
             .map_err(|e| e.to_string())?;
-        self.caret.set(Caret {
-            block: 0,
-            offset: 0,
-        });
-        self.anchor.set(None);
-        self.goal_x.set(None);
-        *self.resume.borrow_mut() = None;
+        self.editor.replace(Editor::default());
         self.images.borrow_mut().clear();
         self.dom.pane.set_scroll_top(0);
         if let Some(paged) = self.paged.borrow_mut().as_mut() {
@@ -255,7 +236,7 @@ impl Ui {
             marks.append_child(&element)?;
             Ok(element)
         };
-        let caret = self.caret.get();
+        let caret = self.caret();
         let selection = self.selection();
         if let Some((from, to)) = selection {
             for band in paged.bands(from, to, top, bottom) {
@@ -458,7 +439,7 @@ impl Ui {
     /// 90 words · 1 min read`, `… · 12 characters selected`. The caret's address is the palette's
     /// tooltip.
     fn render_chrome(&self) {
-        let caret = self.caret.get();
+        let caret = self.caret();
         let counts = self.app.counts();
         let selected = match self.selection() {
             Some((from, to)) if from.block == to.block => match to.offset - from.offset {
@@ -504,69 +485,40 @@ impl Ui {
     fn page_here(&self) -> Option<(usize, usize)> {
         let paged = self.paged.borrow();
         let paged = paged.as_ref()?;
-        let [_, y, h, _] = paged.spot(self.caret.get())?;
+        let [_, y, h, _] = paged.spot(self.caret())?;
         let page = paged.visible(y + h / 2.0, y + h / 2.0).start;
         Some((page + 1, paged.count()))
     }
 
     // --- the selection ---
 
-    /// The selection, in document order, or `None` when the anchor is where the caret is —
-    /// which is what "nothing is selected" *is*, rather than a second state to keep in step.
+    /// The selection, in document order, or `None` when nothing is selected.
     pub fn selection(&self) -> Option<(Caret, Caret)> {
-        grind_text::caret::selection(self.anchor.get(), self.caret.get())
+        self.editor.borrow().selection()
     }
 
-    /// Erase whatever is selected, leaving the caret where it started. Every edit that
-    /// *replaces* a selection begins here — typing, Enter, and paste.
+    /// Erase whatever is selected, leaving the caret where it started — the clipboard's cut.
     pub fn erase_selection(&self) -> bool {
-        let Some((from, to)) = self.selection() else {
-            return false;
-        };
-        match self.app.erase(from, to) {
-            Ok(_) => {
-                self.anchor.set(None);
-                self.set_caret(from);
-                true
-            }
-            Err(error) => {
-                self.set_message(error.to_string());
-                false
-            }
-        }
+        self.edit(Editor::drop_selection).unwrap_or(false)
     }
 
     /// Select the word around the caret, or — with `block` — its whole paragraph.
     fn select_around(&self, block: bool) {
-        let caret = self.caret.get();
-        let text = self.app.input_text(caret.block).unwrap_or_default();
-        let (start, end) = if block {
-            (0, text.chars().count())
-        } else {
-            grind_text::word::around(&text, caret.offset)
-        };
-        self.anchor.set(Some(Caret {
-            block: caret.block,
-            offset: start,
-        }));
-        self.set_caret(Caret {
-            block: caret.block,
-            offset: end,
+        let caret = self.caret();
+        self.edit(|editor, app| {
+            if block {
+                editor.select_block(app, caret);
+            } else {
+                editor.select_word(app, caret);
+            }
+            Ok(())
         });
     }
 
     fn select_all(&self) {
-        let blocks = self.app.block_count();
-        if blocks == 0 {
-            return;
-        }
-        self.anchor.set(Some(Caret {
-            block: 0,
-            offset: 0,
-        }));
-        self.set_caret(Caret {
-            block: blocks - 1,
-            offset: self.block_len(blocks - 1),
+        self.edit(|editor, app| {
+            editor.select_all(app);
+            Ok(())
         });
     }
 
@@ -703,7 +655,7 @@ impl Ui {
 
     /// The misspelt word the caret is in or at the end of, if the checker has found one.
     pub fn misspelt_here(&self) -> Option<grind_text::Misspelling> {
-        let at = self.caret.get();
+        let at = self.caret();
         self.app
             .misspellings(at.block..at.block + 1)
             .into_iter()
@@ -730,7 +682,7 @@ impl Ui {
         };
         match self.app.correct(wrong.caret(), &wrong.word, &with) {
             Ok(()) => {
-                self.set_caret(Caret {
+                self.move_to(Caret {
                     block: wrong.block,
                     offset: wrong.offset + with.chars().count(),
                 });
@@ -744,12 +696,12 @@ impl Ui {
     /// have been.
     pub fn next_misspelling(&self) {
         let all = self.app.misspellings(0..self.app.block_count());
-        let at = self.caret.get();
+        let at = self.caret();
         let after = |m: &grind_text::Misspelling| (m.block, m.offset) > (at.block, at.offset);
         let Some(wrong) = all.iter().find(|m| after(m)).or_else(|| all.first()) else {
             return self.set_message("Nothing is misspelt".to_owned());
         };
-        self.set_caret(wrong.caret());
+        self.move_to(wrong.caret());
         let suggestions: Vec<String> = self.app.suggest(&wrong.word).into_iter().take(3).collect();
         self.set_message(if suggestions.is_empty() {
             format!("{} \u{2014} no suggestion", wrong.word)
@@ -771,7 +723,7 @@ impl Ui {
 
     /// The grammar finding the caret is in, if any.
     pub fn grammar_here(&self) -> Option<grind_text::grammar::Flag> {
-        let at = self.caret.get();
+        let at = self.caret();
         self.grammar_flags(at.block..at.block + 1)
             .into_iter()
             .find(|f| f.finding.range.start <= at.offset && at.offset <= f.finding.range.end)
@@ -810,7 +762,7 @@ impl Ui {
         let covered = self.covered(&flag);
         match self.app.correct(flag.caret(), &covered, &with) {
             Ok(()) => {
-                self.set_caret(Caret {
+                self.move_to(Caret {
                     block: flag.block,
                     offset: flag.finding.range.start + with.chars().count(),
                 });
@@ -825,51 +777,27 @@ impl Ui {
     /// Put the caret on the next grammar finding, wrapping round the end, and say what is wrong.
     pub fn next_grammar(&self) {
         let all = self.grammar_flags(0..self.app.block_count());
-        let at = self.caret.get();
+        let at = self.caret();
         let after = |f: &grind_text::grammar::Flag| {
             (f.block, f.finding.range.start) > (at.block, at.offset)
         };
         let Some(flag) = all.iter().find(|f| after(f)).or_else(|| all.first()) else {
             return self.set_message("No grammar findings".to_owned());
         };
-        self.set_caret(flag.caret());
+        self.move_to(flag.caret());
         self.set_message(flag.finding.message.clone());
     }
 
     // --- whole paragraphs ---
 
-    /// The blocks a paragraph verb acts on: every one the selection touches, or the caret's.
-    fn touched(&self) -> std::ops::RangeInclusive<usize> {
-        match self.selection() {
-            Some((from, to)) => from.block..=to.block,
-            None => self.caret.get().block..=self.caret.get().block,
-        }
-    }
-
-    /// *Move paragraph up / down* — `grind_text::blocks::shift`, caret and selection going along.
+    /// *Move paragraph up / down* — the caret and selection going along.
     fn move_blocks(&self, up: bool) {
-        match grind_text::blocks::shift(&self.app, self.touched(), up) {
-            Ok(()) => {
-                let step = |caret: Caret| Caret {
-                    block: if up { caret.block - 1 } else { caret.block + 1 },
-                    ..caret
-                };
-                self.anchor.set(self.anchor.get().map(step));
-                self.set_caret(step(self.caret.get()));
-            }
-            Err(why) => self.set_message(why),
-        }
+        self.edit(|editor, app| editor.move_paragraphs(app, up));
     }
 
     /// *Delete paragraph* — `grind_text::blocks::remove`, the caret at the start of what followed.
     fn delete_blocks(&self) {
-        match grind_text::blocks::remove(&self.app, self.touched()) {
-            Ok(block) => {
-                self.anchor.set(None);
-                self.set_caret(Caret { block, offset: 0 });
-            }
-            Err(why) => self.set_message(why),
-        }
+        self.edit(Editor::delete_paragraphs);
     }
 
     // --- pictures ---
@@ -884,10 +812,9 @@ impl Ui {
                     .to_owned(),
             );
         };
-        match grind_text::picture::insert_below(&self.app, self.caret.get().block, mime, data) {
+        match grind_text::picture::insert_below(&self.app, self.caret().block, mime, data) {
             Ok(block) => {
-                self.anchor.set(None);
-                self.set_caret(Caret { block, offset: 1 });
+                self.move_to(Caret { block, offset: 1 });
                 self.set_message(
                     "Picture inserted — its “+ Alt text” chip says what a screen reader will"
                         .to_owned(),
@@ -902,7 +829,7 @@ impl Ui {
     /// *Alt text for the picture…* — `index.html`'s `#alt` dialog, opened on the picture beside
     /// the caret (`grind_text::picture::at`) with what it already says filled in.
     fn open_alt(&self) {
-        let caret = self.caret.get();
+        let caret = self.caret();
         let Some(block) = self.block_at(caret.block) else {
             return;
         };
@@ -994,15 +921,14 @@ impl Ui {
 
     /// Markdown read in before the caret's block (`App::import_markdown`), one undo step.
     pub fn import_markdown(&self, markdown: &str) {
-        let at = self.caret.get().block;
+        let at = self.caret().block;
         // A page has no directory to read a picture from: only a `data:` URI comes in.
         match self
             .app
             .import_markdown(at, markdown, &grind_text::commonmark::nowhere)
         {
             Ok(n) => {
-                self.anchor.set(None);
-                self.set_caret(Caret {
+                self.move_to(Caret {
                     block: at,
                     offset: 0,
                 });
@@ -1047,10 +973,9 @@ impl Ui {
         let Some((rows, columns)) = grind_text::table::parse_size(&answer) else {
             return self.set_message("A table size looks like 3x4 — rows, then columns".to_owned());
         };
-        match grind_text::table::insert_below(&self.app, self.caret.get().block, rows, columns) {
+        match grind_text::table::insert_below(&self.app, self.caret().block, rows, columns) {
             Ok(at) => {
-                self.anchor.set(None);
-                self.set_caret(Caret {
+                self.move_to(Caret {
                     block: at,
                     offset: 0,
                 });
@@ -1076,7 +1001,7 @@ impl Ui {
         if name.is_empty() {
             return;
         }
-        match self.app.set_bookmark(name, Some(self.caret.get().block)) {
+        match self.app.set_bookmark(name, Some(self.caret().block)) {
             Ok(moved) => {
                 self.names.set(true);
                 self.set_message(if moved {
@@ -1098,7 +1023,7 @@ impl Ui {
         };
         let (from, to) = self
             .selection()
-            .unwrap_or_else(|| (self.caret.get(), self.caret.get()));
+            .unwrap_or_else(|| (self.caret(), self.caret()));
         let current = self
             .block_at(from.block)
             .and_then(|block| block.style)
@@ -1178,8 +1103,7 @@ impl Ui {
 
     /// Select the hit that starts at `from`, so typing over it replaces it.
     fn select_hit(&self, from: Caret, needle: &str) {
-        self.anchor.set(Some(from));
-        self.set_caret(find::end_of(from, needle));
+        self.select(from, find::end_of(from, needle));
         let _ = self.dom.pane.focus();
     }
 
@@ -1195,7 +1119,7 @@ impl Ui {
         // otherwise.
         let at = self
             .selection()
-            .map_or_else(|| self.caret.get(), |(from, _)| from);
+            .map_or_else(|| self.caret(), |(from, _)| from);
         let Some(index) = find::step(&hits, at, towards) else {
             return self.set_message(format!("“{needle}” is not in the document"));
         };
@@ -1263,7 +1187,7 @@ impl Ui {
         match self.app.replace(&what, &with) {
             Ok(0) => self.set_message(format!("“{what}” is not in the document")),
             Ok(n) => {
-                self.anchor.set(None);
+                self.move_to(self.caret());
                 self.set_message(format!(
                     "Replaced in {n} paragraph{} — Ctrl+Z takes it back",
                     if n == 1 { "" } else { "s" }
@@ -1283,7 +1207,7 @@ impl Ui {
     /// Which block the caret is in, spelled the way the span map spells it. `p12` — the address
     /// every block has, whatever else it also answers to.
     pub fn projection_address(&self) -> Option<String> {
-        Some(grind_text::loc::format(self.caret.get().block))
+        Some(grind_text::loc::format(self.caret().block))
     }
 
     /// What the document says about itself.
@@ -1300,8 +1224,7 @@ impl Ui {
         else {
             return;
         };
-        self.anchor.set(None);
-        self.set_caret(caret);
+        self.move_to(caret);
     }
 
     fn go_to(&self, where_: &str) {
@@ -1311,8 +1234,7 @@ impl Ui {
         if index >= self.app.block_count() {
             return;
         }
-        self.anchor.set(None);
-        self.set_caret(Caret {
+        self.move_to(Caret {
             block: index,
             offset: 0,
         });
@@ -1332,18 +1254,18 @@ impl Ui {
     /// character typed (`grind_text::format::apply`), as the `resume` [`App::type_markdown`]
     /// carries; moving the caret forgets it.
     fn change_char(&self, change: Change) {
-        let pending = self.resume.borrow().clone();
+        let pending = self.editor.borrow().resume.clone();
         let landed = format::apply(
             &self.app,
             self.selection(),
-            self.caret.get(),
+            self.caret(),
             pending.as_ref(),
             &change,
         );
         match landed {
             Ok(Landed::Written) => {}
             Ok(Landed::Pending(style)) => {
-                *self.resume.borrow_mut() = Some(style);
+                self.editor.borrow_mut().resume = Some(style);
                 let _ = self.refresh_tools();
             }
             Err(error) => self.set_message(error.to_string()),
@@ -1366,13 +1288,8 @@ impl Ui {
 
     /// What the tool row shows and what a toggle changes (`grind_text::format::here`).
     fn style_here(&self) -> CharStyle {
-        let pending = self.resume.borrow().clone();
-        format::here(
-            &self.app,
-            self.selection(),
-            self.caret.get(),
-            pending.as_ref(),
-        )
+        let pending = self.editor.borrow().resume.clone();
+        format::here(&self.app, self.selection(), self.caret(), pending.as_ref())
     }
 
     /// A colour from the swatch grid — `"color"` for the letters, `"highlight"` for behind
@@ -1390,7 +1307,7 @@ impl Ui {
     fn set_kind(&self, kind: BlockKind, style: Option<&str>) {
         let (first, last) = match self.selection() {
             Some((from, to)) => (from.block, to.block),
-            None => (self.caret.get().block, self.caret.get().block),
+            None => (self.caret().block, self.caret().block),
         };
         for index in first..=last {
             if let Err(error) = self.app.set_kind(index, kind.clone()) {
@@ -1408,7 +1325,7 @@ impl Ui {
     /// One list level in or out. Only a list item has a depth to change, which is why Tab
     /// types a tab everywhere else.
     fn renest(&self, by: i32) {
-        let index = self.caret.get().block;
+        let index = self.caret().block;
         let Some(block) = self.block_at(index) else {
             return;
         };
@@ -1438,7 +1355,7 @@ impl Ui {
         set_swatch(document, "t-color-bar", style.color.as_deref());
         set_swatch(document, "t-highlight-bar", style.background.as_deref());
 
-        let block = self.block_at(self.caret.get().block);
+        let block = self.block_at(self.caret().block);
         set_select(document, "t-block", &named_block(block.as_ref()));
         Ok(())
     }
@@ -1472,15 +1389,7 @@ impl Ui {
     /// block, which is what pasting two paragraphs has to mean in a model that has no
     /// character for one.
     pub fn paste_text(&self, text: &str) {
-        self.erase_selection();
-        for (index, line) in text.replace("\r\n", "\n").split('\n').enumerate() {
-            if index > 0 {
-                self.split();
-            }
-            if !line.is_empty() {
-                self.insert_plain(line);
-            }
-        }
+        self.edit(|editor, app| editor.paste(app, text));
     }
 
     fn block_at(&self, index: usize) -> Option<BlockView> {
@@ -1537,53 +1446,35 @@ impl Ui {
     }
 
     /// What a composition finally produced, typed as one keystroke — **the only way a dead key's
-    /// character gets in** (see `keymap`). Through [`Ui::type_text`], not [`Ui::insert_plain`], so
-    /// a composed backtick is read by the notation like any other.
+    /// character gets in** (see `keymap`). Through [`Ui::type_text`], so a composed backtick is read
+    /// by the notation like any other.
     fn on_composed(&self, text: &str) {
         if text.is_empty() {
             return;
         }
-        self.erase_selection();
         self.type_text(text);
     }
 
     fn apply(&self, action: Action<'_>) -> Result<(), JsValue> {
         match action {
             Action::Move { motion, extend } => self.go(motion, extend),
-            Action::Type(text) => {
-                self.erase_selection();
-                self.type_text(text);
-            }
+            Action::Type(text) => self.type_text(text),
             Action::Split => {
-                self.erase_selection();
-                self.split();
+                self.edit(Editor::split);
             }
             Action::PageBreak => {
-                self.erase_selection();
-                self.page_break();
+                self.edit(Editor::break_page);
             }
-            Action::EraseBack => {
-                if !self.erase_selection() {
-                    self.erase_back();
-                }
+            Action::Erase { unit, forward } => {
+                let paged = self.paged.borrow();
+                let pages = paged::Pages(paged.as_ref());
+                self.edit(|editor, app| editor.erase(app, &pages, unit, forward));
             }
-            Action::EraseForward => {
-                if !self.erase_selection() {
-                    self.erase_forward();
-                }
+            // A tab nests a list item, starts one at a block's front, and types a character
+            // anywhere else.
+            Action::Tab { back } => {
+                self.edit(|editor, app| editor.tab(app, back));
             }
-            // A tab nests a list item and types a character anywhere else — the one key whose
-            // meaning this pane decides rather than the keymap.
-            Action::Tab { back } => match self.block_at(self.caret.get().block) {
-                Some(block) if matches!(block.kind, BlockKind::ListItem { .. }) => {
-                    self.renest(if back { -1 } else { 1 });
-                }
-                _ if !back => {
-                    self.erase_selection();
-                    self.type_text("\t");
-                }
-                _ => {}
-            },
             // Everything else is a command, and takes the same path a palette row does — the
             // chrome answers its own and hands the rest back to `Ui::run`.
             Action::Run(id) => crate::run_command(id),
@@ -1591,184 +1482,79 @@ impl Ui {
         Ok(())
     }
 
-    /// Every motion, routed to the core. `extend` keeps the anchor where it is, which is what
-    /// makes Shift+arrow a selection rather than a move.
+    /// Every motion, routed to the core's editor over the printed pages. `extend` keeps the
+    /// anchor where it is, which is what makes Shift+arrow a selection rather than a move. A page
+    /// is however many of the caret's lines fit, less one, so the line you were reading is still
+    /// there afterwards.
     fn go(&self, motion: Motion, extend: bool) {
-        if self.app.block_count() == 0 {
-            return;
-        }
-        if extend {
-            if self.anchor.get().is_none() {
-                self.anchor.set(Some(self.caret.get()));
-            }
-        } else {
-            self.anchor.set(None);
-        }
-        let caret = self.caret.get();
-        let moved = match motion {
-            Motion::Char(delta) => Some(self.stepped(delta)),
-            Motion::DocStart => Some(grind_text::caret::START),
-            Motion::DocEnd => Some(grind_text::caret::end(&self.app)),
-            _ => self.go_on_pages(motion, caret),
-        };
-        let Some(moved) = moved else { return };
-        if !matches!(motion, Motion::Line(_) | Motion::Page(_)) {
-            self.goal_x.set(None);
-        }
-        self.set_caret(moved);
-    }
-
-    /// A motion by lines, a screenful or to a line's end, answered by the printed pages; `None`
-    /// before they are set.
-    fn go_on_pages(&self, motion: Motion, caret: Caret) -> Option<Caret> {
         let paged = self.paged.borrow();
-        let paged = paged.as_ref()?;
-        match motion {
-            Motion::Line(steps) | Motion::Page(steps) => {
-                let spot = paged.spot(caret)?;
-                // A page is however many of the caret's lines fit, less one so that the line you
-                // were reading is still there afterwards.
-                let lines = match motion {
-                    Motion::Page(_) => {
-                        let view = f64::from(self.dom.pane.client_height());
-                        ((view / spot[2].max(1.0)) as isize - 1).max(1)
-                    }
-                    _ => 1,
-                };
-                let goal = self.goal_x.get().map_or(spot[3], f64::from);
-                self.goal_x.set(Some(goal as f32));
-                paged.step(caret, steps as isize * lines, goal)
+        let page = paged
+            .as_ref()
+            .and_then(|paged| paged.spot(self.caret()))
+            .map_or(1, |[_, _, height, _]| {
+                let view = f64::from(self.dom.pane.client_height());
+                ((view / height.max(1.0)) as isize - 1).max(1)
+            });
+        let pages = paged::Pages(paged.as_ref());
+        self.edit(|editor, app| {
+            editor.navigate(app, &pages, motion, extend, page);
+            Ok(())
+        });
+    }
+
+    /// The caret, where an edit lands.
+    fn caret(&self) -> Caret {
+        self.editor.borrow().caret
+    }
+
+    /// The caret put at `at` with nothing selected, and any style pending for the next character
+    /// forgotten — a Bold pressed with nothing selected belongs to where it was pressed.
+    fn move_to(&self, at: Caret) {
+        self.edit(|editor, _| {
+            editor.place(at, false);
+            Ok(())
+        });
+    }
+
+    /// `from..to` selected, the caret at `to`.
+    fn select(&self, from: Caret, to: Caret) {
+        self.edit(|editor, _| {
+            editor.select(from, to);
+            Ok(())
+        });
+    }
+
+    /// One change to the editor, then a repaint — the core says nothing when only the caret
+    /// moved; a refusal goes on the message line.
+    fn edit<T>(&self, change: impl FnOnce(&mut Editor, &App) -> Result<T, String>) -> Option<T> {
+        let result = change(&mut self.editor.borrow_mut(), &self.app);
+        match result {
+            Ok(value) => {
+                self.request_repaint();
+                Some(value)
             }
-            Motion::LineStart | Motion::LineEnd => {
-                let (start, end) = paged.bounds(caret)?;
-                Some(if matches!(motion, Motion::LineStart) {
-                    start
-                } else {
-                    end
-                })
+            Err(error) => {
+                self.set_message(error);
+                None
             }
-            _ => None,
         }
-    }
-
-    /// One character left or right, rolling onto the neighbouring block at either end —
-    /// `grind_text::caret::step`, which every shell's page shares.
-    fn stepped(&self, delta: i32) -> Caret {
-        grind_text::caret::step(&self.app, self.caret.get(), delta)
-    }
-
-    /// Move the caret, forgetting any style pending for the next character — a Bold pressed
-    /// with nothing selected belongs to where it was pressed. Typing is the one move that keeps
-    /// it ([`Ui::place_caret`]).
-    fn set_caret(&self, caret: Caret) {
-        *self.resume.borrow_mut() = None;
-        self.place_caret(caret);
-    }
-
-    fn place_caret(&self, caret: Caret) {
-        self.caret.set(caret);
-        // Nothing in the core changed, so nothing will tell the page to repaint.
-        self.request_repaint();
-    }
-
-    fn block_len(&self, index: usize) -> usize {
-        grind_text::caret::block_len(&self.app, index)
     }
 
     // --- editing ---
 
     /// A typed character, read as markdown-shaped notation as it lands (`grind_text::markdown`):
     /// `**bold**` becomes bold and its markers go, `` `code` `` monospace, `# ` makes a heading,
-    /// three backticks fence a code paragraph. One `App::type_markdown` action, so one Ctrl+Z takes back
-    /// `**bold**`. Pasting does not go through it ([`Ui::paste_text`]): clipboard text is text.
+    /// three backticks fence a code paragraph. One `App::type_markdown` action, so one Ctrl+Z takes
+    /// back `**bold**`. Pasting does not go through it ([`Ui::paste_text`]): clipboard text is text.
     fn type_text(&self, text: &str) {
         // A document with no blocks at all has nowhere to put a character, and the first
         // thing anybody does with an empty page is type into it.
-        if self.app.block_count() == 0 {
-            match self.app.insert(0, BlockKind::Paragraph, "") {
-                Ok(()) => self.set_caret(Caret {
-                    block: 0,
-                    offset: 0,
-                }),
-                Err(error) => return self.set_message(error.to_string()),
-            }
+        if self.app.block_count() == 0
+            && let Err(error) = self.app.insert(0, BlockKind::Paragraph, "")
+        {
+            return self.set_message(error.to_string());
         }
-        let caret = self.caret.get();
-        // Cloned out first: a `borrow()` in the scrutinee lives for the whole `match`, and the
-        // arm below takes a `borrow_mut()` of the same cell.
-        let resume = self.resume.borrow().clone();
-        match self.app.type_markdown(caret, text, resume.as_ref()) {
-            Ok(typed) => {
-                self.goal_x.set(None);
-                *self.resume.borrow_mut() = typed.resume;
-                self.place_caret(typed.caret);
-            }
-            Err(error) => self.set_message(error.to_string()),
-        }
-    }
-
-    /// Text in at the caret with no notation read — what pasting and the register use.
-    fn insert_plain(&self, text: &str) {
-        let caret = self.caret.get();
-        match self.app.insert_text(caret, text) {
-            Ok(()) => {
-                self.goal_x.set(None);
-                *self.resume.borrow_mut() = None;
-                self.set_caret(Caret {
-                    block: caret.block,
-                    offset: caret.offset + text.chars().count(),
-                });
-            }
-            Err(error) => self.set_message(error.to_string()),
-        }
-    }
-
-    fn split(&self) {
-        let caret = self.caret.get();
-        match self.app.split_block(caret) {
-            Ok(()) => {
-                self.goal_x.set(None);
-                self.set_caret(Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                });
-            }
-            Err(error) => self.set_message(error.to_string()),
-        }
-    }
-
-    /// Ctrl+Enter: the split Enter makes, the second part starting a page (`App::break_page`).
-    fn page_break(&self) {
-        let caret = self.caret.get();
-        match self.app.break_page(caret) {
-            Ok(()) => {
-                self.goal_x.set(None);
-                self.set_caret(Caret {
-                    block: caret.block + 1,
-                    offset: 0,
-                });
-            }
-            Err(error) => self.set_message(error.to_string()),
-        }
-    }
-
-    /// Backspace: the character before the caret, and at the front of a block the boundary
-    /// itself — which is what [`App::erase`] across one already does.
-    fn erase_back(&self) {
-        self.erase_to(self.stepped(-1));
-    }
-
-    fn erase_forward(&self) {
-        self.erase_to(self.stepped(1));
-    }
-
-    fn erase_to(&self, other: Caret) {
-        let caret = self.caret.get();
-        match grind_text::caret::erase_to(&self.app, caret, other) {
-            Ok(at) if at != caret => self.set_caret(at),
-            Ok(_) => {}
-            Err(error) => self.set_message(error.to_string()),
-        }
+        self.edit(|editor, app| editor.type_text(app, text));
     }
 
     /// Where a click landed: the line carries its address, and the core's layout answers the
@@ -1777,15 +1563,10 @@ impl Ui {
         let Some(caret) = self.caret_at(event)? else {
             return Ok(());
         };
-        if extend {
-            if self.anchor.get().is_none() {
-                self.anchor.set(Some(self.caret.get()));
-            }
-        } else {
-            self.anchor.set(None);
-        }
-        self.goal_x.set(None);
-        self.set_caret(caret);
+        self.edit(|editor, _| {
+            editor.place(caret, extend);
+            Ok(())
+        });
         self.dom.pane.focus()
     }
 
@@ -1882,7 +1663,7 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
             .and_then(|at| chip_caret(&at));
         if let (Some(at), "Enter" | " ") = (chip, event.key().as_str()) {
             event.prevent_default();
-            keys.set_caret(at);
+            keys.move_to(at);
             return keys.open_alt();
         }
         keys.on_key(&event);
@@ -1914,8 +1695,7 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
             .and_then(|chip| chip.get_attribute("data-alt"))
             .and_then(|at| chip_caret(&at))
         {
-            click.anchor.set(None);
-            click.set_caret(at);
+            click.move_to(at);
             click.open_alt();
             return;
         }
