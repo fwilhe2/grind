@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Simple, not easy
 
-**Status: decided 2026-11-20. Phases 0 to 3 done; phases 4 and 5 under way.**
+**Status: decided 2026-11-20. Phases 0 to 3 and 5 done; phase 4 under way.**
 
 *Simple* is one concept in one place doing one job; *easy* is near at hand. Most of the
 accidental complexity here came from easy steps: a decision copied into the next shell, a feature
@@ -127,7 +127,9 @@ modes, the server and loop E: each says what is built and what is not, and nothi
 milestone by number. `doc/xlsx-import.md` keeps its milestone labels: `xlsx/tests/ooxmlgen.rs` and the
 corpus's README classify every fixture by them, so they are a vocabulary the tests check rather
 than history. `AGENTS.md` points at `CLAUDE.md`. `doc/suite.md` and `doc/text-layout.md` say
-what was decided and why, without the milestones and the argument that preceded it.
+what was decided and why, without the milestones and the argument that preceded it;
+`doc/feature-matrix.md`, `doc/not-doing.md` and `doc/spelling.md` carry no dates other than evidence
+dates. The format notes' dates are when a fact was observed, which is evidence and stays.
 
 ### Phase 6 — the big files
 

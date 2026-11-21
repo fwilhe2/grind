@@ -6,14 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Spelling
 
-**Normative for `text/src/spell.rs`, `spell/` and every shell's underline.** Built 2026-10-06:
-English and German, then one language per document, in the core, the CLI, `grind lint` and the GNOME
-window, with every other shell's problems pane listing the words. Since 2026-10-07 the terminal
-and Windows shells underline and correct as well, and so does the Mac (type-checked, not yet run);
-the browser has it since 2026-10-16, with its dictionaries fetched rather than carried (*Where it reaches*). Since 2026-10-10 there are
-seven languages: French, Spanish, Italian, Portuguese and Polish joined the first two (*The
-languages*). Since 2026-10-17 a word is right when **any** of the seven knows it, unless somebody
-asks for one language (decision 4).
+**Normative for `text/src/spell.rs`, `spell/` and every shell's underline. Status: built**, in
+both applications and every client (*Where it reaches*), in seven languages (*The languages*). A
+word is right when **any** of the seven knows it, unless somebody asks for one language
+(decision 4).
 
 ## The decisions
 
@@ -83,7 +79,7 @@ asks for one language (decision 4).
 
 5. **The person's own words are theirs, not the document's.** `$XDG_CONFIG_HOME/grind/words`
    (`~/.config/grind/words`, `%APPDATA%\grind\words`), one per line, `#` for comments — one list
-   for every document and every language. **It is maintained, not only grown** (2026-10-17):
+   for every document and every language. **It is maintained, not only grown**:
    `grind words` lists it, `--add`s a word and `--remove`s one, and every client has a
    *Personal Dictionary* to do the same — a dialog of rows with a Remove each in both GNOME
    windows, `:dict` (`Enter` removes, `:dict add|rm WORD`) in the terminal, a list whose first
@@ -99,11 +95,11 @@ asks for one language (decision 4).
 6. **A correction is an edit in the core**: `App::correct(at, word, with)`, one undo step, the
    word's formatting kept, refused when the word is no longer where it was found.
 
-7. **No grammar checker** (decided 2026-10-17; **superseded 2026-10-30** by `doc/grammar.md`, a
-   built-in checker of our own, which answers the three reasons below; the optional
-   LanguageTool it also had was removed on 2026-11-07). [Harper](https://github.com/Automattic/harper)
-   (Automattic, Apache-2.0, pure Rust, English only) was the candidate, and it was measured
-   before it was turned down — `harper-core 2.13.0`, default features off, a release build:
+7. **Grammar is not the speller's.** It is `doc/grammar.md`'s, a built-in checker of our own,
+   which answers the three reasons below. [Harper](https://github.com/Automattic/harper)
+   (Automattic, Apache-2.0, pure Rust, English only) was the candidate for a library, and it was
+   measured before it was turned down — `harper-core 2.13.0`, default features off, a release
+   build:
 
    | | Measured |
    |---|---|
@@ -162,7 +158,7 @@ language pays to load one.
 
 ## In a spreadsheet
 
-Built 2026-10-10. The same rules, the same dictionaries and the same choice of language, through
+The same rules, the same dictionaries and the same choice of language, through
 the same door: what a word is and which words are checked moved from `grind_text::spell` into
 `grind_core::spell` the day a second application wanted them, beside the `Lexicon` trait and a
 `Spelled` trait that each application's `App` implements — so `grind-spell` chooses, attaches and
@@ -186,7 +182,7 @@ turns off a dictionary without naming either application, and depends on neither
    (`grind_spell::preference`), beside the personal word list and for the same reason: it is the
    person's, never the document's. Every spreadsheet window opens with it and every toggle writes
    it; `grind sheet spelling off` sets it from a terminal, and `grind sheet lint` and `grind lint`
-   follow it. **The text windows read and write theirs too** (2026-10-16): one line per kind in the
+   follow it. **The text windows read and write theirs too**: one line per kind in the
    same file, `text de-DE`, set from a window's Spelling menu or `grind text spelling`, and
    followed by `grind text lint`, `grind lint` and — when no `--language` is given — `grind text
    spell`. The browser remembers its choices in `localStorage` instead of that file.
@@ -200,12 +196,12 @@ turns off a dictionary without naming either application, and depends on neither
 | `grind-sheet-gtk` | The word processor's wavy underline under misspelt words in text cells — ordinary, overflowing, wrapped and merged; not turned text — and a spelling section per word (up to three) leading the cell's right-click menu: suggestions, Ignore All, Add to Dictionary. View ▸ Check Spelling (Shift+F7, LibreOffice's key, and in the palette) turns it off and on, and View ▸ Spelling Language chooses (and so does *Spelling Language…* in the command palette, Ctrl+K, which is where the verb is found first); both are **remembered**. Check the Document lists the words |
 | `grind-tui` | Words underlined in red (not the one being typed), `]`/`[` to the next or previous with suggestions on the status line, `:fix N` or `:fix <word>`, `:spell ignore` and `:spell add`, `:spell auto\|en\|de\|fr\|es\|it\|pt\|pl\|off` — **remembered** for every text document — the language on the status bar, and `:lint`. **In a spreadsheet** the same: a misspelt word's letters underlined in red (only the text the core checked, and only what a narrow column shows), `]`/`[` across every sheet, `:fix N`/`:fix <word>`, `:spell ignore`/`add`, and `:spell auto\|<lang>\|off` — **remembered** for every spreadsheet |
 | `grind-win32` | A squiggle in Fluent's critical red, suggestions with Ignore All and Add to Dictionary at the head of the context menu (right click, or Shift+F10 with the caret in the word), F7 for the next word with the same popup, View ▸ Spelling Language…, the language on the status bar, and Check Document. **In a spreadsheet** the same squiggle under a text cell's misspelt words (wrapped and merged cells too, stopping at an ellipsis), the same popup leading a cell's right-click menu, F7 across every sheet, and View ▸ Check Spelling (Shift+F7) — **remembered** for every spreadsheet, as View ▸ Spelling Language… is there; over a text document both are remembered for every text document |
-| `grind-mac` | The dotted red underline, drawn by the portable `text/paint.rs`; suggestions, *Ignore Spelling* and *Learn Spelling* leading the page's context menu over a misspelt word, and Edit ▸ Spelling ▸ *Check Document Now* (⌘;, the next word selected) and *Spelling Language…* (`ui_mac/src/spelling.rs`, 2026-10-07, type-checked only); the misspelt words in the sidebar's Problems. **In a spreadsheet** the same dotted red line under a text cell's misspelt words (from the portable `sheet/paint.rs`, tested), the same rows leading a cell's context menu, *Check Document Now* across every sheet, and Edit ▸ Spelling ▸ *Check Spelling While Typing* — AppKit's own name for the switch, **remembered** for every spreadsheet; type-checked only |
-| `grind-web` | **2026-10-16.** The same checker, with `grind-spell` linked **without** its bundled lists (`default-features = false`, +0.4 MB of module) and the dictionaries *fetched*: `ui_web/build.sh` puts them in `dictionaries/` beside the page, and the first time a document opens with spelling on `spelling.rs` fetches that one language's `.aff` and `.dic` and hands them to `Language::provide` — 40 to 300 ms of parsing, once a visit. A wavy red line under a misspelt word in the text pane (not under the word still being typed) and in a spreadsheet's text cells; the palette (Ctrl+K) offers a correction, *Ignore* and *Add to your dictionary* for the word at the caret, *Go to the next misspelling*, and the *Spelling:* rows — Automatic, each language, Off. The choice is **remembered** per kind of document in `localStorage` (`grind.spelling.text`/`.spreadsheet`), as is the personal list (`grind.spelling.words`). Gaps: no suggestions or Ignore on a spreadsheet's cell, and no guessing again as a document grows |
+| `grind-mac` | The dotted red underline, drawn by the portable `text/paint.rs`; suggestions, *Ignore Spelling* and *Learn Spelling* leading the page's context menu over a misspelt word, and Edit ▸ Spelling ▸ *Check Document Now* (⌘;, the next word selected) and *Spelling Language…* (`ui_mac/src/spelling.rs`, type-checked only); the misspelt words in the sidebar's Problems. **In a spreadsheet** the same dotted red line under a text cell's misspelt words (from the portable `sheet/paint.rs`, tested), the same rows leading a cell's context menu, *Check Document Now* across every sheet, and Edit ▸ Spelling ▸ *Check Spelling While Typing* — AppKit's own name for the switch, **remembered** for every spreadsheet; type-checked only |
+| `grind-web` | The same checker, with `grind-spell` linked **without** its bundled lists (`default-features = false`, +0.4 MB of module) and the dictionaries *fetched*: `ui_web/build.sh` puts them in `dictionaries/` beside the page, and the first time a document opens with spelling on `spelling.rs` fetches that one language's `.aff` and `.dic` and hands them to `Language::provide` — 40 to 300 ms of parsing, once a visit. A wavy red line under a misspelt word in the text pane (not under the word still being typed) and in a spreadsheet's text cells; the palette (Ctrl+K) offers a correction, *Ignore* and *Add to your dictionary* for the word at the caret, *Go to the next misspelling*, and the *Spelling:* rows — Automatic, each language, Off. The choice is **remembered** per kind of document in `localStorage` (`grind.spelling.text`/`.spreadsheet`), as is the personal list (`grind.spelling.words`). Gaps: no suggestions or Ignore on a spreadsheet's cell, and no guessing again as a document grows |
 
 ### The picker on the status bar
 
-Since 2026-10-17 every spreadsheet client's status bar ends with two answers, beside each other:
+Every spreadsheet client's status bar ends with two answers, beside each other:
 how the document spells a number (`1.234,5 · de-DE`) and which language spelling is checked in.
 The second is a **flag** — `grind_spell::Setting::chip`: 🌐 for all languages, the dictionary's
 own country for one (🇺🇸 🇩🇪 🇫🇷 🇪🇸 🇮🇹 🇵🇹 🇵🇱), `Off` as a word — and pressing it chooses.
@@ -225,7 +221,7 @@ code (`Setting::code`: `ALL`, `DE`) **on purpose** rather than by accident:
   would misalign the bar — `grind-tui` shows the letters, and `:spell` is its picker.
 
 The menus beside the pickers carry the flag too (`Setting::row`: `🇩🇪  Deutsch`), with the
-personal dictionary under the languages. **The word processor has the same picker** (2026-10-17):
+personal dictionary under the languages. **The word processor has the same picker**:
 at the end of the status line in the GNOME window, the terminal (`ALL`/`DE`) and the Windows
 window (`ALL`/`DE`, a click chooses), in the browser's shared bottom bar, and in the Mac's text
 window in a titlebar accessory of its own, where the grid's picker sits.
