@@ -102,8 +102,11 @@ jobs:
           cache-from: type=gha,scope=grind-cli-${{ matrix.arch }}
           cache-to: type=gha,mode=min,scope=grind-cli-${{ matrix.arch }}
 
-      - name: Print Sheet Version
-        run: docker run --rm "$IMAGE:$TAG-${{ matrix.arch }}" /grind --version
+      # The version the checkout says, from the commit checked out, a clean tree, a release build.
+      - name: What grind says it is
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          .github/scripts/check-version.sh "$version" docker run --rm "$IMAGE:$TAG-${{ matrix.arch }}" /grind
 
       # The README calls this image "about as small as one gets", which is a
       # claim, so measure it. Here rather than only in the manifest job because
@@ -195,6 +198,11 @@ jobs:
           load: true
           cache-from: type=gha,scope=grind-web-${{ matrix.arch }}
           cache-to: type=gha,mode=min,scope=grind-web-${{ matrix.arch }}
+
+      - name: What grind says it is
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          .github/scripts/check-version.sh "$version" docker run --rm "$IMAGE:$TAG-${{ matrix.arch }}"
 
       # grind serve listens on 127.0.0.1 only, so the container shares the runner's network
       # rather than publishing a port. It answers the page's probe and serves the page.
