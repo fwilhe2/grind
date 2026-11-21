@@ -331,6 +331,34 @@ fn the_meta_package_pins_the_workspace_version() {
     }
 }
 
+/// The VS Code extension carries the suite's version, the number alone.
+#[test]
+fn the_vscode_extension_has_the_workspace_version() {
+    let version = WORKSPACE
+        .lines()
+        .find_map(|line| line.strip_prefix("version = \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("the workspace declares its version");
+    let number = version
+        .split_once('-')
+        .map_or(version, |(number, _)| number);
+    for (file, text) in [
+        (
+            "package.json",
+            include_str!("../../editors/vscode/package.json"),
+        ),
+        (
+            "package-lock.json",
+            include_str!("../../editors/vscode/package-lock.json"),
+        ),
+    ] {
+        assert!(
+            text.contains(&format!("\n    \"version\": \"{number}\",")),
+            "editors/vscode/{file} is not at {number}: run scripts/set-version.sh {version}"
+        );
+    }
+}
+
 /// The vacuity guard, [`build/tests/manifest.rs`]'s second test in this file's terms: a new
 /// shell added to the workspace and to neither list here would leave this file passing while
 /// checking one crate fewer, which is how a ratchet quietly stops.
