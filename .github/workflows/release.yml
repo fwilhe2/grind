@@ -65,17 +65,23 @@ jobs:
         with:
           tool: cargo-edit
 
-      # Only a commit every check passed on is released; one still being checked is not yet. A
-      # commit this workflow pushed (`Start …-dev`) started none, so a release right after a
+      # Only a commit every check passed on is released; one still being checked is waited for.
+      # A commit this workflow pushed (`Start …-dev`) started none, so a release right after a
       # release waits for the next push.
       - name: main's checks passed
+        timeout-minutes: 120
         env:
           GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           sha="$(git rev-parse HEAD)"
-          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=push&per_page=100" \
-            --jq '.workflow_runs[] | "\(.name): \(.status) \(.conclusion // "")"')"
+          while :; do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=push&per_page=100" \
+              --jq '.workflow_runs[] | "\(.name): \(.status) \(.conclusion // "")"')"
+            [ -n "$runs" ] && grep -q -v ': completed ' <<< "$runs" || break
+            echo "waiting for: $(grep -v ': completed ' <<< "$runs" | tr '\n' ' ')"
+            sleep 60
+          done
           echo "${runs:-no runs}"
           failed="$(grep -v ': completed \(success\|skipped\|neutral\)$' <<< "$runs" || true)"
           if [ -z "$runs" ] || [ -n "$failed" ]; then
