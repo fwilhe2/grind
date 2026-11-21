@@ -9,7 +9,7 @@ What changed for the people who use grind, release by release. `## Unreleased` i
 the next release's notes: every change someone using grind would notice adds a line there as it
 lands, and the release workflow publishes the section as it stands.
 
-## Unreleased
+## 0.1.0 — 2026-11-21
 
 ### Breaking changes
 
@@ -29,3 +29,4 @@ lands, and the release workflow publishes the section as it stands.
 
 - Linux packages built between releases now sort before the release they lead up to, so
   installing the release replaces them.
+
