@@ -213,6 +213,32 @@ Things that bite if forgotten:
   (`suite/`) must depend on it.
 - `core/tests/third_party.rs` rewrites `core/src/third_party/data.rs` and fails when it was stale.
 
+## Releases
+
+Main carries the next version with `-dev` (`0.1.1-dev`), in `[workspace.package]`; every crate,
+the meta-package's pins in `suite/Cargo.toml` and the VS Code extension follow it. Only
+`scripts/set-version.sh` changes it, and only the release workflow runs that: never bump a
+version by hand or in a feature commit.
+
+A release is **Actions → Release** (`release.yml`, `workflow_dispatch`): `bump` (patch, minor,
+major) and `dry_run`. It refuses unless main's push checks passed, commits the release
+(`CHANGELOG.md`'s `## Unreleased` filed under the version by `scripts/release-notes.py`), tags
+`vX.Y.Z`, commits the next `-dev` with an empty `## Unreleased`, and pushes both atomically.
+Then it builds from the tag and attaches the binaries, `artifacts.yml`'s packages, the Windows
+shell, the Mac installer and the `.vsix`, pushes the images, attests every file, and publishes.
+The first release is main's version without `-dev`. A dry run does all of it on a scratch branch
+and publishes nothing; run one after changing any workflow a release calls.
+
+- Pushes made with `GITHUB_TOKEN` start no workflow, so every build is a job of `release.yml`,
+  and `artifacts.yml` and `container.yml` are reusable workflows: each checkout in them takes
+  `ref: ${{ inputs.ref }}`, or a release ships main's code.
+- Every shipped binary is held to the version, commit and clean tree it was built from
+  (`.github/scripts/check-version.sh`). Packages carry `-dev` as `~dev` so they sort before
+  their release; the Mac bundle and the extension carry the number alone.
+- A build that fails after the push: re-run the failed jobs, which build from the tag. A new run
+  refuses the version as tagged already.
+- Images: `dev` is the newest build of main, `latest` the newest release.
+
 ## Architecture
 
 Shared Core / Native Shell. All state and logic live in the core crates; every shell is a
@@ -288,7 +314,8 @@ update: check `../clerk` for callers, and name the change in the commit message.
   line to `CHANGELOG.md`'s `## Unreleased`, under *Breaking changes*, *Changes* or *Fixes*, in
   the same commit: what changes for that person, in their words — no crate names, paths, R-ids
   or internals, one line per change, related lines merged. Refactors, tests and CI get none. A
-  release (`.github/workflows/release.yml`) publishes the section as it stands.
+  release publishes the section as it stands, files it under its version and starts an empty
+  one (Releases, above).
 - **Simple, not easy** (`doc/simplicity.md`): a migration ends with the old path deleted; a
   decision two shells hold moves into the core; no cargo feature or setting without someone who
   needs the other answer; no `pub` without an outside caller. `cli/tests/simplicity.rs` holds
