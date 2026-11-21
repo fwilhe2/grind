@@ -16,14 +16,14 @@ Rule 4 is checked mechanically, and only down one column: `cli/tests/parity.rs` 
 each `App`'s methods (`sheet/src/`, `text/src/`) against `doc/cli-parity-sheet.md` and
 `doc/cli-parity-text.md`, so **the CLI's column cannot silently lose a row**. Nothing checks the
 other six. Each shell names its own gaps in its own document, which is the right place for the
-*reason* — and it is the wrong place to see that `grind-win32` cannot bold a cell while
-`grind-tui` can, because no reader holds five gap lists in their head at once.
+*reason* — and it is the wrong place to see that one window lacks what another has, because
+no reader holds six gap lists in their head at once.
 
 This file is that cross-cut: one row per capability, one column per client, read out of the
-code rather than out of the five shell documents. It is **descriptive, not normative** — where
+code rather than out of the six shell documents. It is **descriptive, not normative** — where
 it disagrees with `doc/sheet-shell.md`, `doc/text-shell.md`, `doc/tui-shell.md`,
-`doc/web-shell.md` or `doc/windows-shell.md`, those are right and this is stale. §10 says how to
-re-derive it, and why that step is worth keeping.
+`doc/web-shell.md`, `doc/windows-shell.md` or `doc/macos-shell.md`, those are right and this is
+stale. §10 says how to re-derive it, and why that step is worth keeping.
 
 ## 1. The clients
 
@@ -592,115 +592,57 @@ pop-up set all six levels, Title and Subtitle; ⌥⌘0–6 reach Body and the he
 row or a Problems finding goes to one too, and Format ▸ Paragraph moves the selected paragraphs
 up or down past their neighbour or deletes them — by where the caret is, not by address. ⁴ The sidebar's Outline section.
 
-## 8. The divergences that matter, ranked
+## 8. Where the clients differ
 
-Everything here is reachable from the CLI, which is R9 doing its job. The order is by how much
-of a client's own job is missing.
+Everything here is reachable from the CLI but the first row, which is R9's one open exception.
+Read off the ○ and ◐ cells above, largest first.
 
-1. ~~**`grind-win32` can barely format a cell.**~~ **Closed** (2026-09-27, W12): the grid has
-   the format strip decision 4 always gave it — bold, italic, alignment, both colours, the
-   number presets, a decimal step and Clear, each a read of the active cell and one
-   `App::set_style` or `App::set_format`, the same verbs in the Format menu. What is left is
-   wrap and borders (§5 ˣ), which this window does not draw, and so does not offer.
-2. ~~**`grind-sheet-gtk` has no borders control** (§5 ᵃ).~~ **Closed** (2026-10-02): a Borders
-   toggle in the format bar, over `format::bordered`.
-3. ~~**`grind-win32` cannot colour a run either**~~ — **stale, found 2026-10-02**: its format strip has had colour, highlight, family, size, strike, code and Clear since W5b/W10 and the pane draws the colours; this row and §7 were never updated. `grind-tui` still approximates one. Colour and
-   highlight are the word processor's twin of row 1: the CLI writes them, loop C round-trips
-   them, `grind-web` and `grind-text-gtk` draw them, and the Windows pane shows neither.
-4. **Font family and size are a `grind-text-gtk`-and-CLI pair.** No other shell offers either
-   control; the terminal has one font at one size by construction, and the browser and Windows
-   panes both carry a family they cannot let anybody set.
-5. ~~**No browser client has formula assist.**~~ **Two thirds closed**, after this file was first
-   read: `ui_web/src/sheet/assist.rs` is autocomplete and signature hints over the same
-   `grind_sheet::formula::assist` the GNOME and Windows shells use. **Point mode** — arrow keys
-   building a reference into a half-typed formula — is still absent there and in `grind-win32`,
-   and that file says why for the browser: it edits in exactly one place.
-6. ~~**CSV is CLI-only.**~~ **Closed.** It was the widest *row* in this file — five ○ against one
-   ● — and every client has both directions now. What is left of it is a *narrower* row, and one
-   shape rather than five: no window offers the import's seven options (§6 ʲ). Each imports with
-   `csv::Import::sniffed` and exports at a name whose extension picks the delimiter, which put
-   the two answers a window cannot skip — which delimiter, which range — in the core where four
-   shells share them rather than in four shells that could differ. The decode rule moved with
-   them: `csv::decode` and `csv::NOT_UTF8` are why "this file is not UTF-8, run `iconv`" is one
-   sentence everywhere instead of five.
-7. **Column widths, row heights, hidden tracks, filters and defined names are CLI-and-GNOME
-   only.** Every other client honours all five faithfully and can create none of them.
-8. **Charts are CLI-and-GNOME to author, and only the browser joins them in drawing one.**
-9. **An image can be inserted from the CLI and from `grind-text-gtk`**, and only those two
-   clients draw one.
-10. ~~**Two clients out of five draw a table.**~~ **Closed** (2026-09-27): all five draw the grid
-    now — `grind-text-gtk` and the Windows pane in pixels, the browser as a CSS grid and
-    `grind-tui` in box-drawing characters, each over the same `Faces` seam — and every one of
-    them edits inside a cell, because a cell holds blocks (§7 ᵖ). What is left is narrower:
-    the browser and the Windows pane cannot *insert* one (§7), and no client can merge cells or
-    set a column width (ᵗ).
-11. ~~**Find and replace over cells were the core's gap.**~~ **Closed** (2026-09-28): `App::find`
-    and `App::replace` exist for the spreadsheet (`grind_sheet::find`), and every client reaches
-    them — `grind sheet find`/`replace`, `grind-tui`'s `:find` and `:s/old/new/`, the GNOME
-    window's find bar, the browser's palette and F3, and the Windows grid's Edit menu and F3 —
-    with `grind_sheet::find::step` deciding where the next hit is for the three that step. What
-    is left is narrower, and over *text*: find and replace there exist on the CLI and in the
-    terminal, and find alone in `grind-text-gtk`.
-12. **Text undo is not on the CLI** (§2 ᶜ) — the one row where a shell is ahead of the CLI, and
-    it is a decision about `grind_text::Action` rather than about the CLI.
-13. ~~**`grind-sheet-gtk` has no cross-app handoff** (§2 ᶠ), where its twin does.~~ **Closed** (2026-10-07): *Open in Text*, the banner its twin raises the other way round.
-
-**Amended on 2026-10-02 for the Mac**, which is now on the authoring side of five of these rows —
-written and type-checked, not yet run (§1): it sets and draws borders (row 2), has point mode
-(row 5), sizes tracks by dragging and fitting, turns a filter on and chooses its values, and
-defines, redefines, renames, inlines and deletes names — the renaming and inlining first in any
-window (row 7) — inserts and draws charts (row 8), and inserts and draws pictures (row 9).
-
-**TODO (2026-10-04): opening a large file must not block the UI thread — only the GNOME
-spreadsheet window does that right.** `Tool_Entsparphase_Weltportfoliom.xlsx` (a Google Sheets
-export, 5 sheets of ~10,000 styled columns, 1.6 million cells, ~60 s and ~2.5 GB to open in a
-release build) froze `grind-sheet-gtk` until GNOME offered to kill it. Fixed there by
-`Ui::load_then` (`ui_sheet_gtk/src/main.rs`): the whole slow half — read, `grind_open::import`,
-`grind_sheet::read_bytes` — runs on a worker thread with no `App` and no widget, and the main
-thread only calls `App::open_document` and shows a toast while it waits. **Not yet checked or
-fixed in** `grind-text-gtk` (same shape for a big `.odt`), `grind-tui`, `grind-win32` (a frozen
-window is "Not Responding" there too), `grind-mac` (the beachball) and `grind-web` (a wasm module
-has no thread to hand it to without a worker, so it needs the page's own Worker). Each shell
-needs the same three things: the work off the UI thread, a visible "opening…" state with the
-window still drawn, and a second open refused while one runs. The shared half already exists —
-`App::open_document` — and the remaining open question is whether `grind_xlsx::open`'s
-write-then-read round trip (about a third of the time) can hand over a `Document` directly. Also
-worth a look: peak memory, since a styled blank costs a cell.
-
-**The same goes for an edit's recalculation** (2026-10-04): `RecalcMode::Document` recalculated all
-600,000 formulas of that workbook inside the edit, with the write lock held, so every repaint
-waited too — 85 s, of which `Engine::area` re-scanning every formula per open range (`B45:NTQ45`)
-was most, now memoised: 14 s. `grind-sheet-gtk` calls `App::defer_recalc(true)`, pays what is owed
-with `App::take_recalc_owed` + `App::recalc_in_place` on a worker (a read lock, a progress toast,
-the window's actions switched off by `Ui::set_busy`) and the result joins the edit's undo entry.
-Every other shell still recalculates inside the edit and freezes the same way on a big document.
+1. **Text undo is not on the CLI** (§2 ᶜ): `grind_text::Action` is not serialisable, so there is
+   no text session to carry it between invocations. Every window undoes.
+2. **Opening a large document, or recalculating one, blocks every window but the GNOME
+   spreadsheet's.** A workbook of 1.6 million styled cells takes about a minute to open, and
+   `grind-sheet-gtk` reads it on a worker thread (`Ui::load_then`: the read, `grind_open::import`
+   and `grind_sheet::read_bytes` hold no `App` and no widget) and shows a toast while the window
+   stays drawn. It also defers recalculation (`App::defer_recalc`) and pays it on a worker under
+   a read lock, with the window's actions off. Every other shell opens and recalculates on its UI
+   thread. Each needs the work off that thread, an *opening…* state and a second open refused
+   meanwhile; the browser needs a Worker for it. `App::open_document` is the shared half.
+3. **A table in a text document**: no client merges its cells or sets a column width (§7 ᵗ); a
+   merge read from a file is kept, projected and drawn.
+4. **Checkboxes in cells** are added and removed only from the CLI (§6 ᶜᵇ); every client draws and
+   ticks one.
+5. **Number formats beyond the presets**: every client but the CLI and the GNOME spreadsheet
+   window offers decimal steps and the three currencies of `numfmt::CURRENCIES`, and no other
+   symbol (§5).
+6. **Blocks by address** — insert, delete, move — are the CLI's and the terminal's; the windows
+   move and delete the block at the caret (§7 ᵍᵖ).
+7. **The two GNOME windows have no welcome screen and do not start the other kind in place**, by
+   decision: one binary per document type (`doc/suite.md`).
+8. **The browser does not zoom a text document** (§7).
+9. **The terminal**, by construction: no zoom, no dragging, no pictures, one font at one size, and
+   colours, borders and charts as near as character cells come (§§3–7).
 
 ## 9. Absent from every client
 
 Not a parity problem — a feature line. Each has its row in `doc/not-doing.md` or a gate in a
-shell document, and none of them is reachable from the CLI either.
+shell document, and none is reachable from the CLI either.
 
-**Spreadsheet.** Merged-cell rendering (the model carries no spans) ·
-freeze panes · sort · printing · pivot tables · macros
-(`doc/not-doing.md` §1 — the generator is the answer, and `grind build` is a CLI verb by R11).
-**Autosave is no longer in this list**: the macOS shell has it, by platform convention, and no
-other client does (`doc/not-doing.md` §3, *Autosave*).
+**Spreadsheet.** Freeze panes · sort · printing · pivot tables · macros (`doc/not-doing.md` §1:
+the generator is the answer, and `grind build` is the CLI's by R11). Autosave is the macOS
+shell's alone, by platform convention (`doc/not-doing.md` §3).
 
-**Word processor.** Footnotes · fields (`text:page-number`, `text:date`, …) · style
-*definitions* (a named character style is kept and never interpreted) · a paginated *editing*
-view (pages are an output, §7's Paper rows, until `doc/page-model.md` is built) · an
-image anchored mid-sentence, which draws as the placeholder character everywhere · a table's own
-style (column widths, borders), merging cells from any client, and `table:formula` in a cell —
-the last of which is gated on `doc/odt-format.md` §5's unanswered question about whether a
-Writer table's formula is OpenFormula at all.
+**Word processor.** Editing a footnote or a field (both are read, shown and printed, and written
+back as the file spelled them) · style *definitions* (a named style is kept and never
+interpreted) · a table's own style (column widths, borders) · `table:formula`, gated on
+`doc/odt-format.md` §5's open question whether a Writer table's formula is OpenFormula.
 
-**Both.** Pagination as an editing view, and RTL, both gated — RTL by explicit decision in `doc/text-layout.md`.
-Editing the code view (`doc/dsl.md` §6.4). `grind test` is built and, like `grind build`,
-is the CLI's alone by R11: no shell links the generator.
+**Both.** Right-to-left layout, excluded by decision (`doc/text-layout.md` decision 1). Editing
+the code view (`doc/dsl.md` §6.4). `grind build` and `grind test` are the CLI's alone by R11: no
+shell links the generator.
 
 ## 10. How to re-derive this
 
-The tables were read out of the code, not out of the shell documents, in this order:
+The tables are read out of the code, not out of the shell documents, in this order:
 
 ```sh
 # 1. What each application can do at all — the two authorities on the rows.
@@ -715,73 +657,19 @@ grep -n 'pub const HELP'         ui_tui/src/sheet/mod.rs ui_tui/src/text/mod.rs
 sed -n '/pub static MENUS/,/^];/p' ui_mac/src/menu.rs      # and Command::applies, and tools.rs
 grind sheet --help; grind text --help
 
-# 3. The cross-check, which is what actually caught §8's first two rows: a verb table can
-#    promise anything, and a shell that never calls the core method cannot deliver it.
+# 3. The cross-check: a verb table can promise anything, and a shell that never calls the
+#    core method cannot deliver it.
 for d in ui_sheet_gtk ui_text_gtk ui_tui ui_web ui_win32 ui_mac; do
   echo "== $d"; grep -rhoE '\.(set_style|set_format|set_filter|set_col_width|import_csv)\(' $d/src | sort -u
 done
 ```
 
 Step 3 is the one worth keeping. A gap list is written by the person who built the shell, and
-what they leave out is exactly what they did not notice they had left out — `ui_win32` calling
-neither `set_style` nor `set_format` is four seconds of `grep` and was in none of the five
-documents that describe these clients.
+what they leave out is what they did not notice they had left out; a shell that calls neither
+`set_style` nor `set_format` is four seconds of `grep`.
 
-**What would make this file self-checking**, if it earns it: the same shape everything else here
-uses — a test that reads each shell's own verb table and this document's tables and fails when
-they disagree, the way `cli/tests/parity.rs` reads `sheet/src/lib.rs`. It is not built. The
-honest reason is that a shell's verb table is five different shapes (a `const` slice, a `Vec` of
-tuples, a `&str` of help text, an HTML file, a `match`), and normalising all five is a bigger
-piece of work than the one thing it would buy: this file going stale is visible the first time
-somebody reads it beside a shell, where a broken ratchet is visible immediately. Until then it
-carries a date.
-
-**Amended on 2026-10-02/03** after a gap-closing pass over all clients, in about eighty commits. Every
-row it touched carries a note saying what was done and how far it was *checked*: Wine renders for the
-Windows grid's borders, charts, wrapped text and zoom; a pty run for the terminal's in-session
-`:new`/`:open`; the jsdom smoke test for the browser's header click; and **build- and lint-checked
-only** for the GNOME additions (no display here), the Windows pointer paths (resize drag, point mode,
-recent documents) and the browser's drag, zoom and point mode. The Windows text column and the
-browser's hide/filter cells were already stale and were corrected. Shared pieces were hoisted into
-the cores so shells cannot diverge: `grind_text::{find, table, blocks, picture}` and
-`grind_sheet::{verbs, autoheight, chart_paint, nav::fills, Filter::over_selection,
-look::border_strokes, format::bordered}`.
-
-**Still open**, as the ○ cells above say: charts — editing and restyling outside GNOME and
-the Mac beyond the kind (which every window chooses since 2026-10-09), and none drawn by the terminal; the terminal's zoom and drag (a terminal has neither) and
-its borders and pictures (it has no way to draw them); the seven CSV import options in any window; a welcome screen and a
-second document kind in the two GNOME shells (by decision); and the number-format sample in the terminal.
-
-**Closed on 2026-10-03** (build- and lint-checked, jsdom smoke for the browser; not seen drawn): the
-Windows Number Format chooser and the browser's `format.*` palette rows now show what the active
-cell would display under each (`App::shown_as`), and both read a formula through its names with the
-Names overlay on — the Windows bar in its reading slot after the friendly one, the browser beside
-the arithmetic — over the new `grind_sheet::place::named_reading`.
-
-**Amended on 2026-10-01** for the Mac column (`doc/macos-shell.md`), read out of `ui_mac`
-through M10 by the same three steps — every row judged against the code, its notes numbered so
-they cannot collide with the lettered ones — and none of it yet seen running. Nothing else was
-re-derived.
-
-**Amended on 2026-09-22** for §5's three locale rows — a document now states its own locale, the
-GNOME window and the CLI set it, and every client honours it since the core does the spelling —
-and for §6's chart rows: a chart read from a table, its own title and legend (which the browser
-draws too), and the GNOME window's preview. Nothing else was re-derived.
-
-**Amended on 2026-09-12** for the CSV rows (§6, §8 row 6), which every GUI shell now has, and for
-§8 row 5, which the browser shell's formula assist narrowed to point mode after the first
-reading. Amended again the same day for §2's three start rows: the browser and Windows shells
-open on a **welcome screen** rather than on an empty spreadsheet, which turned "New, empty
-document" from a gap into a capability in the web column and added a way to start the *other*
-kind in place. Nothing else was re-derived that day, so everything below still carries the date
-it was read on.
-
-**Read on 2026-09-10**, at `main`. The clients as of then: `grind sheet` complete through phase
-9, `grind text` through S10, the GNOME spreadsheet through M10 plus charts, filters and the
-chrome rework, the Windows shell through W10, `grind-text-gtk` through the showcase pass that
-gave it a formatting bar, a clipboard, block structure and Insert Picture (`doc/text-shell.md`),
-and `grind-tui` through the pass that gave it chrome, column widths, a formula-completion band,
-cell search, the track and name verbs, CSV both ways, bookmarks, `:move`, an outline pane and a
-table drawn as a grid (`doc/tui-shell.md`).
-
-**Re-read on 2026-10-03:** the browser's row auto-height (§6 ʷᵗ) was never a gap in the way the ○ said. The grid is a `<table>`; `.grid td`'s `height` is a minimum there, a row is given an inline height only when the document sized it, and a wrapped cell's inline `white-space:normal` and its `font-size` both reach the cell — so the browser grows the row itself. What it does not do is tell the shell: `visible()` still counts rows at the nominal 24px, so a tall row lets the last visible row spill past the surface rather than scrolling it. Read from the CSS and the code, not seen drawn.
+**Why this file is not self-checking.** The test would read each shell's verb table beside these
+tables, the way `cli/tests/parity.rs` reads `sheet/src/lib.rs`. A shell's verb table is six
+shapes (a `const` slice, a `Vec` of tuples, a `&str` of help text, an HTML file, a `match`, a
+`static`), and normalising them costs more than it buys: this file going stale is visible the
+first time somebody reads it beside a shell.

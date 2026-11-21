@@ -169,10 +169,8 @@ architecture supplies most of what "a Mac document application" means with no co
 
 **Autosave in place is on.** It has been the Mac convention since 10.7 — TextEdit, Preview and
 Pages all do it — and the user chose the convention. This is the first client in the suite with
-autosave. `doc/feature-matrix.md` §9 lists autosave as absent from every client, and
-`doc/sheet-shell.md` calls it "a named later toggle". Both are amended in M4, when it is built,
-with the line moved to "the Mac only, by platform convention". What makes it safe here rather
-than reckless:
+autosave; `doc/feature-matrix.md` §9 and `doc/not-doing.md` §3 say "the Mac only, by platform
+convention". What makes it safe here rather than reckless:
 
 - **An untouched document is never written.** `NSDocument` autosaves only a document with
   changes, and the observer is registered after the load, so opening a file is not an edit.
