@@ -97,3 +97,12 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.foldhash]
 opt-level = 3
+
+# Shipped binaries are sized for download: one codegen unit and whole-program LTO let the
+# linker drop what no binary reaches, and nobody debugs a release build from its symbols.
+# `cargo bloat` (artifacts.yml) turns stripping back off for its own build.
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
