@@ -259,6 +259,11 @@ pub fn info_plist(version: &str) -> String {
     pair(&mut out, 1, "CFBundleExecutable", EXECUTABLE);
     pair(&mut out, 1, "CFBundleIconFile", ICON);
     pair(&mut out, 1, "CFBundlePackageType", "APPL");
+    // Both keys are dot-separated integers to macOS, and the installer compares them: a
+    // `-dev` build carries the number of the release it leads up to.
+    let version = version
+        .split_once('-')
+        .map_or(version, |(number, _)| number);
     pair(&mut out, 1, "CFBundleShortVersionString", version);
     pair(&mut out, 1, "CFBundleVersion", version);
     pair(&mut out, 1, "CFBundleInfoDictionaryVersion", "6.0");
@@ -395,6 +400,8 @@ mod tests {
             assert!(plist.contains(ty.identifier), "{}", ty.identifier);
         }
         assert!(plist.contains("<string>1.2.3</string>"));
+        assert!(info_plist("1.2.3-dev").contains("<string>1.2.3</string>"));
+        assert!(!info_plist("1.2.3-dev").contains("-dev"));
         assert!(plist.contains("<key>UTExportedTypeDeclarations</key>"));
         assert!(plist.contains("<key>UTImportedTypeDeclarations</key>"));
         assert_eq!(escape("a<b&c"), "a&lt;b&amp;c");

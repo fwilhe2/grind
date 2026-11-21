@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-spell"
-version = "0.0.0"
+version.workspace = true
 description = "Spelling dictionaries for the word processor (doc/spelling.md)"
 edition.workspace = true
 license.workspace = true

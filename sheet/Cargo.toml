@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-sheet"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native spreadsheet — the document model, ODS filters and OpenFormula engine"
 edition.workspace = true
 license.workspace = true

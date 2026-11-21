@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-sheet-gtk"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native spreadsheet for GNOME"
 edition.workspace = true
 license.workspace = true

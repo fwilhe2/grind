@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-web"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native office suite — the browser shell"
 edition.workspace = true
 license.workspace = true

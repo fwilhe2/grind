@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-core"
-version = "0.0.0"
+version.workspace = true
 description = "ODF plumbing shared by every document type — packaging, namespaces, the reader's context stack"
 edition.workspace = true
 license.workspace = true

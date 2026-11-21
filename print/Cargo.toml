@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-print"
-version = "0.0.0"
+version.workspace = true
 description = "Pages, PDF and print preview for the word processor (doc/pdf-export.md)"
 edition.workspace = true
 license.workspace = true

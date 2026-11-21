@@ -34,9 +34,12 @@
 // Microsoft's own VERSIONINFO reference says the identifier "must be 1", so the literal is the
 // spelling that cannot drift: it depends on no include path, and `1 ICON` above it is already
 // written the same way.
+//
+// `build.rs` fills in the three `@…@`: the crate's version for people, and its number with a
+// fourth part, the only form Windows takes, for the rest.
 1 VERSIONINFO
-FILEVERSION     0,0,0,0
-PRODUCTVERSION  0,0,0,0
+FILEVERSION     @NUMBERS@
+PRODUCTVERSION  @NUMBERS@
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          0x40004L
@@ -49,12 +52,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Florian Wilhelm"
             VALUE "FileDescription",  "Grind - an ODF-native office suite"
-            VALUE "FileVersion",      "0.0.0.0"
+            VALUE "FileVersion",      "@NUMBER@"
             VALUE "InternalName",     "grind-win32"
             VALUE "LegalCopyright",   "Copyright (C) 2026 Florian Wilhelm"
             VALUE "OriginalFilename", "grind-win32.exe"
             VALUE "ProductName",      "Grind"
-            VALUE "ProductVersion",   "0.0.0.0"
+            VALUE "ProductVersion",   "@VERSION@"
         END
     END
     BLOCK "VarFileInfo"

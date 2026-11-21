@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-win32"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native office suite — the Windows shell"
 edition.workspace = true
 license.workspace = true

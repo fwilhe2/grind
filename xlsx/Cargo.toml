@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-xlsx"
-version = "0.0.0"
+version.workspace = true
 description = "Reading Excel workbooks — an import filter that produces an ODF document"
 edition.workspace = true
 license.workspace = true

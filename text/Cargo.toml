@@ -4,7 +4,7 @@
 
 [package]
 name = "grind-text"
-version = "0.0.0"
+version.workspace = true
 description = "An ODF-native word processor — the document model and ODT filters"
 edition.workspace = true
 license.workspace = true
