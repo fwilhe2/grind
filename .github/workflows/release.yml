@@ -10,7 +10,7 @@ name: Release
 #      version main was working towards), commits it with CHANGELOG.md's Unreleased section
 #      cut, tags it, commits the next `-dev` on top, and pushes the tag and main in one
 #      atomic push, so a main that moved meanwhile fails the run before anything is public;
-#   3. creates the release as a draft, its notes the section that was cut;
+#   3. creates the release as a draft, its notes where to download and the section that was cut;
 #   4. builds from the tag: `grind` and `grind-tui` per platform, then everything
 #      artifacts.yml builds — the Linux packages (the GTK shells among them), the Windows
 #      shell, Grind.pkg and Grind.dmg, the VS Code extension — and the container images; each
@@ -133,7 +133,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           scripts/set-version.sh "$VERSION"
-          scripts/release-notes.py cut "$VERSION" "$RUNNER_TEMP/notes.md"
+          scripts/release-notes.py cut "$VERSION" "$RUNNER_TEMP/notes.md" "$GITHUB_REPOSITORY"
           git commit -am "Release $VERSION"
           git tag -a "v$VERSION" -m "grind $VERSION"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

@@ -5,8 +5,9 @@
 #
 # release-notes.py — CHANGELOG.md's `## Unreleased` section, at a release (.github/workflows/release.yml):
 #
-#   scripts/release-notes.py cut 1.2.0 notes.md   # the section, empty headings dropped, to notes.md,
-#                                                 # and its heading becomes `## 1.2.0 — <date>`
+#   scripts/release-notes.py cut 1.2.0 notes.md owner/repo
+#       # the release page's notes to notes.md: where to download, then the section with empty
+#       # headings dropped; in CHANGELOG.md the section's heading becomes `## 1.2.0 — <date>`
 #   scripts/release-notes.py open                 # a fresh, empty `## Unreleased` on top
 
 import datetime
@@ -42,10 +43,60 @@ def notes(body: list[str]) -> str:
     return (text or "No changes a user would notice.") + "\n"
 
 
-def cut(version: str, out: pathlib.Path) -> None:
+def downloads(version: str, repo: str) -> str:
+    """Which file to download on each platform, linked; the names are release.yml's."""
+    base = f"https://github.com/{repo}/releases/download/v{version}"
+
+    def link(label: str, name: str) -> str:
+        return f"[{label}]({base}/{name})"
+
+    def cli(target: str, ext: str) -> str:
+        return link(target.split("-")[0], f"grind-v{version}-{target}.{ext}")
+
+    return f"""## Download
+
+**macOS**, Apple silicon and Intel: {link(f"Grind-{version}.pkg", f"Grind-{version}.pkg")} puts Grind in your own Applications folder. It is not notarized, so macOS refuses it the first time: open System Settings ▸ Privacy & Security and choose *Open Anyway*. To drag it in yourself instead: {link(f"Grind-{version}.dmg", f"Grind-{version}.dmg")}.
+
+**Windows**, x64 and Arm: {link(f"grind-win32-{version}-x86_64.exe", f"grind-win32-{version}-x86_64.exe")} is the whole app, no installer. It is not signed, so SmartScreen asks first: *More info* ▸ *Run anyway*.
+
+**Linux**, x86_64: the spreadsheet, the word processor, the command line and the terminal version.
+
+```sh
+v={version} u={base}
+# Debian, Ubuntu
+cd "$(mktemp -d)" && curl -fL --remote-name-all "$u"/grind{{,-cli,-tui,-sheet-gtk,-text-gtk}}_$v-1_amd64.deb && sudo apt install ./*.deb
+# Fedora
+sudo dnf install "$u/grind-$v-1.noarch.rpm" "$u"/grind-{{cli,tui,sheet-gtk,text-gtk}}-$v-1.x86_64.rpm
+```
+
+**Only the command line**, `grind` and `grind-tui` in one archive, nothing to install (the Linux ones run on any distribution):
+
+| Linux | macOS | Windows |
+|---|---|---|
+| {cli("x86_64-unknown-linux-musl", "tar.gz")} · {cli("aarch64-unknown-linux-musl", "tar.gz")} | {cli("aarch64-apple-darwin", "tar.gz")} · {cli("x86_64-apple-darwin", "tar.gz")} | {cli("x86_64-pc-windows-msvc", "zip")} · {cli("aarch64-pc-windows-msvc", "zip")} |
+
+**In the browser**, a folder of documents served at http://127.0.0.1:8080/ (Linux):
+
+```sh
+docker run --rm --network host --user "$(id -u):$(id -g)" -v ~/Documents:/documents ghcr.io/{repo}-web:{version}
+```
+
+**VS Code**: {link(f"grind-vscode-{version}.vsix", f"grind-vscode-{version}.vsix")}, for `.grind` and `.rhai` files, with `grind` on your `PATH`.
+
+Every file is attested as built from this tag: `gh attestation verify <file> -R {repo}`.
+
+"""
+
+
+def demote(text: str) -> str:
+    """Headings one level down, under the release page's own `## What changed`."""
+    return "\n".join("#" + line if line.startswith("### ") else line for line in text.splitlines()) + "\n"
+
+
+def cut(version: str, out: pathlib.Path, repo: str) -> None:
     lines = CHANGELOG.read_text().splitlines()
     start, end = section(lines)
-    out.write_text(notes(lines[start + 1 : end]))
+    out.write_text(downloads(version, repo) + "## What changed\n\n" + demote(notes(lines[start + 1 : end])))
     # The release's notes as published, empty headings and all removed.
     released = notes(lines[start + 1 : end]).rstrip("\n").splitlines()
     lines[start:end] = [f"## {version} — {datetime.date.today().isoformat()}", "", *released, ""]
@@ -63,9 +114,9 @@ def open_() -> None:
 
 if __name__ == "__main__":
     match sys.argv[1:]:
-        case ["cut", version, out]:
-            cut(version, pathlib.Path(out))
+        case ["cut", version, out, repo]:
+            cut(version, pathlib.Path(out), repo)
         case ["open"]:
             open_()
         case _:
-            sys.exit("usage: release-notes.py cut <version> <out> | release-notes.py open")
+            sys.exit("usage: release-notes.py cut <version> <out> <owner/repo> | release-notes.py open")
