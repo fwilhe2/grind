@@ -84,10 +84,18 @@ jobs:
             [ "$level" = warning ]
           fi
 
-      # Fails when there is no release yet; the next step tells that apart from an error.
+      # The first release has nothing to bump: it is the version main has been working towards.
+      - name: Is there a release yet
+        id: released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          count="$(gh release list --exclude-drafts --limit 1 --json tagName --jq length)"
+          echo "any=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - name: Bump the latest release's version
         id: bump
-        continue-on-error: true
+        if: ${{ steps.released.outputs.any == 'true' }}
         uses: fwilhe2/bump-version@0f96fe11b96887d841bd9ff689df5c4fe0917346 # v3.0.3
         with:
           component: ${{ inputs.bump }}
@@ -96,17 +104,13 @@ jobs:
         id: version
         env:
           BUMPED: ${{ steps.bump.outputs.newVersion }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -n "$BUMPED" ]; then
             version="${BUMPED#v}"
-          elif [ "$(gh release list --limit 1 --json tagName --jq length)" = 0 ]; then
+          else
             current="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
             version="${current%%-*}"
             echo "The first release: $version, from main's $current"
-          else
-            echo "::error::bump-version failed, and there are releases it should have read"
-            exit 1
           fi
           if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
             echo "::error::v$version is tagged already"
