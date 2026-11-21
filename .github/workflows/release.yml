@@ -1,0 +1,314 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Release
+
+# A release, by hand: main carries `X.Y.Z-dev` between releases, and this
+#
+#   1. refuses unless every workflow a push to main ran on its commit has passed;
+#   2. picks the version (the latest release bumped as asked; the first release is the
+#      version main was working towards), commits it with CHANGELOG.md's Unreleased section
+#      cut, tags it, commits the next `-dev` on top, and pushes the tag and main in one
+#      atomic push, so a main that moved meanwhile fails the run before anything is public;
+#   3. creates the release as a draft, its notes the section that was cut;
+#   4. builds from the tag: `grind` and `grind-tui` per platform, then everything
+#      artifacts.yml builds — the Linux packages (the GTK shells among them), the Windows
+#      shell, Grind.pkg and Grind.dmg, the VS Code extension — and the container images; each
+#      is checked to say it is this version from this commit, and attached;
+#   5. attests every file attached as built here, and publishes the draft once all of it
+#      succeeded.
+#
+# A dry run does 1–4 (1 warns instead of refusing) with the release commit on a scratch
+# branch, `release-dry-run`, instead of a tag and main: it builds and checks everything, then
+# deletes the branch, and creates, pushes and attaches nothing.
+#
+# A tag pushed with GITHUB_TOKEN starts no workflow, which is why the builds are jobs of this
+# one rather than a workflow of their own on `push: tags`. When a build fails after the push,
+# re-run the failed jobs: they build from the tag, while a whole new run would refuse the
+# version that is now tagged.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version component to increment
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      dry_run:
+        description: Build and check everything; tag, push and release nothing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.commit.outputs.commit }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-edit
+
+      # Only a commit every check passed on is released; one still being checked is not yet. A
+      # commit this workflow pushed (`Start …-dev`) started none, so a release right after a
+      # release waits for the next push.
+      - name: main's checks passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&event=push&per_page=100" \
+            --jq '.workflow_runs[] | "\(.name): \(.status) \(.conclusion // "")"')"
+          echo "${runs:-no runs}"
+          failed="$(grep -v ': completed \(success\|skipped\|neutral\)$' <<< "$runs" || true)"
+          if [ -z "$runs" ] || [ -n "$failed" ]; then
+            level=error; [ "$DRY_RUN" = true ] && level=warning
+            echo "::$level::main's ${sha:0:7} has not passed every check: ${failed:-none ran on it}"
+            [ "$level" = warning ]
+          fi
+
+      # Fails when there is no release yet; the next step tells that apart from an error.
+      - name: Bump the latest release's version
+        id: bump
+        continue-on-error: true
+        uses: fwilhe2/bump-version@0f96fe11b96887d841bd9ff689df5c4fe0917346 # v3.0.3
+        with:
+          component: ${{ inputs.bump }}
+
+      - name: The release version
+        id: version
+        env:
+          BUMPED: ${{ steps.bump.outputs.newVersion }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$BUMPED" ]; then
+            version="${BUMPED#v}"
+          elif [ "$(gh release list --limit 1 --json tagName --jq length)" = 0 ]; then
+            current="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+            version="${current%%-*}"
+            echo "The first release: $version, from main's $current"
+          else
+            echo "::error::bump-version failed, and there are releases it should have read"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::error::v$version is tagged already"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the release, and the next -dev
+        id: commit
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          scripts/set-version.sh "$VERSION"
+          scripts/release-notes.py cut "$VERSION" "$RUNNER_TEMP/notes.md"
+          git commit -am "Release $VERSION"
+          git tag -a "v$VERSION" -m "grind $VERSION"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          IFS=. read -r major minor patch <<< "$VERSION"
+          next="$major.$minor.$((patch + 1))-dev"
+          scripts/set-version.sh "$next"
+          scripts/release-notes.py open
+          git commit -am "Start $next"
+
+          { echo "## grind $VERSION, then $next"; echo; cat "$RUNNER_TEMP/notes.md"; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the tag and main
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: git push --atomic origin HEAD:main "v$VERSION"
+
+      # Somewhere the build jobs can fetch the release commit from; deleted by `dry-run-done`.
+      - name: Push the release commit to release-dry-run
+        if: ${{ inputs.dry_run }}
+        run: git push --force origin "${{ steps.commit.outputs.commit }}:refs/heads/release-dry-run"
+
+      - name: The draft release
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" --draft --verify-tag \
+            --title "grind $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
+  # `grind` and `grind-tui`, one archive per target with a checksum beside it, each built on a
+  # runner of its own architecture. Linux is musl, statically linked, so one binary runs on
+  # every distribution whatever its glibc, with mimalloc as its allocator (musl's own is slow),
+  # compiled by musl-gcc. Plain cargo rather than cross: inside cross's container
+  # `core/build.rs` cannot read the commit it stamps into `--version`.
+  binaries:
+    needs: version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.version.outputs.commit }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: A C compiler for musl
+        if: contains(matrix.target, 'musl')
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools
+          echo "CC_${TARGET//-/_}=musl-gcc" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        with:
+          bin: grind,grind-tui
+          package: grind-cli,grind-tui
+          target: ${{ matrix.target }}
+          build-tool: cargo
+          locked: true
+          archive: grind-$tag-$target
+          checksum: sha256
+          ref: refs/tags/v${{ needs.version.outputs.version }}
+          token: ${{ github.token }}
+          dry-run: ${{ inputs.dry_run }}
+          dry-run-intended: ${{ inputs.dry_run }}
+      # Before publish can make the release public: each binary is this release, from the tag.
+      # The x86_64 Mac slice runs under Rosetta.
+      - name: What the binaries say they are
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          DIR: target/${{ matrix.target }}/release
+        run: |
+          for bin in grind grind-tui; do
+            .github/scripts/check-version.sh "$VERSION" "$DIR/${bin}${{ runner.os == 'Windows' && '.exe' || '' }}"
+          done
+
+  # The Linux packages, the Windows shell, the Mac app and its installer, the VS Code extension:
+  # built, checked and uploaded as this run's artifacts by the workflow that builds them for
+  # every push to main.
+  artifacts:
+    needs: version
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/artifacts.yml
+    with:
+      ref: ${{ needs.version.outputs.commit }}
+
+  attach:
+    needs: [version, artifacts]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: '{deb-packages,rpm-packages,grind-win32-x64,grind-mac-dmg-macos-15,grind-vscode}'
+          path: artifacts
+      - name: Attach them
+        run: |
+          mkdir release
+          mv artifacts/deb-packages/*.deb artifacts/rpm-packages/*.rpm release/
+          mv artifacts/grind-win32-x64/grind-win32.exe "release/grind-win32-$VERSION-x86_64.exe"
+          mv artifacts/grind-mac-dmg-macos-15/Grind.pkg "release/Grind-$VERSION.pkg"
+          mv artifacts/grind-mac-dmg-macos-15/Grind.dmg "release/Grind-$VERSION.dmg"
+          mv "artifacts/grind-vscode/grind-${VERSION%%-*}.vsix" "release/grind-vscode-$VERSION.vsix"
+          ls -l release
+          gh release upload "v$VERSION" release/*
+
+  # ghcr.io/fwilhe2/grind and ghcr.io/fwilhe2/grind-web, tagged with the version and `latest`.
+  images:
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/container.yml
+    with:
+      ref: ${{ needs.version.outputs.commit }}
+      version: ${{ needs.version.outputs.version }}
+      dry_run: ${{ inputs.dry_run }}
+
+  # Every file on the release, attested as built by this workflow from the tag:
+  # `gh attestation verify <file> -R fwilhe2/grind` says so for anyone who downloads one.
+  publish:
+    needs: [version, binaries, attach, images]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download what is attached
+        run: gh release download "v$VERSION" --dir release
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*
+      - name: Publish the release
+        run: gh release edit "v$VERSION" --draft=false --latest
+
+  dry-run-done:
+    needs: [version, binaries, artifacts, images]
+    if: ${{ always() && inputs.dry_run && needs.version.outputs.commit }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete release-dry-run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/release-dry-run"

@@ -69,12 +69,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # release.yml, for everything it attaches that is not `grind` and `grind-tui` alone.
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to build, the release's
+        type: string
+        required: true
 
 # A superseded pull-request run has no reason to finish — nothing depends on its output.
 # `main` is exempt: its runs are what `scripts/install.sh` downloads and what the next run
 # takes its size baseline from, so they are always allowed to complete.
 concurrency:
-  group: artifacts-${{ github.ref }}
+  group: artifacts-${{ inputs.ref || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # `never`, and it is not a style preference — the first run of the workflow this was extracted
@@ -110,6 +117,8 @@ jobs:
       PY: python3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -129,6 +138,13 @@ jobs:
       # build job, and it matters more here, because these binaries are the ones that leave.
       - name: Build every Linux binary, release
         run: cargo build --release --locked -p grind-cli -p grind-tui -p grind-sheet-gtk -p grind-text-gtk
+
+      - name: What the binaries say they are
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          for bin in grind grind-tui; do
+            .github/scripts/check-version.sh "$version" "target/release/$bin"
+          done
 
       # FIRST, before anything runs `cargo bloat` — see the header. The stripped copy goes to
       # a scratch path so the measured binary is never modified in place either, which also
@@ -313,6 +329,8 @@ jobs:
       PY: python
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -662,6 +680,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Download the executable the windows job already built
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -764,6 +784,8 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           # The universal2 bundle's second slice (decision 11). The runner is arm64, so the
@@ -828,13 +850,15 @@ jobs:
           if-no-files-found: error
 
   # The VS Code client for `grind lsp` (doc/init.md I6), as a .vsix: packaged on every push so
-  # the extension cannot quietly stop building, and offered as an artifact rather than
-  # published — where it is published is the author's decision. No Rust here: the client starts
+  # the extension cannot quietly stop building, and attached to each release by release.yml; no
+  # marketplace, which is the author's decision. No Rust here: the client starts
   # whatever `grind` the user has, so it has nothing of this build's to carry.
   vscode:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - name: Package the extension
         run: editors/vscode/package.sh "$RUNNER_TEMP/vsix"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -849,6 +873,8 @@ jobs:
       PY: python3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -969,6 +995,8 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
