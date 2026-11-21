@@ -810,11 +810,21 @@ jobs:
           .github/scripts/mac-bundle.sh target/release/grind-mac \
             target/x86_64-apple-darwin/release/grind-mac bundle
 
+      # The installer the release ships: into ~/Applications, no administrator, then checked
+      # where it landed.
+      - name: Grind.pkg, installed and checked
+        if: ${{ !cancelled() }}
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+          .github/scripts/mac-pkg.sh bundle/Grind.app "$version" bundle/Grind.pkg
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
           name: grind-mac-dmg-${{ matrix.os }}
-          path: bundle/Grind.dmg
+          path: |
+            bundle/Grind.dmg
+            bundle/Grind.pkg
           if-no-files-found: error
 
   # The VS Code client for `grind lsp` (doc/init.md I6), as a .vsix: packaged on every push so
