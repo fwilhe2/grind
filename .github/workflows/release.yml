@@ -1,0 +1,212 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: Release
+
+# A release, by hand: main carries `X.Y.Z-dev` between releases, and this
+#
+#   1. picks the version (the latest release bumped as asked; the first release is the
+#      version main was working towards), commits it with CHANGELOG.md's Unreleased section
+#      cut, tags it, commits the next `-dev` on top, and pushes the tag and main in one
+#      atomic push, so a main that moved meanwhile fails the run before anything is public;
+#   2. creates the release as a draft, its notes the section that was cut;
+#   3. builds the CLI and the terminal shell per platform, Grind.pkg and Grind.dmg for the Mac,
+#      and the container images, all from the tag, and attaches them;
+#   4. publishes the draft once every one of those succeeded.
+#
+# A tag pushed with GITHUB_TOKEN starts no workflow, which is why the builds are jobs of this
+# one rather than a workflow of their own on `push: tags`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version component to increment
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-edit
+
+      # Fails when there is no release yet; the next step tells that apart from an error.
+      - name: Bump the latest release's version
+        id: bump
+        continue-on-error: true
+        uses: fwilhe2/bump-version@0f96fe11b96887d841bd9ff689df5c4fe0917346 # v3.0.3
+        with:
+          component: ${{ inputs.bump }}
+
+      - name: The release version
+        id: version
+        env:
+          BUMPED: ${{ steps.bump.outputs.newVersion }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$BUMPED" ]; then
+            version="${BUMPED#v}"
+          elif [ "$(gh release list --limit 1 --json tagName --jq length)" = 0 ]; then
+            current="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')"
+            version="${current%%-*}"
+            echo "The first release: $version, from main's $current"
+          else
+            echo "::error::bump-version failed, and there are releases it should have read"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+            echo "::error::v$version is tagged already"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Commit the release, tag it, and commit the next -dev
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          scripts/set-version.sh "$VERSION"
+          scripts/release-notes.py cut "$VERSION" "$RUNNER_TEMP/notes.md"
+          git commit -am "Release $VERSION"
+          git tag -a "v$VERSION" -m "grind $VERSION"
+
+          IFS=. read -r major minor patch <<< "$VERSION"
+          next="$major.$minor.$((patch + 1))-dev"
+          scripts/set-version.sh "$next"
+          scripts/release-notes.py open
+          git commit -am "Start $next"
+
+          git push --atomic origin HEAD:main "v$VERSION"
+
+      - name: The draft release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$VERSION" --draft --verify-tag \
+            --title "grind $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+
+  # `grind` and `grind-tui`, one archive per target with a checksum beside it. The musl build
+  # is plain cargo rather than cross: nothing here compiles C, and inside cross's container
+  # `core/build.rs` cannot read the commit it stamps into `--version`.
+  binaries:
+    needs: version
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        with:
+          bin: grind,grind-tui
+          package: grind-cli,grind-tui
+          target: ${{ matrix.target }}
+          build-tool: cargo
+          locked: true
+          archive: grind-$tag-$target
+          checksum: sha256
+          ref: refs/tags/v${{ needs.version.outputs.version }}
+          token: ${{ github.token }}
+
+  # Grind.app, universal, with mac-bundle.sh's checks; then the installer, installed on the
+  # runner and checked where it landed.
+  mac-installer:
+    needs: version
+    permissions:
+      contents: write
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.version.outputs.version }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-mac
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Both slices, release
+        run: |
+          cargo build --release --locked -p grind-mac
+          cargo build --release --locked -p grind-mac --target x86_64-apple-darwin
+      - name: Grind.app and Grind.dmg
+        run: |
+          .github/scripts/mac-bundle.sh target/release/grind-mac \
+            target/x86_64-apple-darwin/release/grind-mac bundle
+      - name: Grind.pkg
+        run: .github/scripts/mac-pkg.sh bundle/Grind.app "$VERSION" "bundle/Grind-$VERSION.pkg"
+      - name: Attach both
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv bundle/Grind.dmg "bundle/Grind-$VERSION.dmg"
+          gh release upload "v$VERSION" "bundle/Grind-$VERSION.pkg" "bundle/Grind-$VERSION.dmg"
+
+  # ghcr.io/fwilhe2/grind and ghcr.io/fwilhe2/grind-web, tagged with the version and `latest`.
+  images:
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/container.yml
+    with:
+      ref: v${{ needs.version.outputs.version }}
+      version: ${{ needs.version.outputs.version }}
+
+  publish:
+    needs: [version, binaries, mac-installer, images]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "v${{ needs.version.outputs.version }}" --draft=false --latest
