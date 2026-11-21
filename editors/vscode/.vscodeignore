@@ -2,8 +2,11 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# What a .vsix leaves out: the tests and how it is built.
+# What a .vsix leaves out: the tests, how it is built, and what dist/ bundles.
 test/**
 package.sh
+extension.js
+node_modules/**
+package-lock.json
 .gitignore
 *.vsix

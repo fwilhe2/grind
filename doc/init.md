@@ -475,7 +475,9 @@ configuration, marked as not run.
 ### 5.2 The VS Code client
 
 `editors/vscode/` — grind's VS Code extension, plain JavaScript over `vscode-languageclient`
-10.1.1 (MIT; its tree is MIT, ISC and BlueOak-1.0.0), so it builds with no compiler. It starts
+10.1.1 (MIT; its tree is MIT, ISC and BlueOak-1.0.0), so it builds with no compiler: the
+`.vsix` carries one file esbuild bundled from `extension.js` and that tree, beside the tree's
+licences in `dist/THIRD-PARTY-NOTICES.txt`, rather than `node_modules` itself. It starts
 `grind lsp` from `grind.path` and introduces it to VS Code; every answer is the server's. Three
 things it does beyond starting a process:
 

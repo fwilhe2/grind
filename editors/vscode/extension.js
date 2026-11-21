@@ -10,8 +10,8 @@
 // language server rather than an extension: Helix and Neovim get the same answers from the same
 // binary, and this file stays small enough to read.
 //
-// Plain JavaScript, so the extension builds without a compiler: `npm install` and `vsce
-// package` are the whole of it (editors/vscode/package.sh).
+// Plain JavaScript, so the extension builds without a compiler: esbuild bundles it for the
+// package (editors/vscode/package.sh).
 
 'use strict';
 

@@ -13,7 +13,7 @@
         "vscode": "^1.91.0"
     },
     "categories": ["Programming Languages", "Linters"],
-    "main": "./extension.js",
+    "main": "./dist/extension.js",
     "activationEvents": [],
     "capabilities": {
         "untrustedWorkspaces": {
@@ -62,7 +62,13 @@
             }
         ]
     },
+    "scripts": {
+        "vscode:prepublish": "esbuild extension.js --bundle --platform=node --format=cjs --external:vscode --minify --outfile=dist/extension.js"
+    },
     "dependencies": {
         "vscode-languageclient": "10.1.1"
+    },
+    "devDependencies": {
+        "esbuild": "0.28.2"
     }
 }

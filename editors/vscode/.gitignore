@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Installed by npm, copied in by package.sh, and its output.
+# Installed by npm, built or copied in by package.sh, and its output.
 node_modules/
+dist/
 LICENSE.txt
 *.vsix

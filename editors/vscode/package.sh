@@ -20,5 +20,12 @@ cd "$here"
 npm ci --no-audit --no-fund
 cp "$root/LICENSES/AGPL-3.0-or-later.txt" LICENSE.txt
 trap 'rm -f "$here/LICENSE.txt"' EXIT
+# The bundle carries its dependencies' code, so it carries their licences too.
+mkdir -p dist
+npm ls --omit=dev --all --parseable | tail -n +2 | sort | while read -r dep; do
+    printf '%s\n\n' "$(basename "$dep")"
+    cat "$dep"/[Ll][Ii][Cc][Ee][Nn][SsCc][Ee]*
+    printf '\n\n'
+done > dist/THIRD-PARTY-NOTICES.txt
 version=$(node -p "require('./package.json').version")
-npx --yes @vscode/vsce@4.0.0 package --out "$out/grind-$version.vsix"
+npx --yes @vscode/vsce@4.0.0 package --no-dependencies --out "$out/grind-$version.vsix"
