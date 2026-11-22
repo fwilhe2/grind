@@ -21,6 +21,8 @@ lands, and the release workflow publishes the section as it stands.
 - Importing an Excel workbook keeps a one-cell array formula as a formula when it computes the
   same as an ordinary one, instead of freezing it to its saved value.
 - Area charts are shown: stacked bands, with lines drawn over them, as LibreOffice draws them.
+- Importing an Excel workbook brings its charts along — bar, line, pie and area, stacked or not,
+  with a line over bars or areas — placed where they were, drawn from the workbook's cells.
 
 ### Fixes
 

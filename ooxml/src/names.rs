@@ -42,6 +42,11 @@ pub enum Ns {
     /// `a:blip`. Both spellings; the Strict one measured on Word's Strict documents
     /// (`doc/docx-format.md` §1.2).
     Drawing,
+    /// DrawingML's SpreadsheetML placement vocabulary: `xdr:wsDr` and its anchors — where a
+    /// worksheet's chart or picture sits (`doc/xlsx-format.md` §4.15).
+    SpreadsheetDrawing,
+    /// DrawingML's charts: `c:chartSpace` and everything in it.
+    Chart,
     /// VML, the drawing language of Excel before DrawingML, still where a form control lives
     /// (`doc/xlsx-format.md` §4.11): `v:shape`.
     Vml,
@@ -99,6 +104,11 @@ pub const WORD_T: &str = "http://schemas.openxmlformats.org/wordprocessingml/200
 pub const WORD_DRAWING_T: &str =
     "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 pub const PICTURE_T: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+/// The two below measured from a spreadsheet service's export, 2026-11-22 (`doc/xlsx-format.md`
+/// §4.15); their Strict spellings are not.
+pub const SPREADSHEET_DRAWING_T: &str =
+    "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+pub const CHART_T: &str = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 
 // ---- Part 1, Strict (ISO/IEC 29500 Strict) ----
 
@@ -128,6 +138,8 @@ impl Ns {
             WORD_T | WORD_S => Ns::Word,
             WORD_DRAWING_T | WORD_DRAWING_S => Ns::WordDrawing,
             PICTURE_T | PICTURE_S => Ns::Picture,
+            SPREADSHEET_DRAWING_T => Ns::SpreadsheetDrawing,
+            CHART_T => Ns::Chart,
             REL_T | REL_S => Ns::Relationships,
             PACKAGE_RELS => Ns::PackageRels,
             CONTENT_TYPES => Ns::ContentTypes,

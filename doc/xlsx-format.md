@@ -772,6 +772,55 @@ Measured 2026-10-05 by converting one cell per `<alignment>` variant to `.fods` 
 - `textRotation="255"` is stacked letters: `style:direction="ttb"` and no angle. `CellStyle` has
   no direction, so it is counted (`Appearance::Rotation`).
 
+### 4.15 Charts — `MEASURED`
+
+Measured 2026-11-22 with `unzip` over a Monte Carlo retirement calculator a spreadsheet service
+exported (not vendored; `xlsx/tests/charts.rs` rebuilds its shape with invented data), and against
+LibreOffice 26.8.3.1's conversion of it to `.fods`:
+
+- **Where a chart hangs.** The worksheet's `drawing` relationship names a DrawingML drawing
+  (`xdr:wsDr`, namespace `http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing`);
+  each `xdr:oneCellAnchor` in it holds an `xdr:graphicFrame` whose `a:graphicData` holds
+  `c:chart r:id="…"`, the drawing's own relationship to the chart part (`c:chartSpace`, namespace
+  `http://schemas.openxmlformats.org/drawingml/2006/chart`). The Strict spellings of both are
+  `UNVERIFIED`. A drawing with no anchor at all is written for sheets without charts; it holds
+  nothing.
+- **Where it sits.** `xdr:from`'s `xdr:col` and `xdr:row` are 0-based (`col 1`, `row 18` is the
+  oracle's frame in `B19`), `xdr:colOff`/`xdr:rowOff` are offsets into that cell and
+  `xdr:ext`'s `cx`/`cy` the size, all in EMU: `6076950` × `3810000` is the oracle's 6.6453in ×
+  4.1661in, 914,400 to the inch (36,000 to the millimetre) within its rounding.
+- **What it is.** `c:plotArea` holds one element per chart type in drawing order, each with its
+  own `c:ser`s: here `c:areaChart` with `c:grouping val="stacked"`, then `c:lineChart`. The oracle
+  writes one `chart:area` chart whose area series stack (`chart:stacked`) and whose line series
+  carry `chart:class="chart:line"` (`doc/chart-format.md`, Area). Both types name the same two
+  `c:axId`s: one category axis (`c:catAx`) and one value axis (`c:valAx`).
+- **A series.** `c:cat` and `c:val` hold a `c:strRef`/`c:numRef` whose `c:f` is a reference in
+  the workbook's own formula syntax (`Rechenweg!$KL$18:$KL$78`), with an **empty** `c:numCache`
+  or none at all: the values live only in the cells. `c:tx` holds the series' name either as a
+  reference (`c:strRef`) or as **literal text** (`c:v`), which ODF has no attribute for; the
+  oracle writes `loext:label-string="&quot;Basis&quot;"`, quotes included.
+- **Colour.** `c:spPr`'s `a:solidFill/a:srgbClr val="000000"` with `a:alpha val="30000"` is the
+  oracle's `draw:fill-color="#000000" draw:opacity="30%"`: `a:alpha` is thousandths of a percent.
+  A line's colour is its `a:ln`'s fill.
+- **Axes and legend.** `c:legendPos val="b"` is `chart:legend-position="bottom"`. A
+  `c:majorGridlines` is the axis' `chart:grid chart:class="major"`; a `c:title` whose text is
+  empty is no title at all, and one reading `pro Monat` is that axis' title. `c:delete val="0"`
+  with `c:tickLblPos val="nextTo"` shows the tick labels.
+- **The other kinds and anchors**, measured the same day by converting hand-built workbooks (one
+  chart each, two series of `Data!A1:C4`, no theme part): `c:barChart` with `c:barDir val="col"`
+  is `chart:bar`, and with `val="bar"` the same plus `chart:vertical="true"`, bars lying down;
+  `c:grouping val="stacked"` on it is `chart:stacked`, `val="percentStacked"` on an area chart
+  `chart:percentage`; `c:lineChart` is `chart:line`, `c:pieChart` `chart:circle`,
+  `c:doughnutChart` `chart:ring` and `c:scatterChart` `chart:scatter`. `c:legendPos` `r`, `t`,
+  `l` and `tr` are `end`, `top`, `start` and `end`, and no `c:legend` is no legend. A chart's
+  `c:title` with rich text is its `chart:title`. An `xdr:twoCellAnchor` from `E2` to `K17` is
+  6 columns × 15 rows the oracle sizes at 4.0161in × 2.6661in: a column no `<col>` sizes is Excel's
+  64 pixels, and a row no `<row ht>` sizes is the oracle's own 0.452cm. An `a:schemeClr` with no
+  theme part is the oracle's default colour, so what it does with one is not measured here.
+- **Read past:** `c:manualLayout`, fonts and text colours (`c:txPr`), `c:smooth` (the oracle's
+  `chart:interpolation="cubic-spline"`), `c:marker`, a value axis' `c:min` and number format, and
+  line widths and dashes. The import draws a smoothed line straight and a dashed one solid.
+
 ## 5. Functions whose semantics differ under the same name
 
 `doc/xlsx-import.md` Part II §3 takes the decision: the importer translates a function by its

@@ -256,11 +256,12 @@ after it built homes for them:
   verbatim ODF length strings the model stores, so X4 converts instead of counting (§5 below).
 - `AutoFilter` was never in the list and should have been: `sheet/src/filter.rs` exists now,
   and `<autoFilter ref="A1:D10"/>` → `Filter::new` is close to free. It is **carried**.
-- `Chart` stays in the list but is now a *decision* rather than a necessity. The model has
-  `sheet/src/chart.rs` and `doc/chart-format.md`, so there is somewhere to put one; what is
-  still missing is a reader for `xl/charts/chart1.xml`, which is DrawingML — a second
-  vocabulary the size of this whole filter. It is dropped and counted in this phase, and the
-  reason is cost rather than the absence of a home. `doc/xlsx-format.md` records that.
+- `Chart` stays in the list for the charts the model cannot hold yet — a kind not built,
+  percent stacking, a second value axis. Every other chart is **read** (`xlsx/src/drawing.rs`,
+  `doc/xlsx-format.md` §4.15): bar, line, pie and area, stacked or not, a line over bars or
+  areas, placed over the cells it was anchored to, its values always its cells' and never the
+  cache beside each reference. A drawing is dropped and counted only when it anchors something
+  else, a picture or a shape.
 
 **One more field since X1: `over_budget`**, the cells past the materialisation bound
 (`sheet::MAX_CELLS`, four million — `odf/read.rs`'s number). It is not a `Dropped` kind, because
@@ -670,10 +671,10 @@ and counted.
   set, top-N, above-average, duplicate and unique values, and a rule whose formula or `dxf` the
   model cannot carry, are counted as `Dropped::ConditionalFormat`; a `dxf`'s number format is
   `Appearance::RuleFormat`.
-- **Everything else** — charts, drawings, pivot tables, comments, data validation, protection — is
-  counted by kind and dropped, found by relationship from the
-  worksheet part (`xlsx/src/parts.rs`) or by element in it: one per drawing part, per chart
-  part, per `<comment>`, per `<cfRule>` not carried, per `<dataValidation>`, per pivot table, per sheet or
+- **Everything else** — charts the model cannot hold, drawings of pictures and shapes, pivot
+  tables, comments, data validation, protection — is counted by kind and dropped, found by
+  relationship from the worksheet part (`xlsx/src/parts.rs`, `xlsx/src/drawing.rs`) or by
+  element in it: one per drawing part, per chart, per `<comment>`, per `<cfRule>` not carried, per `<dataValidation>`, per pivot table, per sheet or
   workbook that is **actually** locked (an empty `<workbookProtection/>`, which LibreOffice's
   own `.xlsx` writes, locks nothing).
 - **`--strict`.** `grind sheet import --strict` fails when `Report::lossless` is false, writes

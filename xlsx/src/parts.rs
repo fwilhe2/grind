@@ -2,14 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! What hangs off a worksheet in parts of its own — drawings, charts, comments, pivot tables —
-//! **counted and never read**: each has no home in the model, or one that would cost a second
-//! vocabulary. Found by relationship from the worksheet part, counted once per construct:
+//! What hangs off a worksheet in parts of its own and has no home in the model — comments, pivot
+//! tables — **counted and never read**. Found by relationship from the worksheet part, counted
+//! once per construct (a drawing and its charts are `drawing.rs`'s):
 //!
 //! | relationship | counted as | unit |
 //! |---|---|---|
-//! | `drawing` | `Dropped::Drawing` | per drawing part |
-//! | the drawing's `chart` | `Dropped::Chart` | per chart part |
 //! | `comments` | `Dropped::Comment` | per `<comment>` in it |
 //! | `pivotTable` | `Dropped::PivotTable` | per table, however many cache parts it took |
 //!
@@ -27,23 +25,6 @@ pub fn count(package: &mut Package, sheet_part: &str, report: &mut Report, seen:
             continue;
         }
         match rel.kind {
-            RelType::Drawing => {
-                // A drawing whose every shape is a form control's DrawingML twin is not a
-                // drawing anybody made: the controls are read from VML (`controls.rs`).
-                if package
-                    .part(&rel.target)
-                    .is_some_and(|bytes| only_control_twins(&bytes))
-                {
-                    continue;
-                }
-                report.drop_one(Dropped::Drawing);
-                let charts = package
-                    .rels(&rel.target, seen)
-                    .iter()
-                    .filter(|r| r.kind == RelType::Chart && !r.external)
-                    .count();
-                report.drop_many(Dropped::Chart, charts);
-            }
             RelType::Comments => {
                 let comments = package
                     .part(&rel.target)
@@ -54,18 +35,6 @@ pub fn count(package: &mut Package, sheet_part: &str, report: &mut Report, seen:
             _ => {}
         }
     }
-}
-
-/// Whether every anchored shape in a DrawingML drawing is the twin of a VML form control —
-/// marked by an `a14:compatExt` naming the VML shape (`doc/xlsx-format.md` §4.11). Counted on
-/// the bytes: one anchor element per shape, one `compatExt` per twin, and a drawing with no
-/// anchors at all is still a drawing.
-fn only_control_twins(bytes: &[u8]) -> bool {
-    let count = |needle: &[u8]| bytes.windows(needle.len()).filter(|w| *w == needle).count();
-    let anchors = count(b"twoCellAnchor") + count(b"oneCellAnchor") + count(b"absoluteAnchor");
-    // Each anchor element's name appears twice, in its start tag and its end tag.
-    let anchors = anchors / 2;
-    anchors > 0 && count(b"compatExt") >= anchors
 }
 
 /// How many `<comment>`s a comments part holds. A part that will not parse holds none that

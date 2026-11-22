@@ -36,6 +36,7 @@ pub mod address;
 mod color;
 mod controls;
 mod dates;
+mod drawing;
 pub mod formula;
 pub mod numfmt;
 mod parts;
@@ -175,6 +176,7 @@ pub fn import_bytes(bytes: &[u8]) -> Result<(Document, Report)> {
         };
         sheet::read(&bytes, &context, index, target, &mut report, &mut seen);
         controls::read(&mut package, part, target, &mut report, &mut seen);
+        drawing::read(&mut package, part, target, &renames, &mut report, &mut seen);
         parts::count(&mut package, part, &mut report, &mut seen);
     }
     // The flavour is whatever the *whole* read saw, not only what the workbook part did: a
