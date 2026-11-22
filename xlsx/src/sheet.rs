@@ -1392,7 +1392,7 @@ mod tests {
         let (sheet, report) = sheet_of(
             r#"<row r="1">
                  <c r="A1"><f>NOSUCHFUNCTION(B1)</f><v>1</v></c>
-                 <c r="B1"><f>_xlfn.XLOOKUP(3,C1:C2,D1:D2)</f><v>2</v></c>
+                 <c r="B1"><f>_xlfn.UNIQUE(C1:C2)</f><v>2</v></c>
                  <c r="C1"><f>SUM(D1:D2)</f><v>3</v></c>
                </row>"#,
             &[],
@@ -1402,11 +1402,11 @@ mod tests {
         assert_eq!(sheet.formula(at("A1")), Some("=NOSUCHFUNCTION([.B1])"));
         assert_eq!(
             sheet.formula(at("B1")),
-            Some("=COM.MICROSOFT.XLOOKUP(3;[.C1:.C2];[.D1:.D2])")
+            Some("=COM.MICROSOFT.UNIQUE([.C1:.C2])")
         );
         assert_eq!(
             report.unknown_functions,
-            ["COM.MICROSOFT.XLOOKUP", "NOSUCHFUNCTION"]
+            ["COM.MICROSOFT.UNIQUE", "NOSUCHFUNCTION"]
                 .map(str::to_owned)
                 .into_iter()
                 .collect()

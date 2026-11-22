@@ -1078,6 +1078,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.69",
     },
     FuncInfo {
+        name: "TEXT",
+        signature: "TEXT( Scalar X ; Text FormatCode )",
+        brief: "Return the value converted to a text.",
+        section: "6.20.23",
+    },
+    FuncInfo {
         name: "TIME",
         signature: "TIME( Number Hours ; Number Minutes ; Number Seconds )",
         brief: "Constructs a time value from hours, minutes, and seconds.",

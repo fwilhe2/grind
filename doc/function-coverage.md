@@ -150,7 +150,7 @@ left says, in its last column, what stands in its way.
 | ✓ `CONCATENATE` | Medium | Enron (formulas) #10, EUSES #5, LO 6 |
 | ✓ `IFERROR` | Large | LO 5; the standard wrapper since Excel 2007 |
 | ✓ `SUMIFS`, `COUNTIFS`, `AVERAGEIFS` | Large | What Enron's `{=SUM(IF(…))}` became |
-| `TEXT` | Large | LO 7 — a format code is implementation-defined, and LibreOffice reads it in the document's locale |
+| ✓ `TEXT` | Large | LO 7 — moved in on 2026-11-22: the code read as Excel's files spell it, by the parser the xlsx import already had (hoisted to `numfmt::code`), and spelled in the document's locale |
 | ✓ `INDIRECT` | Large | EUSES #10, LO 12 — the most-blocking function measured; moved in on 2026-11-22 beside `OFFSET`, both returning a reference as `INDEX` now does |
 | ✓ `OFFSET` | Medium | Enron #7 (Jansen), O'Beirne #14 |
 | `CELL` | outside every group | Enron #14 — and a variance swamp, Part 4 leaves much of it implementation-defined |
@@ -283,7 +283,6 @@ which this build reads as wildcards by `wildcard.rs`'s decision.
 | Function | Unlocks | Needs | Decision owed |
 |---|---|---|---|
 | `AGGREGATE` | — | `SUBTOTAL`'s machinery plus its option bits (errors, nested aggregates) | not Part 4: `COM.MICROSOFT.AGGREGATE`, as the next section's names are |
-| `TEXT` | 3 files | a format-code language | the code is implementation-defined and LibreOffice reads it in the document's locale; `numfmt` holds no format-code strings by rule, though `grind-xlsx`'s `numfmt.rs` parses Excel's and could be hoisted |
 | `CELL` | 3 files | an info-type vocabulary | outside every ODF group, and much of it implementation-defined |
 | The rest of Tier 2 | — | — | each is outside ODF 1.4; `COM.MICROSOFT.*` is the spelling, as for `MAXIFS` and `MINIFS` (`doc/small-group.md`), and each still needs its own evidence |
 

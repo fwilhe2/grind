@@ -1729,3 +1729,56 @@ fn isformula_and_formula_read_a_cells_formula() {
     assert_eq!(eval("=FORMULA([.A1])"), Value::Text("=SUM(B1:B3)*2".into()));
     assert_eq!(eval("=FORMULA([.B1])"), Value::Error(FormulaError::NA));
 }
+
+/// §6.20.23 `TEXT`: a value spelled in a format code, read as `numfmt::code` reads one (the
+/// language Excel's files and LibreOffice's dialog share), in the document's locale. Measured
+/// against LibreOffice 26.8.
+#[test]
+fn text_spells_a_value_in_a_format_code() {
+    for (formula, want) in [
+        ("=TEXT(1234.567;\"#,##0.00\")", "1,234.57"),
+        ("=TEXT(1234.567;\"0\")", "1235"),
+        ("=TEXT(0.256;\"0%\")", "26%"),
+        ("=TEXT(0.256;\"0.0%\")", "25.6%"),
+        ("=TEXT(46000;\"dd.mm.yyyy\")", "09.12.2025"),
+        ("=TEXT(46000;\"yyyy-mm-dd\")", "2025-12-09"),
+        ("=TEXT(46000;\"mmmm d, yyyy\")", "December 9, 2025"),
+        ("=TEXT(46000.75;\"hh:mm\")", "18:00"),
+        ("=TEXT(46000;\"ddd\")", "Tue"),
+        ("=TEXT(46000;\"mmm\")", "Dec"),
+        ("=TEXT(0.75;\"h:mm AM/PM\")", "6:00 PM"),
+        ("=TEXT(1234.5;\"$#,##0.00\")", "$1,234.50"),
+        ("=TEXT(-5;\"0;(0)\")", "(5)"),
+        ("=TEXT(-1234.5;\"#,##0.00\")", "-1,234.50"),
+        ("=TEXT(3.14159;\"0.000\")", "3.142"),
+        ("=TEXT(7;\"00\")", "07"),
+        ("=TEXT(7;\"000-00\")", "000-07"),
+        ("=TEXT([.B1];\"0.0\")", "10.0"),
+        ("=TEXT(1;\"[Red]0\")", "1"),
+        ("=TEXT(TRUE();\"0\")", "1"),
+        ("=TEXT(1234.5;\"General\")", "1234.5"),
+        ("=TEXT(1234.5;\"\")", ""),
+        ("=TEXT(\"abc\";\"@\")", "abc"),
+        ("=TEXT(\"abc\";\"0.00\")", "abc"),
+        ("=TEXT(5;\"@\")", "5"),
+    ] {
+        assert_eq!(text(formula), want, "{formula}");
+    }
+    // A fraction, an exponent or a display factor has no part to spell it with: refused, where
+    // the oracle shows 1/2, 1.23E+04 and 1.5.
+    for refused in [
+        "=TEXT(0.5;\"# ?/?\")",
+        "=TEXT(12345;\"0.00E+00\")",
+        "=TEXT(1500;\"0.0,\")",
+    ] {
+        assert_eq!(error(refused), FormulaError::Value, "{refused}");
+    }
+    // The document's locale spells the separators.
+    let mut document = table();
+    document.locale = Some(grind_core::locale::Locale::new("de", "DE"));
+    let at = Address::new(0, Pos::new(20, 0));
+    assert_eq!(
+        Engine::new(&document).eval("=TEXT(1234.567;\"#,##0.00\")", at),
+        Value::Text("1.234,57".into())
+    );
+}

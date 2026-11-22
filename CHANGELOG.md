@@ -17,6 +17,7 @@ lands, and the release workflow publishes the section as it stands.
 
 - Excel's newer functions recalculate instead of showing `#NAME?`: `IFS`, `SWITCH`, `CONCAT`,
   `TEXTJOIN`, `XLOOKUP`, `XMATCH`, `STDEV.S`, `STDEV.P`, `VAR.S` and `VAR.P`.
+- `TEXT`: a number or a date spelled in a format code such as `#,##0.00` or `dd.mm.yyyy`.
 - `LOOKUP`, `ISEVEN`, `ISODD`, `ISREF`, `ISFORMULA`, `FORMULA` (Excel's `FORMULATEXT`),
   `ERROR.TYPE`, `CHAR`, `CODE`, `UNICHAR` and `UNICODE`.
 - `OFFSET` and `INDIRECT`: a reference moved and resized, and a reference spelled as text — with

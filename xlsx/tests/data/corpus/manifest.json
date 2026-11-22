@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T22:07:41Z",
+  "generated": "2026-11-22T22:17:23Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -15474,17 +15474,77 @@
               "t": "s",
               "raw": "123",
               "kind": "Text",
-              "value": "FIXED"
+              "value": "TEXT"
             },
             {
               "ref": "B32",
               "t": "s",
               "raw": "124",
               "kind": "Text",
-              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+              "value": "=\u0022Customer since \u0022\u0026TEXT(DATE(Customers!H3,3,1),\u0022mmmm yyyy\u0022)"
             },
             {
               "ref": "C32",
+              "t": "str",
+              "raw": "Customer since March 2021",
+              "kind": "Text",
+              "value": "Customer since March 2021",
+              "excel": "\u0022Customer since \u0022\u0026TEXT(DATE(Customers!H3,3,1),\u0022mmmm yyyy\u0022)",
+              "formula": "\u0022Customer since \u0022\u0026TEXT(DATE([Customers.H3];3;1);\u0022mmmm yyyy\u0022)"
+            },
+            {
+              "ref": "D32",
+              "t": "s",
+              "raw": "125",
+              "kind": "Text",
+              "value": "A date put into a sentence"
+            },
+            {
+              "ref": "A33",
+              "t": "s",
+              "raw": "123",
+              "kind": "Text",
+              "value": "TEXT"
+            },
+            {
+              "ref": "B33",
+              "t": "s",
+              "raw": "126",
+              "kind": "Text",
+              "value": "=TEXT(Customers!H5*1.5,\u0022#,##0.00\u0022)"
+            },
+            {
+              "ref": "C33",
+              "t": "str",
+              "raw": "3,027.00",
+              "kind": "Text",
+              "value": "3,027.00",
+              "excel": "TEXT(Customers!H5*1.5,\u0022#,##0.00\u0022)",
+              "formula": "TEXT([Customers.H5]*1.5;\u0022#,##0.00\u0022)"
+            },
+            {
+              "ref": "D33",
+              "t": "s",
+              "raw": "127",
+              "kind": "Text",
+              "value": "A number spelled with separators and two decimals"
+            },
+            {
+              "ref": "A34",
+              "t": "s",
+              "raw": "128",
+              "kind": "Text",
+              "value": "FIXED"
+            },
+            {
+              "ref": "B34",
+              "t": "s",
+              "raw": "129",
+              "kind": "Text",
+              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+            },
+            {
+              "ref": "C34",
               "t": "str",
               "raw": "Order total: 1,234.50",
               "kind": "Text",
@@ -15493,28 +15553,28 @@
               "formula": "\u0022Order total: \u0022\u0026FIXED(1234.5;2)"
             },
             {
-              "ref": "D32",
+              "ref": "D34",
               "t": "s",
-              "raw": "125",
+              "raw": "130",
               "kind": "Text",
               "value": "An amount spelled with its separators inside a sentence"
             },
             {
-              "ref": "A33",
+              "ref": "A35",
               "t": "s",
-              "raw": "123",
+              "raw": "128",
               "kind": "Text",
               "value": "FIXED"
             },
             {
-              "ref": "B33",
+              "ref": "B35",
               "t": "s",
-              "raw": "126",
+              "raw": "131",
               "kind": "Text",
               "value": "=FIXED(Customers!H2,0,TRUE)"
             },
             {
-              "ref": "C33",
+              "ref": "C35",
               "t": "str",
               "raw": "2019",
               "kind": "Text",
@@ -15523,9 +15583,9 @@
               "formula": "FIXED([Customers.H2];0;TRUE())"
             },
             {
-              "ref": "D33",
+              "ref": "D35",
               "t": "s",
-              "raw": "127",
+              "raw": "132",
               "kind": "Text",
               "value": "A year as text, with no thousands separator"
             }
@@ -15539,8 +15599,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5696,
-      "sha256": "a4a609129d6c99f36133fd38e55eecdf370bda7bab1f16cc76bc20c0688187e6"
+      "bytes": 5894,
+      "sha256": "91b10f3a939cc3571be06b66166a4c9fe5103903adc4bd9b656a87daf94bd07a"
     },
     {
       "file": "geometry/columns.xlsx",

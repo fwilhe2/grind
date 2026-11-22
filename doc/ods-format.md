@@ -445,6 +445,7 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `ISEVEN([empty cell])` (measured 2026-11-22) | `Err:504` | §6.3.5: an empty cell is 0 | **the spec**: TRUE, as Excel answers |
 | `CHAR(169)`, `CODE("€")` under a UTF-8 system | an invalid byte, 226 (the first UTF-8 byte) | §6.20.3 Note 1: a system code page or Unicode | Unicode code points: `©`, 8364 — the same on every system, and `CODE(CHAR(N))` = N for 1 to 255 |
 | `FORMULA([.A1])` without a formula, `ERROR.TYPE(5)` | `#N/A`, `#N/A` | "shall contain a formula"; a non-error "returns an Error" | as measured |
+| `TEXT(0.5;"# ?/?")`, `TEXT(12345;"0.00E+00")`, `TEXT(1500;"0.0,")` (measured 2026-11-22) | `1/2`, `1.23E+04`, `1.5` | "implementation-defined meaning" | `#VALUE!`: the model has no part for a fraction, an exponent or a display factor, and a different number would be wrong |
 | `LEGACY.NORMSINV(0)`, `(1)`, `(-0.1)` (measured 2026-11-22, 26.8.3.1) | `#VALUE!`, `#VALUE!`, `Err:502` | `0 < P < 1` | `#NUM!` for all three: one constraint, one domain error |
 | `COM.MICROSOFT.NORM.S.DIST(1)`, `COM.MICROSOFT.GAMMA.DIST(2;3;2)` | `Err:511` | not Part 4 | `#VALUE!`: Excel's `Cumulative` is required, and a missing argument is `#VALUE!` everywhere here |
 | `COM.MICROSOFT.GAMMA.DIST(-1;3;2;…)`, `(…;0;…)`, `(…;…;0;…)` | `Err:502` | not Part 4 (§6.18.31's `GAMMADIST` answers 0 for a negative X) | `#NUM!`: Excel's function, as its oracle measures it |

@@ -171,6 +171,7 @@ const BEYOND: &[&str] = &[
     "SUBTOTAL",
     "SUMIFS",
     "SUMPRODUCT",
+    "TEXT",
     "UNICHAR",
     "UNICODE",
     "WEEKNUM",
@@ -301,6 +302,7 @@ const NAMES: &[&str] = &[
     "CODE",
     "UNICHAR",
     "UNICODE",
+    "TEXT",
     "COM.MICROSOFT.CONCAT",
     "COM.MICROSOFT.TEXTJOIN",
     // external access (§6.11)

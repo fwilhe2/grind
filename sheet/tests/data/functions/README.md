@@ -207,6 +207,8 @@ A customer list as it arrives from a web form: stray spaces, mixed case, phone n
 | `CODE` | `=CODE(Customers.E3)` | 76 | London begins with code 76, an L |
 | `UNICHAR` | `="Price: "&UNICHAR(8364)&"5"` | Price: €5 | The euro sign by its code point |
 | `UNICODE` | `=UNICODE(Customers.E4)` | 84 | Tokyo's T is code point 84 |
+| `TEXT` | `="Customer since "&TEXT(DATE(Customers.H3;3;1);"mmmm yyyy")` | Customer since March 2021 | A date put into a sentence |
+| `TEXT` | `=TEXT(Customers.H5*1.5;"#,##0.00")` | 3,027.00 | A number spelled with separators and two decimals |
 | `FIXED` | `="Order total: "&FIXED(1234.5;2)` | Order total: 1,234.50 | An amount spelled with its separators inside a sentence |
 | `FIXED` | `=FIXED(Customers.H2;0;TRUE())` | 2019 | A year as text, with no thousands separator |
 

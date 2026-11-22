@@ -540,9 +540,10 @@ that disagree. `doc/xlsx-format.md` §5 is the list.
 ### 4. Number formats (X3) — **built**
 
 Excel spells a format as a **code string** — `#,##0.00;[Red]-#,##0.00;"—";@` — and
-`CLAUDE.md` says, correctly, that no such string may exist in the core. So the parser for it
-lives here (`xlsx/src/numfmt.rs`), and its output is a `numfmt::Format`: an ordered sequence of
-`Part`s, which is ODF's model and the only one the core has. One reading of a code answers both
+`CLAUDE.md` says, correctly, that no such string is ever stored. The parser for it is
+`grind_sheet::numfmt::code` (shared with `TEXT`, whose argument is a code too), the built-in ids
+are this filter's (`xlsx/src/numfmt.rs`), and the output is a `numfmt::Format`: an ordered
+sequence of `Part`s, which is ODF's model and the only one the core has. One reading of a code answers both
 questions — *is this a date?* (X1's) and *what does it display?* — so the two cannot disagree.
 
 - **Sections.** Up to four (`positive;negative;zero;text`) → one style plus `style:map`

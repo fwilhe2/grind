@@ -321,6 +321,16 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   keeps `CODE(CHAR(N))` = `N` for 1 to 255 on every system; the oracle answers from its own code
   page. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
 
+- `TEXT` — §6.20.23
+
+  **Evidence:** Enron's and EUSES's everyday function for putting a number or a date into a
+  sentence, and seven of LibreOffice's test documents. Part 4 leaves the code's meaning to the
+  implementation; this build reads it as Excel's files spell it — the parser the xlsx import
+  already had, hoisted to `numfmt::code`, so the import and `TEXT` read a code one way — and spells
+  the result in the document's locale, as `FIXED` does. A code with a part the model cannot spell
+  (a fraction, an exponent, a display factor) is `#VALUE!`, where the oracle shows it. Measured
+  against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,

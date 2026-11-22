@@ -36,6 +36,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "COM.MICROSOFT.TEXTJOIN" => textjoin(args),
         "SEARCH" => search(args),
         "FIXED" => fixed(args),
+        "TEXT" => text(args),
         _ => return None,
     })
 }
@@ -59,6 +60,47 @@ fn fixed(args: &mut Args) -> Answer {
     Ok(Value::Text(format.render_in(
         &crate::CellValue::Number(rounded),
         0,
+        args.locale(),
+    )))
+}
+
+/// §6.20.23 `TEXT(Value; Format)`: the value spelled in a format code, read as
+/// [`crate::numfmt::code`] reads one and rendered in the document's locale. An empty code is empty
+/// text and `General` the plain number; text is its own spelling unless the code has a text
+/// section. A code with a part the model cannot spell — a fraction, an exponent, a display factor —
+/// is `#VALUE!` rather than a different number.
+fn text(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let value = match args.value(0) {
+        Value::Error(e) => return Err(e),
+        Value::Bool(b) => crate::CellValue::Number(f64::from(u8::from(b))),
+        Value::Number(n) => crate::CellValue::Number(n),
+        Value::Text(t) => crate::CellValue::Text(t),
+        Value::Empty => crate::CellValue::Number(0.0),
+    };
+    let code = args.text(1)?;
+    if code.trim().is_empty() {
+        return Ok(Value::Text(String::new()));
+    }
+    let translated = crate::numfmt::code::of_code(&code);
+    if translated
+        .lost
+        .iter()
+        .copied()
+        .any(crate::numfmt::code::Unspellable::refuses)
+    {
+        return Err(FormulaError::Value);
+    }
+    let Some(format) = translated.format else {
+        return Ok(Value::Text(match value {
+            crate::CellValue::Number(n) => super::super::value::format_number(n),
+            crate::CellValue::Text(t) => t,
+            _ => String::new(),
+        }));
+    };
+    Ok(Value::Text(format.render_in(
+        &value,
+        args.null_date(),
         args.locale(),
     )))
 }
