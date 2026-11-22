@@ -29,7 +29,7 @@ lands, and the release workflow publishes the section as it stands.
 - Importing an Excel workbook brings its charts along — bar, line, pie and area, stacked or not,
   with a line over bars or areas — placed where they were, drawn from the workbook's cells, and
   with their series' names even where the workbook gives a name as text rather than a cell, and
-  their colours, theme colours included.
+  their colours, theme colours included. A 3D chart comes in as its flat kind.
 
 ### Fixes
 

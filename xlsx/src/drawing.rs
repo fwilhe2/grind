@@ -351,10 +351,11 @@ fn plot_area(
             return Ok(Handled::No);
         }
         let kind = match name.local.as_str() {
-            "barChart" => ChartKind::Bar,
-            "lineChart" => ChartKind::Line,
-            "pieChart" => ChartKind::Pie,
-            "areaChart" => ChartKind::Area,
+            // A 3D chart is drawn flat: the same numbers, without the depth.
+            "barChart" | "bar3DChart" => ChartKind::Bar,
+            "lineChart" | "line3DChart" => ChartKind::Line,
+            "pieChart" | "pie3DChart" => ChartKind::Pie,
+            "areaChart" | "area3DChart" => ChartKind::Area,
             "catAx" | "dateAx" => {
                 found.x_axis = Some(axis(reader)?);
                 return Ok(Handled::Yes);
@@ -714,5 +715,27 @@ mod tests {
             fill(r#"<a:srgbClr val="2C3A82"/>"#).as_deref(),
             Some("#2c3a82")
         );
+    }
+
+    /// A 3D chart is its flat kind drawn flat: the same numbers, without the depth.
+    #[test]
+    fn a_three_dimensional_chart_is_read_as_its_flat_kind() {
+        let part = |kind: &str| {
+            format!(
+                r#"<c:chartSpace xmlns:c="{}"><c:chart><c:plotArea><c:{kind}>
+                     <c:ser><c:val><c:numRef><c:f>Data!$B$1:$B$4</c:f></c:numRef></c:val></c:ser>
+                   </c:{kind}></c:plotArea></c:chart></c:chartSpace>"#,
+                grind_ooxml::names::CHART_T
+            )
+        };
+        for (three, flat) in [
+            ("pie3DChart", ChartKind::Pie),
+            ("bar3DChart", ChartKind::Bar),
+            ("line3DChart", ChartKind::Line),
+            ("area3DChart", ChartKind::Area),
+        ] {
+            let chart = chart(part(three).as_bytes(), "Data", &[], &THEME).expect(three);
+            assert_eq!(chart.kind, flat, "{three}");
+        }
     }
 }

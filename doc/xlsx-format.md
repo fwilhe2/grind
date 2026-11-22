@@ -824,6 +824,10 @@ LibreOffice 26.8.3.1's conversion of it to `.fods`:
   `#a9d18e`, `tx1` at 50% + 50% `#808080`, exactly; `a:alpha` 50% is `draw:opacity="50%"`.
   `a:shade` and `a:tint` 50% on `accent1` gave `#325490` and `#c0c8e3`, which no blend in sRGB or
   linear light reproduces to the unit, so they are `UNVERIFIED` and not read.
+- **3D kinds:** `c:pie3DChart`, `c:bar3DChart`, `c:line3DChart` and `c:area3DChart` are read as
+  their flat kind and drawn flat — the same numbers without the depth; two of the eleven chart
+  parts in LibreOffice's own xlsx test files are 3D pies. A 3D chart with a series axis
+  (`c:serAx`) is still dropped.
 - **Read past:** `c:manualLayout`, fonts and text colours (`c:txPr`), `c:smooth` (the oracle's
   `chart:interpolation="cubic-spline"`), `c:marker`, a value axis' `c:min` and number format, and
   line widths and dashes. The import draws a smoothed line straight and a dashed one solid.
