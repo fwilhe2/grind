@@ -1540,6 +1540,12 @@ fn the_sample_script_still_builds_its_document() {
     assert_eq!(ok(&["get", &book, "M13", "--raw"]).trim(), "792.19");
     assert_eq!(ok(&["get", &book, "M14", "--raw"]).trim(), "612.34");
     assert_eq!(ok(&["get", &book, "M15", "--raw"]).trim(), "179.85");
+    assert_eq!(ok(&["get", &book, "M16"]).trim(), "Rent: 1,825.50");
+    // LibreOffice's answer to the same call, to the digits it writes.
+    assert_eq!(
+        ok(&["get", &book, "M19", "--raw"]).trim(),
+        "0.848796117223352"
+    );
     // A styled and formatted header, and a currency cell whose value is untouched.
     assert_eq!(ok(&["get", &book, "B2", "--raw"]).trim(), "1800");
     assert!(ok(&["get", &book, "B2"]).contains('\u{20ac}'));
@@ -2221,6 +2227,7 @@ fn functions_lists_what_this_build_implements() {
     assert!(out.lines().all(|name| !name.contains(' ')), "{out}");
     assert!(out.lines().any(|name| name == "SUM"));
     assert!(out.lines().any(|name| name == "COM.MICROSOFT.MAXIFS"));
+    assert!(out.lines().any(|name| name == "LEGACY.NORMSINV"));
     assert!(!out.contains("BESSELJ"), "not in the Small Group");
     let summary = String::from_utf8_lossy(&output.stderr);
     assert!(summary.contains("of the Small Group's 110"), "{summary}");

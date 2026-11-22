@@ -245,8 +245,13 @@ fn scaled(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
     } else {
         0
     };
+    Ok(Value::number(at_digits(x, digits, f)))
+}
+
+/// `f` applied `digits` places after the decimal point (before it when negative).
+pub(super) fn at_digits(x: f64, digits: i64, f: impl Fn(f64) -> f64) -> f64 {
     let scale = 10f64.powi(digits.clamp(-308, 308) as i32);
-    Ok(Value::number(f(x * scale) / scale))
+    f(x * scale) / scale
 }
 
 /// A value as a spreadsheet shows it — rounded to fifteen significant digits — for a function

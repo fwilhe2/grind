@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-09T17:43:44Z",
+  "generated": "2026-11-22T19:14:42Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -13327,6 +13327,122 @@
               "raw": "76",
               "kind": "Text",
               "value": "The same, as a population"
+            },
+            {
+              "ref": "A22",
+              "t": "s",
+              "raw": "77",
+              "kind": "Text",
+              "value": "LEGACY.NORMSINV"
+            },
+            {
+              "ref": "B22",
+              "t": "s",
+              "raw": "78",
+              "kind": "Text",
+              "value": "=AVERAGE(Marks!C2:C11)\u002BLEGACY.NORMSINV(0.9)*STDEV(Marks!C2:C11)"
+            },
+            {
+              "ref": "C22",
+              "raw": "94.4823463344024",
+              "kind": "Number",
+              "value": "94.4823463344024",
+              "excel": "AVERAGE(Marks!C2:C11)\u002BLEGACY.NORMSINV(0.9)*STDEV(Marks!C2:C11)",
+              "formula": "AVERAGE([Marks.C2:.C11])\u002BLEGACY.NORMSINV(0.9)*STDEV([Marks.C2:.C11])"
+            },
+            {
+              "ref": "D22",
+              "t": "s",
+              "raw": "79",
+              "kind": "Text",
+              "value": "The maths mark the top tenth would reach if marks were normally distributed"
+            },
+            {
+              "ref": "A23",
+              "t": "s",
+              "raw": "80",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NORM.S.DIST"
+            },
+            {
+              "ref": "B23",
+              "t": "s",
+              "raw": "81",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NORM.S.DIST((Marks!C4-AVERAGE(Marks!C2:C11))/STDEV(Marks!C2:C11),TRUE)"
+            },
+            {
+              "ref": "C23",
+              "raw": "0.855524877377216",
+              "kind": "Number",
+              "value": "0.855524877377216",
+              "excel": "COM.MICROSOFT.NORM.S.DIST((Marks!C4-AVERAGE(Marks!C2:C11))/STDEV(Marks!C2:C11),TRUE)",
+              "formula": "COM.MICROSOFT.NORM.S.DIST(([Marks.C4]-AVERAGE([Marks.C2:.C11]))/STDEV([Marks.C2:.C11]);TRUE())"
+            },
+            {
+              "ref": "D23",
+              "t": "s",
+              "raw": "82",
+              "kind": "Text",
+              "value": "Excel\u0027s NORM.S.DIST: the share of a normal class below Chloe\u0027s maths mark"
+            },
+            {
+              "ref": "A24",
+              "t": "s",
+              "raw": "80",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NORM.S.DIST"
+            },
+            {
+              "ref": "B24",
+              "t": "s",
+              "raw": "83",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NORM.S.DIST(0,FALSE)"
+            },
+            {
+              "ref": "C24",
+              "raw": "0.398942280401433",
+              "kind": "Number",
+              "value": "0.398942280401433",
+              "excel": "COM.MICROSOFT.NORM.S.DIST(0,FALSE)",
+              "formula": "COM.MICROSOFT.NORM.S.DIST(0;FALSE())"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "84",
+              "kind": "Text",
+              "value": "The bell curve\u0027s height at its middle"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "85",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.GAMMA.DIST"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "86",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.GAMMA.DIST(30,4,5,TRUE)"
+            },
+            {
+              "ref": "C25",
+              "raw": "0.848796117223352",
+              "kind": "Number",
+              "value": "0.848796117223352",
+              "excel": "COM.MICROSOFT.GAMMA.DIST(30,4,5,TRUE)",
+              "formula": "COM.MICROSOFT.GAMMA.DIST(30;4;5;TRUE())"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "87",
+              "kind": "Text",
+              "value": "Excel\u0027s GAMMA.DIST: the chance homework takes at most 30 minutes, if times follow shape 4, scale 5"
             }
           ]
         }
@@ -13338,8 +13454,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4409,
-      "sha256": "86c1f6ebd1ba581a6dbb76364e23bef5d6b45ec5d81dec585695ccad9b139fe6"
+      "bytes": 4856,
+      "sha256": "63720e8421073dbc30ee495d789a4bf0e0fe112949c10d444f07ea76d7343e84"
     },
     {
       "file": "functions/text.xlsx",
@@ -14320,6 +14436,66 @@
               "raw": "100",
               "kind": "Text",
               "value": "A link that writes to Aiko"
+            },
+            {
+              "ref": "A24",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "FIXED"
+            },
+            {
+              "ref": "B24",
+              "t": "s",
+              "raw": "102",
+              "kind": "Text",
+              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+            },
+            {
+              "ref": "C24",
+              "t": "str",
+              "raw": "Order total: 1,234.50",
+              "kind": "Text",
+              "value": "Order total: 1,234.50",
+              "excel": "\u0022Order total: \u0022\u0026FIXED(1234.5,2)",
+              "formula": "\u0022Order total: \u0022\u0026FIXED(1234.5;2)"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "An amount spelled with its separators inside a sentence"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "FIXED"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "104",
+              "kind": "Text",
+              "value": "=FIXED(Customers!H2,0,TRUE)"
+            },
+            {
+              "ref": "C25",
+              "t": "str",
+              "raw": "2019",
+              "kind": "Text",
+              "value": "2019",
+              "excel": "FIXED(Customers!H2,0,TRUE)",
+              "formula": "FIXED([Customers.H2];0;TRUE())"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "105",
+              "kind": "Text",
+              "value": "A year as text, with no thousands separator"
             }
           ]
         }
@@ -14331,8 +14507,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4845,
-      "sha256": "ba306c7499321886134bb9af5a5e21bcd17f124806697496aa6bf08740aea1a0"
+      "bytes": 5022,
+      "sha256": "7ed37fb45b2416db031c4ef67fcdacb3529f71fe8b8c9ef99174add1e0ace453"
     },
     {
       "file": "geometry/columns.xlsx",

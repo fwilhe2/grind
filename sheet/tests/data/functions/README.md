@@ -101,6 +101,10 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `STDEVP` | `=STDEVP(Marks.C2:C11)` | 14.9402141885583 | The same, treating the classes as the whole population |
 | `VAR` | `=VAR(Marks.E2:E11)` | 217.733333333333 | Variance of the science marks, as a sample |
 | `VARP` | `=VARP(Marks.E2:E11)` | 195.96 | The same, as a population |
+| `LEGACY.NORMSINV` | `=AVERAGE(Marks.C2:C11)+LEGACY.NORMSINV(0.9)*STDEV(Marks.C2:C11)` | 94.4823463344024 | The maths mark the top tenth would reach if marks were normally distributed |
+| `COM.MICROSOFT.NORM.S.DIST` | `=COM.MICROSOFT.NORM.S.DIST((Marks.C4-AVERAGE(Marks.C2:C11))/STDEV(Marks.C2:C11);TRUE())` | 0.855524877377216 | Excel's NORM.S.DIST: the share of a normal class below Chloe's maths mark |
+| `COM.MICROSOFT.NORM.S.DIST` | `=COM.MICROSOFT.NORM.S.DIST(0;FALSE())` | 0.398942280401433 | The bell curve's height at its middle |
+| `COM.MICROSOFT.GAMMA.DIST` | `=COM.MICROSOFT.GAMMA.DIST(30;4;5;TRUE())` | 0.848796117223352 | Excel's GAMMA.DIST: the chance homework takes at most 30 minutes, if times follow shape 4, scale 5 |
 
 ## Logical — `logical.fods`
 
@@ -179,6 +183,8 @@ A customer list as it arrives from a web form: stray spaces, mixed case, phone n
 | `T` | `=T(Customers.F4)` | 100-0001 | A postcode is text, so T keeps it |
 | `T` | `=T(Customers.H2)` |  | A year is a number, so T gives nothing |
 | `HYPERLINK` | `=HYPERLINK("mailto:"&Customers.C4;Customers.B4)` | Aiko Tanaka | A link that writes to Aiko |
+| `FIXED` | `="Order total: "&FIXED(1234.5;2)` | Order total: 1,234.50 | An amount spelled with its separators inside a sentence |
+| `FIXED` | `=FIXED(Customers.H2;0;TRUE())` | 2019 | A year as text, with no thousands separator |
 
 ## Date and time — `datetime.fods`
 

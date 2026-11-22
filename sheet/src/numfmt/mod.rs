@@ -897,6 +897,16 @@ mod tests {
 
     const EPOCH: i64 = date::DEFAULT_NULL_DATE;
 
+    /// A number past every calendar is still a number: rendering it computes no date to overflow.
+    #[test]
+    fn a_huge_number_renders_without_a_calendar() {
+        let f = number(0, 0, true);
+        assert_eq!(
+            f.render(&CellValue::Number(1e20), EPOCH),
+            "100,000,000,000,000,000,000"
+        );
+    }
+
     fn number(decimals: u8, min_decimals: u8, grouping: bool) -> Format {
         let mut f = Format::new(Kind::Number);
         f.push(Part::Number {

@@ -435,6 +435,14 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `IPMT(0.1/12;36;36;8000)`, `IPMT(0.06/52;30;208;8000;0;1)` | -2.13336774835317, -8.06341136318208 | — | **exact**: rational arithmetic over the same doubles gives -2.1333677483528916… and -8.0634113631819843…, which this build matches to the last digit or two and the oracle misses from the twelfth; the last periods of a loan are a small difference of large terms |
 | `ADDRESS(1;1;6)`, `ADDRESS(1;1;9)` | `A$1`, `#VALUE!` | `1 ≤ Abs ≤ 4` | 5…8 read as 1…4, anything else `#VALUE!` |
 | `ADDRESS(…;"My Sheet")`, `"Sheet-1"`, `"1abc"`, `"a.b"`, `5` vs `"Ä"`, `"A_b"` | quoted, unquoted | silent | quoted (with `''` for a quote) unless the name is letters, digits and `_` not starting with a digit — so the text reads back as a reference |
+| `LEGACY.NORMSINV(0)`, `(1)`, `(-0.1)` (measured 2026-11-22, 26.8.3.1) | `#VALUE!`, `#VALUE!`, `Err:502` | `0 < P < 1` | `#NUM!` for all three: one constraint, one domain error |
+| `COM.MICROSOFT.NORM.S.DIST(1)`, `COM.MICROSOFT.GAMMA.DIST(2;3;2)` | `Err:511` | not Part 4 | `#VALUE!`: Excel's `Cumulative` is required, and a missing argument is `#VALUE!` everywhere here |
+| `COM.MICROSOFT.GAMMA.DIST(-1;3;2;…)`, `(…;0;…)`, `(…;…;0;…)` | `Err:502` | not Part 4 (§6.18.31's `GAMMADIST` answers 0 for a negative X) | `#NUM!`: Excel's function, as its oracle measures it |
+| `COM.MICROSOFT.GAMMA.DIST(0;0.5;1;FALSE())` | `#DIV/0!` | the density divides by zero at 0 when α < 1 | `#DIV/0!` |
+| `FIXED(5;16)`, `FIXED(5;-16)` | `Err:502`; ±15 places are spelled | Constraints: None | `#NUM!` past fifteen places either way: a double holds no more |
+| `FIXED(1234.5;-1.9)` | `1,200` | "rounded towards 0 as an integer" | **the spec**: D is -1, `1,230` |
+| `FIXED(1.005;2)`, beside `ROUND(1.005;2)` | `1.00`, 1.01 | "Rounds value N to D decimal places" | **the spec**: `ROUND`'s rounding of the shown value, `1.01` |
+| `FIXED(-1234567.891;2)` in a document whose default language is `de-DE` | `-1,234,567.89` — the user interface's locale | "using locale-specific settings" | **the spec**, read as the document's locale: `-1.234.567,89` |
 
 **Where the fifteen-digit read stops.** It is not applied to every magnitude. A series
 `10^k·(1−4E−16)`, whose sixteenth digit always rounds the value up to `10^k`, snaps in

@@ -1115,3 +1115,210 @@ fn address_spells_a_reference_as_text() {
     assert_eq!(error("=ADDRESS(1;1;9)"), FormulaError::Value);
     assert_eq!(error("=ADDRESS(1;1;1;\"x\")"), FormulaError::Value);
 }
+
+/// The oracle's document for the two normal-distribution functions and Excel's `GAMMA.DIST`,
+/// measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1).
+#[test]
+fn the_standard_normal_and_its_inverse_agree_with_the_oracle() {
+    // §6.18.55.
+    close("=LEGACY.NORMSINV(0.025)", -1.959_963_984_540_05);
+    close("=LEGACY.NORMSINV(0.975)", 1.959_963_984_540_05);
+    close("=LEGACY.NORMSINV(0.75)", 0.674_489_750_196_082);
+    close("=LEGACY.NORMSINV(0.001)", -3.090_232_306_167_81);
+    close("=LEGACY.NORMSINV(1E-10)", -6.361_340_902_404_06);
+    close("=LEGACY.NORMSINV(0.9999999)", 5.199_337_582_290_66);
+    close("=LEGACY.NORMSINV(1E-300)", -37.047_096_299_361_2);
+    close("=LEGACY.NORMSINV(\"0.3\")", -0.524_400_512_708_041);
+    close("=LEGACY.NORMSINV(0.5)", 0.0);
+    // `0 < P < 1`: the oracle answers #VALUE! at either end and Err:502 past them; the domain
+    // error is #NUM!, as everywhere else here.
+    for p in ["0", "1", "-0.1"] {
+        assert_eq!(
+            error(&format!("=LEGACY.NORMSINV({p})")),
+            FormulaError::Num,
+            "{p}"
+        );
+    }
+    assert_eq!(error("=LEGACY.NORMSINV(\"x\")"), FormulaError::Value);
+    assert_eq!(error("=LEGACY.NORMSINV()"), FormulaError::Value);
+
+    // Excel's NORM.S.DIST: §6.18.52's NORMDIST with a mean of 0 and a deviation of 1.
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(1.96;TRUE())",
+        0.975_002_104_851_78,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(-1;TRUE())",
+        0.158_655_253_931_457,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(-3.2;TRUE())",
+        0.000_687_137_937_915_847,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(-8;TRUE())",
+        6.220_960_574_271_76e-16,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(8;TRUE())",
+        0.999_999_999_999_999,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(0;FALSE())",
+        0.398_942_280_401_433,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.S.DIST(1;FALSE())",
+        0.241_970_724_519_143,
+    );
+    close("=COM.MICROSOFT.NORM.S.DIST(0.5;1)", 0.691_462_461_274_013);
+    close("=COM.MICROSOFT.NORM.S.DIST(0.5;0)", 0.352_065_326_764_3);
+    close("=COM.MICROSOFT.NORM.S.DIST(;1)", 0.5);
+    assert_eq!(number("=COM.MICROSOFT.NORM.S.DIST(-40;TRUE())"), 0.0);
+    // Excel's Cumulative is required.
+    assert_eq!(error("=COM.MICROSOFT.NORM.S.DIST(1)"), FormulaError::Value);
+    assert_eq!(
+        error("=COM.MICROSOFT.NORM.S.DIST(\"x\";1)"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.NORM.S.DIST(1;\"x\")"),
+        FormulaError::Value
+    );
+}
+
+#[test]
+fn excels_gamma_dist_is_the_gamma_distribution_and_refuses_a_negative_x() {
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(2;3;2;TRUE())",
+        0.080_301_397_071_394_2,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(2;3;2;FALSE())",
+        0.091_969_860_292_860_6,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(5;0.5;1;TRUE())",
+        0.998_434_597_741_998,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(60;50;1;TRUE())",
+        0.915_593_318_906_311,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(0.0035;12.5;0.0002;TRUE())",
+        0.911_796_788_750_756,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(150;200;1;TRUE())",
+        5.709_688_574_208_72e-5,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(3;2.5;1.5;FALSE())",
+        0.191_967_880_935_78,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(1E-300;0.5;1;TRUE())",
+        1.128_379_167_095_52e-150,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(1;1E-5;1;TRUE())",
+        0.999_997_806_138_208,
+    );
+    close(
+        "=COM.MICROSOFT.GAMMA.DIST(1E+6;1E+6;1;TRUE())",
+        0.500_132_980_418_817,
+    );
+    assert_eq!(number("=COM.MICROSOFT.GAMMA.DIST(0;3;2;TRUE())"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.GAMMA.DIST(0;3;2;FALSE())"), 0.0);
+    assert_eq!(number("=COM.MICROSOFT.GAMMA.DIST(0;1;1;FALSE())"), 1.0);
+    assert_eq!(
+        number("=COM.MICROSOFT.GAMMA.DIST(0.01;100;0.5;TRUE())"),
+        0.0
+    );
+    assert_eq!(number("=COM.MICROSOFT.GAMMA.DIST(1000;3;2;TRUE())"), 1.0);
+    // The density divides by zero at 0 when α < 1.
+    assert_eq!(
+        error("=COM.MICROSOFT.GAMMA.DIST(0;0.5;1;FALSE())"),
+        FormulaError::DivZero
+    );
+    // Excel's, unlike §6.18.31's: a negative X is refused rather than 0.
+    for refused in [
+        "-1;3;2;TRUE()",
+        "-1;3;2;FALSE()",
+        "2;0;2;TRUE()",
+        "2;3;0;TRUE()",
+        "2;-3;2;TRUE()",
+    ] {
+        assert_eq!(
+            error(&format!("=COM.MICROSOFT.GAMMA.DIST({refused})")),
+            FormulaError::Num,
+            "{refused}"
+        );
+    }
+    assert_eq!(
+        error("=COM.MICROSOFT.GAMMA.DIST(2;3;2)"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.GAMMA.DIST(\"x\";3;2;TRUE())"),
+        FormulaError::Value
+    );
+}
+
+#[test]
+fn fixed_rounds_as_round_does_and_spells_the_result_in_the_documents_locale() {
+    // §6.20.10.
+    assert_eq!(text("=FIXED(1234.567)"), "1,234.57");
+    assert_eq!(text("=FIXED(1234.567;1)"), "1,234.6");
+    assert_eq!(text("=FIXED(1234.567;-2)"), "1,200");
+    assert_eq!(text("=FIXED(1234.567;2;TRUE())"), "1234.57");
+    assert_eq!(text("=FIXED(1234.567;2;1)"), "1234.57");
+    assert_eq!(text("=FIXED(1234.567;;TRUE())"), "1234.57");
+    assert_eq!(text("=FIXED(1234567;0;FALSE())"), "1,234,567");
+    assert_eq!(text("=FIXED(-1234567.891;2)"), "-1,234,567.89");
+    assert_eq!(text("=FIXED(1E+15;0)"), "1,000,000,000,000,000");
+    assert_eq!(text("=FIXED(1E+20;0)"), "100,000,000,000,000,000,000");
+    assert_eq!(text("=FIXED(12;5)"), "12.00000");
+    assert_eq!(text("=FIXED(1.5;15)"), "1.500000000000000");
+    assert_eq!(text("=FIXED(0;2)"), "0.00");
+    // Half away from zero, and a zero left after rounding has no sign.
+    assert_eq!(text("=FIXED(2.5;0)"), "3");
+    assert_eq!(text("=FIXED(-2.5;0)"), "-3");
+    assert_eq!(text("=FIXED(0.5;0)"), "1");
+    assert_eq!(text("=FIXED(-0.5;0)"), "-1");
+    assert_eq!(text("=FIXED(0.4;0)"), "0");
+    assert_eq!(text("=FIXED(0.125;2)"), "0.13");
+    assert_eq!(text("=FIXED(2.675;2)"), "2.68");
+    assert_eq!(text("=FIXED(-0.001;2)"), "0.00");
+    // "Rounds value N": ROUND's rounding, which reads 1.005 as it shows. The oracle's FIXED
+    // answers 1.00 here while its own ROUND answers 1.01; the spec says they are one rounding.
+    assert_eq!(text("=FIXED(1.005;2)"), "1.01");
+    // "If D is a fraction, it is rounded towards 0": -1.9 is -1. The oracle reads it as -2 and
+    // answers 1,200; the spec wins.
+    assert_eq!(text("=FIXED(1234.5;1.9)"), "1,234.5");
+    assert_eq!(text("=FIXED(1234.5;-1.9)"), "1,230");
+    assert_eq!(text("=FIXED(1234.567;-5)"), "0");
+    assert_eq!(text("=FIXED(123;-3)"), "0");
+    assert_eq!(text("=FIXED(15;-15)"), "0");
+    assert_eq!(text("=FIXED(\"12.5\";0)"), "13");
+    assert_eq!(text("=FIXED(TRUE();1)"), "1.0");
+    // The oracle refuses more than fifteen places either way: a double has no more.
+    for d in ["16", "-16", "128"] {
+        assert_eq!(error(&format!("=FIXED(5;{d})")), FormulaError::Num, "{d}");
+    }
+    assert_eq!(error("=FIXED(\"x\";1)"), FormulaError::Value);
+    assert_eq!(error("=FIXED()"), FormulaError::Value);
+    assert_eq!(error("=FIXED(1;2;3;4)"), FormulaError::Value);
+
+    // "using locale-specific settings": the document's. The oracle spells FIXED in its own user
+    // interface's locale whatever the document says; the spec says locale, and a document's
+    // locale is the one it has.
+    let mut document = table();
+    document.locale = Some(grind_core::locale::Locale::new("de", "DE"));
+    let at = Address::new(0, Pos::new(20, 0));
+    assert_eq!(
+        Engine::new(&document).eval("=FIXED(-1234567.891;2)", at),
+        Value::Text("-1.234.567,89".into())
+    );
+}

@@ -25,6 +25,8 @@ zip = { version = "9", default-features = false, features = ["deflate", "unreser
 # For `Session` only — so an undo stack can outlive the process that built it and a CLI can
 # offer undo across stateless invocations. The document format is ODF and owes serde nothing.
 serde = { version = "1", features = ["derive", "rc"] }
+# erfc and the log-gamma function, for the statistical distributions.
+libm = "0.2"
 
 [dev-dependencies]
 # Only to prove `Session` survives a round trip through a file; the core never writes JSON.

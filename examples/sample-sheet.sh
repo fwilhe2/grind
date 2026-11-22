@@ -162,7 +162,15 @@ run set "$book" L14 'Biggest spend after housing'
 run set "$book" M14 '=COM.MICROSOFT.MAXIFS([.C2:.C7];[.A2:.A7];"<>Housing")'   # Excel's MAXIFS, as ODF spells it
 run set "$book" L15 'Smallest spend'
 run set "$book" M15 '=COM.MICROSOFT.MINIFS([.C2:.C7];[.C2:.C7];">0")'          # the refund is not spending
-sheet view "$book" L1:M15
+run set "$book" L16 'Rent, for a letter'
+run set "$book" M16 '="Rent: "&FIXED([.C2];2)'                               # a number as text, with separators
+run set "$book" L17 'A tenth of months spend more than'
+run set "$book" M17 '=AVERAGE([.C2:.C7])+LEGACY.NORMSINV(0.9)*STDEV([.C2:.C7])'   # if spending were normal
+run set "$book" L18 'Share of spending below rent'
+run set "$book" M18 '=COM.MICROSOFT.NORM.S.DIST(([.C2]-AVERAGE([.C2:.C7]))/STDEV([.C2:.C7]);TRUE())'
+run set "$book" L19 'Chance a bill is at most 30'
+run set "$book" M19 '=COM.MICROSOFT.GAMMA.DIST(30;4;5;TRUE())'           # Excel's GAMMA.DIST, shape 4, scale 5
+sheet view "$book" L1:M19
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2

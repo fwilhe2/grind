@@ -275,6 +275,17 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   narrowed rather than crossed. Where the oracle and §3.3 disagree — an operator over arrays
   of two lengths — the spec wins (`doc/ods-format.md` §4.1). Decided 2026-10-18.
 
+- `LEGACY.NORMSINV` — §6.18.55
+- `FIXED` — §6.20.10
+
+  **Evidence:** a Monte Carlo retirement calculator exported from a spreadsheet service, whose
+  simulation draws every percentile band through Excel's `NORMSINV` (imported as
+  `LEGACY.NORMSINV`, as the oracle does) and spells its results with `FIXED`; without them a
+  recalculation turned 413 cells into errors and every band of its charts into zero.
+  `LEGACY.NORMSINV` is Φ⁻¹ by Halley's method over `erfc`; `FIXED` is `ROUND` followed by the
+  number format a cell would use, in the document's locale. Measured against LibreOffice 26.8
+  (`doc/ods-format.md` §4.1), the spec winning where the two disagree. Decided 2026-11-22.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
@@ -306,6 +317,16 @@ same name.
   place of the sum. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1): 0 when nothing
   matches, text in the range is skipped, and a matched error is the answer — which `SUMIFS` and
   its kin now give too. Decided 2026-11-09.
+
+- `COM.MICROSOFT.GAMMA.DIST` — §6.18
+- `COM.MICROSOFT.NORM.S.DIST` — §6.18
+
+  **Evidence:** the same calculator as `LEGACY.NORMSINV` above. `grind-xlsx` imports Excel's
+  `GAMMA.DIST` and `NORM.S.DIST` under these names, as the oracle does, and they are its
+  ruin-probability columns. Both are §6.18's own functions in Excel's clothes — `GAMMADIST`,
+  and `NORMDIST` with a mean of 0 and a deviation of 1 — with the last parameter required and,
+  for `GAMMA.DIST`, a negative X refused rather than 0, as the oracle's functions of these names
+  do (`doc/ods-format.md` §4.1). Decided 2026-11-22.
 
 ---
 

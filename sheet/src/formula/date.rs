@@ -32,7 +32,8 @@ pub fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
 /// The inverse of [`days_from_civil`] — Hinnant's `civil_from_days`.
 #[must_use]
 pub(crate) fn civil_from_days(z: i64) -> (i64, i64, i64) {
-    let z = z + 719_468;
+    // A serial far past any calendar still names some day rather than overflowing.
+    let z = z.saturating_add(719_468);
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
@@ -75,7 +76,7 @@ pub(crate) fn expand_year(y: i64, null_year: i64) -> i64 {
 /// serial names the day it falls in.
 #[must_use]
 pub fn ymd(serial: f64, null_date: i64) -> (i64, i64, i64) {
-    civil_from_days(serial.floor() as i64 + null_date)
+    civil_from_days((serial.floor() as i64).saturating_add(null_date))
 }
 
 /// The serial number of a calendar date. Out-of-range months and days roll over, as §6.10.2

@@ -30,8 +30,32 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "T" => t(args),
         "CONCATENATE" => concatenate(args),
         "SEARCH" => search(args),
+        "FIXED" => fixed(args),
         _ => return None,
     })
+}
+
+/// §6.20.10 `FIXED(N; D; OmitSeparators)`: `N` rounded as `ROUND` rounds, spelled with `D`
+/// decimals in the document's locale. More than fifteen places either way is refused, as the
+/// oracle refuses it: a double holds no more.
+fn fixed(args: &mut Args) -> Answer {
+    use crate::numfmt::{Kind, preset};
+    args.arity(1..=3)?;
+    let n = args.number(0)?;
+    let digits = if args.omitted(1) { 2 } else { args.integer(1)? };
+    let grouping = args.omitted(2) || !args.logical(2)?;
+    if digits.abs() > 15 {
+        return Err(FormulaError::Num);
+    }
+    let rounded = super::math::at_digits(n, digits, |v| super::math::shown(v).round());
+    // A value rounded to zero is spelled without its sign.
+    let rounded = if rounded == 0.0 { 0.0 } else { rounded };
+    let format = preset(Kind::Number, digits.max(0) as u8, grouping, "");
+    Ok(Value::Text(format.render_in(
+        &crate::CellValue::Number(rounded),
+        0,
+        args.locale(),
+    )))
 }
 
 fn len(args: &mut Args) -> Answer {

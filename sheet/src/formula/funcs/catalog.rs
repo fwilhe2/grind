@@ -227,6 +227,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.GAMMA.DIST",
+        signature: "COM.MICROSOFT.GAMMA.DIST( Number X ; Number Alpha ; Number Beta ; Logical Cumulative )",
+        brief: "Excel's GAMMA.DIST: the gamma distribution's density at X, or its cumulative distribution when Cumulative is TRUE.",
+        section: "6.18",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.MAXIFS",
         signature: "COM.MICROSOFT.MAXIFS( Reference M ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
         brief: "Excel's MAXIFS: the largest number in M where every range meets its criterion, 0 if none does.",
@@ -236,6 +242,12 @@ static CATALOG: &[FuncInfo] = &[
         name: "COM.MICROSOFT.MINIFS",
         signature: "COM.MICROSOFT.MINIFS( Reference M ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
         brief: "Excel's MINIFS: the smallest number in M where every range meets its criterion, 0 if none does.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.NORM.S.DIST",
+        signature: "COM.MICROSOFT.NORM.S.DIST( Number Z ; Logical Cumulative )",
+        brief: "Excel's NORM.S.DIST: the standard normal distribution's density at Z, or its cumulative distribution when Cumulative is TRUE.",
         section: "6.18",
     },
     FuncInfo {
@@ -426,6 +438,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.20.9",
     },
     FuncInfo {
+        name: "FIXED",
+        signature: "FIXED( Number N [ ; Integer D = 2 [ ; Logical OmitSeparators = FALSE ] ] )",
+        brief: "Round the number to a specified number of decimals and format the result as a text.",
+        section: "6.20.10",
+    },
+    FuncInfo {
         name: "FLOOR",
         signature: "FLOOR( Number N [ ; [ Number Significance ] [ ; Number Mode ] ] )",
         brief: "Round a number N down to the nearest multiple of the second parameter, significance.",
@@ -563,6 +581,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "LEFT( Text T [ ; Integer Length ] )",
         brief: "Return a selected number of text characters from the left.",
         section: "6.20.12",
+    },
+    FuncInfo {
+        name: "LEGACY.NORMSINV",
+        signature: "LEGACY.NORMSINV( Number P )",
+        brief: "returns the inverse of LEGACY.NORMSDIST(X).",
+        section: "6.18.55",
     },
     FuncInfo {
         name: "LEN",

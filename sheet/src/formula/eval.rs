@@ -164,6 +164,11 @@ impl<'a> Engine<'a> {
         self.doc.null_year
     }
 
+    /// The document's locale, for the functions that spell a number.
+    pub(crate) fn locale(&self) -> Option<&grind_core::locale::Locale> {
+        self.doc.locale.as_ref()
+    }
+
     /// The value of a cell: its formula recalculated, or its stored value if it has none.
     pub fn value(&mut self, at: Address) -> Value {
         if let Some(cached) = self.cache.get(&at) {

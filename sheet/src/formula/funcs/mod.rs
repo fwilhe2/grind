@@ -23,6 +23,7 @@ mod catalog;
 mod criterion;
 mod datetime;
 mod db;
+mod dist;
 mod fin;
 mod info;
 mod logical;
@@ -117,12 +118,15 @@ const BEYOND: &[&str] = &[
     "COLUMN",
     "COM.MICROSOFT.CEILING",
     "COM.MICROSOFT.FLOOR",
+    "COM.MICROSOFT.GAMMA.DIST",
     "COM.MICROSOFT.MAXIFS",
     "COM.MICROSOFT.MINIFS",
+    "COM.MICROSOFT.NORM.S.DIST",
     "CONCATENATE",
     "COUNTIFS",
     "EDATE",
     "EOMONTH",
+    "FIXED",
     "FLOOR",
     "HYPERLINK",
     "IFERROR",
@@ -130,6 +134,7 @@ const BEYOND: &[&str] = &[
     "IPMT",
     "ISOWEEKNUM",
     "LARGE",
+    "LEGACY.NORMSINV",
     "MEDIAN",
     "MROUND",
     "NETWORKDAYS",
@@ -236,6 +241,9 @@ const NAMES: &[&str] = &[
     "SMALL",
     "COM.MICROSOFT.MAXIFS",
     "COM.MICROSOFT.MINIFS",
+    "LEGACY.NORMSINV",
+    "COM.MICROSOFT.NORM.S.DIST",
+    "COM.MICROSOFT.GAMMA.DIST",
     // text (§6.20)
     "EXACT",
     "FIND",
@@ -253,6 +261,7 @@ const NAMES: &[&str] = &[
     "UPPER",
     "CONCATENATE",
     "SEARCH",
+    "FIXED",
     // external access (§6.11)
     "HYPERLINK",
     // date and time (§6.10)
@@ -366,6 +375,12 @@ impl Args<'_, '_> {
     #[must_use]
     pub fn null_date(&self) -> i64 {
         self.engine.null_date()
+    }
+
+    /// The document's locale — how `FIXED` spells a number.
+    #[must_use]
+    pub fn locale(&self) -> Option<&grind_core::locale::Locale> {
+        self.engine.locale()
     }
 
     /// `HOST-NULL-YEAR` (§3.4 item 7) — how `DATE` reads a two-digit year.

@@ -29,6 +29,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SMALL" => nth(args, false),
         "MEDIAN" => median(args),
         "RANK" => rank(args),
+        "LEGACY.NORMSINV" => super::dist::normsinv(args),
+        "COM.MICROSOFT.NORM.S.DIST" => super::dist::norm_s_dist(args),
+        "COM.MICROSOFT.GAMMA.DIST" => super::dist::gamma_dist(args),
         _ => return None,
     })
 }
