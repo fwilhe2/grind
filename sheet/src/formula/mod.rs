@@ -21,6 +21,8 @@ pub mod trace;
 pub mod value;
 pub(crate) mod wildcard;
 
+pub use array::one_cell_array_is_plain;
+
 /// What typing a formula refuses, with what to write instead: a formula that does not parse, a
 /// cell address without its brackets, which would parse as a name `defined` does not know, and
 /// Excel's name for a function ODF spells `COM.MICROSOFT.…` — the last two would read `#NAME?`.

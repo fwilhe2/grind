@@ -754,6 +754,8 @@ struct RawFormula {
     t: String,
     /// The shared group this cell belongs to.
     si: Option<u32>,
+    /// An array formula's range covers this one cell: no `ref`, a single cell, or `A1:A1`.
+    one_cell: bool,
     text: String,
 }
 
@@ -771,11 +773,16 @@ fn cell(reader: &mut Reader<'_>) -> crate::Result<Held> {
         if name.is("f") {
             let t = attrs.plain("t").unwrap_or("normal").to_owned();
             let si = attrs.plain("si").and_then(|s| s.parse().ok());
-            // `ref` is the group's own range and is never read: a follower names its group by
-            // number, so the range would be a second way to say the same thing.
+            // A shared group's `ref` is never read: a follower names its group by number, so
+            // the range would be a second way to say the same thing. An array's says how many
+            // cells it fills.
+            let one_cell = attrs
+                .plain("ref")
+                .is_none_or(|range| range.split_once(':').is_none_or(|(a, b)| a == b));
             held.f = Some(RawFormula {
                 t,
                 si,
+                one_cell,
                 text: reader.text()?,
             });
             return Ok(Handled::Yes);
@@ -796,10 +803,22 @@ fn take_formula(
     report: &mut Report,
     shared: &mut Shared,
 ) {
+    let scope = crate::tables::Scope {
+        tables: context.tables,
+        sheet: index,
+        sheet_names: context.sheet_names,
+        row: at.row,
+    };
     // An array formula is §2.3.2's exclusion rather than a translation failure: the cell keeps
-    // the value Excel cached for it and the expression goes, whatever it says.
+    // the value Excel cached for it and the expression goes — unless it fills one cell and means
+    // there what it means entered plainly, when it is carried as a plain formula.
     if f.t == "array" {
-        refuse(Refusal::Array, at, index, report);
+        match formula::translate_in(&f.text, Some(&scope)) {
+            Ok(expr) if f.one_cell && grind_sheet::formula::one_cell_array_is_plain(&expr) => {
+                store_formula(sheet, at, &expr, index, context, report, true);
+            }
+            _ => refuse(Refusal::Array, at, index, report),
+        }
         return;
     }
     // A follower carries the group's number and nothing else. Its master may not have been
@@ -814,12 +833,6 @@ fn take_formula(
     }
     // `dataTable` has no expression at all — it is a what-if table described by attributes —
     // so it lands here with empty text and is refused as syntax, which is the truth.
-    let scope = crate::tables::Scope {
-        tables: context.tables,
-        sheet: index,
-        sheet_names: context.sheet_names,
-        row: at.row,
-    };
     match formula::translate_in(&f.text, Some(&scope)) {
         Ok(expr) => {
             if f.t == "shared"
@@ -1344,6 +1357,33 @@ mod tests {
         );
         assert_eq!(report.refused[&Refusal::Array], 1);
         assert_eq!(report.refused[&Refusal::Intersection], 1);
+    }
+
+    /// A one-cell array formula that reads the same entered plainly is carried as one; a range
+    /// where one value belongs, or an array over several cells, is refused as before.
+    #[test]
+    fn a_one_cell_array_formula_that_reads_plainly_is_carried() {
+        let (sheet, report) = sheet_of(
+            r#"<row r="1">
+                 <c r="A1"><f t="array" ref="A1">INDEX(B1:B3,2)/12</f><v>2</v></c>
+                 <c r="A2"><f t="array" ref="A2:A2">SUMPRODUCT((B1:B3>1)*B1:B3)</f><v>5</v></c>
+                 <c r="A3"><f t="array" ref="A3">SUM(B1:B3*2)</f><v>12</v></c>
+                 <c r="A4"><f t="array" ref="A4:A5">B1:B2*2</f><v>2</v></c>
+               </row>"#,
+            &[],
+            &Styles::default(),
+            false,
+        );
+        assert_eq!(sheet.formula(at("A1")), Some("=INDEX([.B1:.B3];2)/12"));
+        assert_eq!(
+            sheet.formula(at("A2")),
+            Some("=SUMPRODUCT(([.B1:.B3]>1)*[.B1:.B3])")
+        );
+        assert_eq!(sheet.formula(at("A3")), None);
+        assert_eq!(sheet.formula(at("A4")), None);
+        assert_eq!(sheet.get(at("A3")), CellValue::Number(12.0));
+        assert_eq!(report.formulas, 2);
+        assert_eq!(report.dropped[&Dropped::ArrayFormula], 2);
     }
 
     /// A name grind cannot evaluate is reported and the formula carried anyway.

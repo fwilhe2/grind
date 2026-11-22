@@ -509,7 +509,16 @@ at F2 whose only follower is F1, above it. That file is also where the `#REF!` c
 the follower shifts a reference to A1 up by a row, off the sheet.
 
 **Array formulas** (`t="array"`) are out of scope by §2.3.2: the cell keeps its cached value,
-loses its formula, and is counted.
+loses its formula, and is counted — **unless it fills one cell and means there what it means
+entered plainly**, when it is carried as a plain formula (`grind_sheet::formula::
+one_cell_array_is_plain`). Array mode iterates a range that stands where one value belongs —
+an operator's operand, a one-value parameter's argument, the whole formula — and a plain formula
+meets it at one cell; anywhere else a range is taken whole either way, and inside a `ForceArray`
+argument (§6.3.4: `SUMPRODUCT`'s, `MATCH`'s search region) both readings are array mode already.
+A spreadsheet service writes almost every formula it exports as a one-cell array: one workbook
+carried 8,429 of them, nearly all `INDEX`, `MAX` over a range and `SUMPRODUCT`. A name,
+a function the catalog does not know and an `INDEX` with a zero row or column may be ranges and
+count as ranges. An array over several cells is refused whatever it says.
 
 **A function is translated by name, never by rewriting.** A name OpenFormula spells
 differently gets the spelling that *means* the same function — the oracle's own import,

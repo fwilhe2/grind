@@ -151,3 +151,115 @@ fn literal(value: &Value) -> Expr {
         },
     }
 }
+
+/// Whether `expr`, entered as an array formula over one cell, means what it means entered
+/// plainly. Array mode iterates a range that stands where one value belongs — an operator's
+/// operand, a one-value parameter's argument, the whole formula — and a plain formula meets it at
+/// one cell; anywhere else a range is taken whole either way, and inside a `ForceArray` argument
+/// both readings are array mode already. A name, a function the catalog does not know and an
+/// `INDEX` with a zero row or column may be ranges, so they count as ranges.
+#[must_use]
+pub fn one_cell_array_is_plain(expr: &Expr) -> bool {
+    !ranged(expr) && plain_inside(expr)
+}
+
+/// Whether nothing below `expr` puts a range where one value belongs.
+fn plain_inside(expr: &Expr) -> bool {
+    match expr {
+        Expr::Binary(Op::Range | Op::Union | Op::Intersect, left, right) => {
+            plain_inside(left) && plain_inside(right)
+        }
+        Expr::Binary(_, left, right) => {
+            one_cell_array_is_plain(left) && one_cell_array_is_plain(right)
+        }
+        Expr::Prefix(_, inner) | Expr::Postfix(_, inner) => one_cell_array_is_plain(inner),
+        Expr::Paren(inner) => plain_inside(inner),
+        Expr::Call { name, args } => {
+            let name = name.to_uppercase();
+            let Some(info) = funcs::catalog().iter().find(|info| info.name == name) else {
+                return !args.iter().any(ranged) && args.iter().all(plain_inside);
+            };
+            let (params, group) = funcs::parameters(info.signature);
+            args.iter().enumerate().all(|(i, arg)| {
+                let at = match i.checked_sub(params.len()) {
+                    None => Some(i),
+                    Some(_) if group == 0 => None,
+                    Some(past) => Some(params.len() - group + past % group),
+                };
+                let force_array = at.is_some_and(|at| params[at].0 == "ForceArray");
+                force_array
+                    || if funcs::takes_one_value(&name, i) {
+                        one_cell_array_is_plain(arg)
+                    } else {
+                        plain_inside(arg)
+                    }
+            })
+        }
+        Expr::Number(_)
+        | Expr::Text(_)
+        | Expr::Error(_)
+        | Expr::Ref(_)
+        | Expr::Name(_)
+        | Expr::Empty => true,
+    }
+}
+
+/// Whether `expr` may stand for more than one cell.
+fn ranged(expr: &Expr) -> bool {
+    match expr {
+        Expr::Ref(reference) => reference.end.is_some(),
+        Expr::Name(_) | Expr::Binary(Op::Range | Op::Union | Op::Intersect, ..) => true,
+        Expr::Paren(inner) => ranged(inner),
+        Expr::Call { name, args } if name.eq_ignore_ascii_case("INDEX") => args
+            .iter()
+            .skip(1)
+            .take(2)
+            .any(|arg| matches!(arg, Expr::Empty | Expr::Number(0.0))),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::one_cell_array_is_plain;
+    use crate::formula::parse::parse;
+
+    fn plain(formula: &str) -> bool {
+        one_cell_array_is_plain(&parse(formula).expect("parses"))
+    }
+
+    /// The shapes a spreadsheet service writes as one-cell array formulas, from a Monte Carlo
+    /// workbook: every range is taken whole, or sits inside SUMPRODUCT's own array argument.
+    #[test]
+    fn a_range_taken_whole_reads_the_same_either_way() {
+        assert!(plain("=INDEX([.$AL$18:.$AL$78];[.$B$4]+1)"));
+        assert!(plain("=INDEX([.$CH$19:.$CH$78];[.$KK19])/12"));
+        assert!(plain("=MAX([.$AX$19]:INDEX([.$AX$19:.$AX$78];[.$B$4]))"));
+        assert!(plain(
+            "=IF([.$C19]=0;0;IFERROR(MAX(0;[.$B$12]*EXP([.$A19])+SUMPRODUCT(([.$A$19:.$A$78]<=[.$A19])*[.$I$19:.$I$78]));0))"
+        ));
+        // MATCH's search region is ForceArray (§6.14.9): array mode in either reading.
+        assert!(plain("=MATCH(TRUE();INDEX([.$Y$19:.$Y$78]>=0.1;0);0)"));
+        assert!(plain("=1+2"));
+        assert!(plain("=[.A1]*2"));
+    }
+
+    /// Where array mode iterates a range and a plain formula meets it at one cell, the two
+    /// readings part.
+    #[test]
+    fn a_range_where_one_value_belongs_reads_differently() {
+        // An operator's operand.
+        assert!(!plain("=SUM([.A1:.A3]*2)"));
+        assert!(!plain("=-[.A1:.A3]"));
+        // A one-value parameter's argument, iterated in array mode.
+        assert!(!plain("=SUM(LEN([.A1:.A3]))"));
+        assert!(!plain("=COUNTIF([.A1:.A9];[.B1:.B3])"));
+        // The whole formula: array mode takes its first cell.
+        assert!(!plain("=[.A1:.A3]"));
+        // INDEX's zero means a whole row or column.
+        assert!(!plain("=INDEX([.A1:.B3];0;1)+1"));
+        // A name may be a range, and a function this build does not know may take one value.
+        assert!(!plain("=Prices*2"));
+        assert!(!plain("=NOSUCH([.A1:.A3])"));
+    }
+}

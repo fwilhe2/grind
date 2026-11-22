@@ -18,6 +18,8 @@ lands, and the release workflow publishes the section as it stands.
 - Four more spreadsheet functions: `FIXED`, `LEGACY.NORMSINV`, and Excel's `NORM.S.DIST` and
   `GAMMA.DIST`, so workbooks that simulate with the normal and gamma distributions recalculate
   instead of turning into errors.
+- Importing an Excel workbook keeps a one-cell array formula as a formula when it computes the
+  same as an ordinary one, instead of freezing it to its saved value.
 
 ### Fixes
 
