@@ -48,6 +48,8 @@ A household's September budget, a garden plan and an order of supplies for it. (
 | `ASIN` | `=DEGREES(ASIN(Garden.B5/SQRT(Garden.B5^2+Garden.B6^2)))` | 4.76364169072618 | The same slope, from the rise and the surface length |
 | `ACOS` | `=DEGREES(ACOS(Garden.B6/SQRT(Garden.B5^2+Garden.B6^2)))` | 4.76364169072622 | The same slope, from the run and the surface length |
 | `ATAN2` | `=DEGREES(ATAN2(Garden.B16;Garden.B17))` | 36.869897645844 | Bearing of the shed above due east — ATAN2 takes x first |
+| `SUMSQ` | `=SUMSQ(3;4)` | 25 | The squares of three and four, added |
+| `COMBIN` | `=COMBIN(6;2)` | 15 | Pairs of plants from six seedlings |
 
 ## Rounding — `rounding.fods`
 
@@ -109,6 +111,21 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `COM.MICROSOFT.STDEV.P` | `=COM.MICROSOFT.STDEV.P(Marks.C2:C11)` | 14.9402141885583 | Excel's STDEV.P: STDEVP by its new name |
 | `COM.MICROSOFT.VAR.S` | `=COM.MICROSOFT.VAR.S(Marks.E2:E11)` | 217.733333333333 | Excel's VAR.S: VAR by its new name |
 | `COM.MICROSOFT.VAR.P` | `=COM.MICROSOFT.VAR.P(Marks.E2:E11)` | 195.96 | Excel's VAR.P: VARP by its new name |
+| `PERCENTILE` | `=PERCENTILE(Marks.C2:C11;0.9)` | 91.4 | The maths mark the top tenth reached |
+| `QUARTILE` | `=QUARTILE(Marks.E2:E11;1)` | 71 | The science mark a quarter of the class stayed below |
+| `MODE` | `=MODE(70;72;70;88;72;70)` | 70 | The most frequent of a few marks |
+| `PERCENTRANK` | `=PERCENTRANK(Marks.C2:C11;Marks.C6)` | 0.667 | Ella's maths mark as a share of the class below her |
+| `CORREL` | `=CORREL(Marks.C2:C11;Marks.E2:E11)` | 0.998653284117567 | How closely maths and science marks move together |
+| `PEARSON` | `=PEARSON(Marks.C2:C11;Marks.E2:E11)` | 0.998653284117567 | The same coefficient by its other name |
+| `RSQ` | `=RSQ(Marks.E2:E11;Marks.C2:C11)` | 0.997308381878801 | How much of science maths explains |
+| `SLOPE` | `=SLOPE(Marks.E2:E11;Marks.C2:C11)` | 0.9357107656467 | Science points per maths point |
+| `INTERCEPT` | `=INTERCEPT(Marks.E2:E11;Marks.C2:C11)` | 8.27669011245015 | Where the science line crosses zero maths |
+| `FORECAST` | `=FORECAST(75;Marks.E2:E11;Marks.C2:C11)` | 78.4549975359527 | The science mark a 75 in maths suggests |
+| `DEVSQ` | `=DEVSQ(Marks.C2:C11)` | 2232.1 | The spread of the maths marks, squared and summed |
+| `AVEDEV` | `=AVEDEV(Marks.C2:C11)` | 12.7 | How far a maths mark is from the mean, on average |
+| `GEOMEAN` | `=GEOMEAN(Marks.E2:E11)` | 76.4429070653117 | The science marks' geometric mean |
+| `HARMEAN` | `=HARMEAN(Marks.E2:E11)` | 74.9935751717485 | …and their harmonic mean |
+| `PERMUT` | `=PERMUT(10;3)` | 720 | Gold, silver and bronze among ten students |
 
 ## Logical — `logical.fods`
 

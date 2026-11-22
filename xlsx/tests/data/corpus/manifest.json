@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T22:17:23Z",
+  "generated": "2026-11-22T22:29:58Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -12227,6 +12227,64 @@
               "raw": "168",
               "kind": "Text",
               "value": "Bearing of the shed above due east \u2014 ATAN2 takes x first"
+            },
+            {
+              "ref": "A38",
+              "t": "s",
+              "raw": "169",
+              "kind": "Text",
+              "value": "SUMSQ"
+            },
+            {
+              "ref": "B38",
+              "t": "s",
+              "raw": "170",
+              "kind": "Text",
+              "value": "=SUMSQ(3,4)"
+            },
+            {
+              "ref": "C38",
+              "raw": "25",
+              "kind": "Number",
+              "value": "25",
+              "excel": "SUMSQ(3,4)",
+              "formula": "SUMSQ(3;4)"
+            },
+            {
+              "ref": "D38",
+              "t": "s",
+              "raw": "171",
+              "kind": "Text",
+              "value": "The squares of three and four, added"
+            },
+            {
+              "ref": "A39",
+              "t": "s",
+              "raw": "172",
+              "kind": "Text",
+              "value": "COMBIN"
+            },
+            {
+              "ref": "B39",
+              "t": "s",
+              "raw": "173",
+              "kind": "Text",
+              "value": "=COMBIN(6,2)"
+            },
+            {
+              "ref": "C39",
+              "raw": "15",
+              "kind": "Number",
+              "value": "15",
+              "excel": "COMBIN(6,2)",
+              "formula": "COMBIN(6;2)"
+            },
+            {
+              "ref": "D39",
+              "t": "s",
+              "raw": "174",
+              "kind": "Text",
+              "value": "Pairs of plants from six seedlings"
             }
           ]
         }
@@ -12238,8 +12296,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 7849,
-      "sha256": "1072442559bf35528990e69997a21d034b0716b568733bc5b3e5801a379dbffb"
+      "bytes": 7974,
+      "sha256": "c877a7f0337ee22d498fccf818686f9f753187ea2e78a69ef0a46fc5196a1a82"
     },
     {
       "file": "functions/rounding.xlsx",
@@ -14237,6 +14295,441 @@
               "raw": "99",
               "kind": "Text",
               "value": "Excel\u0027s VAR.P: VARP by its new name"
+            },
+            {
+              "ref": "A30",
+              "t": "s",
+              "raw": "100",
+              "kind": "Text",
+              "value": "PERCENTILE"
+            },
+            {
+              "ref": "B30",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "=PERCENTILE(Marks!C2:C11,0.9)"
+            },
+            {
+              "ref": "C30",
+              "raw": "91.4",
+              "kind": "Number",
+              "value": "91.4",
+              "excel": "PERCENTILE(Marks!C2:C11,0.9)",
+              "formula": "PERCENTILE([Marks.C2:.C11];0.9)"
+            },
+            {
+              "ref": "D30",
+              "t": "s",
+              "raw": "102",
+              "kind": "Text",
+              "value": "The maths mark the top tenth reached"
+            },
+            {
+              "ref": "A31",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "QUARTILE"
+            },
+            {
+              "ref": "B31",
+              "t": "s",
+              "raw": "104",
+              "kind": "Text",
+              "value": "=QUARTILE(Marks!E2:E11,1)"
+            },
+            {
+              "ref": "C31",
+              "raw": "71",
+              "kind": "Number",
+              "value": "71",
+              "excel": "QUARTILE(Marks!E2:E11,1)",
+              "formula": "QUARTILE([Marks.E2:.E11];1)"
+            },
+            {
+              "ref": "D31",
+              "t": "s",
+              "raw": "105",
+              "kind": "Text",
+              "value": "The science mark a quarter of the class stayed below"
+            },
+            {
+              "ref": "A32",
+              "t": "s",
+              "raw": "106",
+              "kind": "Text",
+              "value": "MODE"
+            },
+            {
+              "ref": "B32",
+              "t": "s",
+              "raw": "107",
+              "kind": "Text",
+              "value": "=MODE(70,72,70,88,72,70)"
+            },
+            {
+              "ref": "C32",
+              "raw": "70",
+              "kind": "Number",
+              "value": "70",
+              "excel": "MODE(70,72,70,88,72,70)",
+              "formula": "MODE(70;72;70;88;72;70)"
+            },
+            {
+              "ref": "D32",
+              "t": "s",
+              "raw": "108",
+              "kind": "Text",
+              "value": "The most frequent of a few marks"
+            },
+            {
+              "ref": "A33",
+              "t": "s",
+              "raw": "109",
+              "kind": "Text",
+              "value": "PERCENTRANK"
+            },
+            {
+              "ref": "B33",
+              "t": "s",
+              "raw": "110",
+              "kind": "Text",
+              "value": "=PERCENTRANK(Marks!C2:C11,Marks!C6)"
+            },
+            {
+              "ref": "C33",
+              "raw": "0.667",
+              "kind": "Number",
+              "value": "0.667",
+              "excel": "PERCENTRANK(Marks!C2:C11,Marks!C6)",
+              "formula": "PERCENTRANK([Marks.C2:.C11];[Marks.C6])"
+            },
+            {
+              "ref": "D33",
+              "t": "s",
+              "raw": "111",
+              "kind": "Text",
+              "value": "Ella\u0027s maths mark as a share of the class below her"
+            },
+            {
+              "ref": "A34",
+              "t": "s",
+              "raw": "112",
+              "kind": "Text",
+              "value": "CORREL"
+            },
+            {
+              "ref": "B34",
+              "t": "s",
+              "raw": "113",
+              "kind": "Text",
+              "value": "=CORREL(Marks!C2:C11,Marks!E2:E11)"
+            },
+            {
+              "ref": "C34",
+              "raw": "0.998653284117567",
+              "kind": "Number",
+              "value": "0.998653284117567",
+              "excel": "CORREL(Marks!C2:C11,Marks!E2:E11)",
+              "formula": "CORREL([Marks.C2:.C11];[Marks.E2:.E11])"
+            },
+            {
+              "ref": "D34",
+              "t": "s",
+              "raw": "114",
+              "kind": "Text",
+              "value": "How closely maths and science marks move together"
+            },
+            {
+              "ref": "A35",
+              "t": "s",
+              "raw": "115",
+              "kind": "Text",
+              "value": "PEARSON"
+            },
+            {
+              "ref": "B35",
+              "t": "s",
+              "raw": "116",
+              "kind": "Text",
+              "value": "=PEARSON(Marks!C2:C11,Marks!E2:E11)"
+            },
+            {
+              "ref": "C35",
+              "raw": "0.998653284117567",
+              "kind": "Number",
+              "value": "0.998653284117567",
+              "excel": "PEARSON(Marks!C2:C11,Marks!E2:E11)",
+              "formula": "PEARSON([Marks.C2:.C11];[Marks.E2:.E11])"
+            },
+            {
+              "ref": "D35",
+              "t": "s",
+              "raw": "117",
+              "kind": "Text",
+              "value": "The same coefficient by its other name"
+            },
+            {
+              "ref": "A36",
+              "t": "s",
+              "raw": "118",
+              "kind": "Text",
+              "value": "RSQ"
+            },
+            {
+              "ref": "B36",
+              "t": "s",
+              "raw": "119",
+              "kind": "Text",
+              "value": "=RSQ(Marks!E2:E11,Marks!C2:C11)"
+            },
+            {
+              "ref": "C36",
+              "raw": "0.997308381878801",
+              "kind": "Number",
+              "value": "0.997308381878801",
+              "excel": "RSQ(Marks!E2:E11,Marks!C2:C11)",
+              "formula": "RSQ([Marks.E2:.E11];[Marks.C2:.C11])"
+            },
+            {
+              "ref": "D36",
+              "t": "s",
+              "raw": "120",
+              "kind": "Text",
+              "value": "How much of science maths explains"
+            },
+            {
+              "ref": "A37",
+              "t": "s",
+              "raw": "121",
+              "kind": "Text",
+              "value": "SLOPE"
+            },
+            {
+              "ref": "B37",
+              "t": "s",
+              "raw": "122",
+              "kind": "Text",
+              "value": "=SLOPE(Marks!E2:E11,Marks!C2:C11)"
+            },
+            {
+              "ref": "C37",
+              "raw": "0.9357107656467",
+              "kind": "Number",
+              "value": "0.9357107656467",
+              "excel": "SLOPE(Marks!E2:E11,Marks!C2:C11)",
+              "formula": "SLOPE([Marks.E2:.E11];[Marks.C2:.C11])"
+            },
+            {
+              "ref": "D37",
+              "t": "s",
+              "raw": "123",
+              "kind": "Text",
+              "value": "Science points per maths point"
+            },
+            {
+              "ref": "A38",
+              "t": "s",
+              "raw": "124",
+              "kind": "Text",
+              "value": "INTERCEPT"
+            },
+            {
+              "ref": "B38",
+              "t": "s",
+              "raw": "125",
+              "kind": "Text",
+              "value": "=INTERCEPT(Marks!E2:E11,Marks!C2:C11)"
+            },
+            {
+              "ref": "C38",
+              "raw": "8.27669011245015",
+              "kind": "Number",
+              "value": "8.27669011245015",
+              "excel": "INTERCEPT(Marks!E2:E11,Marks!C2:C11)",
+              "formula": "INTERCEPT([Marks.E2:.E11];[Marks.C2:.C11])"
+            },
+            {
+              "ref": "D38",
+              "t": "s",
+              "raw": "126",
+              "kind": "Text",
+              "value": "Where the science line crosses zero maths"
+            },
+            {
+              "ref": "A39",
+              "t": "s",
+              "raw": "127",
+              "kind": "Text",
+              "value": "FORECAST"
+            },
+            {
+              "ref": "B39",
+              "t": "s",
+              "raw": "128",
+              "kind": "Text",
+              "value": "=FORECAST(75,Marks!E2:E11,Marks!C2:C11)"
+            },
+            {
+              "ref": "C39",
+              "raw": "78.4549975359527",
+              "kind": "Number",
+              "value": "78.4549975359527",
+              "excel": "FORECAST(75,Marks!E2:E11,Marks!C2:C11)",
+              "formula": "FORECAST(75;[Marks.E2:.E11];[Marks.C2:.C11])"
+            },
+            {
+              "ref": "D39",
+              "t": "s",
+              "raw": "129",
+              "kind": "Text",
+              "value": "The science mark a 75 in maths suggests"
+            },
+            {
+              "ref": "A40",
+              "t": "s",
+              "raw": "130",
+              "kind": "Text",
+              "value": "DEVSQ"
+            },
+            {
+              "ref": "B40",
+              "t": "s",
+              "raw": "131",
+              "kind": "Text",
+              "value": "=DEVSQ(Marks!C2:C11)"
+            },
+            {
+              "ref": "C40",
+              "raw": "2232.1",
+              "kind": "Number",
+              "value": "2232.1",
+              "excel": "DEVSQ(Marks!C2:C11)",
+              "formula": "DEVSQ([Marks.C2:.C11])"
+            },
+            {
+              "ref": "D40",
+              "t": "s",
+              "raw": "132",
+              "kind": "Text",
+              "value": "The spread of the maths marks, squared and summed"
+            },
+            {
+              "ref": "A41",
+              "t": "s",
+              "raw": "133",
+              "kind": "Text",
+              "value": "AVEDEV"
+            },
+            {
+              "ref": "B41",
+              "t": "s",
+              "raw": "134",
+              "kind": "Text",
+              "value": "=AVEDEV(Marks!C2:C11)"
+            },
+            {
+              "ref": "C41",
+              "raw": "12.7",
+              "kind": "Number",
+              "value": "12.7",
+              "excel": "AVEDEV(Marks!C2:C11)",
+              "formula": "AVEDEV([Marks.C2:.C11])"
+            },
+            {
+              "ref": "D41",
+              "t": "s",
+              "raw": "135",
+              "kind": "Text",
+              "value": "How far a maths mark is from the mean, on average"
+            },
+            {
+              "ref": "A42",
+              "t": "s",
+              "raw": "136",
+              "kind": "Text",
+              "value": "GEOMEAN"
+            },
+            {
+              "ref": "B42",
+              "t": "s",
+              "raw": "137",
+              "kind": "Text",
+              "value": "=GEOMEAN(Marks!E2:E11)"
+            },
+            {
+              "ref": "C42",
+              "raw": "76.4429070653117",
+              "kind": "Number",
+              "value": "76.4429070653117",
+              "excel": "GEOMEAN(Marks!E2:E11)",
+              "formula": "GEOMEAN([Marks.E2:.E11])"
+            },
+            {
+              "ref": "D42",
+              "t": "s",
+              "raw": "138",
+              "kind": "Text",
+              "value": "The science marks\u0027 geometric mean"
+            },
+            {
+              "ref": "A43",
+              "t": "s",
+              "raw": "139",
+              "kind": "Text",
+              "value": "HARMEAN"
+            },
+            {
+              "ref": "B43",
+              "t": "s",
+              "raw": "140",
+              "kind": "Text",
+              "value": "=HARMEAN(Marks!E2:E11)"
+            },
+            {
+              "ref": "C43",
+              "raw": "74.9935751717485",
+              "kind": "Number",
+              "value": "74.9935751717485",
+              "excel": "HARMEAN(Marks!E2:E11)",
+              "formula": "HARMEAN([Marks.E2:.E11])"
+            },
+            {
+              "ref": "D43",
+              "t": "s",
+              "raw": "141",
+              "kind": "Text",
+              "value": "\u2026and their harmonic mean"
+            },
+            {
+              "ref": "A44",
+              "t": "s",
+              "raw": "142",
+              "kind": "Text",
+              "value": "PERMUT"
+            },
+            {
+              "ref": "B44",
+              "t": "s",
+              "raw": "143",
+              "kind": "Text",
+              "value": "=PERMUT(10,3)"
+            },
+            {
+              "ref": "C44",
+              "raw": "720",
+              "kind": "Number",
+              "value": "720",
+              "excel": "PERMUT(10,3)",
+              "formula": "PERMUT(10;3)"
+            },
+            {
+              "ref": "D44",
+              "t": "s",
+              "raw": "144",
+              "kind": "Text",
+              "value": "Gold, silver and bronze among ten students"
             }
           ]
         }
@@ -14248,8 +14741,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5030,
-      "sha256": "4912428b1635d50a8ac059f988c53d44c7dc701b121ba5d1dfb83e4776e7a6d2"
+      "bytes": 6077,
+      "sha256": "0d74ef19a849117f0b5751f2f9909d4004171ef0b6c35efabdfa022ce02f40f8"
     },
     {
       "file": "functions/text.xlsx",

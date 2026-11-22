@@ -174,6 +174,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.10",
     },
     FuncInfo {
+        name: "AVEDEV",
+        signature: "AVEDEV( { NumberSequenceList N } + )",
+        brief: "Calculates the average of the absolute deviations of the values in list.",
+        section: "6.18.2",
+    },
+    FuncInfo {
         name: "AVERAGE",
         signature: "AVERAGE( { NumberSequence N } + )",
         brief: "Average the set of numbers",
@@ -324,10 +330,22 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.14",
     },
     FuncInfo {
+        name: "COMBIN",
+        signature: "COMBIN( Integer N ; Integer R )",
+        brief: "Returns the number of different R -length sets that can be selected from N items.",
+        section: "6.16.16",
+    },
+    FuncInfo {
         name: "CONCATENATE",
         signature: "CONCATENATE( { Text T } + )",
         brief: "Concatenate the text strings",
         section: "6.20.6",
+    },
+    FuncInfo {
+        name: "CORREL",
+        signature: "CORREL( ForceArray Array N1 ; ForceArray Array N2 )",
+        brief: "Calculates the correlation coefficient of values in N1 and N2 .",
+        section: "6.18.17",
     },
     FuncInfo {
         name: "COS",
@@ -406,6 +424,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "DEGREES( Number N )",
         brief: "Convert radians to degrees.",
         section: "6.16.25",
+    },
+    FuncInfo {
+        name: "DEVSQ",
+        signature: "DEVSQ( { NumberSequence N } + )",
+        brief: "Calculates sum of squares of deviations.",
+        section: "6.18.20",
     },
     FuncInfo {
         name: "DGET",
@@ -529,6 +553,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17.3",
     },
     FuncInfo {
+        name: "FORECAST",
+        signature: "FORECAST( Number Value ; ForceArray Array Data_Y ; ForceArray Array Data_X )",
+        brief: "Extrapolates future values based on existing x and y values.",
+        section: "6.18.28",
+    },
+    FuncInfo {
         name: "FORMULA",
         signature: "FORMULA( Reference X )",
         brief: "Returns formula at given reference as text.",
@@ -539,6 +569,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "FV( Number Rate ; Number Nper ; Number Payment [ ; [ Number Pv = 0 ] [ ; Number PayType = 0 ] ] )",
         brief: "Compute the future value (FV) of an investment.",
         section: "6.12.20",
+    },
+    FuncInfo {
+        name: "GEOMEAN",
+        signature: "GEOMEAN( { NumberSequenceList N } + )",
+        brief: "returns the geometric mean of a sequence",
+        section: "6.18.34",
+    },
+    FuncInfo {
+        name: "HARMEAN",
+        signature: "HARMEAN( { NumberSequenceList N } + )",
+        brief: "returns the harmonic mean of a sequence",
+        section: "6.18.36",
     },
     FuncInfo {
         name: "HLOOKUP",
@@ -593,6 +635,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "INT( Number N )",
         brief: "Rounds a number down to the nearest integer.",
         section: "6.17.2",
+    },
+    FuncInfo {
+        name: "INTERCEPT",
+        signature: "INTERCEPT( ForceArray Array Data_Y ; ForceArray Array Data_X )",
+        brief: "Returns the y-intercept of the linear regression line for the given data.",
+        section: "6.18.38",
     },
     FuncInfo {
         name: "IPMT",
@@ -782,6 +830,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.42",
     },
     FuncInfo {
+        name: "MODE",
+        signature: "MODE( { ForceArray NumberSequence N } + )",
+        brief: "Returns the most common value in a data set.",
+        section: "6.18.50",
+    },
+    FuncInfo {
         name: "MONTH",
         signature: "MONTH( DateParam Date )",
         brief: "Extracts the month from a date.",
@@ -854,6 +908,30 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.15.8",
     },
     FuncInfo {
+        name: "PEARSON",
+        signature: "PEARSON( ForceArray Array IndependentValues ; ForceArray Array DependentValues )",
+        brief: "PEARSON returns the Pearson correlation coefficient of two data sets",
+        section: "6.18.56",
+    },
+    FuncInfo {
+        name: "PERCENTILE",
+        signature: "PERCENTILE( NumberSequenceList Data ; Number X )",
+        brief: "Calculates the x-th sample percentile among the values in range.",
+        section: "6.18.57",
+    },
+    FuncInfo {
+        name: "PERCENTRANK",
+        signature: "PERCENTRANK( NumberSequenceList Data ; Number X [ ; Integer Significance = 3 ] )",
+        brief: "Returns the percentage rank of a value in a sample.",
+        section: "6.18.58",
+    },
+    FuncInfo {
+        name: "PERMUT",
+        signature: "PERMUT( Integer N ; Integer K )",
+        brief: "returns the number of permutations of k objects taken from n objects.",
+        section: "6.18.59",
+    },
+    FuncInfo {
         name: "PI",
         signature: "PI()",
         brief: "Return the approximate value of π .",
@@ -894,6 +972,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "PV( Number Rate ; Number Nper ; Number Payment [ ; [ Number Fv = 0 ] [ ; Number PayType = 0 ] ] )",
         brief: "Compute the present value (PV) of an investment.",
         section: "6.12.41",
+    },
+    FuncInfo {
+        name: "QUARTILE",
+        signature: "QUARTILE( NumberSequence Data ; Integer Quart )",
+        brief: "Returns a quartile of a set of data points.",
+        section: "6.18.64",
     },
     FuncInfo {
         name: "QUOTIENT",
@@ -969,6 +1053,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.13.30",
     },
     FuncInfo {
+        name: "RSQ",
+        signature: "RSQ( ForceArray Array ArrayY ; ForceArray Array ArrayX )",
+        brief: "Returns the square of the Pearson product moment correlation coefficient.",
+        section: "6.18.66",
+    },
+    FuncInfo {
         name: "SEARCH",
         signature: "SEARCH( Text Search ; Text T [ ; Integer Start = 1 ] )",
         brief: "Return the starting position of a given text.",
@@ -998,6 +1088,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SLN( Number Cost ; Number Salvage ; Number LifeTime )",
         brief: "Compute the amount of depreciation at a given period of time using the straight-line depreciation method.",
         section: "6.12.45",
+    },
+    FuncInfo {
+        name: "SLOPE",
+        signature: "SLOPE( ForceArray Array Y ; ForceArray Array X )",
+        brief: "Calculates the slope of the linear regression line.",
+        section: "6.18.69",
     },
     FuncInfo {
         name: "SMALL",
@@ -1058,6 +1154,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SUMPRODUCT( { ForceArray Array A }+ )",
         brief: "Returns the sum of the products of the matrix elements.",
         section: "6.16.64",
+    },
+    FuncInfo {
+        name: "SUMSQ",
+        signature: "SUMSQ( { NumberSequence N } + )",
+        brief: "Sum (add) the set of squares of numbers, including all numbers in ranges",
+        section: "6.16.65",
     },
     FuncInfo {
         name: "SYD",

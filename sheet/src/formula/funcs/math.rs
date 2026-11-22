@@ -59,8 +59,29 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "COM.MICROSOFT.FLOOR" => excel_multiple(args, f64::floor, Some(FormulaError::DivZero)),
         "QUOTIENT" => quotient(args),
         "SIGN" => unary(args, |n| if n == 0.0 { 0.0 } else { n.signum() }),
+        "COMBIN" => choose(args, true),
+        "PERMUT" => choose(args, false),
         _ => return None,
     })
+}
+
+/// §6.16.16 `COMBIN( N ; R )` and §6.18.59 `PERMUT( N ; K )`, both truncated: the ways to pick `R`
+/// of `N`, as sets or in order. `R > N` or a negative is `#NUM!`.
+fn choose(args: &mut Args, sets: bool) -> Answer {
+    args.arity(2..=2)?;
+    let (n, r) = (args.number(0)?.trunc(), args.number(1)?.trunc());
+    if n < 0.0 || r < 0.0 || r > n {
+        return Err(FormulaError::Num);
+    }
+    let r = if sets { r.min(n - r) } else { r };
+    let mut result = 1.0;
+    for i in 0..r as u64 {
+        result *= n - i as f64;
+        if sets {
+            result /= i as f64 + 1.0;
+        }
+    }
+    Ok(Value::number(result.round()))
 }
 
 /// A whole `NumberSequence` in, one number out — `SUM` and `PRODUCT` (§6.16.61, §6.16.47).

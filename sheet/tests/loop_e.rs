@@ -21,7 +21,7 @@
 //!
 //!     cargo test --test loop_e
 //!     GRIND_LOOP_E_DUMP=1 cargo test --test loop_e -- --nocapture
-//!     GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_FORMULAS=5000 cargo test --test loop_e
+//!     GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_PER_FUNCTION=30 cargo test --test loop_e
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -35,7 +35,9 @@ use grind_sheet::{CellValue, Pos};
 
 /// Formulas that must keep agreeing with LibreOffice. Raise it when the scoreboard rises;
 /// never lower it for a code change. Meaningful only at the default seed and default count —
-/// a run with either overridden prints its scoreboard and skips the ratchet.
+/// a run with either overridden prints its scoreboard and skips the ratchet. Each function's
+/// formulas come from its own name and the seed, so a function added to the catalog adds formulas
+/// and changes no other's: the floor only ever has more to hold.
 ///
 /// Unlike loop B's `FLOOR`, this one is also sensitive to *which* LibreOffice answered, so
 /// it is measured against the container image pinned by digest in `ci/libreoffice-image`
@@ -43,10 +45,10 @@ use grind_sheet::{CellValue, Pos};
 /// LibreOffice" in `doc/differential-fuzz.md` for the pin, `scripts/soffice-tests.sh` to run
 /// against it locally, and the upgrade procedure that keeps an image bump and a `FLOOR`
 /// change in the same commit.
-const FLOOR: usize = 916;
+const FLOOR: usize = 1030;
 
 const DEFAULT_SEED: u64 = 0x5EED;
-const DEFAULT_FORMULAS: usize = 1000;
+const DEFAULT_PER_FUNCTION: usize = 6;
 
 /// Not a function of the document, so no two evaluators agree by construction.
 const VOLATILE: [&str; 2] = ["NOW", "TODAY"];
@@ -268,18 +270,24 @@ fn call(name: &str, slots: &[Slot], rng: &mut Rng) -> String {
 }
 
 /// Every formula for one run, paired with the function it came from.
-fn formulas(seed: u64, count: usize) -> Vec<(&'static str, String)> {
-    let catalog: Vec<_> = funcs::catalog()
+fn formulas(seed: u64, per_function: usize) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    for info in funcs::catalog()
         .iter()
         .filter(|info| !VOLATILE.contains(&info.name))
-        .collect();
-    let mut rng = Rng(seed);
-    let mut out = Vec::with_capacity(count);
-    // Round-robin rather than random choice, so every function appears in every run and the
-    // count per function does not itself depend on the seed.
-    for i in 0..count {
-        let info = catalog[i % catalog.len()];
-        out.push((info.name, call(info.name, &slots(info.signature), &mut rng)));
+    {
+        // A generator of its own per function, seeded by its name (FNV-1a), so adding a function
+        // to the catalog changes no other function's formulas.
+        let name_hash = info
+            .name
+            .bytes()
+            .fold(0xCBF2_9CE4_8422_2325_u64, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01B3)
+            });
+        let mut rng = Rng(seed ^ name_hash);
+        for _ in 0..per_function {
+            out.push((info.name, call(info.name, &slots(info.signature), &mut rng)));
+        }
     }
     out
 }
@@ -539,13 +547,14 @@ fn generated_formulas_agree_with_libreoffice() {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(DEFAULT_SEED);
-    let count = std::env::var("GRIND_LOOP_E_FORMULAS")
+    let each = std::env::var("GRIND_LOOP_E_PER_FUNCTION")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_FORMULAS);
+        .unwrap_or(DEFAULT_PER_FUNCTION);
     let dump = std::env::var("GRIND_LOOP_E_DUMP").is_ok();
 
-    let formulas = formulas(seed, count);
+    let formulas = formulas(seed, each);
+    let count = formulas.len();
     let xml = document(&formulas);
 
     let lab = Lab::new();
@@ -592,7 +601,7 @@ fn generated_formulas_agree_with_libreoffice() {
 
     // A run with either knob turned is a fishing trip, not the ratchet: the floor is a
     // statement about one specific document.
-    if seed == DEFAULT_SEED && count == DEFAULT_FORMULAS {
+    if seed == DEFAULT_SEED && each == DEFAULT_PER_FUNCTION {
         assert!(
             totals.matched >= FLOOR,
             "loop E: {} formulas match LibreOffice, below the floor of {FLOOR}",

@@ -1807,3 +1807,68 @@ fn text_spells_a_value_in_a_format_code() {
         Value::Text("1.234,57".into())
     );
 }
+
+/// §6.18's everyday statistics. `B1:B7` is 10, 20, 30, 40, `x`, 5, 30. Measured against
+/// LibreOffice 26.8.
+#[test]
+fn percentiles_modes_regression_and_means() {
+    for (formula, want) in [
+        ("=PERCENTILE([.B1:.B4];0.25)", 17.5),
+        ("=PERCENTILE([.B1:.B7];0.9)", 35.0),
+        ("=PERCENTILE([.B1:.B4];0)", 10.0),
+        ("=PERCENTILE([.B1:.B4];1)", 40.0),
+        ("=QUARTILE([.B1:.B7];1)", 12.5),
+        ("=QUARTILE([.B1:.B7];3)", 30.0),
+        ("=QUARTILE([.B1:.B7];0)", 5.0),
+        ("=QUARTILE([.B1:.B7];4)", 40.0),
+        ("=QUARTILE([.B1:.B7];2.7)", 25.0),
+        ("=MODE([.B1:.B7])", 30.0),
+        // A tie goes to the smallest (§6.18.50).
+        ("=MODE(3;1;1;3)", 1.0),
+        ("=CORREL([.B1:.B4];[.B2:.B5])", 1.0),
+        ("=PEARSON([.B1:.B3];[.B4:.B6])", -1.0),
+        ("=RSQ([.B1:.B3];[.B4:.B6])", 1.0),
+        ("=SUMSQ([.B1:.B4];2)", 3004.0),
+        ("=SUMSQ([.B1:.B7])", 3925.0),
+        ("=DEVSQ([.B1:.B7])", 887.5),
+        ("=HARMEAN([.B1:.B4])", 19.2),
+        ("=PERCENTRANK([.B1:.B4];25)", 0.5),
+        ("=PERCENTRANK([.B1:.B4];20)", 0.333),
+        ("=PERCENTRANK([.B1:.B4];30)", 0.667),
+        ("=PERCENTRANK([.B1:.B4];36)", 0.867),
+        ("=PERCENTRANK([.B1:.B4];36;1)", 0.9),
+        ("=PERCENTRANK([.B1:.B4];36;5)", 0.866_67),
+        ("=PERCENTRANK([.B1:.B7];30)", 0.6),
+        ("=PERCENTRANK([.B1];10)", 1.0),
+        ("=COMBIN(5;2)", 10.0),
+        ("=COMBIN(5;0)", 1.0),
+        ("=COMBIN(10.7;3.9)", 120.0),
+        ("=PERMUT(5;2)", 20.0),
+        ("=PERMUT(5;0)", 1.0),
+    ] {
+        close(formula, want);
+    }
+    close("=SLOPE([.B1:.B4];[.B4:.B7])", -0.384_615_384_615_385);
+    close("=INTERCEPT([.B1:.B4];[.B4:.B7])", 36.282_051_282_051_3);
+    close("=FORECAST(5;[.B1:.B4];[.B4:.B7])", 34.358_974_358_974_4);
+    close("=AVEDEV([.B1:.B7])", 10.833_333_333_333_3);
+    close("=GEOMEAN([.B1:.B4])", 22.133_638_394_006_4);
+    for (formula, want) in [
+        ("=PERCENTILE([.B1:.B4];1.5)", FormulaError::Num),
+        ("=QUARTILE([.B1:.B7];5)", FormulaError::Num),
+        ("=MODE(1;2;3)", FormulaError::Value),
+        ("=CORREL([.B1:.B2];[.B3])", FormulaError::NA),
+        ("=SLOPE([.B1:.B3];[.B4:.B4])", FormulaError::NA),
+        ("=SLOPE([.A1:.A3];[.C1:.C3])", FormulaError::Value),
+        ("=SLOPE([.B1];[.B2])", FormulaError::DivZero),
+        ("=GEOMEAN(1;-1)", FormulaError::Num),
+        ("=HARMEAN(0;1)", FormulaError::Num),
+        ("=PERCENTRANK([.B1:.B4];5)", FormulaError::Value),
+        ("=PERCENTRANK([.B1:.B4];36;0)", FormulaError::Num),
+        ("=COMBIN(2;5)", FormulaError::Num),
+        ("=COMBIN(-1;0)", FormulaError::Num),
+        ("=PERMUT(2;5)", FormulaError::Num),
+    ] {
+        assert_eq!(error(formula), want, "{formula}");
+    }
+}

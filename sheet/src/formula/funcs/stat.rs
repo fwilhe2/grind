@@ -30,6 +30,35 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SMALL" => nth(args, false),
         "MEDIAN" => median(args),
         "RANK" => rank(args),
+        "PERCENTILE" => percentile(args),
+        "QUARTILE" => quartile(args),
+        "MODE" => mode(args),
+        "PERCENTRANK" => percent_rank(args),
+        "SUMSQ" => fold_numbers(args, |n| Ok(n.iter().map(|x| x * x).sum())),
+        "DEVSQ" => fold_numbers(args, |n| Ok(deviations(n).map(|d| d * d).sum())),
+        "AVEDEV" => fold_numbers(args, |n| {
+            if n.is_empty() {
+                return Err(FormulaError::DivZero);
+            }
+            Ok(deviations(n).map(f64::abs).sum::<f64>() / n.len() as f64)
+        }),
+        "GEOMEAN" => fold_numbers(args, |n| {
+            if n.is_empty() || n.iter().any(|x| *x <= 0.0) {
+                return Err(FormulaError::Num);
+            }
+            Ok((n.iter().map(|x| x.ln()).sum::<f64>() / n.len() as f64).exp())
+        }),
+        "HARMEAN" => fold_numbers(args, |n| {
+            if n.is_empty() || n.iter().any(|x| *x <= 0.0) {
+                return Err(FormulaError::Num);
+            }
+            Ok(n.len() as f64 / n.iter().map(|x| 1.0 / x).sum::<f64>())
+        }),
+        "CORREL" | "PEARSON" => paired(args, 0, Pairs::correlation),
+        "RSQ" => paired(args, 0, |p| p.correlation().map(|r| r * r)),
+        "SLOPE" => paired(args, 0, Pairs::slope),
+        "INTERCEPT" => paired(args, 0, Pairs::intercept),
+        "FORECAST" => forecast(args),
         "LEGACY.NORMSINV" => super::dist::normsinv(args),
         "COM.MICROSOFT.NORM.S.DIST" => super::dist::norm_s_dist(args),
         "COM.MICROSOFT.GAMMA.DIST" => super::dist::gamma_dist(args),
@@ -157,4 +186,211 @@ fn rank(args: &mut Args) -> Answer {
         .filter(|&&x| if ascending { x < value } else { x > value })
         .count();
     Ok(Value::number(ahead as f64 + 1.0))
+}
+
+/// A whole number sequence in, one number out.
+fn fold_numbers(args: &mut Args, f: impl Fn(&[f64]) -> Result<f64, FormulaError>) -> Answer {
+    args.arity(1..)?;
+    Ok(Value::number(f(&args.numbers()?)?))
+}
+
+/// Each number's distance from the mean.
+fn deviations(numbers: &[f64]) -> impl Iterator<Item = f64> + '_ {
+    let mean = numbers.iter().sum::<f64>() / numbers.len().max(1) as f64;
+    numbers.iter().map(move |x| x - mean)
+}
+
+/// The sorted numbers of the first argument, `#VALUE!` when there are none (as the oracle
+/// answers §6.18.57's `COUNT( Data ) > 0`).
+fn sorted_data(args: &mut Args) -> Result<Vec<f64>, FormulaError> {
+    let mut data = args.numbers_range(0..1)?;
+    if data.is_empty() {
+        return Err(FormulaError::Value);
+    }
+    data.sort_by(f64::total_cmp);
+    Ok(data)
+}
+
+/// §6.18.57's interpolation over sorted data at rank `1 + x·(n − 1)`.
+fn interpolate(data: &[f64], x: f64) -> f64 {
+    let r = x * (data.len() - 1) as f64;
+    let (i, d) = (r.floor() as usize, r - r.floor());
+    match data.get(i + 1) {
+        Some(next) => data[i] + d * (next - data[i]),
+        None => data[i],
+    }
+}
+
+/// §6.18.57 `PERCENTILE( Data ; X )`, `0 ≤ X ≤ 1`.
+fn percentile(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let data = sorted_data(args)?;
+    let x = args.number(1)?;
+    if !(0.0..=1.0).contains(&x) {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(interpolate(&data, x)))
+}
+
+/// §6.18.64 `QUARTILE( Data ; Quart )`: the percentile at a quarter step, `Quart` truncated.
+fn quartile(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let data = sorted_data(args)?;
+    let quart = args.integer(1)?;
+    if !(0..=4).contains(&quart) {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(interpolate(&data, quart as f64 / 4.0)))
+}
+
+/// §6.18.50 `MODE`: the most frequent number, the smallest of a tie; `#VALUE!` when no number
+/// repeats, as the oracle answers.
+fn mode(args: &mut Args) -> Answer {
+    args.arity(1..)?;
+    let mut data = args.numbers()?;
+    data.sort_by(f64::total_cmp);
+    let mut best: Option<(f64, usize)> = None;
+    for run in data.chunk_by(|a, b| a == b) {
+        if run.len() > 1 && best.is_none_or(|(_, count)| run.len() > count) {
+            best = Some((run[0], run.len()));
+        }
+    }
+    best.map(|(value, _)| Value::number(value))
+        .ok_or(FormulaError::Value)
+}
+
+/// §6.18.58 `PERCENTRANK( Data ; X ; Significance )`: X's rank in the sorted data, interpolated
+/// between neighbours, over `n − 1`, rounded to `Significance` decimals (the oracle rounds; 3 by
+/// default). An X outside the data is `#VALUE!`, as the oracle answers.
+fn percent_rank(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let data = sorted_data(args)?;
+    let x = args.number(1)?;
+    let digits = if args.len() > 2 && !args.omitted(2) {
+        args.integer(2)?
+    } else {
+        3
+    };
+    if digits < 1 {
+        return Err(FormulaError::Num);
+    }
+    let (first, last) = (data[0], data[data.len() - 1]);
+    if x < first || x > last {
+        return Err(FormulaError::Value);
+    }
+    if data.len() == 1 {
+        return Ok(Value::Number(1.0));
+    }
+    let below = data.iter().filter(|v| **v < x).count();
+    let rank = if data.contains(&x) {
+        below as f64
+    } else {
+        let (y, z) = (data[below - 1], data[below]);
+        (below - 1) as f64 + (x - y) / (z - y)
+    };
+    let scale = 10f64.powi(digits.min(15) as i32);
+    Ok(Value::number(
+        (rank / (data.len() - 1) as f64 * scale).round() / scale,
+    ))
+}
+
+/// Pairs of numbers at the same place in two arrays of one shape — §6.18's paired statistics
+/// skip a place where either is not a number.
+struct Pairs {
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+}
+
+impl Pairs {
+    fn means(&self) -> (f64, f64) {
+        let n = self.xs.len() as f64;
+        (
+            self.xs.iter().sum::<f64>() / n,
+            self.ys.iter().sum::<f64>() / n,
+        )
+    }
+
+    /// Σ(x−x̄)(y−ȳ), Σ(x−x̄)², Σ(y−ȳ)².
+    fn sums(&self) -> (f64, f64, f64) {
+        let (mx, my) = self.means();
+        self.xs
+            .iter()
+            .zip(&self.ys)
+            .fold((0.0, 0.0, 0.0), |(xy, xx, yy), (x, y)| {
+                let (dx, dy) = (x - mx, y - my);
+                (xy + dx * dy, xx + dx * dx, yy + dy * dy)
+            })
+    }
+
+    /// §6.18.17 `CORREL`, §6.18.56 `PEARSON`.
+    fn correlation(&self) -> Result<f64, FormulaError> {
+        let (xy, xx, yy) = self.sums();
+        let denominator = (xx * yy).sqrt();
+        if denominator == 0.0 {
+            return Err(FormulaError::DivZero);
+        }
+        Ok(xy / denominator)
+    }
+
+    /// §6.18.69 `SLOPE` of y on x.
+    fn slope(&self) -> Result<f64, FormulaError> {
+        let (xy, xx, _) = self.sums();
+        if xx == 0.0 {
+            return Err(FormulaError::DivZero);
+        }
+        Ok(xy / xx)
+    }
+
+    /// §6.18.38 `INTERCEPT`.
+    fn intercept(&self) -> Result<f64, FormulaError> {
+        let (mx, my) = self.means();
+        Ok(my - self.slope()? * mx)
+    }
+}
+
+/// The numbers paired from arguments `first` (y) and `first + 1` (x), `ForceArray` both; arrays of
+/// different shapes are `#N/A`, and no pair of numbers at all `#VALUE!`, as the oracle answers.
+fn pairs(args: &mut Args, first: usize) -> Result<Pairs, FormulaError> {
+    let (y, x) = (args.array(first), args.array(first + 1));
+    if (y.rows, y.cols) != (x.rows, x.cols) {
+        return Err(FormulaError::NA);
+    }
+    let mut pairs = Pairs {
+        xs: Vec::new(),
+        ys: Vec::new(),
+    };
+    for (a, b) in y.values().iter().zip(x.values()) {
+        if let Value::Error(e) = a {
+            return Err(*e);
+        }
+        if let Value::Error(e) = b {
+            return Err(*e);
+        }
+        if let (Value::Number(a), Value::Number(b)) = (a, b) {
+            pairs.ys.push(*a);
+            pairs.xs.push(*b);
+        }
+    }
+    if pairs.xs.is_empty() {
+        return Err(FormulaError::Value);
+    }
+    Ok(pairs)
+}
+
+/// A paired statistic of arguments `first` and `first + 1`.
+fn paired(
+    args: &mut Args,
+    first: usize,
+    f: impl Fn(&Pairs) -> Result<f64, FormulaError>,
+) -> Answer {
+    args.arity(first + 2..=first + 2)?;
+    Ok(Value::number(f(&pairs(args, first)?)?))
+}
+
+/// §6.18.28 `FORECAST( Value ; Data_Y ; Data_X )`: the regression line at `Value`.
+fn forecast(args: &mut Args) -> Answer {
+    args.arity(3..=3)?;
+    let at = args.number(0)?;
+    let pairs = pairs(args, 1)?;
+    Ok(Value::number(pairs.intercept()? + pairs.slope()? * at))
 }

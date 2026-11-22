@@ -90,7 +90,11 @@ its type, which is where the awkwardness lives: `-1`, `0`, `""`, `"12"`, `1e308`
 into the data block, a range spanning empty and text cells.
 
 **Determinism** is a SplitMix64 in the harness — twenty lines, no new dependency for what a
-`u64` and two shifts do.
+`u64` and two shifts do. **Each function draws six formulas from a generator of its own**, seeded
+by the run's seed and its name: a function added to the catalog adds its six and changes no other
+function's. (Until 2026-11-22 one generator walked the catalog round-robin for 1000 formulas, so
+every function added reshuffled every other function's formulas and the floor measured a
+different sample each time.)
 
 ## What is excluded, and why
 
@@ -217,6 +221,12 @@ triaged, and they are not evenly spread — the recurring classes:
 - **Genuine numeric drift.** `FV` at a rate of `1e-15` differs in the 15th digit — that is the
   ceiling above, not a bug.
 
+Since 2026-11-22 the sample is six formulas per function — 1134 for that day's catalog — and
+the floor is **1030** of them on the pinned image. The functions added that day brought no new
+class either: their disagreements are the logical-in-a-range class above (the dotted statistics,
+`CONCAT`, `TEXTJOIN`, the paired statistics over the boolean column) and two decisions written
+in `doc/ods-format.md` §4.1 (`ISEVEN` of an empty cell, a `CHAR` above 127).
+
 The classic band that moved in on 2026-10-12 (`doc/small-group.md`'s second half) changed what
 a seed generates, since the catalog is what the generator walks, and added **no new class**:
 the same seed against LibreOffice 26.8 is 917 of 1000. What its 26 functions disagree about is
@@ -229,5 +239,5 @@ and degenerate parameters — a rate of −1, a negative `Nper`, a logical as `W
 ```sh
 cargo test -p grind-sheet --test loop_e                       # needs soffice; skips with a notice without it
 GRIND_LOOP_E_DUMP=1 cargo test -p grind-sheet --test loop_e -- --nocapture   # print every disagreement
-GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_FORMULAS=5000 cargo test -p grind-sheet --test loop_e
+GRIND_FUZZ_SEED=12345 GRIND_LOOP_E_PER_FUNCTION=30 cargo test -p grind-sheet --test loop_e
 ```

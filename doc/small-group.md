@@ -331,6 +331,33 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   (a fraction, an exponent, a display factor) is `#VALUE!`, where the oracle shows it. Measured
   against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
 
+- `AVEDEV` — §6.18.2
+- `COMBIN` — §6.16.16
+- `CORREL` — §6.18.17
+- `DEVSQ` — §6.18.20
+- `FORECAST` — §6.18.28
+- `GEOMEAN` — §6.18.34
+- `HARMEAN` — §6.18.36
+- `INTERCEPT` — §6.18.38
+- `MODE` — §6.18.50
+- `PEARSON` — §6.18.56
+- `PERCENTILE` — §6.18.57
+- `PERCENTRANK` — §6.18.58
+- `PERMUT` — §6.18.59
+- `QUARTILE` — §6.18.64
+- `RSQ` — §6.18.66
+- `SLOPE` — §6.18.69
+- `SUMSQ` — §6.16.65
+
+  **Evidence:** the statistics a workbook reaches for after `AVERAGE` and `STDEV` — percentiles,
+  quartiles, the most frequent value, a percent rank, correlation and the regression line through
+  two columns, sums of squares and the other means — and `COMBIN`/`PERMUT` beside `FACT`. Each is
+  a formula over a number sequence or a pair of ForceArray arrays (`array.rs`), with no new
+  machinery. Where the spec leaves a choice the oracle decides: `PERCENTRANK` rounds to its
+  significance, an X outside the data and an empty sequence are `#VALUE!`; arrays of two shapes
+  for the paired statistics are `#N/A`, as Excel answers, where the oracle says Err:502.
+  Measured against LibreOffice 26.8. Decided 2026-11-22.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
