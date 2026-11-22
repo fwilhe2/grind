@@ -106,7 +106,7 @@ fn if_error(args: &mut Args, catches: impl Fn(FormulaError) -> bool) -> Answer {
 /// Excel's `IFS(Condition1; Value1; …)`: the value beside the first true condition, `#N/A` when
 /// none is. Conditions are evaluated in turn, and only the chosen value.
 fn ifs(args: &mut Args) -> Answer {
-    if args.is_empty() || args.len() % 2 != 0 {
+    if args.is_empty() || !args.len().is_multiple_of(2) {
         return Err(FormulaError::Value);
     }
     for i in (0..args.len()).step_by(2) {

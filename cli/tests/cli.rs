@@ -1544,8 +1544,16 @@ fn the_sample_script_still_builds_its_document() {
     // The reference functions read the same cells the plain references do.
     let actual = |cell: &str| ok(&["get", &book, cell, "--raw"]).trim().to_owned();
     assert_eq!(actual("M21"), actual("C3"));
-    assert_eq!(actual("M22"), actual("C4"), "Transport is the third category");
-    assert!(actual("M23").starts_with("Housing, Groceries"), "{}", actual("M23"));
+    assert_eq!(
+        actual("M22"),
+        actual("C4"),
+        "Transport is the third category"
+    );
+    assert!(
+        actual("M23").starts_with("Housing, Groceries"),
+        "{}",
+        actual("M23")
+    );
     let charts = ok(&["chart-list", &book]);
     assert!(
         charts.lines().any(|line| line.contains("\tArea\t")),

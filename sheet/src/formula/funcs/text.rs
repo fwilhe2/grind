@@ -265,7 +265,7 @@ fn textjoin(args: &mut Args) -> Answer {
     for i in 2..args.len() {
         let values = match args.operand(i) {
             super::super::eval::Operand::Area(area) => args.values_in(&area),
-            other => vec![args.scalar(other)],
+            other @ super::super::eval::Operand::Value(_) => vec![args.scalar(other)],
         };
         for value in values {
             let piece = value.to_text()?;

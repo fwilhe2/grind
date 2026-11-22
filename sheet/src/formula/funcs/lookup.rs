@@ -145,15 +145,12 @@ fn match_(args: &mut Args) -> Answer {
 /// The cells of the `i`th argument — a reference where it is, anything else as the array it
 /// evaluates to — and how many rows and columns they make.
 fn cells(args: &mut Args, i: usize) -> (Vec<Value>, usize, usize) {
-    match args.area(i) {
-        Some(area) => {
-            let (rows, cols) = (area.rows.len(), area.cols.len());
-            (args.values_in(&area), rows, cols)
-        }
-        None => {
-            let array = args.array(i);
-            (array.values().to_vec(), array.rows, array.cols)
-        }
+    if let Some(area) = args.area(i) {
+        let (rows, cols) = (area.rows.len(), area.cols.len());
+        (args.values_in(&area), rows, cols)
+    } else {
+        let array = args.array(i);
+        (array.values().to_vec(), array.rows, array.cols)
     }
 }
 

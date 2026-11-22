@@ -20,16 +20,12 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "MIN" => extreme(args, false),
         "COM.MICROSOFT.MAXIFS" => super::criterion::several(args, super::criterion::Mode::Max),
         "COM.MICROSOFT.MINIFS" => super::criterion::several(args, super::criterion::Mode::Min),
-        // §6.18.82/§6.18.84: the sample forms divide by n-1, the population forms by n.
-        "VAR" => moment(args, true, false),
-        "VARP" => moment(args, false, false),
-        "STDEV" => moment(args, true, true),
-        "STDEVP" => moment(args, false, true),
-        // Excel's 2010 names for the same four.
-        "COM.MICROSOFT.VAR.S" => moment(args, true, false),
-        "COM.MICROSOFT.VAR.P" => moment(args, false, false),
-        "COM.MICROSOFT.STDEV.S" => moment(args, true, true),
-        "COM.MICROSOFT.STDEV.P" => moment(args, false, true),
+        // §6.18.82/§6.18.84: the sample forms divide by n-1, the population forms by n; Excel's
+        // 2010 names are the same four.
+        "VAR" | "COM.MICROSOFT.VAR.S" => moment(args, true, false),
+        "VARP" | "COM.MICROSOFT.VAR.P" => moment(args, false, false),
+        "STDEV" | "COM.MICROSOFT.STDEV.S" => moment(args, true, true),
+        "STDEVP" | "COM.MICROSOFT.STDEV.P" => moment(args, false, true),
         "LARGE" => nth(args, true),
         "SMALL" => nth(args, false),
         "MEDIAN" => median(args),
