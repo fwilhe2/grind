@@ -1651,3 +1651,81 @@ fn excels_xlookup_and_xmatch_and_the_dotted_statistics() {
     close("=COM.MICROSOFT.VAR.P([.B1:.B7])", 147.916_666_666_667);
     assert_eq!(error("=COM.MICROSOFT.STDEV.S(5)"), FormulaError::DivZero);
 }
+
+/// The information and text basics everyday workbooks call: parity, references, error types,
+/// characters, a cell's formula, and `LOOKUP`. Measured against LibreOffice 26.8.
+#[test]
+fn parity_references_errors_characters_and_lookup() {
+    let b = |f: &str| match eval(f) {
+        Value::Bool(b) => b,
+        other => panic!("{f} evaluated to {other:?}"),
+    };
+    assert!(b("=ISEVEN(4)") && !b("=ISEVEN(-3)") && b("=ISEVEN(2.9)") && b("=ISEVEN(-2.5)"));
+    assert!(b("=ISEVEN([.B1])") && b("=ISODD(3)") && !b("=ISODD(0)") && b("=ISODD(TRUE())"));
+    // §6.3.5: an empty cell is 0, which is even. The oracle refuses it (Err:504); Excel agrees.
+    assert!(b("=ISEVEN([.Z9])"));
+    assert_eq!(error("=ISEVEN(\"x\")"), FormulaError::Value);
+
+    assert!(b("=ISREF([.A1])") && b("=ISREF([.A1:.B2])") && b("=ISREF(INDIRECT(\"A1\"))"));
+    assert!(!b("=ISREF(5)") && !b("=ISREF(1/0)"));
+
+    for (formula, code) in [
+        ("=ERROR.TYPE(#NULL!)", 1.0),
+        ("=ERROR.TYPE(1/0)", 2.0),
+        ("=ERROR.TYPE(#VALUE!)", 3.0),
+        ("=ERROR.TYPE(#REF!)", 4.0),
+        ("=ERROR.TYPE(#NAME?)", 5.0),
+        ("=ERROR.TYPE(#NUM!)", 6.0),
+        ("=ERROR.TYPE(NA())", 7.0),
+    ] {
+        assert_eq!(number(formula), code, "{formula}");
+    }
+    assert_eq!(error("=ERROR.TYPE(5)"), FormulaError::NA);
+
+    // §6.20.3/§6.20.5: Unicode code points, so CODE(CHAR(N)) is N for 1 to 255.
+    assert_eq!(text("=CHAR(65)"), "A");
+    assert_eq!(text("=CHAR(65.9)"), "A");
+    assert_eq!(text("=CHAR(10)"), "\n");
+    assert_eq!(text("=CHAR(169)"), "©");
+    assert_eq!(number("=CODE(CHAR(233))"), 233.0);
+    assert_eq!(error("=CHAR(256)"), FormulaError::Value);
+    assert_eq!(error("=CHAR(0)"), FormulaError::Value);
+    assert_eq!(number("=CODE(\"Apple\")"), 65.0);
+    assert_eq!(number("=CODE(5)"), 53.0);
+    assert_eq!(error("=CODE(\"\")"), FormulaError::Value);
+    assert_eq!(text("=UNICHAR(8364)"), "€");
+    assert_eq!(text("=UNICHAR(128512)"), "😀");
+    assert_eq!(number("=UNICODE(\"€\")"), 8364.0);
+    assert_eq!(number("=UNICODE(\"😀\")"), 128_512.0);
+    assert_eq!(error("=UNICODE(\"\")"), FormulaError::Value);
+    assert_eq!(error("=UNICHAR(55296)"), FormulaError::Value);
+
+    // §6.14.8: the largest value at or below, the last of a run; the result row or column by
+    // position, or the searched array's own last row or column.
+    assert_eq!(text("=LOOKUP(25;[.B1:.B4];[.A1:.A4])"), "pear");
+    assert_eq!(text("=LOOKUP(100;[.B1:.B4];[.A1:.A4])"), "plum");
+    assert_eq!(number("=LOOKUP(40;[.B1:.B4])"), 40.0);
+    assert_eq!(number("=LOOKUP(\"pear\";[.A1:.A2];[.B1:.B2])"), 20.0);
+    assert_eq!(text("=LOOKUP(25;[.B1:.C4])"), "green");
+    assert_eq!(text("=LOOKUP(25;[.B1:.B4];[.C1:.C2])"), "green");
+    assert_eq!(error("=LOOKUP(5;[.B1:.B4];[.A1:.A4])"), FormulaError::NA);
+}
+
+#[test]
+fn isformula_and_formula_read_a_cells_formula() {
+    let mut sheet = Sheet::new("S");
+    sheet.set_formula(Pos::new(0, 0), "=SUM([.B1:.B3])*2".into());
+    sheet.set(Pos::new(0, 1), CellValue::Number(1.0));
+    let document = Document {
+        sheets: vec![sheet],
+        ..Default::default()
+    };
+    let at = Address::new(0, Pos::new(5, 5));
+    let eval = |f: &str| Engine::new(&document).eval(f, at);
+    assert_eq!(eval("=ISFORMULA([.A1])"), Value::Bool(true));
+    assert_eq!(eval("=ISFORMULA([.B1])"), Value::Bool(false));
+    assert_eq!(eval("=ISFORMULA(5)"), Value::Bool(false));
+    // As the formula bar shows it.
+    assert_eq!(eval("=FORMULA([.A1])"), Value::Text("=SUM(B1:B3)*2".into()));
+    assert_eq!(eval("=FORMULA([.B1])"), Value::Error(FormulaError::NA));
+}

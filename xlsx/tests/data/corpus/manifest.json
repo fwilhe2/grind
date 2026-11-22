@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T21:58:51Z",
+  "generated": "2026-11-22T22:07:41Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -7743,6 +7743,244 @@
               "raw": "96",
               "kind": "Text",
               "value": "Fields kept per item"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "97",
+              "kind": "Text",
+              "value": "ISEVEN"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "98",
+              "kind": "Text",
+              "value": "=ISEVEN(Stock!D3)"
+            },
+            {
+              "ref": "C25",
+              "t": "b",
+              "raw": "1",
+              "kind": "Bool",
+              "value": "true",
+              "excel": "ISEVEN(Stock!D3)",
+              "formula": "ISEVEN([Stock.D3])"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "99",
+              "kind": "Text",
+              "value": "Hex nuts reorder at an even number, so a pair of boxes fits"
+            },
+            {
+              "ref": "A26",
+              "t": "s",
+              "raw": "100",
+              "kind": "Text",
+              "value": "ISODD"
+            },
+            {
+              "ref": "B26",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "=ISODD(Stock!C8)"
+            },
+            {
+              "ref": "C26",
+              "t": "b",
+              "raw": "0",
+              "kind": "Bool",
+              "value": "false",
+              "excel": "ISODD(Stock!C8)",
+              "formula": "ISODD([Stock.C8])"
+            },
+            {
+              "ref": "D26",
+              "t": "s",
+              "raw": "102",
+              "kind": "Text",
+              "value": "Heat-shrink\u0027s count is not odd"
+            },
+            {
+              "ref": "A27",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "ISREF"
+            },
+            {
+              "ref": "B27",
+              "t": "s",
+              "raw": "104",
+              "kind": "Text",
+              "value": "=ISREF(Stock!C2)"
+            },
+            {
+              "ref": "C27",
+              "t": "b",
+              "raw": "1",
+              "kind": "Bool",
+              "value": "true",
+              "excel": "ISREF(Stock!C2)",
+              "formula": "ISREF([Stock.C2])"
+            },
+            {
+              "ref": "D27",
+              "t": "s",
+              "raw": "105",
+              "kind": "Text",
+              "value": "A cell is a reference"
+            },
+            {
+              "ref": "A28",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "ISREF"
+            },
+            {
+              "ref": "B28",
+              "t": "s",
+              "raw": "106",
+              "kind": "Text",
+              "value": "=ISREF(5)"
+            },
+            {
+              "ref": "C28",
+              "t": "b",
+              "raw": "0",
+              "kind": "Bool",
+              "value": "false",
+              "excel": "ISREF(5)",
+              "formula": "ISREF(5)"
+            },
+            {
+              "ref": "D28",
+              "t": "s",
+              "raw": "107",
+              "kind": "Text",
+              "value": "\u2026a number is not"
+            },
+            {
+              "ref": "A29",
+              "t": "s",
+              "raw": "108",
+              "kind": "Text",
+              "value": "ISFORMULA"
+            },
+            {
+              "ref": "B29",
+              "t": "s",
+              "raw": "109",
+              "kind": "Text",
+              "value": "=ISFORMULA(Stock!I2)"
+            },
+            {
+              "ref": "C29",
+              "t": "b",
+              "raw": "1",
+              "kind": "Bool",
+              "value": "true",
+              "excel": "ISFORMULA(Stock!I2)",
+              "formula": "ISFORMULA([Stock.I2])"
+            },
+            {
+              "ref": "D29",
+              "t": "s",
+              "raw": "110",
+              "kind": "Text",
+              "value": "Weeks of cover is worked out, not typed"
+            },
+            {
+              "ref": "A30",
+              "t": "s",
+              "raw": "111",
+              "kind": "Text",
+              "value": "FORMULA"
+            },
+            {
+              "ref": "B30",
+              "t": "s",
+              "raw": "112",
+              "kind": "Text",
+              "value": "=FORMULA(Stock!I2)"
+            },
+            {
+              "ref": "C30",
+              "t": "str",
+              "raw": "=C2/H2",
+              "kind": "Text",
+              "value": "=C2/H2",
+              "excel": "FORMULA(Stock!I2)",
+              "formula": "FORMULA([Stock.I2])"
+            },
+            {
+              "ref": "D30",
+              "t": "s",
+              "raw": "113",
+              "kind": "Text",
+              "value": "\u2026and this is how"
+            },
+            {
+              "ref": "A31",
+              "t": "s",
+              "raw": "114",
+              "kind": "Text",
+              "value": "ERROR.TYPE"
+            },
+            {
+              "ref": "B31",
+              "t": "s",
+              "raw": "115",
+              "kind": "Text",
+              "value": "=ERROR.TYPE(Stock!I7)"
+            },
+            {
+              "ref": "C31",
+              "raw": "2",
+              "kind": "Number",
+              "value": "2",
+              "excel": "ERROR.TYPE(Stock!I7)",
+              "formula": "ERROR.TYPE([Stock.I7])"
+            },
+            {
+              "ref": "D31",
+              "t": "s",
+              "raw": "116",
+              "kind": "Text",
+              "value": "Cable ties have no weekly use: a division by zero is error 2"
+            },
+            {
+              "ref": "A32",
+              "t": "s",
+              "raw": "114",
+              "kind": "Text",
+              "value": "ERROR.TYPE"
+            },
+            {
+              "ref": "B32",
+              "t": "s",
+              "raw": "117",
+              "kind": "Text",
+              "value": "=ERROR.TYPE(MATCH(\u0022D-400\u0022,Stock!A2:A8,0))"
+            },
+            {
+              "ref": "C32",
+              "raw": "7",
+              "kind": "Number",
+              "value": "7",
+              "excel": "ERROR.TYPE(MATCH(\u0022D-400\u0022,Stock!A2:A8,0))",
+              "formula": "ERROR.TYPE(MATCH(\u0022D-400\u0022;[Stock.A2:.A8];0))"
+            },
+            {
+              "ref": "D32",
+              "t": "s",
+              "raw": "118",
+              "kind": "Text",
+              "value": "An unstocked SKU: #N/A is error 7"
             }
           ]
         }
@@ -7754,8 +7992,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4787,
-      "sha256": "44edab4788dfc07cce2914dcdb544f89010a44f266fe87c900654c2272a96e94"
+      "bytes": 5231,
+      "sha256": "027d61831aec87e3ee393c82050158594f9f13cbf7bd21e9d997d424d1356f06"
     },
     {
       "file": "functions/logical.xlsx",
@@ -9596,6 +9834,64 @@
               "raw": "76",
               "kind": "Text",
               "value": "The last oak product, by wildcard"
+            },
+            {
+              "ref": "A23",
+              "t": "s",
+              "raw": "77",
+              "kind": "Text",
+              "value": "LOOKUP"
+            },
+            {
+              "ref": "B23",
+              "t": "s",
+              "raw": "78",
+              "kind": "Text",
+              "value": "=LOOKUP(7,Shipping!B1:F1,Shipping!B2:F2)"
+            },
+            {
+              "ref": "C23",
+              "raw": "9.9",
+              "kind": "Number",
+              "value": "9.9",
+              "excel": "LOOKUP(7,Shipping!B1:F1,Shipping!B2:F2)",
+              "formula": "LOOKUP(7;[Shipping.B1:.F1];[Shipping.B2:.F2])"
+            },
+            {
+              "ref": "D23",
+              "t": "s",
+              "raw": "79",
+              "kind": "Text",
+              "value": "Zone A\u0027s rate for 7 kg, from the sorted bands"
+            },
+            {
+              "ref": "A24",
+              "t": "s",
+              "raw": "77",
+              "kind": "Text",
+              "value": "LOOKUP"
+            },
+            {
+              "ref": "B24",
+              "t": "s",
+              "raw": "80",
+              "kind": "Text",
+              "value": "=LOOKUP(\u0022P-21\u0022,Prices!A2:D6)"
+            },
+            {
+              "ref": "C24",
+              "raw": "9.8",
+              "kind": "Number",
+              "value": "9.8",
+              "excel": "LOOKUP(\u0022P-21\u0022,Prices!A2:D6)",
+              "formula": "LOOKUP(\u0022P-21\u0022;[Prices.A2:.D6])"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "81",
+              "kind": "Text",
+              "value": "The brass brackets\u0027 price, from the table\u0027s last column"
             }
           ]
         }
@@ -9607,8 +9903,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5023,
-      "sha256": "4ab64e63695102f2835ace4ae275690b14776573cbd233a6b78a0b61a977537f"
+      "bytes": 5116,
+      "sha256": "ee9819e4f52fa7147ddeb42557f203a8e45c3906920f38ebfe9cb281337062b7"
     },
     {
       "file": "functions/math.xlsx",
@@ -15060,17 +15356,135 @@
               "t": "s",
               "raw": "111",
               "kind": "Text",
-              "value": "FIXED"
+              "value": "CHAR"
             },
             {
               "ref": "B28",
               "t": "s",
               "raw": "112",
               "kind": "Text",
-              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+              "value": "=LEFT(Customers!B3,3)\u0026CHAR(45)\u0026RIGHT(Customers!A3,2)"
             },
             {
               "ref": "C28",
+              "t": "str",
+              "raw": "Tom-43",
+              "kind": "Text",
+              "value": "Tom-43",
+              "excel": "LEFT(Customers!B3,3)\u0026CHAR(45)\u0026RIGHT(Customers!A3,2)",
+              "formula": "LEFT([Customers.B3];3)\u0026CHAR(45)\u0026RIGHT([Customers.A3];2)"
+            },
+            {
+              "ref": "D28",
+              "t": "s",
+              "raw": "113",
+              "kind": "Text",
+              "value": "A short code joined by CHAR(45), a hyphen"
+            },
+            {
+              "ref": "A29",
+              "t": "s",
+              "raw": "114",
+              "kind": "Text",
+              "value": "CODE"
+            },
+            {
+              "ref": "B29",
+              "t": "s",
+              "raw": "115",
+              "kind": "Text",
+              "value": "=CODE(Customers!E3)"
+            },
+            {
+              "ref": "C29",
+              "raw": "76",
+              "kind": "Number",
+              "value": "76",
+              "excel": "CODE(Customers!E3)",
+              "formula": "CODE([Customers.E3])"
+            },
+            {
+              "ref": "D29",
+              "t": "s",
+              "raw": "116",
+              "kind": "Text",
+              "value": "London begins with code 76, an L"
+            },
+            {
+              "ref": "A30",
+              "t": "s",
+              "raw": "117",
+              "kind": "Text",
+              "value": "UNICHAR"
+            },
+            {
+              "ref": "B30",
+              "t": "s",
+              "raw": "118",
+              "kind": "Text",
+              "value": "=\u0022Price: \u0022\u0026UNICHAR(8364)\u0026\u00225\u0022"
+            },
+            {
+              "ref": "C30",
+              "t": "str",
+              "raw": "Price: \u20AC5",
+              "kind": "Text",
+              "value": "Price: \u20AC5",
+              "excel": "\u0022Price: \u0022\u0026UNICHAR(8364)\u0026\u00225\u0022",
+              "formula": "\u0022Price: \u0022\u0026UNICHAR(8364)\u0026\u00225\u0022"
+            },
+            {
+              "ref": "D30",
+              "t": "s",
+              "raw": "119",
+              "kind": "Text",
+              "value": "The euro sign by its code point"
+            },
+            {
+              "ref": "A31",
+              "t": "s",
+              "raw": "120",
+              "kind": "Text",
+              "value": "UNICODE"
+            },
+            {
+              "ref": "B31",
+              "t": "s",
+              "raw": "121",
+              "kind": "Text",
+              "value": "=UNICODE(Customers!E4)"
+            },
+            {
+              "ref": "C31",
+              "raw": "84",
+              "kind": "Number",
+              "value": "84",
+              "excel": "UNICODE(Customers!E4)",
+              "formula": "UNICODE([Customers.E4])"
+            },
+            {
+              "ref": "D31",
+              "t": "s",
+              "raw": "122",
+              "kind": "Text",
+              "value": "Tokyo\u0027s T is code point 84"
+            },
+            {
+              "ref": "A32",
+              "t": "s",
+              "raw": "123",
+              "kind": "Text",
+              "value": "FIXED"
+            },
+            {
+              "ref": "B32",
+              "t": "s",
+              "raw": "124",
+              "kind": "Text",
+              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+            },
+            {
+              "ref": "C32",
               "t": "str",
               "raw": "Order total: 1,234.50",
               "kind": "Text",
@@ -15079,28 +15493,28 @@
               "formula": "\u0022Order total: \u0022\u0026FIXED(1234.5;2)"
             },
             {
-              "ref": "D28",
+              "ref": "D32",
               "t": "s",
-              "raw": "113",
+              "raw": "125",
               "kind": "Text",
               "value": "An amount spelled with its separators inside a sentence"
             },
             {
-              "ref": "A29",
+              "ref": "A33",
               "t": "s",
-              "raw": "111",
+              "raw": "123",
               "kind": "Text",
               "value": "FIXED"
             },
             {
-              "ref": "B29",
+              "ref": "B33",
               "t": "s",
-              "raw": "114",
+              "raw": "126",
               "kind": "Text",
               "value": "=FIXED(Customers!H2,0,TRUE)"
             },
             {
-              "ref": "C29",
+              "ref": "C33",
               "t": "str",
               "raw": "2019",
               "kind": "Text",
@@ -15109,9 +15523,9 @@
               "formula": "FIXED([Customers.H2];0;TRUE())"
             },
             {
-              "ref": "D29",
+              "ref": "D33",
               "t": "s",
-              "raw": "115",
+              "raw": "127",
               "kind": "Text",
               "value": "A year as text, with no thousands separator"
             }
@@ -15125,8 +15539,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5393,
-      "sha256": "31dcedded5efc8fedcb63a19ded9c7620ffec749e033cc7a998f1930f81db068"
+      "bytes": 5696,
+      "sha256": "a4a609129d6c99f36133fd38e55eecdf370bda7bab1f16cc76bc20c0688187e6"
     },
     {
       "file": "geometry/columns.xlsx",

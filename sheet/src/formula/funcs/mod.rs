@@ -115,6 +115,8 @@ const BEYOND: &[&str] = &[
     "ADDRESS",
     "AVERAGEIFS",
     "CEILING",
+    "CHAR",
+    "CODE",
     "COLUMN",
     "COM.MICROSOFT.CEILING",
     "COM.MICROSOFT.CONCAT",
@@ -136,16 +138,23 @@ const BEYOND: &[&str] = &[
     "COUNTIFS",
     "EDATE",
     "EOMONTH",
+    "ERROR.TYPE",
     "FIXED",
     "FLOOR",
+    "FORMULA",
     "HYPERLINK",
     "IFERROR",
     "IFNA",
     "INDIRECT",
     "IPMT",
+    "ISEVEN",
+    "ISFORMULA",
+    "ISODD",
     "ISOWEEKNUM",
+    "ISREF",
     "LARGE",
     "LEGACY.NORMSINV",
+    "LOOKUP",
     "MEDIAN",
     "MROUND",
     "NETWORKDAYS",
@@ -162,6 +171,8 @@ const BEYOND: &[&str] = &[
     "SUBTOTAL",
     "SUMIFS",
     "SUMPRODUCT",
+    "UNICHAR",
+    "UNICODE",
     "WEEKNUM",
     "WORKDAY",
 ];
@@ -231,6 +242,12 @@ const NAMES: &[&str] = &[
     "ISERROR",
     "ISLOGICAL",
     "ISNA",
+    "ISEVEN",
+    "ISODD",
+    "ISREF",
+    "ISFORMULA",
+    "FORMULA",
+    "ERROR.TYPE",
     "ISNONTEXT",
     "ISNUMBER",
     "ISTEXT",
@@ -280,6 +297,10 @@ const NAMES: &[&str] = &[
     "CONCATENATE",
     "SEARCH",
     "FIXED",
+    "CHAR",
+    "CODE",
+    "UNICHAR",
+    "UNICODE",
     "COM.MICROSOFT.CONCAT",
     "COM.MICROSOFT.TEXTJOIN",
     // external access (§6.11)
@@ -313,6 +334,7 @@ const NAMES: &[&str] = &[
     "INDIRECT",
     "COM.MICROSOFT.XLOOKUP",
     "COM.MICROSOFT.XMATCH",
+    "LOOKUP",
     // database (§6.9)
     "DAVERAGE",
     "DCOUNT",
@@ -399,6 +421,12 @@ impl Args<'_, '_> {
     #[must_use]
     pub fn null_date(&self) -> i64 {
         self.engine.null_date()
+    }
+
+    /// The formula the cell at `at` holds, as stored.
+    #[must_use]
+    pub fn formula_at(&self, at: Address) -> Option<&str> {
+        self.engine.formula_at(at)
     }
 
     /// The document's locale — how `FIXED` spells a number.

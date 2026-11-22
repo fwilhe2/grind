@@ -34,6 +34,12 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         // §6.13.15: every error *except* #N/A, which is the one users enter on purpose.
         "ISERR" => is(args, |v| v.error().is_some_and(|e| e != FormulaError::NA)),
         "ISNA" => is(args, |v| v.error() == Some(FormulaError::NA)),
+        "ISEVEN" => parity(args, 0),
+        "ISODD" => parity(args, 1),
+        "ISREF" => is_ref(args),
+        "ISFORMULA" => is_formula(args),
+        "FORMULA" => formula(args),
+        "ERROR.TYPE" => error_type(args),
         _ => return None,
     })
 }
@@ -131,4 +137,67 @@ fn n(args: &mut Args) -> Answer {
 fn value_of(args: &mut Args) -> Answer {
     args.arity(1..=1)?;
     Ok(Value::number(args.number(0)?))
+}
+
+/// §6.13.17 `ISEVEN` and §6.13.23 `ISODD`: `X` truncated, then its remainder by two. A logical is a
+/// number here, and an empty cell 0 (§6.3.5).
+fn parity(args: &mut Args, remainder: i64) -> Answer {
+    args.arity(1..=1)?;
+    let x = args.number(0)?.trunc() as i64;
+    Ok(Value::Bool(x.rem_euclid(2) == remainder))
+}
+
+/// §6.13.22 `ISREF`: whether the argument is a reference — never an error, even of one that failed.
+fn is_ref(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    Ok(Value::Bool(matches!(args.operand(0), Operand::Area(_))))
+}
+
+/// The first cell of a reference argument, if it is one.
+fn first_cell(args: &mut Args) -> Option<super::super::eval::Address> {
+    match args.operand(0) {
+        Operand::Area(area) => Some(super::super::eval::Address::new(
+            area.sheet,
+            crate::model::Pos::new(area.rows.start, area.cols.start),
+        )),
+        Operand::Value(_) => None,
+    }
+}
+
+/// §6.13.18 `ISFORMULA`: whether the referenced cell holds a formula.
+fn is_formula(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    let at = first_cell(args);
+    Ok(Value::Bool(
+        at.is_some_and(|at| args.formula_at(at).is_some()),
+    ))
+}
+
+/// §6.13.12 `FORMULA`: the referenced cell's formula as the formula bar shows it; `#N/A` for a
+/// cell without one, as the oracle answers.
+fn formula(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    let at = first_cell(args).ok_or(FormulaError::Value)?;
+    let stored = args.formula_at(at).ok_or(FormulaError::NA)?.to_owned();
+    let shown = super::super::display::to_display(&stored).unwrap_or(stored);
+    Ok(Value::Text(if shown.starts_with('=') {
+        shown
+    } else {
+        format!("={shown}")
+    }))
+}
+
+/// §6.13.11 `ERROR.TYPE`: an error's number, 1 `#NULL!` to 7 `#N/A`; anything else is `#N/A`.
+fn error_type(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    Ok(Value::number(match args.value(0) {
+        Value::Error(FormulaError::Null) => 1.0,
+        Value::Error(FormulaError::DivZero) => 2.0,
+        Value::Error(FormulaError::Value) => 3.0,
+        Value::Error(FormulaError::Ref) => 4.0,
+        Value::Error(FormulaError::Name) => 5.0,
+        Value::Error(FormulaError::Num) => 6.0,
+        Value::Error(FormulaError::NA) => 7.0,
+        _ => return Err(FormulaError::NA),
+    }))
 }

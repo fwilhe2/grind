@@ -442,6 +442,9 @@ table:use-regular-expressions="false"/>` — the reading this build gives every 
 | `COM.MICROSOFT.CONCAT(1;TRUE();"")` (measured 2026-11-22) | `11` | not Part 4 | `1TRUE`: the oracle has no logical type, so its `TRUE` is the number 1; this build keeps a logical and spells it as Excel does |
 | `COM.MICROSOFT.XLOOKUP(…;…;…;;3)`, `COM.MICROSOFT.XMATCH(…;…;0;3)` | `#N/A`, `Err:504` | not Part 4 | `#VALUE!` for both: a mode that is none of Excel's is a bad parameter |
 | `COM.MICROSOFT.XLOOKUP("pear";[.A1:.A7];[.B1:.B7];"n";0;-2)` over unsorted data | `n` | not Part 4 | a binary search (±2) promises sorted data; this build searches it in order, which finds what a binary search finds on sorted data and `pear` here |
+| `ISEVEN([empty cell])` (measured 2026-11-22) | `Err:504` | §6.3.5: an empty cell is 0 | **the spec**: TRUE, as Excel answers |
+| `CHAR(169)`, `CODE("€")` under a UTF-8 system | an invalid byte, 226 (the first UTF-8 byte) | §6.20.3 Note 1: a system code page or Unicode | Unicode code points: `©`, 8364 — the same on every system, and `CODE(CHAR(N))` = N for 1 to 255 |
+| `FORMULA([.A1])` without a formula, `ERROR.TYPE(5)` | `#N/A`, `#N/A` | "shall contain a formula"; a non-error "returns an Error" | as measured |
 | `LEGACY.NORMSINV(0)`, `(1)`, `(-0.1)` (measured 2026-11-22, 26.8.3.1) | `#VALUE!`, `#VALUE!`, `Err:502` | `0 < P < 1` | `#NUM!` for all three: one constraint, one domain error |
 | `COM.MICROSOFT.NORM.S.DIST(1)`, `COM.MICROSOFT.GAMMA.DIST(2;3;2)` | `Err:511` | not Part 4 | `#VALUE!`: Excel's `Cumulative` is required, and a missing argument is `#VALUE!` everywhere here |
 | `COM.MICROSOFT.GAMMA.DIST(-1;3;2;…)`, `(…;0;…)`, `(…;…;0;…)` | `Err:502` | not Part 4 (§6.18.31's `GAMMADIST` answers 0 for a negative X) | `#NUM!`: Excel's function, as its oracle measures it |

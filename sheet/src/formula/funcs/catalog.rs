@@ -8,13 +8,14 @@
 //! line, verbatim, with the section number. Verbatim extraction is why this file carries the OASIS
 //! copyright alongside ours, as `doc/small-group.md` does.
 //!
-//! Four of the spec's `Syntax:` lines are wrong and are corrected, with the erratum noted at the
+//! Four of the spec's `Syntax:` lines and one `Summary:` are wrong and are corrected, with the erratum noted at the
 //! entry:
 //!
 //! * §6.13.20 `ISNA` is written `ISERR( Scalar X )`
 //! * §6.20.18 `REPT` is written `T ( Text T ; Integer Count )`
 //! * §6.12.45 `SLN` is written `DDB( Number Cost ; Number Salvage ; Number LifeTime )`
 //! * §6.10.10 `EOMONTH` is written `EOMONTH( DateParam StartDate ; Integer MonthAdd`
+//! * §6.13.23 `ISODD`'s `Summary:` says "even"
 //!
 //! The `COM.MICROSOFT.` entries are not the spec's: their lines are written in its style, under
 //! their ODF namesake's chapter. Tests hold [`catalog`] to [`super::implemented`] and every
@@ -197,10 +198,22 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17.1",
     },
     FuncInfo {
+        name: "CHAR",
+        signature: "CHAR( Number N )",
+        brief: "Return character represented by the given numeric value",
+        section: "6.20.3",
+    },
+    FuncInfo {
         name: "CHOOSE",
         signature: "CHOOSE( Integer Index ; { Any Value } + )",
         brief: "Uses an index to return a value from a list of values.",
         section: "6.14.3",
+    },
+    FuncInfo {
+        name: "CODE",
+        signature: "CODE( Text T )",
+        brief: "Return numeric value corresponding to the first character of the text value.",
+        section: "6.20.5",
     },
     FuncInfo {
         name: "COLUMN",
@@ -462,6 +475,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.10.10",
     },
     FuncInfo {
+        name: "ERROR.TYPE",
+        signature: "ERROR.TYPE( Error E )",
+        brief: "Returns Number representing the specific Error type.",
+        section: "6.13.11",
+    },
+    FuncInfo {
         name: "EVEN",
         signature: "EVEN( Number N )",
         brief: "Rounds a number up to the nearest even integer. Rounding is away from zero.",
@@ -508,6 +527,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "FLOOR( Number N [ ; [ Number Significance ] [ ; Number Mode ] ] )",
         brief: "Round a number N down to the nearest multiple of the second parameter, significance.",
         section: "6.17.3",
+    },
+    FuncInfo {
+        name: "FORMULA",
+        signature: "FORMULA( Reference X )",
+        brief: "Returns formula at given reference as text.",
+        section: "6.13.12",
     },
     FuncInfo {
         name: "FV",
@@ -600,6 +625,18 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.13.16",
     },
     FuncInfo {
+        name: "ISEVEN",
+        signature: "ISEVEN( Number X )",
+        brief: "Return TRUE if the value is even, else return FALSE.",
+        section: "6.13.17",
+    },
+    FuncInfo {
+        name: "ISFORMULA",
+        signature: "ISFORMULA( Reference X )",
+        brief: "Return TRUE if the reference refers to a formula, else return FALSE.",
+        section: "6.13.18",
+    },
+    FuncInfo {
         name: "ISLOGICAL",
         signature: "ISLOGICAL( Scalar X )",
         brief: "Return TRUE if the parameter has type Logical, else return FALSE.",
@@ -625,10 +662,22 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.13.22",
     },
     FuncInfo {
+        name: "ISODD",
+        signature: "ISODD( Number X )",
+        brief: "Return TRUE if the value is odd, else return FALSE.",
+        section: "6.13.23",
+    },
+    FuncInfo {
         name: "ISOWEEKNUM",
         signature: "ISOWEEKNUM( DateParam D )",
         brief: "Determines the ISO week number of the year for a given date.",
         section: "6.10.12",
+    },
+    FuncInfo {
+        name: "ISREF",
+        signature: "ISREF( Any X )",
+        brief: "Return TRUE if the parameter is of type reference, else return FALSE.",
+        section: "6.13.24",
     },
     FuncInfo {
         name: "ISTEXT",
@@ -677,6 +726,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "LOG10( Number N )",
         brief: "Return the base 10 logarithm of a number.",
         section: "6.16.41",
+    },
+    FuncInfo {
+        name: "LOOKUP",
+        signature: "LOOKUP( Any Find ; ForceArray Reference|Array Searched [ ; ForceArray Reference|Array Results ] )",
+        brief: "Look for criterion in an already-sorted array, and return a corresponding result.",
+        section: "6.14.8",
     },
     FuncInfo {
         name: "LOWER",
@@ -1051,6 +1106,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "TRUNC( Number A ; Integer B )",
         brief: "Truncate a number to a specified number of digits.",
         section: "6.17.8",
+    },
+    FuncInfo {
+        name: "UNICHAR",
+        signature: "UNICHAR( Integer N )",
+        brief: "Return the character represented by the given numeric value according to the [UNICODE] Standard.",
+        section: "6.20.25",
+    },
+    FuncInfo {
+        name: "UNICODE",
+        signature: "UNICODE( Text T )",
+        brief: "Return the [UNICODE] code point corresponding to the first character of the text value.",
+        section: "6.20.26",
     },
     FuncInfo {
         name: "UPPER",

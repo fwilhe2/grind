@@ -34,6 +34,7 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     Some(match name {
         "CHOOSE" => choose(args),
         "MATCH" => match_(args),
+        "LOOKUP" => lookup_vector(args),
         "COM.MICROSOFT.XLOOKUP" => xlookup(args),
         "COM.MICROSOFT.XMATCH" => xmatch(args),
         "VLOOKUP" => lookup(args, true),
@@ -140,6 +141,31 @@ fn match_(args: &mut Args) -> Answer {
         _ => return Err(FormulaError::Value),
     };
     Ok(Value::number(search(&key, &values, mode)? as f64 + 1.0))
+}
+
+/// §6.14.8 `LOOKUP(Find; Searched; Results)`: the largest value at or below `Find` in a sorted row
+/// or column, the last of a run, and the cell at its position in `Results` — or, without one, in
+/// `Searched`'s own last row or column (its first row is searched when it is wider than tall).
+fn lookup_vector(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let key = args.value(0);
+    let (cells_found, rows, cols) = cells(args, 1);
+    let across = cols > rows;
+    let searched: Vec<Value> = if across {
+        cells_found[..cols].to_vec()
+    } else {
+        cells_found.iter().step_by(cols.max(1)).cloned().collect()
+    };
+    let i = search(&key, &searched, Mode::Ascending)?;
+    if args.len() > 2 {
+        let (results, _, _) = cells(args, 2);
+        return results.get(i).cloned().ok_or(FormulaError::NA);
+    }
+    Ok(if across {
+        cells_found[(rows - 1) * cols + i].clone()
+    } else {
+        cells_found[i * cols + cols - 1].clone()
+    })
 }
 
 /// The cells of the `i`th argument — a reference where it is, anything else as the array it

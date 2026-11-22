@@ -162,6 +162,14 @@ A stock-take in a hardware store: one count is missing, one was written down as 
 | `ROWS` | `=ROWS(Stock.A2:A8)` | 7 | SKUs on the list |
 | `COLUMN` | `=COLUMN(Stock.E1)` | 5 | Supplier is the fifth column |
 | `COLUMNS` | `=COLUMNS(Stock.A1:I1)` | 9 | Fields kept per item |
+| `ISEVEN` | `=ISEVEN(Stock.D3)` | TRUE | Hex nuts reorder at an even number, so a pair of boxes fits |
+| `ISODD` | `=ISODD(Stock.C8)` | FALSE | Heat-shrink's count is not odd |
+| `ISREF` | `=ISREF(Stock.C2)` | TRUE | A cell is a reference |
+| `ISREF` | `=ISREF(5)` | FALSE | …a number is not |
+| `ISFORMULA` | `=ISFORMULA(Stock.I2)` | TRUE | Weeks of cover is worked out, not typed |
+| `FORMULA` | `=FORMULA(Stock.I2)` | =C2/H2 | …and this is how |
+| `ERROR.TYPE` | `=ERROR.TYPE(Stock.I7)` | 2 | Cable ties have no weekly use: a division by zero is error 2 |
+| `ERROR.TYPE` | `=ERROR.TYPE(MATCH("D-400";Stock.A2:A8;0))` | 7 | An unstocked SKU: #N/A is error 7 |
 
 ## Text — `text.fods`
 
@@ -195,6 +203,10 @@ A customer list as it arrives from a web form: stray spaces, mixed case, phone n
 | `COM.MICROSOFT.CONCAT` | `=COM.MICROSOFT.CONCAT(Customers.A2:A5)` | C-0042C-0043C-0044C-0045 | Every ID run together, a range at once |
 | `COM.MICROSOFT.TEXTJOIN` | `=COM.MICROSOFT.TEXTJOIN(", ";TRUE();Customers.E2:E5)` | berlin, London, Tokyo, Copenhagen | Excel's TEXTJOIN: the cities as a list |
 | `COM.MICROSOFT.TEXTJOIN` | `=COM.MICROSOFT.TEXTJOIN("/";FALSE();Customers.A2;"";Customers.A3)` | C-0042//C-0043 | Empty pieces kept when told to |
+| `CHAR` | `=LEFT(Customers.B3;3)&CHAR(45)&RIGHT(Customers.A3;2)` | Tom-43 | A short code joined by CHAR(45), a hyphen |
+| `CODE` | `=CODE(Customers.E3)` | 76 | London begins with code 76, an L |
+| `UNICHAR` | `="Price: "&UNICHAR(8364)&"5"` | Price: €5 | The euro sign by its code point |
+| `UNICODE` | `=UNICODE(Customers.E4)` | 84 | Tokyo's T is code point 84 |
 | `FIXED` | `="Order total: "&FIXED(1234.5;2)` | Order total: 1,234.50 | An amount spelled with its separators inside a sentence |
 | `FIXED` | `=FIXED(Customers.H2;0;TRUE())` | 2019 | A year as text, with no thousands separator |
 
@@ -253,6 +265,8 @@ A furniture shop's price list, sorted by SKU, and its shipping rates by weight b
 | `COM.MICROSOFT.XLOOKUP` | `=COM.MICROSOFT.XLOOKUP(7;Shipping.B1:F1;Shipping.B2:F2;;-1)` | 9.9 | Zone A's rate for 7 kg: the band below |
 | `COM.MICROSOFT.XMATCH` | `=COM.MICROSOFT.XMATCH("P-30";Prices.A2:A6)` | 5 | Excel's XMATCH: where the wall anchors are |
 | `COM.MICROSOFT.XMATCH` | `=COM.MICROSOFT.XMATCH("Oak*";Prices.B2:B6;2;-1)` | 2 | The last oak product, by wildcard |
+| `LOOKUP` | `=LOOKUP(7;Shipping.B1:F1;Shipping.B2:F2)` | 9.9 | Zone A's rate for 7 kg, from the sorted bands |
+| `LOOKUP` | `=LOOKUP("P-21";Prices.A2:D6)` | 9.8 | The brass brackets' price, from the table's last column |
 
 ## Database — `database.fods`
 

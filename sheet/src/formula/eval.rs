@@ -164,6 +164,11 @@ impl<'a> Engine<'a> {
         self.doc.null_year
     }
 
+    /// The formula a cell holds, as stored — for `ISFORMULA` and `FORMULA`.
+    pub(crate) fn formula_at(&self, at: Address) -> Option<&str> {
+        self.doc.sheets.get(at.sheet)?.formula(at.pos)
+    }
+
     /// The document's locale, for the functions that spell a number.
     pub(crate) fn locale(&self) -> Option<&grind_core::locale::Locale> {
         self.doc.locale.as_ref()

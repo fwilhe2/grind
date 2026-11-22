@@ -299,6 +299,28 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   invisible to the precedent views and to lint. Measured against LibreOffice 26.8
   (`doc/ods-format.md` §4.1). Decided 2026-11-22.
 
+- `ISEVEN` — §6.13.17
+- `ISODD` — §6.13.23
+- `ISREF` — §6.13.24
+- `ISFORMULA` — §6.13.18
+- `FORMULA` — §6.13.12
+- `ERROR.TYPE` — §6.13.11
+- `CHAR` — §6.20.3
+- `CODE` — §6.20.5
+- `UNICHAR` — §6.20.25
+- `UNICODE` — §6.20.26
+- `LOOKUP` — §6.14.8
+
+  **Evidence:** the everyday helpers `doc/function-coverage.md` finds in every corpus — `LOOKUP`
+  is Enron's fourteenth by workbook (Jansen), `CHAR(10)` is how a formula breaks a line,
+  `ERROR.TYPE`, `ISREF`, `ISEVEN`, `ISODD`, `CHAR` and `FORMULA` each block several of
+  LibreOffice's own test documents, and Excel's `FORMULATEXT` is imported as `FORMULA` (`doc/xlsx-format.md`
+  §5.1). No new machinery: a reference operand for `ISREF`, the stored formula through the
+  formula bar's own rendering for `ISFORMULA` and `FORMULA`, `MATCH`'s sorted search for
+  `LOOKUP`. `CHAR` and `CODE` read Unicode code points, which §6.20.3 Note 1 allows and which
+  keeps `CODE(CHAR(N))` = `N` for 1 to 255 on every system; the oracle answers from its own code
+  page. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,

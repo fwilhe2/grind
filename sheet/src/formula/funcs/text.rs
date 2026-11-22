@@ -30,6 +30,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "T" => t(args),
         "CONCATENATE" => concatenate(args),
         "COM.MICROSOFT.CONCAT" => concat(args),
+        "CHAR" => character(args, 255),
+        "UNICHAR" => character(args, 0x10_FFFF),
+        "CODE" | "UNICODE" => code(args),
         "COM.MICROSOFT.TEXTJOIN" => textjoin(args),
         "SEARCH" => search(args),
         "FIXED" => fixed(args),
@@ -235,6 +238,27 @@ fn concatenate(args: &mut Args) -> Answer {
         out.push_str(&args.text(i)?);
     }
     Ok(Value::Text(out))
+}
+
+/// §6.20.3 `CHAR` and §6.20.25 `UNICHAR`: the character with that Unicode code point — `CHAR` up
+/// to 255, so that `CODE(CHAR(N))` is `N` (§6.20.3 Note 1 allows Unicode).
+fn character(args: &mut Args, max: u32) -> Answer {
+    args.arity(1..=1)?;
+    let n = args.number(0)?.trunc();
+    if !(1.0..=f64::from(max)).contains(&n) {
+        return Err(FormulaError::Value);
+    }
+    char::from_u32(n as u32)
+        .map(|c| Value::Text(c.to_string()))
+        .ok_or(FormulaError::Value)
+}
+
+/// §6.20.5 `CODE` and §6.20.26 `UNICODE`: the first character's Unicode code point.
+fn code(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    let text = args.text(0)?;
+    let first = text.chars().next().ok_or(FormulaError::Value)?;
+    Ok(Value::number(f64::from(u32::from(first))))
 }
 
 /// Excel's `CONCAT`: `CONCATENATE` that also takes ranges, each cell's text in reading order.
