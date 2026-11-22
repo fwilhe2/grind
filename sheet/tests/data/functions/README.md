@@ -105,6 +105,10 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `COM.MICROSOFT.NORM.S.DIST` | `=COM.MICROSOFT.NORM.S.DIST((Marks.C4-AVERAGE(Marks.C2:C11))/STDEV(Marks.C2:C11);TRUE())` | 0.855524877377216 | Excel's NORM.S.DIST: the share of a normal class below Chloe's maths mark |
 | `COM.MICROSOFT.NORM.S.DIST` | `=COM.MICROSOFT.NORM.S.DIST(0;FALSE())` | 0.398942280401433 | The bell curve's height at its middle |
 | `COM.MICROSOFT.GAMMA.DIST` | `=COM.MICROSOFT.GAMMA.DIST(30;4;5;TRUE())` | 0.848796117223352 | Excel's GAMMA.DIST: the chance homework takes at most 30 minutes, if times follow shape 4, scale 5 |
+| `COM.MICROSOFT.STDEV.S` | `=COM.MICROSOFT.STDEV.S(Marks.C2:C11)` | 15.7483685222029 | Excel's STDEV.S: STDEV by its new name |
+| `COM.MICROSOFT.STDEV.P` | `=COM.MICROSOFT.STDEV.P(Marks.C2:C11)` | 14.9402141885583 | Excel's STDEV.P: STDEVP by its new name |
+| `COM.MICROSOFT.VAR.S` | `=COM.MICROSOFT.VAR.S(Marks.E2:E11)` | 217.733333333333 | Excel's VAR.S: VAR by its new name |
+| `COM.MICROSOFT.VAR.P` | `=COM.MICROSOFT.VAR.P(Marks.E2:E11)` | 195.96 | Excel's VAR.P: VARP by its new name |
 
 ## Logical — `logical.fods`
 
@@ -124,6 +128,10 @@ A small shop's open orders, and the checks it runs on them. (Part 4 §6.15)
 | `IFERROR` | `=IFERROR(Orders.C6/Orders.H6;"no items")` | no items | SO-1045 has no items, so a note instead of #DIV/0! |
 | `IFNA` | `=IFNA(VLOOKUP("SO-1050";Orders.A2:C6;3;FALSE());"not on file")` | not on file | An order number that does not exist |
 | `IFNA` | `=IFNA(MATCH("Quayside Gym";Orders.B2:B6;0);0)` | 5 | Where Quayside Gym's order is in the list |
+| `COM.MICROSOFT.IFS` | `=COM.MICROSOFT.IFS(Orders.C3>2000;"large";Orders.C3>500;"medium";TRUE();"small")` | medium | Excel's IFS: SO-1042's size band, without nesting IFs |
+| `COM.MICROSOFT.IFS` | `=COM.MICROSOFT.IFS(Orders.C6>0;"charge")` | #N/A | No condition holds for a free order: #N/A |
+| `COM.MICROSOFT.SWITCH` | `=COM.MICROSOFT.SWITCH(Orders.G3;TRUE();"Courier";FALSE();"Post")` | Courier | Excel's SWITCH: SO-1042's carrier by its express flag |
+| `COM.MICROSOFT.SWITCH` | `=COM.MICROSOFT.SWITCH(Orders.B4;"Harbor Café";"regular";"new")` | new | A customer not named is the default |
 
 ## Information — `information.fods`
 
@@ -183,6 +191,10 @@ A customer list as it arrives from a web form: stray spaces, mixed case, phone n
 | `T` | `=T(Customers.F4)` | 100-0001 | A postcode is text, so T keeps it |
 | `T` | `=T(Customers.H2)` |  | A year is a number, so T gives nothing |
 | `HYPERLINK` | `=HYPERLINK("mailto:"&Customers.C4;Customers.B4)` | Aiko Tanaka | A link that writes to Aiko |
+| `COM.MICROSOFT.CONCAT` | `=COM.MICROSOFT.CONCAT(Customers.E3;" ";Customers.F3)` | London SW1A 1AA | Excel's CONCAT: Tom's city and postcode |
+| `COM.MICROSOFT.CONCAT` | `=COM.MICROSOFT.CONCAT(Customers.A2:A5)` | C-0042C-0043C-0044C-0045 | Every ID run together, a range at once |
+| `COM.MICROSOFT.TEXTJOIN` | `=COM.MICROSOFT.TEXTJOIN(", ";TRUE();Customers.E2:E5)` | berlin, London, Tokyo, Copenhagen | Excel's TEXTJOIN: the cities as a list |
+| `COM.MICROSOFT.TEXTJOIN` | `=COM.MICROSOFT.TEXTJOIN("/";FALSE();Customers.A2;"";Customers.A3)` | C-0042//C-0043 | Empty pieces kept when told to |
 | `FIXED` | `="Order total: "&FIXED(1234.5;2)` | Order total: 1,234.50 | An amount spelled with its separators inside a sentence |
 | `FIXED` | `=FIXED(Customers.H2;0;TRUE())` | 2019 | A year as text, with no thousands separator |
 
@@ -236,6 +248,11 @@ A furniture shop's price list, sorted by SKU, and its shipping rates by weight b
 | `OFFSET` | `=OFFSET(Prices.A1;MATCH("P-30";Prices.A2:A6;0);3)` | 3.2 | The wall anchors' price, reached by moving |
 | `INDIRECT` | `=INDIRECT("Prices.D"&(MATCH("P-11";Prices.A2:A6;0)+1))` | 49.9 | A price at an address built as text |
 | `INDIRECT` | `=SUM(INDIRECT("Shipping!B2:F2"))` | 61.5 | Zone A's rates, named in Excel's spelling |
+| `COM.MICROSOFT.XLOOKUP` | `=COM.MICROSOFT.XLOOKUP("P-21";Prices.A2:A6;Prices.D2:D6)` | 9.8 | Excel's XLOOKUP: the brass brackets' price |
+| `COM.MICROSOFT.XLOOKUP` | `=COM.MICROSOFT.XLOOKUP("P-99";Prices.A2:A6;Prices.B2:B6;"not stocked")` | not stocked | A SKU not on the list, said in words |
+| `COM.MICROSOFT.XLOOKUP` | `=COM.MICROSOFT.XLOOKUP(7;Shipping.B1:F1;Shipping.B2:F2;;-1)` | 9.9 | Zone A's rate for 7 kg: the band below |
+| `COM.MICROSOFT.XMATCH` | `=COM.MICROSOFT.XMATCH("P-30";Prices.A2:A6)` | 5 | Excel's XMATCH: where the wall anchors are |
+| `COM.MICROSOFT.XMATCH` | `=COM.MICROSOFT.XMATCH("Oak*";Prices.B2:B6;2;-1)` | 2 | The last oak product, by wildcard |
 
 ## Database — `database.fods`
 

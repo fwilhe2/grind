@@ -341,6 +341,27 @@ same name.
   for `GAMMA.DIST`, a negative X refused rather than 0, as the oracle's functions of these names
   do (`doc/ods-format.md` §4.1). Decided 2026-11-22.
 
+- `COM.MICROSOFT.IFS` — §6.15
+- `COM.MICROSOFT.SWITCH` — §6.15
+- `COM.MICROSOFT.CONCAT` — §6.20
+- `COM.MICROSOFT.TEXTJOIN` — §6.20
+- `COM.MICROSOFT.XLOOKUP` — §6.14
+- `COM.MICROSOFT.XMATCH` — §6.14
+- `COM.MICROSOFT.STDEV.S` — §6.18
+- `COM.MICROSOFT.STDEV.P` — §6.18
+- `COM.MICROSOFT.VAR.S` — §6.18
+- `COM.MICROSOFT.VAR.P` — §6.18
+
+  **Evidence:** `doc/function-coverage.md`'s Tier 2 — the functions Excel 2010–2019 added that a
+  workbook of today is written with: nested `IF`s become `IFS` and `SWITCH`, `VLOOKUP` becomes
+  `XLOOKUP`, `&` over a column becomes `TEXTJOIN`, and the dotted statistics are what Excel's
+  function picker offers first. `grind-xlsx` already imports each under this name, as the oracle
+  does, and each recalculated to `#NAME?`. No new machinery: `IF`'s conditions, `=`'s
+  comparison, `CONCATENATE`'s text, `MATCH`'s search with Excel's match and search modes, and
+  `STDEV`/`STDEVP`/`VAR`/`VARP` themselves. One value each: an `XLOOKUP` whose return array is
+  wider gives the found row's first cell, where Excel would spill the row. Measured against
+  LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
+
 ---
 
 ## Attribution

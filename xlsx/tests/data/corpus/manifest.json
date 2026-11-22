@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T21:50:43Z",
+  "generated": "2026-11-22T21:58:51Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -8484,6 +8484,126 @@
               "raw": "53",
               "kind": "Text",
               "value": "Where Quayside Gym\u0027s order is in the list"
+            },
+            {
+              "ref": "A14",
+              "t": "s",
+              "raw": "54",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.IFS"
+            },
+            {
+              "ref": "B14",
+              "t": "s",
+              "raw": "55",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.IFS(Orders!C3\u003E2000,\u0022large\u0022,Orders!C3\u003E500,\u0022medium\u0022,TRUE,\u0022small\u0022)"
+            },
+            {
+              "ref": "C14",
+              "t": "str",
+              "raw": "medium",
+              "kind": "Text",
+              "value": "medium",
+              "excel": "COM.MICROSOFT.IFS(Orders!C3\u003E2000,\u0022large\u0022,Orders!C3\u003E500,\u0022medium\u0022,TRUE,\u0022small\u0022)",
+              "formula": "COM.MICROSOFT.IFS([Orders.C3]\u003E2000;\u0022large\u0022;[Orders.C3]\u003E500;\u0022medium\u0022;TRUE();\u0022small\u0022)"
+            },
+            {
+              "ref": "D14",
+              "t": "s",
+              "raw": "56",
+              "kind": "Text",
+              "value": "Excel\u0027s IFS: SO-1042\u0027s size band, without nesting IFs"
+            },
+            {
+              "ref": "A15",
+              "t": "s",
+              "raw": "54",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.IFS"
+            },
+            {
+              "ref": "B15",
+              "t": "s",
+              "raw": "57",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.IFS(Orders!C6\u003E0,\u0022charge\u0022)"
+            },
+            {
+              "ref": "C15",
+              "t": "e",
+              "raw": "#N/A",
+              "kind": "Error",
+              "value": "#N/A",
+              "excel": "COM.MICROSOFT.IFS(Orders!C6\u003E0,\u0022charge\u0022)",
+              "formula": "COM.MICROSOFT.IFS([Orders.C6]\u003E0;\u0022charge\u0022)"
+            },
+            {
+              "ref": "D15",
+              "t": "s",
+              "raw": "58",
+              "kind": "Text",
+              "value": "No condition holds for a free order: #N/A"
+            },
+            {
+              "ref": "A16",
+              "t": "s",
+              "raw": "59",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.SWITCH"
+            },
+            {
+              "ref": "B16",
+              "t": "s",
+              "raw": "60",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.SWITCH(Orders!G3,TRUE,\u0022Courier\u0022,FALSE,\u0022Post\u0022)"
+            },
+            {
+              "ref": "C16",
+              "t": "str",
+              "raw": "Courier",
+              "kind": "Text",
+              "value": "Courier",
+              "excel": "COM.MICROSOFT.SWITCH(Orders!G3,TRUE,\u0022Courier\u0022,FALSE,\u0022Post\u0022)",
+              "formula": "COM.MICROSOFT.SWITCH([Orders.G3];TRUE();\u0022Courier\u0022;FALSE();\u0022Post\u0022)"
+            },
+            {
+              "ref": "D16",
+              "t": "s",
+              "raw": "61",
+              "kind": "Text",
+              "value": "Excel\u0027s SWITCH: SO-1042\u0027s carrier by its express flag"
+            },
+            {
+              "ref": "A17",
+              "t": "s",
+              "raw": "59",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.SWITCH"
+            },
+            {
+              "ref": "B17",
+              "t": "s",
+              "raw": "62",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.SWITCH(Orders!B4,\u0022Harbor Caf\u00E9\u0022,\u0022regular\u0022,\u0022new\u0022)"
+            },
+            {
+              "ref": "C17",
+              "t": "str",
+              "raw": "new",
+              "kind": "Text",
+              "value": "new",
+              "excel": "COM.MICROSOFT.SWITCH(Orders!B4,\u0022Harbor Caf\u00E9\u0022,\u0022regular\u0022,\u0022new\u0022)",
+              "formula": "COM.MICROSOFT.SWITCH([Orders.B4];\u0022Harbor Caf\u00E9\u0022;\u0022regular\u0022;\u0022new\u0022)"
+            },
+            {
+              "ref": "D17",
+              "t": "s",
+              "raw": "63",
+              "kind": "Text",
+              "value": "A customer not named is the default"
             }
           ]
         }
@@ -8495,8 +8615,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4015,
-      "sha256": "05424d87eb69ab7766df8b68e77bcaffb5cf07c1413912c0ef2f80768c76c70b"
+      "bytes": 4453,
+      "sha256": "a12caf0a2a9de8ba7d1eb6f9ddd31e6bff7537a5a357deb0374004b89ff6e429"
     },
     {
       "file": "functions/lookup.xlsx",
@@ -9330,6 +9450,152 @@
               "raw": "64",
               "kind": "Text",
               "value": "Zone A\u0027s rates, named in Excel\u0027s spelling"
+            },
+            {
+              "ref": "A18",
+              "t": "s",
+              "raw": "65",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.XLOOKUP"
+            },
+            {
+              "ref": "B18",
+              "t": "s",
+              "raw": "66",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.XLOOKUP(\u0022P-21\u0022,Prices!A2:A6,Prices!D2:D6)"
+            },
+            {
+              "ref": "C18",
+              "raw": "9.8",
+              "kind": "Number",
+              "value": "9.8",
+              "excel": "COM.MICROSOFT.XLOOKUP(\u0022P-21\u0022,Prices!A2:A6,Prices!D2:D6)",
+              "formula": "COM.MICROSOFT.XLOOKUP(\u0022P-21\u0022;[Prices.A2:.A6];[Prices.D2:.D6])"
+            },
+            {
+              "ref": "D18",
+              "t": "s",
+              "raw": "67",
+              "kind": "Text",
+              "value": "Excel\u0027s XLOOKUP: the brass brackets\u0027 price"
+            },
+            {
+              "ref": "A19",
+              "t": "s",
+              "raw": "65",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.XLOOKUP"
+            },
+            {
+              "ref": "B19",
+              "t": "s",
+              "raw": "68",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.XLOOKUP(\u0022P-99\u0022,Prices!A2:A6,Prices!B2:B6,\u0022not stocked\u0022)"
+            },
+            {
+              "ref": "C19",
+              "t": "str",
+              "raw": "not stocked",
+              "kind": "Text",
+              "value": "not stocked",
+              "excel": "COM.MICROSOFT.XLOOKUP(\u0022P-99\u0022,Prices!A2:A6,Prices!B2:B6,\u0022not stocked\u0022)",
+              "formula": "COM.MICROSOFT.XLOOKUP(\u0022P-99\u0022;[Prices.A2:.A6];[Prices.B2:.B6];\u0022not stocked\u0022)"
+            },
+            {
+              "ref": "D19",
+              "t": "s",
+              "raw": "69",
+              "kind": "Text",
+              "value": "A SKU not on the list, said in words"
+            },
+            {
+              "ref": "A20",
+              "t": "s",
+              "raw": "65",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.XLOOKUP"
+            },
+            {
+              "ref": "B20",
+              "t": "s",
+              "raw": "70",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.XLOOKUP(7,Shipping!B1:F1,Shipping!B2:F2,,-1)"
+            },
+            {
+              "ref": "C20",
+              "raw": "9.9",
+              "kind": "Number",
+              "value": "9.9",
+              "excel": "COM.MICROSOFT.XLOOKUP(7,Shipping!B1:F1,Shipping!B2:F2,,-1)",
+              "formula": "COM.MICROSOFT.XLOOKUP(7;[Shipping.B1:.F1];[Shipping.B2:.F2];;-1)"
+            },
+            {
+              "ref": "D20",
+              "t": "s",
+              "raw": "71",
+              "kind": "Text",
+              "value": "Zone A\u0027s rate for 7 kg: the band below"
+            },
+            {
+              "ref": "A21",
+              "t": "s",
+              "raw": "72",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.XMATCH"
+            },
+            {
+              "ref": "B21",
+              "t": "s",
+              "raw": "73",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.XMATCH(\u0022P-30\u0022,Prices!A2:A6)"
+            },
+            {
+              "ref": "C21",
+              "raw": "5",
+              "kind": "Number",
+              "value": "5",
+              "excel": "COM.MICROSOFT.XMATCH(\u0022P-30\u0022,Prices!A2:A6)",
+              "formula": "COM.MICROSOFT.XMATCH(\u0022P-30\u0022;[Prices.A2:.A6])"
+            },
+            {
+              "ref": "D21",
+              "t": "s",
+              "raw": "74",
+              "kind": "Text",
+              "value": "Excel\u0027s XMATCH: where the wall anchors are"
+            },
+            {
+              "ref": "A22",
+              "t": "s",
+              "raw": "72",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.XMATCH"
+            },
+            {
+              "ref": "B22",
+              "t": "s",
+              "raw": "75",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.XMATCH(\u0022Oak*\u0022,Prices!B2:B6,2,-1)"
+            },
+            {
+              "ref": "C22",
+              "raw": "2",
+              "kind": "Number",
+              "value": "2",
+              "excel": "COM.MICROSOFT.XMATCH(\u0022Oak*\u0022,Prices!B2:B6,2,-1)",
+              "formula": "COM.MICROSOFT.XMATCH(\u0022Oak*\u0022;[Prices.B2:.B6];2;-1)"
+            },
+            {
+              "ref": "D22",
+              "t": "s",
+              "raw": "76",
+              "kind": "Text",
+              "value": "The last oak product, by wildcard"
             }
           ]
         }
@@ -9341,8 +9607,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4686,
-      "sha256": "ba082e60dda53ae52c3003b43381648a43d9e472a55fcda201a068fc1cfb0695"
+      "bytes": 5023,
+      "sha256": "4ab64e63695102f2835ace4ae275690b14776573cbd233a6b78a0b61a977537f"
     },
     {
       "file": "functions/math.xlsx",
@@ -13559,6 +13825,122 @@
               "raw": "87",
               "kind": "Text",
               "value": "Excel\u0027s GAMMA.DIST: the chance homework takes at most 30 minutes, if times follow shape 4, scale 5"
+            },
+            {
+              "ref": "A26",
+              "t": "s",
+              "raw": "88",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.STDEV.S"
+            },
+            {
+              "ref": "B26",
+              "t": "s",
+              "raw": "89",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.STDEV.S(Marks!C2:C11)"
+            },
+            {
+              "ref": "C26",
+              "raw": "15.7483685222029",
+              "kind": "Number",
+              "value": "15.7483685222029",
+              "excel": "COM.MICROSOFT.STDEV.S(Marks!C2:C11)",
+              "formula": "COM.MICROSOFT.STDEV.S([Marks.C2:.C11])"
+            },
+            {
+              "ref": "D26",
+              "t": "s",
+              "raw": "90",
+              "kind": "Text",
+              "value": "Excel\u0027s STDEV.S: STDEV by its new name"
+            },
+            {
+              "ref": "A27",
+              "t": "s",
+              "raw": "91",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.STDEV.P"
+            },
+            {
+              "ref": "B27",
+              "t": "s",
+              "raw": "92",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.STDEV.P(Marks!C2:C11)"
+            },
+            {
+              "ref": "C27",
+              "raw": "14.9402141885583",
+              "kind": "Number",
+              "value": "14.9402141885583",
+              "excel": "COM.MICROSOFT.STDEV.P(Marks!C2:C11)",
+              "formula": "COM.MICROSOFT.STDEV.P([Marks.C2:.C11])"
+            },
+            {
+              "ref": "D27",
+              "t": "s",
+              "raw": "93",
+              "kind": "Text",
+              "value": "Excel\u0027s STDEV.P: STDEVP by its new name"
+            },
+            {
+              "ref": "A28",
+              "t": "s",
+              "raw": "94",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.VAR.S"
+            },
+            {
+              "ref": "B28",
+              "t": "s",
+              "raw": "95",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.VAR.S(Marks!E2:E11)"
+            },
+            {
+              "ref": "C28",
+              "raw": "217.733333333333",
+              "kind": "Number",
+              "value": "217.733333333333",
+              "excel": "COM.MICROSOFT.VAR.S(Marks!E2:E11)",
+              "formula": "COM.MICROSOFT.VAR.S([Marks.E2:.E11])"
+            },
+            {
+              "ref": "D28",
+              "t": "s",
+              "raw": "96",
+              "kind": "Text",
+              "value": "Excel\u0027s VAR.S: VAR by its new name"
+            },
+            {
+              "ref": "A29",
+              "t": "s",
+              "raw": "97",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.VAR.P"
+            },
+            {
+              "ref": "B29",
+              "t": "s",
+              "raw": "98",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.VAR.P(Marks!E2:E11)"
+            },
+            {
+              "ref": "C29",
+              "raw": "195.96",
+              "kind": "Number",
+              "value": "195.96",
+              "excel": "COM.MICROSOFT.VAR.P(Marks!E2:E11)",
+              "formula": "COM.MICROSOFT.VAR.P([Marks.E2:.E11])"
+            },
+            {
+              "ref": "D29",
+              "t": "s",
+              "raw": "99",
+              "kind": "Text",
+              "value": "Excel\u0027s VAR.P: VARP by its new name"
             }
           ]
         }
@@ -13570,8 +13952,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4856,
-      "sha256": "63720e8421073dbc30ee495d789a4bf0e0fe112949c10d444f07ea76d7343e84"
+      "bytes": 5030,
+      "sha256": "4912428b1635d50a8ac059f988c53d44c7dc701b121ba5d1dfb83e4776e7a6d2"
     },
     {
       "file": "functions/text.xlsx",
@@ -14558,17 +14940,137 @@
               "t": "s",
               "raw": "101",
               "kind": "Text",
-              "value": "FIXED"
+              "value": "COM.MICROSOFT.CONCAT"
             },
             {
               "ref": "B24",
               "t": "s",
               "raw": "102",
               "kind": "Text",
-              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+              "value": "=COM.MICROSOFT.CONCAT(Customers!E3,\u0022 \u0022,Customers!F3)"
             },
             {
               "ref": "C24",
+              "t": "str",
+              "raw": "London SW1A 1AA",
+              "kind": "Text",
+              "value": "London SW1A 1AA",
+              "excel": "COM.MICROSOFT.CONCAT(Customers!E3,\u0022 \u0022,Customers!F3)",
+              "formula": "COM.MICROSOFT.CONCAT([Customers.E3];\u0022 \u0022;[Customers.F3])"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "Excel\u0027s CONCAT: Tom\u0027s city and postcode"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.CONCAT"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "104",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.CONCAT(Customers!A2:A5)"
+            },
+            {
+              "ref": "C25",
+              "t": "str",
+              "raw": "C-0042C-0043C-0044C-0045",
+              "kind": "Text",
+              "value": "C-0042C-0043C-0044C-0045",
+              "excel": "COM.MICROSOFT.CONCAT(Customers!A2:A5)",
+              "formula": "COM.MICROSOFT.CONCAT([Customers.A2:.A5])"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "105",
+              "kind": "Text",
+              "value": "Every ID run together, a range at once"
+            },
+            {
+              "ref": "A26",
+              "t": "s",
+              "raw": "106",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.TEXTJOIN"
+            },
+            {
+              "ref": "B26",
+              "t": "s",
+              "raw": "107",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.TEXTJOIN(\u0022, \u0022,TRUE,Customers!E2:E5)"
+            },
+            {
+              "ref": "C26",
+              "t": "str",
+              "raw": "berlin, London, Tokyo, Copenhagen",
+              "kind": "Text",
+              "value": "berlin, London, Tokyo, Copenhagen",
+              "excel": "COM.MICROSOFT.TEXTJOIN(\u0022, \u0022,TRUE,Customers!E2:E5)",
+              "formula": "COM.MICROSOFT.TEXTJOIN(\u0022, \u0022;TRUE();[Customers.E2:.E5])"
+            },
+            {
+              "ref": "D26",
+              "t": "s",
+              "raw": "108",
+              "kind": "Text",
+              "value": "Excel\u0027s TEXTJOIN: the cities as a list"
+            },
+            {
+              "ref": "A27",
+              "t": "s",
+              "raw": "106",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.TEXTJOIN"
+            },
+            {
+              "ref": "B27",
+              "t": "s",
+              "raw": "109",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.TEXTJOIN(\u0022/\u0022,FALSE,Customers!A2,\u0022\u0022,Customers!A3)"
+            },
+            {
+              "ref": "C27",
+              "t": "str",
+              "raw": "C-0042//C-0043",
+              "kind": "Text",
+              "value": "C-0042//C-0043",
+              "excel": "COM.MICROSOFT.TEXTJOIN(\u0022/\u0022,FALSE,Customers!A2,\u0022\u0022,Customers!A3)",
+              "formula": "COM.MICROSOFT.TEXTJOIN(\u0022/\u0022;FALSE();[Customers.A2];\u0022\u0022;[Customers.A3])"
+            },
+            {
+              "ref": "D27",
+              "t": "s",
+              "raw": "110",
+              "kind": "Text",
+              "value": "Empty pieces kept when told to"
+            },
+            {
+              "ref": "A28",
+              "t": "s",
+              "raw": "111",
+              "kind": "Text",
+              "value": "FIXED"
+            },
+            {
+              "ref": "B28",
+              "t": "s",
+              "raw": "112",
+              "kind": "Text",
+              "value": "=\u0022Order total: \u0022\u0026FIXED(1234.5,2)"
+            },
+            {
+              "ref": "C28",
               "t": "str",
               "raw": "Order total: 1,234.50",
               "kind": "Text",
@@ -14577,28 +15079,28 @@
               "formula": "\u0022Order total: \u0022\u0026FIXED(1234.5;2)"
             },
             {
-              "ref": "D24",
+              "ref": "D28",
               "t": "s",
-              "raw": "103",
+              "raw": "113",
               "kind": "Text",
               "value": "An amount spelled with its separators inside a sentence"
             },
             {
-              "ref": "A25",
+              "ref": "A29",
               "t": "s",
-              "raw": "101",
+              "raw": "111",
               "kind": "Text",
               "value": "FIXED"
             },
             {
-              "ref": "B25",
+              "ref": "B29",
               "t": "s",
-              "raw": "104",
+              "raw": "114",
               "kind": "Text",
               "value": "=FIXED(Customers!H2,0,TRUE)"
             },
             {
-              "ref": "C25",
+              "ref": "C29",
               "t": "str",
               "raw": "2019",
               "kind": "Text",
@@ -14607,9 +15109,9 @@
               "formula": "FIXED([Customers.H2];0;TRUE())"
             },
             {
-              "ref": "D25",
+              "ref": "D29",
               "t": "s",
-              "raw": "105",
+              "raw": "115",
               "kind": "Text",
               "value": "A year as text, with no thousands separator"
             }
@@ -14623,8 +15125,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5022,
-      "sha256": "7ed37fb45b2416db031c4ef67fcdacb3529f71fe8b8c9ef99174add1e0ace453"
+      "bytes": 5393,
+      "sha256": "31dcedded5efc8fedcb63a19ded9c7620ffec749e033cc7a998f1930f81db068"
     },
     {
       "file": "geometry/columns.xlsx",

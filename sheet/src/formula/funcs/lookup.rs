@@ -34,6 +34,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
     Some(match name {
         "CHOOSE" => choose(args),
         "MATCH" => match_(args),
+        "COM.MICROSOFT.XLOOKUP" => xlookup(args),
+        "COM.MICROSOFT.XMATCH" => xmatch(args),
         "VLOOKUP" => lookup(args, true),
         "HLOOKUP" => lookup(args, false),
         "ADDRESS" => address(args),
@@ -138,6 +140,129 @@ fn match_(args: &mut Args) -> Answer {
         _ => return Err(FormulaError::Value),
     };
     Ok(Value::number(search(&key, &values, mode)? as f64 + 1.0))
+}
+
+/// The cells of the `i`th argument — a reference where it is, anything else as the array it
+/// evaluates to — and how many rows and columns they make.
+fn cells(args: &mut Args, i: usize) -> (Vec<Value>, usize, usize) {
+    match args.area(i) {
+        Some(area) => {
+            let (rows, cols) = (area.rows.len(), area.cols.len());
+            (args.values_in(&area), rows, cols)
+        }
+        None => {
+            let array = args.array(i);
+            (array.values().to_vec(), array.rows, array.cols)
+        }
+    }
+}
+
+/// Excel's search behind `XLOOKUP` and `XMATCH`: `match_mode` 0 equal, -1 equal or the next
+/// smaller, 1 equal or the next larger, 2 a wildcard pattern; `search_mode` 1 from the first, -1
+/// from the last, and 2 and -2 the same over data sorted as they promise. A 0-based position.
+fn xsearch(
+    key: &Value,
+    values: &[Value],
+    match_mode: i64,
+    search_mode: i64,
+) -> Result<usize, FormulaError> {
+    if !matches!(match_mode, -1..=2) || !matches!(search_mode, -2 | -1 | 1 | 2) {
+        return Err(FormulaError::Value);
+    }
+    let visit: Vec<usize> = if search_mode < 0 {
+        (0..values.len()).rev().collect()
+    } else {
+        (0..values.len()).collect()
+    };
+    let same_kind = |a: &Value, b: &Value| {
+        matches!(
+            (a, b),
+            (Value::Number(_), Value::Number(_))
+                | (Value::Text(_), Value::Text(_))
+                | (Value::Bool(_), Value::Bool(_))
+        )
+    };
+    let mut best: Option<usize> = None;
+    for &i in &visit {
+        let value = &values[i];
+        if value.error().is_some() || *value == Value::Empty {
+            continue;
+        }
+        let equal = match (match_mode, key, value) {
+            (2, Value::Text(pattern), Value::Text(text)) => wildcard::matches(pattern, text),
+            _ => order(value, key) == Some(Ordering::Equal),
+        };
+        if equal {
+            return Ok(i);
+        }
+        if match_mode == 0 || match_mode == 2 || !same_kind(value, key) {
+            continue;
+        }
+        let wanted = if match_mode < 0 {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        };
+        if order(value, key) != Some(wanted) {
+            continue;
+        }
+        let closer = best.is_none_or(|b| order(value, &values[b]) == Some(wanted.reverse()));
+        if closer {
+            best = Some(i);
+        }
+    }
+    best.ok_or(FormulaError::NA)
+}
+
+/// An optional integer parameter, `default` when omitted.
+fn mode(args: &mut Args, i: usize, default: i64) -> Result<i64, FormulaError> {
+    if args.len() > i && !args.omitted(i) {
+        args.integer(i)
+    } else {
+        Ok(default)
+    }
+}
+
+/// Excel's `XLOOKUP(Key; LookupArray; ReturnArray; IfNotFound; MatchMode; SearchMode)`, one value:
+/// the return array's cell beside the key — its first cell across, when it is wider. A return
+/// array of another length is `#VALUE!`.
+fn xlookup(args: &mut Args) -> Answer {
+    args.arity(3..=6)?;
+    let key = args.value(0);
+    let (values, rows, cols) = cells(args, 1);
+    if rows > 1 && cols > 1 {
+        return Err(FormulaError::Value);
+    }
+    let (results, result_rows, result_cols) = cells(args, 2);
+    let down = cols == 1 && rows > 1 || (rows == 1 && cols == 1 && result_cols == 1);
+    if (down && result_rows != values.len()) || (!down && result_cols != values.len()) {
+        return Err(FormulaError::Value);
+    }
+    let (match_mode, search_mode) = (mode(args, 4, 0)?, mode(args, 5, 1)?);
+    match xsearch(&key, &values, match_mode, search_mode) {
+        Ok(i) => Ok(if down {
+            results[i * result_cols].clone()
+        } else {
+            results[i].clone()
+        }),
+        Err(FormulaError::NA) if args.len() > 3 && !args.omitted(3) => Ok(args.value(3)),
+        Err(e) => Err(e),
+    }
+}
+
+/// Excel's `XMATCH(Key; LookupArray; MatchMode; SearchMode)`: the 1-based position `XLOOKUP`
+/// would take its value from.
+fn xmatch(args: &mut Args) -> Answer {
+    args.arity(2..=4)?;
+    let key = args.value(0);
+    let (values, rows, cols) = cells(args, 1);
+    if rows > 1 && cols > 1 {
+        return Err(FormulaError::Value);
+    }
+    let (match_mode, search_mode) = (mode(args, 2, 0)?, mode(args, 3, 1)?);
+    Ok(Value::number(
+        xsearch(&key, &values, match_mode, search_mode)? as f64 + 1.0,
+    ))
 }
 
 /// §6.14.12 `VLOOKUP` and §6.14.5 `HLOOKUP`, the same function transposed.

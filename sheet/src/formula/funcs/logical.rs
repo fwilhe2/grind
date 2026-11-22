@@ -23,6 +23,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "IFERROR" => if_error(args, |_| true),
         "IFNA" => if_error(args, |e| e == FormulaError::NA),
         "HYPERLINK" => hyperlink(args),
+        "COM.MICROSOFT.IFS" => ifs(args),
+        "COM.MICROSOFT.SWITCH" => switch(args),
         _ => return None,
     })
 }
@@ -99,6 +101,46 @@ fn if_error(args: &mut Args, catches: impl Fn(FormulaError) -> bool) -> Answer {
         Value::Error(e) if catches(e) => Ok(args.value(1)),
         value => Ok(value),
     }
+}
+
+/// Excel's `IFS(Condition1; Value1; …)`: the value beside the first true condition, `#N/A` when
+/// none is. Conditions are evaluated in turn, and only the chosen value.
+fn ifs(args: &mut Args) -> Answer {
+    if args.is_empty() || args.len() % 2 != 0 {
+        return Err(FormulaError::Value);
+    }
+    for i in (0..args.len()).step_by(2) {
+        if args.logical(i)? {
+            return Ok(args.value(i + 1));
+        }
+    }
+    Err(FormulaError::NA)
+}
+
+/// Excel's `SWITCH(Expression; Value1; Result1; …; Default)`: the result beside the first value
+/// equal to the expression, as `=` compares; the default, or `#N/A`, when none is.
+fn switch(args: &mut Args) -> Answer {
+    if args.len() < 3 {
+        return Err(FormulaError::Value);
+    }
+    let key = args.value(0);
+    if let Value::Error(e) = key {
+        return Err(e);
+    }
+    let pairs = (args.len() - 1) / 2;
+    for pair in 0..pairs {
+        let candidate = args.value(1 + 2 * pair);
+        if let Value::Error(e) = candidate {
+            return Err(e);
+        }
+        if super::super::eval::order(&key, &candidate) == Some(std::cmp::Ordering::Equal) {
+            return Ok(args.value(2 + 2 * pair));
+        }
+    }
+    if (args.len() - 1) % 2 == 1 {
+        return Ok(args.value(args.len() - 1));
+    }
+    Err(FormulaError::NA)
 }
 
 /// §6.11.3 `HYPERLINK( IRI [ ; FunctionResult ] )`: the value is the second argument, else

@@ -168,9 +168,10 @@ left says, in its last column, what stands in its way.
 
 ### Tier 2 — Excel 2010 and later, scalar
 
-✓ `IFNA` (Large, and the one of these ODF 1.4 has); `IFS`, `SWITCH`, `MAXIFS`, `MINIFS`,
-`CONCAT`, `TEXTJOIN`, and `XLOOKUP` and `XMATCH` in their single-value use; and the dotted
-renames of functions already implemented (`STDEV.S`, `STDEV.P`, `VAR.S`, `VAR.P`). None of the
+✓ `IFNA` (Large, and the one of these ODF 1.4 has); ✓ `IFS`, `SWITCH`, `MAXIFS`, `MINIFS`,
+`CONCAT`, `TEXTJOIN`, and `XLOOKUP` and `XMATCH` in their single-value use; and ✓ the dotted
+renames of functions already implemented (`STDEV.S`, `STDEV.P`, `VAR.S`, `VAR.P`) — the rest
+moved in on 2026-11-22. None of the
 rest is in ODF 1.4, so each needs a written decision about its spelling as well as its
 semantics. ✓ `MAXIFS`/`MINIFS`, as `COM.MICROSOFT.MAXIFS`/`COM.MICROSOFT.MINIFS` (2026-11-09).
 

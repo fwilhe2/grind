@@ -221,6 +221,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.CONCAT",
+        signature: "COM.MICROSOFT.CONCAT( { Any T } + )",
+        brief: "Excel's CONCAT: the text of every argument, ranges cell by cell, joined.",
+        section: "6.20",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.FLOOR",
         signature: "COM.MICROSOFT.FLOOR( Number N ; Number Significance )",
         brief: "Excel's FLOOR: rounds N down to a multiple of Significance on the number line.",
@@ -231,6 +237,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COM.MICROSOFT.GAMMA.DIST( Number X ; Number Alpha ; Number Beta ; Logical Cumulative )",
         brief: "Excel's GAMMA.DIST: the gamma distribution's density at X, or its cumulative distribution when Cumulative is TRUE.",
         section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.IFS",
+        signature: "COM.MICROSOFT.IFS( Logical Condition1 ; Any Value1 [ ; Logical Condition2 ; Any Value2 ]... )",
+        brief: "Excel's IFS: the value beside the first condition that is true, #N/A if none is.",
+        section: "6.15",
     },
     FuncInfo {
         name: "COM.MICROSOFT.MAXIFS",
@@ -249,6 +261,54 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COM.MICROSOFT.NORM.S.DIST( Number Z ; Logical Cumulative )",
         brief: "Excel's NORM.S.DIST: the standard normal distribution's density at Z, or its cumulative distribution when Cumulative is TRUE.",
         section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.STDEV.P",
+        signature: "COM.MICROSOFT.STDEV.P( { NumberSequenceList N } + )",
+        brief: "Excel's STDEV.P: STDEVP, the population standard deviation.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.STDEV.S",
+        signature: "COM.MICROSOFT.STDEV.S( { NumberSequenceList N } + )",
+        brief: "Excel's STDEV.S: STDEV, the sample standard deviation.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.SWITCH",
+        signature: "COM.MICROSOFT.SWITCH( Any Expression ; Any Value1 ; Any Result1 [ ; Any Value2 ; Any Result2 ]... )",
+        brief: "Excel's SWITCH: the result beside the first value equal to Expression; a last odd argument is the default, else #N/A.",
+        section: "6.15",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.TEXTJOIN",
+        signature: "COM.MICROSOFT.TEXTJOIN( Text Delimiter ; Logical IgnoreEmpty ; { Any T } + )",
+        brief: "Excel's TEXTJOIN: the text of every argument joined by Delimiter, empty ones skipped when IgnoreEmpty is TRUE.",
+        section: "6.20",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.VAR.P",
+        signature: "COM.MICROSOFT.VAR.P( { NumberSequenceList N } + )",
+        brief: "Excel's VAR.P: VARP, the population variance.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.VAR.S",
+        signature: "COM.MICROSOFT.VAR.S( { NumberSequenceList N } + )",
+        brief: "Excel's VAR.S: VAR, the sample variance.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.XLOOKUP",
+        signature: "COM.MICROSOFT.XLOOKUP( Any Key ; Reference|Array LookupArray ; Reference|Array ReturnArray [ ; Any IfNotFound [ ; Integer MatchMode = 0 [ ; Integer SearchMode = 1 ] ] ] )",
+        brief: "Excel's XLOOKUP: the cell of ReturnArray beside Key's place in LookupArray.",
+        section: "6.14",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.XMATCH",
+        signature: "COM.MICROSOFT.XMATCH( Any Key ; Reference|Array LookupArray [ ; Integer MatchMode = 0 [ ; Integer SearchMode = 1 ] ] )",
+        brief: "Excel's XMATCH: Key's position in LookupArray, starting from 1.",
+        section: "6.14",
     },
     FuncInfo {
         name: "CONCATENATE",

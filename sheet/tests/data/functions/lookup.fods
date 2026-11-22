@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <office:document xmlns:grddl="http://www.w3.org/2003/g/data-view#" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xforms="http://www.w3.org/2002/xforms" xmlns:dom="http://www.w3.org/2001/xml-events" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0" xmlns:math="http://www.w3.org/1998/Math/MathML" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:field="urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0" xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:ooo="http://openoffice.org/2004/office" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" xmlns:ooow="http://openoffice.org/2004/writer" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:drawooo="http://openoffice.org/2010/draw" xmlns:oooc="http://openoffice.org/2004/calc" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:tableooo="http://openoffice.org/2009/table" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0" xmlns:rpt="http://openoffice.org/2005/report" xmlns:css3t="http://www.w3.org/TR/css3-text/" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:formx="urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
- <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="3" meta:cell-count="116" meta:object-count="0"/></office:meta>
+ <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="3" meta:cell-count="136" meta:object-count="0"/></office:meta>
  <office:settings>
   <config:config-item-set config:name="ooo:view-settings">
    <config:config-item config:name="VisibleAreaTop" config:type="int">0</config:config-item>
@@ -678,6 +678,76 @@
      </table:table-cell>
      <table:table-cell office:value-type="string" calcext:value-type="string">
       <text:p>Zone A&apos;s rates, named in Excel&apos;s spelling</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.XLOOKUP</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.XLOOKUP(&quot;P-21&quot;;Prices.A2:A6;Prices.D2:D6)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.XLOOKUP(&quot;P-21&quot;;[Prices.A2:.A6];[Prices.D2:.D6])" office:value-type="float" office:value="9.8" calcext:value-type="float">
+      <text:p>9.8</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Excel&apos;s XLOOKUP: the brass brackets&apos; price</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.XLOOKUP</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.XLOOKUP(&quot;P-99&quot;;Prices.A2:A6;Prices.B2:B6;&quot;not stocked&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.XLOOKUP(&quot;P-99&quot;;[Prices.A2:.A6];[Prices.B2:.B6];&quot;not stocked&quot;)" office:value-type="string" office:string-value="not stocked" calcext:value-type="string">
+      <text:p>not stocked</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>A SKU not on the list, said in words</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.XLOOKUP</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.XLOOKUP(7;Shipping.B1:F1;Shipping.B2:F2;;-1)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.XLOOKUP(7;[Shipping.B1:.F1];[Shipping.B2:.F2];;-1)" office:value-type="float" office:value="9.9" calcext:value-type="float">
+      <text:p>9.9</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Zone A&apos;s rate for 7 kg: the band below</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.XMATCH</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.XMATCH(&quot;P-30&quot;;Prices.A2:A6)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.XMATCH(&quot;P-30&quot;;[Prices.A2:.A6])" office:value-type="float" office:value="5" calcext:value-type="float">
+      <text:p>5</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Excel&apos;s XMATCH: where the wall anchors are</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.XMATCH</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.XMATCH(&quot;Oak*&quot;;Prices.B2:B6;2;-1)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.XMATCH(&quot;Oak*&quot;;[Prices.B2:.B6];2;-1)" office:value-type="float" office:value="2" calcext:value-type="float">
+      <text:p>2</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The last oak product, by wildcard</text:p>
      </table:table-cell>
     </table:table-row>
    </table:table>

@@ -29,6 +29,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "SUBSTITUTE" => substitute(args),
         "T" => t(args),
         "CONCATENATE" => concatenate(args),
+        "COM.MICROSOFT.CONCAT" => concat(args),
+        "COM.MICROSOFT.TEXTJOIN" => textjoin(args),
         "SEARCH" => search(args),
         "FIXED" => fixed(args),
         _ => return None,
@@ -231,6 +233,53 @@ fn concatenate(args: &mut Args) -> Answer {
     let mut out = String::new();
     for i in 0..args.len() {
         out.push_str(&args.text(i)?);
+    }
+    Ok(Value::Text(out))
+}
+
+/// Excel's `CONCAT`: `CONCATENATE` that also takes ranges, each cell's text in reading order.
+fn concat(args: &mut Args) -> Answer {
+    args.arity(1..)?;
+    let mut out = String::new();
+    for value in args.values() {
+        out.push_str(&value.to_text()?);
+    }
+    Ok(Value::Text(out))
+}
+
+/// Excel's `TEXTJOIN(Delimiter; IgnoreEmpty; Text1; …)`: every text, ranges cell by cell, joined
+/// by the delimiter — the cells of a delimiter range used in turn — and empty ones skipped when
+/// asked.
+fn textjoin(args: &mut Args) -> Answer {
+    args.arity(3..)?;
+    let delimiters: Vec<String> = match args.area(0) {
+        Some(area) => args
+            .values_in(&area)
+            .into_iter()
+            .map(|v| v.to_text())
+            .collect::<Result<_, _>>()?,
+        None => vec![args.text(0)?],
+    };
+    let skip_empty = args.logical(1)?;
+    let mut pieces = Vec::new();
+    for i in 2..args.len() {
+        let values = match args.operand(i) {
+            super::super::eval::Operand::Area(area) => args.values_in(&area),
+            other => vec![args.scalar(other)],
+        };
+        for value in values {
+            let piece = value.to_text()?;
+            if !(skip_empty && piece.is_empty()) {
+                pieces.push(piece);
+            }
+        }
+    }
+    let mut out = String::new();
+    for (i, piece) in pieces.iter().enumerate() {
+        if i > 0 && !delimiters.is_empty() {
+            out.push_str(&delimiters[(i - 1) % delimiters.len()]);
+        }
+        out.push_str(piece);
     }
     Ok(Value::Text(out))
 }

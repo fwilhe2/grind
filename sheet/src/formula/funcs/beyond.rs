@@ -1463,3 +1463,191 @@ fn offset_and_indirect_build_references() {
         assert_eq!(e(refused), FormulaError::Ref, "{refused}");
     }
 }
+
+/// Excel's 2016–2019 functions, as LibreOffice spells them in ODF and the xlsx import writes them
+/// (`doc/small-group.md`). Measured against LibreOffice 26.8.
+#[test]
+fn excels_ifs_switch_concat_and_textjoin() {
+    let t = |f: &str| text(f);
+    assert_eq!(
+        t("=COM.MICROSOFT.IFS([.B1]>15;\"big\";[.B1]>5;\"mid\")"),
+        "mid"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.IFS([.B2]>15;\"big\";TRUE();\"small\")"),
+        "big"
+    );
+    assert_eq!(t("=COM.MICROSOFT.IFS(1;\"a\")"), "a");
+    // Only the branch taken is evaluated.
+    assert_eq!(t("=COM.MICROSOFT.IFS(0;1/0;1;\"ok\")"), "ok");
+    assert_eq!(
+        error("=COM.MICROSOFT.IFS([.B6]>15;\"big\";[.B6]>8;\"mid\")"),
+        FormulaError::NA
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.IFS(\"x\";\"a\")"),
+        FormulaError::Value
+    );
+    assert_eq!(error("=COM.MICROSOFT.IFS([.B1]>5)"), FormulaError::Value);
+    assert_eq!(
+        error("=COM.MICROSOFT.IFS(1/0;1;1;2)"),
+        FormulaError::DivZero
+    );
+
+    assert_eq!(
+        number("=COM.MICROSOFT.SWITCH([.A2];\"pear\";1;\"apple\";2)"),
+        1.0
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.SWITCH([.A1];\"pear\";1;\"none\")"),
+        "none"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.SWITCH([.B1];10;\"ten\";20;\"twenty\")"),
+        "ten"
+    );
+    assert_eq!(
+        number("=COM.MICROSOFT.SWITCH(\"APPLE\";\"apple\";1;0)"),
+        1.0
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.SWITCH([.A1];\"pear\";1)"),
+        FormulaError::NA
+    );
+    assert_eq!(error("=COM.MICROSOFT.SWITCH(1;1)"), FormulaError::Value);
+    assert_eq!(
+        error("=COM.MICROSOFT.SWITCH(1/0;1;2;3)"),
+        FormulaError::DivZero
+    );
+
+    assert_eq!(
+        t("=COM.MICROSOFT.CONCAT([.A1:.A3];\"-\";[.B1])"),
+        "applepearapple-10"
+    );
+    assert_eq!(t("=COM.MICROSOFT.CONCAT([.A1:.B2])"), "apple10pear20");
+    assert_eq!(t("=COM.MICROSOFT.CONCAT(1;TRUE();\"\")"), "1TRUE");
+    assert_eq!(t("=COM.MICROSOFT.CONCAT([.B5])"), "x");
+    assert_eq!(
+        error("=COM.MICROSOFT.CONCAT(1/0;\"a\")"),
+        FormulaError::DivZero
+    );
+
+    assert_eq!(
+        t("=COM.MICROSOFT.TEXTJOIN(\", \";TRUE();[.A1:.A4])"),
+        "apple, pear, apple, plum"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.TEXTJOIN(\"-\";FALSE();[.A1];\"\";[.A2])"),
+        "apple--pear"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.TEXTJOIN(\"-\";TRUE();[.A1];\"\";[.A2])"),
+        "apple-pear"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.TEXTJOIN(\"\";TRUE();[.B1:.B3])"),
+        "102030"
+    );
+    // A range of delimiters is used in turn.
+    assert_eq!(
+        t("=COM.MICROSOFT.TEXTJOIN([.A1:.A2];TRUE();\"x\";\"y\";\"z\")"),
+        "xappleypearz"
+    );
+}
+
+#[test]
+fn excels_xlookup_and_xmatch_and_the_dotted_statistics() {
+    let t = |f: &str| text(f);
+    assert_eq!(
+        number("=COM.MICROSOFT.XLOOKUP(\"plum\";[.A1:.A7];[.B1:.B7])"),
+        40.0
+    );
+    assert_eq!(
+        number("=COM.MICROSOFT.XLOOKUP(\"APPLE\";[.A1:.A7];[.B1:.B7])"),
+        10.0
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XLOOKUP(\"kiwi\";[.A1:.A7];[.B1:.B7])"),
+        FormulaError::NA
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(\"kiwi\";[.A1:.A7];[.B1:.B7];\"none\")"),
+        "none"
+    );
+    // From the last.
+    assert_eq!(
+        number("=COM.MICROSOFT.XLOOKUP(\"apple\";[.A1:.A7];[.B1:.B7];;0;-1)"),
+        30.0
+    );
+    // Next smaller and next larger.
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(25;[.B1:.B4];[.A1:.A4];;-1)"),
+        "pear"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(25;[.B1:.B4];[.A1:.A4];;1)"),
+        "apple"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(5;[.B1:.B7];[.A1:.A7];;1)"),
+        "banana"
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XLOOKUP(41;[.B1:.B4];[.A1:.A4];;1)"),
+        FormulaError::NA
+    );
+    // Wildcards in mode 2 only.
+    assert_eq!(
+        number("=COM.MICROSOFT.XLOOKUP(\"p*\";[.A1:.A7];[.B1:.B7];;2)"),
+        20.0
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XLOOKUP(\"p*\";[.A1:.A7];[.B1:.B7])"),
+        FormulaError::NA
+    );
+    // Sorted data searched in halves finds what a scan finds.
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(30;[.B1:.B4];[.A1:.A4];;0;2)"),
+        "apple"
+    );
+    assert_eq!(
+        t("=COM.MICROSOFT.XLOOKUP(25;[.B1:.B4];[.A1:.A4];;-1;2)"),
+        "pear"
+    );
+    // A wider return array gives the found row's first cell; a shorter one is no answer.
+    assert_eq!(
+        number("=COM.MICROSOFT.XLOOKUP(\"pear\";[.A1:.A7];[.B1:.C7])"),
+        20.0
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XLOOKUP(\"pear\";[.A1:.A7];[.B1:.B5])"),
+        FormulaError::Value
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XLOOKUP(25;[.B1:.B4];[.A1:.A4];;3)"),
+        FormulaError::Value
+    );
+
+    assert_eq!(number("=COM.MICROSOFT.XMATCH(\"plum\";[.A1:.A7])"), 4.0);
+    assert_eq!(
+        number("=COM.MICROSOFT.XMATCH(\"apple\";[.A1:.A7];0;-1)"),
+        7.0
+    );
+    assert_eq!(number("=COM.MICROSOFT.XMATCH(25;[.B1:.B4];1)"), 3.0);
+    assert_eq!(number("=COM.MICROSOFT.XMATCH(25;[.B1:.B4];-1)"), 2.0);
+    assert_eq!(number("=COM.MICROSOFT.XMATCH(\"p*\";[.A1:.A7];2)"), 2.0);
+    assert_eq!(
+        error("=COM.MICROSOFT.XMATCH(\"kiwi\";[.A1:.A7])"),
+        FormulaError::NA
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XMATCH(30;[.B1:.B7];0;3)"),
+        FormulaError::Value
+    );
+
+    close("=COM.MICROSOFT.STDEV.S([.B1:.B7])", 13.322_912_594_474_2);
+    close("=COM.MICROSOFT.STDEV.P([.B1:.B7])", 12.162_099_599_438_7);
+    close("=COM.MICROSOFT.VAR.S([.B1:.B7])", 177.5);
+    close("=COM.MICROSOFT.VAR.P([.B1:.B7])", 147.916_666_666_667);
+    assert_eq!(error("=COM.MICROSOFT.STDEV.S(5)"), FormulaError::DivZero);
+}

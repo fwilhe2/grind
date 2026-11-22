@@ -25,6 +25,11 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "VARP" => moment(args, false, false),
         "STDEV" => moment(args, true, true),
         "STDEVP" => moment(args, false, true),
+        // Excel's 2010 names for the same four.
+        "COM.MICROSOFT.VAR.S" => moment(args, true, false),
+        "COM.MICROSOFT.VAR.P" => moment(args, false, false),
+        "COM.MICROSOFT.STDEV.S" => moment(args, true, true),
+        "COM.MICROSOFT.STDEV.P" => moment(args, false, true),
         "LARGE" => nth(args, true),
         "SMALL" => nth(args, false),
         "MEDIAN" => median(args),

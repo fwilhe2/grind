@@ -174,7 +174,11 @@ run set "$book" L20 'The last three actuals'
 run set "$book" M20 '=SUM(OFFSET([.C7];-2;0;3))'                          # a reference, moved and sized
 run set "$book" L21 'An actual, by address'
 run set "$book" M21 '=INDIRECT("C"&3)'                                    # a reference spelled as text
-sheet view "$book" L1:M21
+run set "$book" L22 'Transport, looked up'
+run set "$book" M22 '=COM.MICROSOFT.XLOOKUP("Transport";[.A2:.A7];[.C2:.C7];"none")'   # Excel's XLOOKUP
+run set "$book" L23 'Every category'
+run set "$book" M23 '=COM.MICROSOFT.TEXTJOIN(", ";TRUE();[.A2:.A7])'      # Excel's TEXTJOIN
+sheet view "$book" L1:M23
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2
