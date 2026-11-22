@@ -11,20 +11,15 @@ real document say which file and which build of LibreOffice, per `CONTRIBUTING.m
 rule — LibreOffice's own source is never read for this, only its *output*, which is a
 conformance oracle rather than a source.
 
-## What is in scope, and why these four
+## What is in scope
 
-`doc/not-doing.md` originally drew the line at one chart type — "one that round-trips proves
-the mechanism, the second is taste." That line moved by an explicit decision: bar, line and pie
-are the three shapes a spreadsheet's data most commonly wants, and building one showed that the
-second and third add no new mechanism, only a second `chart:class` token and a different way of
-turning ranges into shapes on screen. A fourth, area, came in later on a real document's evidence
-(Area, below). What stays out: a subtitle and a footer, more than one axis pair, percent
-variants, and every chart type beyond these four — each a `chart:*`
-detail this build does not read or write, not a limitation of the mechanism. What an *axis*
-carries is in scope — its own title, its tick labels and its gridlines, three separate places in
-the file: see The axes, below. **So are the chart's own title and its legend**, which this line
-used to leave out: a chart of two series with no legend is a chart nobody can read, and that is
-a product decision, taken, rather than a detail — see The chart's own title and legend.
+A chart type is in when it is useful: when real documents carry it, or people reach for it. There
+is no fixed number. Each kind is one `chart:class` token and one way of turning ranges into
+marks; the mechanism has no per-type special case. Built: bar, line, pie and area. A subtitle and
+a footer, more than one axis pair and percent-stacked charts are not built yet. Each is a
+`chart:*` detail this build does not read or write, not a limit of the mechanism. An axis'
+title, tick labels and gridlines are built (The axes, below), and so are the chart's own title and
+legend (The chart's own title and legend).
 
 ## The two places a chart's own document can live
 
@@ -113,9 +108,9 @@ each kind through its own UNO API (`ScTabViewShell`'s chart insertion, `LineDiag
   ODF's own name for a pie chart, and it is the one surprising token of the three |
 | `Area` | `chart:area` | LibreOffice 26.8.3.1's conversion of an Excel workbook with three fan charts (below) |
 
-### Area — the fourth kind, and a series of a kind of its own
+### Area, and a series of a kind of its own
 
-A fourth kind came in on evidence, as `doc/not-doing.md` said it would: a Monte Carlo retirement
+Area came in with a Monte Carlo retirement
 calculator exported from a spreadsheet service, whose three charts are **fan charts** — seven
 stacked bands of an area chart, the percentiles of a simulation, with one or two lines (the
 median, the need) drawn over them on the same axes. LibreOffice's conversion of it writes each as
@@ -124,8 +119,7 @@ band and `chart:class="chart:line"` for a line (rng:892: a series has a class of
 whose plot area's style says `chart:stacked="true"` (rng:9978). So the model carries three
 things more, and nothing else:
 
-- **`ChartKind::Area`**, read and drawn — each series a band at the categories' ticks — but not
-  offered by any picker (`ChartKind::ALL` stays bar, line, pie): nothing yet asks to make one.
+- **`ChartKind::Area`**, read and drawn — each series a band at the categories' ticks.
 - **`Series::kind`**, a series' own class where it differs from the chart's. Drawn in layers —
   bands, then bars, then lines, each over the last — and a pointer over a band names the band
   only where no line drawn over it is under the pointer.
