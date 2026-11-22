@@ -47,6 +47,7 @@ fn budget() -> (Chart, ChartData) {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            kind: None,
         })
         .into();
     let names = [
@@ -71,6 +72,8 @@ fn budget() -> (Chart, ChartData) {
             ),
         ],
         value_format: None,
+        kinds: Vec::new(),
+        stacked: false,
     };
     (chart, data)
 }
@@ -324,5 +327,80 @@ fn a_line_and_a_slice_are_hit_and_named() {
         picture.target_at(plot.x + 1.0, plot.y + 1.0, &data),
         None,
         "outside the circle"
+    );
+}
+
+/// A stacked area chart's bands sit on one another and the axis reaches the top of the stack; a
+/// line among its series is drawn at its own values, over the bands — as LibreOffice draws one
+/// (`doc/chart-format.md`, Area).
+#[test]
+fn a_stacked_area_stacks_its_bands_and_leaves_a_line_at_its_own_values() {
+    let mut chart = Chart::new(
+        ChartKind::Area,
+        "0cm".into(),
+        "0cm".into(),
+        "10cm".into(),
+        "6cm".into(),
+    );
+    chart.stacked = true;
+    let series = |kind| Series {
+        values: "B1:B3".into(),
+        label: None,
+        color: None,
+        point_colors: Vec::new(),
+        kind,
+    };
+    chart.series = vec![series(None), series(None), series(Some(ChartKind::Line))];
+    let data = ChartData {
+        kind: ChartKind::Area,
+        categories: vec!["1".into(), "2".into(), "3".into()],
+        series: vec![
+            ("Base".into(), vec![10.0; 3]),
+            ("Band".into(), vec![10.0; 3]),
+            ("Median".into(), vec![15.0; 3]),
+        ],
+        value_format: None,
+        kinds: vec![ChartKind::Area, ChartKind::Area, ChartKind::Line],
+        stacked: true,
+    };
+    let picture = chart_paint::picture(
+        &chart,
+        &data,
+        Rect::new(0.0, 0.0, 400.0, 300.0),
+        &colours(),
+        &Letters,
+    );
+    let plot = picture.plot.expect("a plot");
+    // The stack's top, 20, is the axis' top.
+    let y = |value: f64| plot.bottom() - value / 20.0 * plot.h;
+    let paths: Vec<_> = picture
+        .marks
+        .iter()
+        .filter_map(|mark| match mark {
+            Mark::Path {
+                points,
+                fill,
+                stroke,
+            } => Some((points.clone(), fill.is_some(), stroke.is_some())),
+            _ => None,
+        })
+        .collect();
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    let top = |points: &[(f64, f64)]| points.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    let bottom = |points: &[(f64, f64)]| points.iter().map(|p| p.1).fold(0.0, f64::max);
+    let bands: Vec<_> = paths.iter().filter(|p| p.1).collect();
+    assert_eq!(bands.len(), 2, "{paths:?}");
+    assert!(close(top(&bands[0].0), y(10.0)) && close(bottom(&bands[0].0), y(0.0)));
+    assert!(close(top(&bands[1].0), y(20.0)) && close(bottom(&bands[1].0), y(10.0)));
+    let line = paths.iter().find(|p| !p.1 && p.2).expect("the line");
+    assert!(line.0.iter().all(|p| close(p.1, y(15.0))), "{line:?}");
+    // Drawn after the bands, so it is on top of them.
+    let order: Vec<bool> = paths.iter().map(|p| p.1).collect();
+    assert_eq!(order.last(), Some(&false));
+    // A band is hit where it is drawn, and a pointer over it names the series.
+    let (mx, my) = (plot.x + plot.w / 2.0, y(17.0));
+    assert_eq!(
+        picture.target_at(mx, my, &data),
+        Some(Target::Area { series: 1 })
     );
 }

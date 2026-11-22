@@ -357,8 +357,8 @@ impl Sheet {
         (index < self.charts.len()).then(|| self.charts.remove(index))
     }
 
-    /// Insert `chart` back at `index`, undoing [`Self::remove_chart`].
-    pub(crate) fn insert_chart(&mut self, index: usize, chart: crate::chart::Chart) {
+    /// Insert `chart` at `index` — one a reader found, or one taken out by an undo.
+    pub fn insert_chart(&mut self, index: usize, chart: crate::chart::Chart) {
         let index = index.min(self.charts.len());
         self.charts.insert(index, chart);
     }

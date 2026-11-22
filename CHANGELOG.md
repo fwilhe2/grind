@@ -20,6 +20,7 @@ lands, and the release workflow publishes the section as it stands.
   instead of turning into errors.
 - Importing an Excel workbook keeps a one-cell array formula as a formula when it computes the
   same as an ordinary one, instead of freezing it to its saved value.
+- Area charts are shown: stacked bands, with lines drawn over them, as LibreOffice draws them.
 
 ### Fixes
 

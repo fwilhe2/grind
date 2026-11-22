@@ -907,3 +907,70 @@ fn a_preview_draws_what_an_edit_would_make_and_writes_nothing() {
     );
     assert_eq!(app.charts(0).unwrap().len(), 1);
 }
+
+/// A stacked area chart with a line among its series — an Excel fan chart — survives a save and
+/// reopen in both forms, and an edit that keeps its kind keeps both; one that changes the kind
+/// makes a plain chart of that kind.
+#[test]
+fn a_stacked_area_chart_with_a_line_survives_a_save_and_an_edit() {
+    let series = |values: &str, kind| grind_sheet::ChartSeries {
+        values: values.into(),
+        label: None,
+        color: None,
+        point_colors: Vec::new(),
+        kind,
+    };
+    let mut chart = grind_sheet::Chart::new(
+        ChartKind::Area,
+        "1cm".into(),
+        "1cm".into(),
+        "10cm".into(),
+        "8cm".into(),
+    );
+    chart.categories = Some("Sheet1.A2:Sheet1.A4".into());
+    chart.series = vec![
+        series("Sheet1.B2:Sheet1.B4", None),
+        series("Sheet1.C2:Sheet1.C4", Some(ChartKind::Line)),
+    ];
+    chart.stacked = true;
+    let mut sheet = grind_sheet::Sheet::new("Sheet1");
+    for row in 1..4 {
+        for col in 1..3 {
+            sheet.set(
+                grind_sheet::Pos::new(row, col),
+                grind_sheet::CellValue::Number(f64::from(row * col)),
+            );
+        }
+    }
+    sheet.insert_chart(0, chart);
+    let doc = grind_sheet::Document {
+        sheets: vec![sheet],
+        ..Default::default()
+    };
+    for form in [Form::Flat, Form::Package] {
+        let bytes = grind_sheet::write_bytes(&doc, form).unwrap();
+        let again = App::new();
+        again.open_bytes("fan", &bytes).unwrap();
+        let back = &again.charts(0).unwrap()[0];
+        assert_eq!(back.kind, ChartKind::Area, "{form:?}");
+        assert!(back.stacked, "{form:?}");
+        assert_eq!(back.series[0].kind, None, "{form:?}");
+        assert_eq!(back.series[1].kind, Some(ChartKind::Line), "{form:?}");
+
+        let mut same_kind = grind_sheet::ChartSpec::of(back);
+        same_kind.title = Some("Fan".into());
+        again.edit_chart(0, 0, &same_kind).unwrap();
+        let edited = &again.charts(0).unwrap()[0];
+        assert!(edited.stacked);
+        assert_eq!(edited.series[1].kind, Some(ChartKind::Line));
+
+        let bars = grind_sheet::ChartSpec {
+            kind: ChartKind::Bar,
+            ..grind_sheet::ChartSpec::of(edited)
+        };
+        again.edit_chart(0, 0, &bars).unwrap();
+        let plain = &again.charts(0).unwrap()[0];
+        assert!(!plain.stacked);
+        assert!(plain.series.iter().all(|s| s.kind.is_none()));
+    }
+}

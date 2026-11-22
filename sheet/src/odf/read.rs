@@ -171,6 +171,10 @@ struct PendingChart {
     /// `chart:chart`'s own title and legend (rng:466, rng:475).
     title: Option<String>,
     legend: Option<crate::chart::Legend>,
+    /// Names of the styles saying `chart:stacked="true"` (rng:9978), and whether the plot area
+    /// named one.
+    stacking: std::collections::HashSet<String>,
+    stacked: bool,
     /// The package directory the chart's document was read from, when it was a separate part.
     part: Option<String>,
 }
@@ -195,6 +199,8 @@ impl Default for PendingChart {
             y_reversed: None,
             title: None,
             legend: None,
+            stacking: std::collections::HashSet::new(),
+            stacked: false,
             part: None,
         }
     }
@@ -940,6 +946,7 @@ impl Context<Builder> for Frame {
                         main.y_reversed = found.y_reversed;
                         main.title = found.title;
                         main.legend = found.legend;
+                        main.stacked = found.stacked;
                     }
                 }
                 Some(Box::new(super::context::Ignore))
@@ -979,6 +986,7 @@ impl Context<Builder> for Frame {
             },
             title: pending.title,
             legend: pending.legend,
+            stacked: pending.stacked,
         };
         if let Some(part) = pending.part {
             if let Some(table) = b
@@ -1036,8 +1044,9 @@ impl Context<Builder> for ChartAutomaticStyles {
     }
 }
 
-/// One `style:style style:family="chart"`: a mark's `draw:fill-color` (rng:10941) and an axis'
-/// `chart:display-label` (rng:10069) are read; the rest is read past.
+/// One `style:style style:family="chart"`: a mark's `draw:fill-color` (rng:10941), seen through
+/// its `draw:opacity` (rng:11039), an axis' `chart:display-label` (rng:10069) and a plot area's
+/// `chart:stacked` (rng:9978) are read; the rest is read past.
 struct ChartStyleStyle {
     name: String,
 }
@@ -1050,7 +1059,13 @@ impl Context<Builder> for ChartStyleStyle {
         if name.is(Ns::Style, "graphic-properties")
             && let Some(color) = attrs.get(Ns::Draw, "fill-color")
         {
-            pending.styles.insert(self.name.clone(), color.to_owned());
+            let opacity = attrs
+                .get(Ns::Draw, "opacity")
+                .and_then(|percent| percent.trim().strip_suffix('%')?.trim().parse::<f64>().ok());
+            let color = opacity
+                .and_then(|percent| crate::chart::over_white(color, percent / 100.0))
+                .unwrap_or_else(|| color.to_owned());
+            pending.styles.insert(self.name.clone(), color);
         }
         if name.is(Ns::Style, "chart-properties") {
             if let Some(display) = attrs.get(Ns::Chart, "display-label") {
@@ -1062,6 +1077,9 @@ impl Context<Builder> for ChartStyleStyle {
                 pending
                     .reverse_directions
                     .insert(self.name.clone(), reverse == "true");
+            }
+            if attrs.get(Ns::Chart, "stacked") == Some("true") {
+                pending.stacking.insert(self.name.clone());
             }
         }
         None
@@ -1114,7 +1132,14 @@ struct ChartChart;
 impl Context<Builder> for ChartChart {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
         match (name.ns, name.local.as_str()) {
-            (Ns::Chart, "plot-area") => Some(Box::new(ChartPlotArea) as Ctx),
+            (Ns::Chart, "plot-area") => {
+                if let Some(pending) = &mut b.pending_chart
+                    && let Some(style) = attrs.get(Ns::Chart, "style-name")
+                {
+                    pending.stacked = pending.stacking.contains(style);
+                }
+                Some(Box::new(ChartPlotArea) as Ctx)
+            }
             (Ns::Chart, "title") => Some(Box::new(ChartTitle) as Ctx),
             (Ns::Chart, "legend") => {
                 if let Some(pending) = &mut b.pending_chart {
@@ -1191,11 +1216,18 @@ impl Context<Builder> for ChartPlotArea {
                     .get(Ns::Chart, "label-cell-address")
                     .map(str::to_owned);
                 let series_style = attrs.get(Ns::Chart, "style-name").map(str::to_owned);
-                let (index, kind) = {
+                let (index, chart_kind) = {
                     let pending = b.pending_chart.as_ref()?;
                     (pending.series.len(), pending.kind)
                 };
-                // A bar or line has one colour per series, on the series' own style
+                // A series of a class of its own — a line among an area chart's bands; one this
+                // build does not draw is drawn as the chart's.
+                let own_kind = attrs
+                    .get(Ns::Chart, "class")
+                    .and_then(crate::chart::ChartKind::from_class)
+                    .filter(|own| Some(*own) != chart_kind);
+                let kind = own_kind.or(chart_kind);
+                // A bar, line or area has one colour per series, on the series' own style
                 // (`doc/chart-format.md`, Colour); a pie's are its slices', read from each
                 // `chart:data-point`. A colour equal to the default cycle at its position counts
                 // as unset ([`crate::chart::effective_color`]).
@@ -1204,7 +1236,11 @@ impl Context<Builder> for ChartPlotArea {
                     pending.styles.get(name).cloned()
                 });
                 let color = match kind {
-                    Some(crate::chart::ChartKind::Bar | crate::chart::ChartKind::Line) => own
+                    Some(
+                        crate::chart::ChartKind::Bar
+                        | crate::chart::ChartKind::Line
+                        | crate::chart::ChartKind::Area,
+                    ) => own
                         .as_deref()
                         .filter(|hex| *hex != crate::chart::series_color(index))
                         .map(str::to_owned),
@@ -1230,6 +1266,7 @@ impl Context<Builder> for ChartPlotArea {
                     label,
                     color,
                     point_colors: Vec::new(),
+                    kind: own_kind,
                 });
                 Some(Box::new(ChartSeries {
                     series_index: index,

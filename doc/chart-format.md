@@ -11,14 +11,15 @@ real document say which file and which build of LibreOffice, per `CONTRIBUTING.m
 rule — LibreOffice's own source is never read for this, only its *output*, which is a
 conformance oracle rather than a source.
 
-## What is in scope, and why three
+## What is in scope, and why these four
 
 `doc/not-doing.md` originally drew the line at one chart type — "one that round-trips proves
 the mechanism, the second is taste." That line moved by an explicit decision: bar, line and pie
 are the three shapes a spreadsheet's data most commonly wants, and building one showed that the
 second and third add no new mechanism, only a second `chart:class` token and a different way of
-turning ranges into shapes on screen. What stays out: a subtitle and a footer, more than one
-axis pair, stacked/percent variants, and every chart type beyond these three — each a `chart:*`
+turning ranges into shapes on screen. A fourth, area, came in later on a real document's evidence
+(Area, below). What stays out: a subtitle and a footer, more than one axis pair, percent
+variants, and every chart type beyond these four — each a `chart:*`
 detail this build does not read or write, not a limitation of the mechanism. What an *axis*
 carries is in scope — its own title, its tick labels and its gridlines, three separate places in
 the file: see The axes, below. **So are the chart's own title and its legend**, which this line
@@ -110,6 +111,40 @@ each kind through its own UNO API (`ScTabViewShell`'s chart insertion, `LineDiag
 | `Line` | `chart:line` | A `soffice`-built line chart, same LibreOffice build |
 | `Pie` | `chart:circle` | A `soffice`-built pie chart, same LibreOffice build — "circle" is
   ODF's own name for a pie chart, and it is the one surprising token of the three |
+| `Area` | `chart:area` | LibreOffice 26.8.3.1's conversion of an Excel workbook with three fan charts (below) |
+
+### Area — the fourth kind, and a series of a kind of its own
+
+A fourth kind came in on evidence, as `doc/not-doing.md` said it would: a Monte Carlo retirement
+calculator exported from a spreadsheet service, whose three charts are **fan charts** — seven
+stacked bands of an area chart, the percentiles of a simulation, with one or two lines (the
+median, the need) drawn over them on the same axes. LibreOffice's conversion of it writes each as
+`chart:chart chart:class="chart:area"` whose `chart:series` say `chart:class="chart:area"` for a
+band and `chart:class="chart:line"` for a line (rng:892: a series has a class of its own), and
+whose plot area's style says `chart:stacked="true"` (rng:9978). So the model carries three
+things more, and nothing else:
+
+- **`ChartKind::Area`**, read and drawn — each series a band at the categories' ticks — but not
+  offered by any picker (`ChartKind::ALL` stays bar, line, pie): nothing yet asks to make one.
+- **`Series::kind`**, a series' own class where it differs from the chart's. Drawn in layers —
+  bands, then bars, then lines, each over the last — and a pointer over a band names the band
+  only where no line drawn over it is under the pointer.
+- **`Chart::stacked`**. ODF has one flag for the whole plot area. **Measured** (LibreOffice
+  26.8.3.1, a document of two area series of 10 and two line series of 15 and 25 under a stacked
+  plot area, converted to a picture): the bands stand at 10 and 20 and the lines at 15 and 25 —
+  only the series of the chart's own class stack. That is the rule drawn here, for an area chart;
+  a stacked bar or line chart from a file keeps the flag and is drawn side by side.
+
+Changing a chart's kind (Bar, Line, Pie in every window) makes a plain chart of that kind:
+`stacked` and every series' own kind go, since they belonged to the kind they were made for. An
+edit that keeps the kind keeps both, a series' kind travelling with it as its colours do.
+
+**A band's translucency is carried as the colour it shows.** Excel's fan charts fill every band
+30% black so that gridlines show through; LibreOffice writes `draw:opacity="30%"` (rng:11039) on
+the series' style. The model holds a colour and no opacity: the reader folds `draw:opacity` into
+the fill over the chart's white (`chart::over_white`, `#000000` at 30% is `#b3b3b3`), which is
+what a reader sees on a white chart, and a chart regenerated after an edit is written opaque. A
+chart nobody edited is carried byte for byte, opacity and all (`sheet/tests/never_worse.rs`).
 
 ### Colour — verified, and where this build departs on purpose
 
@@ -381,8 +416,9 @@ axis title is schema-valid and opens correctly in LibreOffice 26.2.5.2 (the same
 → `soffice --convert-to fods` round trip through it with the title intact, on a bar chart and
 on a pie alike — **correcting an earlier note here that said it did not**, which was measured
 before the axis carried a style of its own and does not reproduce against that build.
-No secondary axis, no stacked or
-percent variants, no more than one categories range or values range per series. A chart's
+No secondary axis, no percent
+variants, stacking drawn only for an area chart (Area, above), no more than one categories range
+or values range per series. A chart's
 embedded `table:table` (rng:463-483's own optional
 `table-table` — the fallback data LibreOffice caches inside the chart document itself, in case
 the ranges it points at ever go stale) is not read either: this build always re-resolves a

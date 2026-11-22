@@ -175,6 +175,8 @@ mod tests {
             categories: vec!["CDU".into(), "SPD".into()],
             series: vec![("Votes".into(), vec![90.0, 60.0])],
             value_format: None,
+            kinds: Vec::new(),
+            stacked: false,
         }
     }
 
@@ -185,6 +187,7 @@ mod tests {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            kind: None,
         }];
         chart
     }
@@ -209,6 +212,8 @@ mod tests {
                 ("Costs".into(), vec![3.0, 4.0]),
             ],
             value_format: None,
+            kinds: Vec::new(),
+            stacked: false,
         };
         let mut dressed = chart(ChartKind::Bar);
         dressed.series.push(dressed.series[0].clone());

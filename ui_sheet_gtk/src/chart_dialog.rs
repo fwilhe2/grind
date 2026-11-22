@@ -858,6 +858,14 @@ fn glyph(kind: ChartKind) -> gtk::DrawingArea {
                 cr.line_to(w - 1.0, h * 0.15);
                 let _ = cr.stroke();
             }
+            ChartKind::Area => {
+                cr.move_to(0.0, h);
+                cr.line_to(0.0, h * 0.6);
+                cr.line_to(w * 0.45, h * 0.3);
+                cr.line_to(w, h * 0.5);
+                cr.line_to(w, h);
+                let _ = cr.fill();
+            }
             ChartKind::Pie => {
                 // Most of a pie, and one slice pulled a little way out of it.
                 let (cx, cy, r) = (w / 2.0 - 1.0, h / 2.0 + 0.5, h / 2.0 - 1.5);

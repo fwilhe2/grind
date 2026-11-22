@@ -427,6 +427,11 @@ fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String>
             format!("{:?}", (&a.title, a.legend)),
             format!("{:?}", (&b.title, b.legend)),
         );
+        say(
+            "stacking",
+            format!("stacked {}", a.stacked),
+            format!("stacked {}", b.stacked),
+        );
         if a.kind == grind_sheet::ChartKind::Pie {
             say(
                 "direction",
@@ -478,6 +483,11 @@ fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String>
                 &format!("{what} colours"),
                 format!("{:?}", colours(x)),
                 format!("{:?}", colours(y)),
+            );
+            say(
+                &format!("{what} kind"),
+                format!("{:?}", x.kind),
+                format!("{:?}", y.kind),
             );
         }
     }
@@ -1051,6 +1061,52 @@ fn charts() -> (String, Document) {
     ("charts".to_owned(), doc)
 }
 
+/// An Excel fan chart as the xlsx import makes one: stacked bands, translucent ones carried as
+/// the colour they show, with a line among them under its own class.
+fn fan() -> (String, Document) {
+    let mut sheet = grind_sheet::Sheet::new("Sheet1");
+    for row in 0..4 {
+        for col in 0..4 {
+            sheet.set(
+                Pos::new(row, col),
+                CellValue::Number(f64::from((row + 1) * (col + 2))),
+            );
+        }
+    }
+    let series = |col: &str, color: &str, kind| grind_sheet::ChartSeries {
+        values: format!("Sheet1.{col}1:Sheet1.{col}4"),
+        label: None,
+        color: Some(color.to_owned()),
+        point_colors: Vec::new(),
+        kind,
+    };
+    let mut chart = grind_sheet::Chart::new(
+        grind_sheet::ChartKind::Area,
+        "1cm".into(),
+        "6cm".into(),
+        "12cm".into(),
+        "8cm".into(),
+    );
+    chart.categories = Some("Sheet1.A1:Sheet1.A4".into());
+    chart.series = vec![
+        series("B", "#b3b3b3", None),
+        series("C", "#8a8a8a", None),
+        series("D", "#2c3a82", Some(grind_sheet::ChartKind::Line)),
+    ];
+    chart.stacked = true;
+    chart.legend = Some(grind_sheet::ChartLegend::Bottom);
+    sheet.insert_chart(0, chart);
+    let doc = Document {
+        sheets: vec![sheet],
+        ..Default::default()
+    };
+    let bytes = grind_sheet::write_bytes(&doc, Form::Flat).unwrap();
+    (
+        "fan".to_owned(),
+        grind_sheet::read_bytes("fan.fods", &bytes).unwrap(),
+    )
+}
+
 /// A counter-clockwise pie — a file that says so, which is the only way one arises — so that
 /// both values of `chart:reverse-direction` go through LibreOffice.
 fn counter_clockwise_pie() -> (String, Document) {
@@ -1160,6 +1216,7 @@ fn cases() -> Vec<(String, Document)> {
         rules(),
         filtered(),
         charts(),
+        fan(),
         counter_clockwise_pie(),
         german(),
         eleven_point(),

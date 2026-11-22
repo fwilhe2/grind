@@ -186,3 +186,61 @@ fn a_frame_with_no_chart_inside_it_is_simply_not_a_chart() {
  </table:table>"#);
     assert_eq!(d.sheet(0).unwrap().charts().len(), 0);
 }
+
+/// The shape LibreOffice writes for an Excel fan chart: an area chart whose plot area is stacked,
+/// with a line among its series under its own `chart:class`, and every band 30% opaque.
+#[test]
+fn a_stacked_area_chart_reads_its_stacking_and_each_series_own_class() {
+    let d = doc(r##"<table:table table:name="Sheet1">
+  <table:shapes>
+   <draw:frame svg:x="0cm" svg:y="0cm" svg:width="16cm" svg:height="10cm">
+    <draw:object>
+     <office:document office:mimetype="application/vnd.oasis.opendocument.chart" office:version="1.4">
+      <office:automatic-styles>
+       <style:style style:name="ch3" style:family="chart">
+        <style:chart-properties chart:interpolation="cubic-spline" chart:stacked="true"/>
+       </style:style>
+       <style:style style:name="ch7" style:family="chart">
+        <style:graphic-properties draw:stroke="none" draw:fill-color="#000000" draw:opacity="30%"/>
+       </style:style>
+       <style:style style:name="ch8" style:family="chart">
+        <style:chart-properties chart:symbol-type="none"/>
+        <style:graphic-properties svg:stroke-color="#2c3a82" draw:fill-color="#2c3a82"/>
+       </style:style>
+      </office:automatic-styles>
+      <office:body><office:chart>
+       <chart:chart svg:width="16cm" svg:height="10cm" chart:class="chart:area">
+        <chart:plot-area chart:style-name="ch3">
+         <chart:axis chart:dimension="x">
+          <chart:categories table:cell-range-address="Sheet1.A2:Sheet1.A4"/>
+         </chart:axis>
+         <chart:axis chart:dimension="y"/>
+         <chart:series chart:style-name="ch7" chart:values-cell-range-address="Sheet1.B2:Sheet1.B4" chart:class="chart:area"/>
+         <chart:series chart:style-name="ch7" chart:values-cell-range-address="Sheet1.C2:Sheet1.C4" chart:class="chart:area"/>
+         <chart:series chart:style-name="ch8" chart:values-cell-range-address="Sheet1.D2:Sheet1.D4" chart:class="chart:line"/>
+        </chart:plot-area>
+       </chart:chart>
+      </office:chart></office:body>
+     </office:document>
+    </draw:object>
+   </draw:frame>
+  </table:shapes>
+ </table:table>"##);
+    let chart = &d.sheet(0).unwrap().charts()[0];
+    assert_eq!(chart.kind, ChartKind::Area);
+    assert!(chart.stacked);
+    let kinds: Vec<_> = chart.series.iter().map(|s| s.kind).collect();
+    assert_eq!(kinds, [None, None, Some(ChartKind::Line)]);
+    // 30% black over the chart's white: the colour a reader sees, carried as one.
+    assert_eq!(chart.series[0].color.as_deref(), Some("#b3b3b3"));
+    assert_eq!(chart.series[2].color.as_deref(), Some("#2c3a82"));
+}
+
+#[test]
+fn a_plot_area_that_says_nothing_is_not_stacked() {
+    let d = doc(&inline_chart("chart:area"));
+    let chart = &d.sheet(0).unwrap().charts()[0];
+    assert_eq!(chart.kind, ChartKind::Area);
+    assert!(!chart.stacked);
+    assert_eq!(chart.series[0].kind, None);
+}

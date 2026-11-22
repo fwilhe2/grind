@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! A chart: bar, line or pie (`doc/chart-format.md`). In ODF a chart is an embedded document of
+//! A chart: bar, line, pie or area (`doc/chart-format.md`). In ODF a chart is an embedded document of
 //! its own (`draw:frame`/`draw:object`, rng:5088/5539); this is the part of it that is read and
 //! written. It holds ranges rather than values, so editing the data moves the chart.
 
@@ -10,26 +10,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::{App, CellValue, Pos, Result, a1};
 
-/// The three shapes drawn (`doc/chart-format.md`), each a `chart:class` token checked against
+/// The shapes drawn (`doc/chart-format.md`), each a `chart:class` token checked against
 /// `soffice` (the schema leaves the attribute free, rng:487-489).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChartKind {
     Bar,
     Line,
     Pie,
+    /// Read and drawn, not offered: the kind of an imported fan chart.
+    Area,
 }
 
 impl ChartKind {
-    /// Every kind, in the order a picker offers them.
+    /// The kinds a picker offers, in its order.
     pub const ALL: [ChartKind; 3] = [ChartKind::Bar, ChartKind::Line, ChartKind::Pie];
 
-    /// The kind's name as a control shows it — `Bar`, `Line`, `Pie`.
+    /// The kind's name as a control shows it — `Bar`, `Line`, `Pie`, `Area`.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             ChartKind::Bar => "Bar",
             ChartKind::Line => "Line",
             ChartKind::Pie => "Pie",
+            ChartKind::Area => "Area",
         }
     }
 
@@ -41,6 +44,7 @@ impl ChartKind {
             ChartKind::Line => "chart:line",
             // ODF's name for a pie chart (`doc/chart-format.md`).
             ChartKind::Pie => "chart:circle",
+            ChartKind::Area => "chart:area",
         }
     }
 
@@ -51,6 +55,7 @@ impl ChartKind {
             "chart:bar" => Some(ChartKind::Bar),
             "chart:line" => Some(ChartKind::Line),
             "chart:circle" => Some(ChartKind::Pie),
+            "chart:area" => Some(ChartKind::Area),
             _ => None,
         }
     }
@@ -71,6 +76,10 @@ pub struct Series {
     /// `None` entry is no override ([`effective_color`]).
     #[serde(default)]
     pub point_colors: Vec<Option<String>>,
+    /// This series' own `chart:class` (rng:892) where it differs from the chart's — a line among
+    /// an area chart's bands; `None` is the chart's.
+    #[serde(default)]
+    pub kind: Option<ChartKind>,
 }
 
 /// One axis of a chart: its title, whether its tick labels are drawn, and whether it rules
@@ -189,6 +198,11 @@ pub struct Chart {
     /// The chart's `chart:legend` (rng:475, rng:694), and where it sits; `None` is no legend.
     #[serde(default)]
     pub legend: Option<Legend>,
+    /// `chart:stacked` on the plot area's style (rng:9978): the series of the chart's own kind
+    /// stand on one another, and a series of another kind at its own values, as LibreOffice
+    /// draws them (`doc/chart-format.md`, Area). Drawn for an area chart.
+    #[serde(default)]
+    pub stacked: bool,
 }
 
 fn clockwise_by_default() -> bool {
@@ -212,7 +226,17 @@ impl Chart {
             clockwise: clockwise_by_default(),
             title: None,
             legend: None,
+            stacked: false,
         }
+    }
+
+    /// The kind series `n` is drawn as: its own, else the chart's.
+    #[must_use]
+    pub fn series_kind(&self, n: usize) -> ChartKind {
+        self.series
+            .get(n)
+            .and_then(|series| series.kind)
+            .unwrap_or(self.kind)
     }
 }
 
@@ -528,16 +552,26 @@ pub fn effective_color(chart: &Chart, series: usize, point: Option<usize>) -> St
         ChartKind::Bar => point
             .and_then(own)
             .unwrap_or_else(|| series_own_color(chart, series)),
-        ChartKind::Line => series_own_color(chart, series),
+        ChartKind::Line | ChartKind::Area => series_own_color(chart, series),
     }
 }
 
-/// A bar or line series' own colour: its override, else the default cycle at its position.
+/// A bar, line or area series' own colour: its override, else the default cycle at its position.
 fn series_own_color(chart: &Chart, series: usize) -> String {
     chart.series[series]
         .color
         .clone()
         .unwrap_or_else(|| series_color(series).to_owned())
+}
+
+/// A fill `opacity` (0 to 1) of `color` over the chart's white, as the one opaque colour it shows:
+/// how a translucent band is carried (`doc/chart-format.md`, Area). `None` for a colour that is
+/// not `#rrggbb`.
+#[must_use]
+pub fn over_white(color: &str, opacity: f64) -> Option<String> {
+    let (r, g, b) =
+        grind_core::color::mix((255, 255, 255), grind_core::color::parse(color)?, opacity);
+    Some(format!("#{r:02x}{g:02x}{b:02x}"))
 }
 
 /// A typed range (`B3:B9`, `Data.B3:B9`) as the address string a chart stores
@@ -746,6 +780,10 @@ pub struct ChartData {
     /// locale, as LibreOffice links an axis to its source — `150,000`, not `150000`. `None` for
     /// general, a date or a time, and `ChartData::tick_label`'s plain spelling stands.
     pub value_format: Option<(crate::numfmt::Format, Option<crate::locale::Locale>)>,
+    /// Each series' kind ([`Chart::series_kind`]); a series past its end is the chart's kind.
+    pub kinds: Vec<ChartKind>,
+    /// [`Chart::stacked`], for an area chart: the bands stand on one another.
+    pub stacked: bool,
 }
 
 impl ChartData {
@@ -785,7 +823,36 @@ impl ChartData {
             categories,
             series,
             value_format,
+            kinds: (0..chart.series.len())
+                .map(|n| chart.series_kind(n))
+                .collect(),
+            stacked: chart.stacked && chart.kind == ChartKind::Area,
         })
+    }
+
+    /// The kind series `n` is drawn as.
+    #[must_use]
+    pub fn series_kind(&self, n: usize) -> ChartKind {
+        self.kinds.get(n).copied().unwrap_or(self.kind)
+    }
+
+    /// The value at which series `n`'s mark at `point` ends: its own, or on a stacked chart the
+    /// total of it and every series of the chart's kind before it.
+    #[must_use]
+    pub(crate) fn top(&self, n: usize, point: usize) -> f64 {
+        let own = |s: usize| {
+            self.series
+                .get(s)
+                .and_then(|(_, values)| values.get(point))
+                .map_or(0.0, |v| v.max(0.0))
+        };
+        if !self.stacked || self.series_kind(n) != self.kind {
+            return own(n);
+        }
+        (0..=n)
+            .filter(|&s| self.series_kind(s) == self.kind)
+            .map(own)
+            .sum()
     }
 
     /// One tick of the value axis, spelled in [`ChartData::value_format`] when that tells every
@@ -851,7 +918,12 @@ mod tests {
 
     #[test]
     fn every_kind_round_trips_through_its_own_class() {
-        for kind in [ChartKind::Bar, ChartKind::Line, ChartKind::Pie] {
+        for kind in [
+            ChartKind::Bar,
+            ChartKind::Line,
+            ChartKind::Pie,
+            ChartKind::Area,
+        ] {
             assert_eq!(ChartKind::from_class(kind.class()), Some(kind));
         }
     }
@@ -873,6 +945,7 @@ mod tests {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            kind: None,
         }
     }
 
@@ -1097,6 +1170,8 @@ mod tests {
             categories: Vec::new(),
             series: vec![(String::new(), values.to_vec())],
             value_format: None,
+            kinds: Vec::new(),
+            stacked: false,
         }
     }
 

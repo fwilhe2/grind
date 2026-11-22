@@ -2274,11 +2274,7 @@ fn chart_name(chart: &grind_sheet::Chart) -> String {
         Some(title) => title.clone(),
         None => format!(
             "{} chart of {}",
-            match chart.kind {
-                grind_sheet::ChartKind::Bar => "Bar",
-                grind_sheet::ChartKind::Line => "Line",
-                grind_sheet::ChartKind::Pie => "Pie",
-            },
+            chart.kind.name(),
             chart
                 .series
                 .iter()

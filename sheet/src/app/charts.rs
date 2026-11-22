@@ -129,9 +129,9 @@ impl App {
     }
 
     /// Change what a chart is — everything a [`chart::Spec`] says — as one undo step, leaving its
-    /// position and size alone. Hand-picked colours survive on series still pointing at the same
-    /// range (matched by address, not position); a series whose range changed starts from the
-    /// default cycle.
+    /// position and size alone. Hand-picked colours, and a series' own kind, survive on series
+    /// still pointing at the same range (matched by address, not position); a series whose range
+    /// changed starts from the default cycle.
     pub fn edit_chart(&self, sheet: usize, index: usize, spec: &chart::Spec) -> Result<()> {
         let chart = self.charted(sheet, spec, Some(index))?;
         self.replace_chart(sheet, index, chart)
@@ -167,10 +167,15 @@ impl App {
         self.fill_chart(sheet, spec, &mut chart)?;
         chart.kind = spec.kind;
         if let Some(old) = old {
+            // Stacking and a series' own kind belong to the kind they were made for: a chart
+            // turned into another kind is a plain chart of it.
+            let same_kind = old.kind == spec.kind;
+            chart.stacked = same_kind && old.stacked;
             for new in &mut chart.series {
                 if let Some(old) = old.series.iter().find(|old| old.values == new.values) {
                     new.color = old.color.clone();
                     new.point_colors = old.point_colors.clone();
+                    new.kind = old.kind.filter(|_| same_kind);
                 }
             }
         }
@@ -250,6 +255,7 @@ impl App {
                         .transpose()?,
                     color: None,
                     point_colors: Vec::new(),
+                    kind: None,
                 })
             })
             .collect::<Result<Vec<_>>>()?;

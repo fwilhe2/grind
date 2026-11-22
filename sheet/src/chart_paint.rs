@@ -221,13 +221,15 @@ fn title_style() -> TextStyle {
     }
 }
 
-/// What a click or a pointer over a chart can mean: a legend entry, a bar, a line or a slice.
+/// What a click or a pointer over a chart can mean: a legend entry, a bar, a line, an area's band
+/// or a slice.
 /// `series` and `point` mean what [`effective_color`] takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
     Legend { series: usize, point: Option<usize> },
     Bar { series: usize, point: usize },
     Line { series: usize },
+    Area { series: usize },
     Slice { point: usize },
 }
 
@@ -238,7 +240,7 @@ impl Target {
         match self {
             Target::Legend { series, point } => (series, point),
             Target::Bar { series, point } => (series, Some(point)),
-            Target::Line { series } => (series, None),
+            Target::Line { series } | Target::Area { series } => (series, None),
             Target::Slice { point } => (0, Some(point)),
         }
     }
@@ -248,6 +250,7 @@ impl Target {
 enum Region {
     Rect(Rect),
     Line(Vec<(f64, f64)>),
+    Polygon(Vec<(f64, f64)>),
     Pie { cx: f64, cy: f64, r: f64 },
 }
 
@@ -265,7 +268,8 @@ pub struct Picture {
 }
 
 impl Picture {
-    /// What is under `(x, y)`: a legend entry before anything in the plot.
+    /// What is under `(x, y)`: a legend entry before anything in the plot, and an area's band only
+    /// when no bar, line or slice drawn over it is.
     #[must_use]
     pub fn target_at(&self, x: f64, y: f64, data: &ChartData) -> Option<Target> {
         let legend = self.hits.iter().find(|(region, target)| {
@@ -275,9 +279,14 @@ impl Picture {
         if let Some((_, target)) = legend {
             return Some(*target);
         }
-        self.hits.iter().find_map(|(region, target)| {
+        let (bands, marks): (Vec<_>, Vec<_>) = self
+            .hits
+            .iter()
+            .partition(|(region, _)| matches!(region, Region::Polygon(_)));
+        marks.into_iter().chain(bands).find_map(|(region, target)| {
             let hit = match region {
                 Region::Rect(r) => r.contains(x, y),
+                Region::Polygon(points) => inside((x, y), points),
                 Region::Line(points) => points
                     .windows(2)
                     .any(|pair| distance_to_segment((x, y), pair[0], pair[1]) <= LINE_HIT),
@@ -317,7 +326,7 @@ impl Picture {
         match self.target_at(x, y, data)? {
             Target::Legend { .. } => None,
             Target::Bar { series, point } => at(series, point),
-            Target::Line { series } => {
+            Target::Line { series } | Target::Area { series } => {
                 let (cat, _) = self
                     .categories
                     .iter()
@@ -578,7 +587,8 @@ impl Painter<'_> {
         for (x, y, (label, (series, point), w)) in placed {
             let color = self.mark(series, point);
             let swatch = Rect::new(x, y + (line - SWATCH) / 2.0, SWATCH, SWATCH);
-            if self.data.kind == ChartKind::Line {
+            if self.data.kind != ChartKind::Pie && self.data.series_kind(series) == ChartKind::Line
+            {
                 // A line is keyed by a stroke of itself rather than by a square of its colour.
                 self.fill(
                     Rect::new(x, swatch.y + SWATCH / 2.0 - 1.0, SWATCH, 2.0),
@@ -660,10 +670,12 @@ impl Painter<'_> {
         if self.data.kind != ChartKind::Pie {
             self.gridlines(&x_axis, &y_axis, &ticks, plot);
         }
-        match self.data.kind {
-            ChartKind::Bar => self.bars(&ticks, plot),
-            ChartKind::Line => self.lines(&ticks, plot),
-            ChartKind::Pie => self.pie(plot),
+        if self.data.kind == ChartKind::Pie {
+            self.pie(plot);
+        } else {
+            self.areas(&ticks, plot);
+            self.bars(&ticks, plot);
+            self.lines(&ticks, plot);
         }
         let ink = self.palette.ink;
         if y_axis.tick_labels {
@@ -735,7 +747,8 @@ impl Painter<'_> {
     /// are at most [`BAR_MAX`] wide and [`BAR_GAP`] apart, centred in the group's band.
     fn bars(&mut self, ticks: &Ticks, plot: Rect) {
         let count = category_count(self.data);
-        let series = self.data.series.len();
+        let ours = self.of_kind(ChartKind::Bar);
+        let series = ours.len();
         if count == 0 || series == 0 {
             return;
         }
@@ -744,12 +757,12 @@ impl Painter<'_> {
         let w = ((group * (1.0 - GROUP_GAP) - gaps) / series as f64).clamp(1.0, BAR_MAX);
         let lead = (group - (w * series as f64 + gaps)) / 2.0;
         for cat in 0..count {
-            for s in 0..series {
+            for (slot, &s) in ours.iter().enumerate() {
                 let Some(value) = self.data.series[s].1.get(cat).copied() else {
                     continue;
                 };
                 let y = value_y(value, ticks, plot);
-                let x = plot.x + cat as f64 * group + lead + s as f64 * (w + BAR_GAP);
+                let x = plot.x + cat as f64 * group + lead + slot as f64 * (w + BAR_GAP);
                 let bar = Rect::new(x, y, w, plot.bottom() - y);
                 self.out.hits.push((
                     Region::Rect(bar),
@@ -772,7 +785,7 @@ impl Painter<'_> {
             return;
         }
         let step = plot.w / count as f64;
-        for s in 0..self.data.series.len() {
+        for s in self.of_kind(ChartKind::Line) {
             let values = &self.data.series[s].1;
             if values.len() < 2 {
                 continue;
@@ -797,6 +810,49 @@ impl Painter<'_> {
                 stroke: Some((color, LINE_W)),
             });
         }
+    }
+
+    /// Each area series a band from its floor up to [`ChartData::top`], at the categories' ticks:
+    /// the axis on a chart that is not stacked, the band below on one that is.
+    fn areas(&mut self, ticks: &Ticks, plot: Rect) {
+        let xs = category_x(self.data, plot);
+        if xs.len() < 2 {
+            return;
+        }
+        for s in self.of_kind(ChartKind::Area) {
+            let values = &self.data.series[s].1;
+            let top = |i: usize| self.data.top(s, i);
+            let floor = |i: usize| {
+                if self.data.stacked {
+                    top(i) - values.get(i).map_or(0.0, |v| v.max(0.0))
+                } else {
+                    0.0
+                }
+            };
+            let mut points: Vec<(f64, f64)> = xs
+                .iter()
+                .enumerate()
+                .map(|(i, x)| (*x, value_y(top(i), ticks, plot)))
+                .collect();
+            points.extend(
+                xs.iter()
+                    .enumerate()
+                    .rev()
+                    .map(|(i, x)| (*x, value_y(floor(i), ticks, plot))),
+            );
+            let color = self.mark(s, None);
+            self.out
+                .hits
+                .push((Region::Polygon(points.clone()), Target::Area { series: s }));
+            self.shape(points, color);
+        }
+    }
+
+    /// The series drawn as `kind`, in order.
+    fn of_kind(&self, kind: ChartKind) -> Vec<usize> {
+        (0..self.data.series.len())
+            .filter(|&s| self.data.series_kind(s) == kind)
+            .collect()
     }
 
     /// Every slice as [`pie_slices`] sweeps it, a fan of segments round its rim.
@@ -859,6 +915,20 @@ fn rounded(rect: Rect, top: f64, bottom: f64) -> Vec<(f64, f64)> {
     points
 }
 
+/// Whether `p` is inside the polygon `points`, by the even-odd rule.
+fn inside(p: (f64, f64), points: &[(f64, f64)]) -> bool {
+    let mut odd = false;
+    let mut j = points.len().wrapping_sub(1);
+    for (i, &(xi, yi)) in points.iter().enumerate() {
+        let (xj, yj) = points[j];
+        if (yi > p.1) != (yj > p.1) && p.0 < xi + (p.1 - yi) * (xj - xi) / (yj - yi) {
+            odd = !odd;
+        }
+        j = i;
+    }
+    odd
+}
+
 fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let len_sq = dx * dx + dy * dy;
@@ -871,8 +941,8 @@ fn distance_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
     ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt()
 }
 
-/// What a legend names and whose colour it shows: one series each for a bar or line, one slice
-/// each for a pie. A series with no name of its own is named by its position.
+/// What a legend names and whose colour it shows: one series each for a bar, line or area, one
+/// slice each for a pie. A series with no name of its own is named by its position.
 fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<usize>))> {
     match data.kind {
         ChartKind::Pie => pie_slices(data, chart.clockwise)
@@ -887,7 +957,7 @@ fn legend_items(chart: &Chart, data: &ChartData) -> Vec<(String, (usize, Option<
                 (name, (0, Some(slice.point)))
             })
             .collect(),
-        ChartKind::Bar | ChartKind::Line => data
+        ChartKind::Bar | ChartKind::Line | ChartKind::Area => data
             .series
             .iter()
             .enumerate()
@@ -911,10 +981,12 @@ fn axes(chart: &Chart, data: &ChartData) -> (ChartAxis, ChartAxis) {
     }
 }
 
+/// The highest any mark reaches — a stacked chart's tallest stack.
 fn max_value(data: &ChartData) -> f64 {
     data.series
         .iter()
-        .flat_map(|(_, values)| values.iter().copied())
+        .enumerate()
+        .flat_map(|(s, (_, values))| (0..values.len()).map(move |i| data.top(s, i)))
         .fold(0.0_f64, f64::max)
         .max(1.0)
 }

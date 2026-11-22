@@ -2783,10 +2783,12 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
     for (n, series) in chart.series.iter().enumerate() {
         let own = match chart.kind {
             ChartKind::Pie => crate::chart::effective_color(chart, n, Some(0)),
-            ChartKind::Bar | ChartKind::Line => crate::chart::effective_color(chart, n, None),
+            ChartKind::Bar | ChartKind::Line | ChartKind::Area => {
+                crate::chart::effective_color(chart, n, None)
+            }
         };
         styles.push((format!("gch{n}"), own));
-        match chart.kind {
+        match chart.series_kind(n) {
             ChartKind::Pie => {
                 for point in 0..cell_count(&series.values) {
                     styles.push((
@@ -2803,7 +2805,7 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
                     ));
                 }
             }
-            ChartKind::Line => {}
+            ChartKind::Line | ChartKind::Area => {}
         }
     }
     // Each axis gets a style carrying `chart:display-label`, always stated: LibreOffice reads an
@@ -2812,7 +2814,7 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
     // counter-clockwise.
     let direction = match chart.kind {
         ChartKind::Pie => format!(" chart:reverse-direction=\"{}\"", chart.clockwise),
-        ChartKind::Bar | ChartKind::Line => String::new(),
+        ChartKind::Bar | ChartKind::Line | ChartKind::Area => String::new(),
     };
     let axis_styles: [(&str, &Axis, &str); 2] = [
         ("gchx", &chart.x_axis, ""),
@@ -2850,6 +2852,12 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
             axis.tick_labels
         );
     }
+    if chart.stacked {
+        out.push_str(
+            "         <style:style style:name=\"gchp\" style:family=\"chart\">\
+             <style:chart-properties chart:stacked=\"true\"/></style:style>\n",
+        );
+    }
     out.push_str("        </office:automatic-styles>\n");
     out.push_str("        <office:body><office:chart>\n");
     let _ = writeln!(
@@ -2875,7 +2883,11 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
             legend.token()
         );
     }
-    out.push_str("          <chart:plot-area>\n");
+    out.push_str(if chart.stacked {
+        "          <chart:plot-area chart:style-name=\"gchp\">\n"
+    } else {
+        "          <chart:plot-area>\n"
+    });
     write_axis(out, "x", chart.categories.as_deref(), &chart.x_axis);
     write_axis(out, "y", None, &chart.y_axis);
     for (n, series) in chart.series.iter().enumerate() {
@@ -2887,11 +2899,11 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
             out,
             "           <chart:series chart:class=\"{}\" \
              chart:values-cell-range-address=\"{}\"{label} chart:style-name=\"gch{n}\">",
-            chart.kind.class(),
+            chart.series_kind(n).class(),
             esc(&series.values)
         );
         let count = cell_count(&series.values);
-        match chart.kind {
+        match chart.series_kind(n) {
             // A pie's slices are what a reader tells apart, so every one is its own
             // `chart:data-point` and its own colour.
             ChartKind::Pie => {
@@ -2922,8 +2934,8 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
                     }
                 }
             }
-            // A line series shares one colour across every point in it.
-            ChartKind::Line => {
+            // A line or area series shares one colour across every point in it.
+            ChartKind::Line | ChartKind::Area => {
                 let _ = writeln!(
                     out,
                     "            <chart:data-point chart:repeated=\"{count}\"/>"

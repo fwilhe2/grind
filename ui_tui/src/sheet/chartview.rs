@@ -109,7 +109,8 @@ pub fn lines(chart: &Chart, data: &ChartData, width: usize) -> Vec<String> {
                 }
             }
         }
-        ChartKind::Line => {
+        // An area chart's bands read as its lines do: what each series runs through.
+        ChartKind::Line | ChartKind::Area => {
             for (s, (_, values)) in data.series.iter().enumerate() {
                 let low = values.iter().copied().fold(f64::MAX, f64::min);
                 let high = values.iter().copied().fold(f64::MIN, f64::max);
@@ -175,6 +176,8 @@ mod tests {
             categories: vec!["Q1".into(), "Q2".into()],
             series: vec![("Sales".into(), vec![10.0, 20.0])],
             value_format: None,
+            kinds: Vec::new(),
+            stacked: false,
         }
     }
 
@@ -192,6 +195,7 @@ mod tests {
             clockwise: true,
             title: None,
             legend: None,
+            stacked: false,
         };
         chart.title = title.map(str::to_owned);
         chart.legend = legend;
