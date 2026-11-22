@@ -7,12 +7,14 @@
 //! Display only: the cell's value is the value, so a formatted cell still sums, compares and
 //! round-trips as its number. A format is the spec's own shape, an ordered sequence of literal and
 //! value-bearing pieces; a format-code string (`"#,##0.00"`) is never stored, only read into parts
-//! ([`code`]). No XML here: `odf::read` builds these and `odf::write` puts them back.
+//! ([`of_code`]). No XML here: `odf::read` builds these and `odf::write` puts them back.
 //!
 //! Not modelled: month and weekday names are English whatever the locale (a name table wants
 //! CLDR), and `number:truncate-on-overflow="false"` — hours wrap at 24, the attribute's default.
 
-pub mod code;
+mod code;
+
+pub use code::{Translation, Unspellable, classify, of_code};
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Write as _;

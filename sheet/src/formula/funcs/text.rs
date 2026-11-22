@@ -65,7 +65,7 @@ fn fixed(args: &mut Args) -> Answer {
 }
 
 /// §6.20.23 `TEXT(Value; Format)`: the value spelled in a format code, read as
-/// [`crate::numfmt::code`] reads one and rendered in the document's locale. An empty code is empty
+/// [`crate::numfmt::of_code`] reads one and rendered in the document's locale. An empty code is empty
 /// text and `General` the plain number; text is its own spelling unless the code has a text
 /// section. A code with a part the model cannot spell — a fraction, an exponent, a display factor —
 /// is `#VALUE!` rather than a different number.
@@ -82,12 +82,12 @@ fn text(args: &mut Args) -> Answer {
     if code.trim().is_empty() {
         return Ok(Value::Text(String::new()));
     }
-    let translated = crate::numfmt::code::of_code(&code);
+    let translated = crate::numfmt::of_code(&code);
     if translated
         .lost
         .iter()
         .copied()
-        .any(crate::numfmt::code::Unspellable::refuses)
+        .any(crate::numfmt::Unspellable::refuses)
     {
         return Err(FormulaError::Value);
     }

@@ -6,7 +6,7 @@
 //! shares; a **built-in id** (ECMA-376 §18.8.30) is this filter's to translate, by meaning.
 
 use grind_sheet::model::NumberKind;
-pub use grind_sheet::numfmt::code::{Translation, Unspellable, classify, of_code};
+pub use grind_sheet::numfmt::{Translation, Unspellable, classify, of_code};
 
 /// What a built-in format id means, for the value reader (ECMA-376 §18.8.30):
 ///
