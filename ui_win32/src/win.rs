@@ -2161,12 +2161,13 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
     let commands: &[Command] = if is_welcome(hwnd) {
         &[Command::NewSheet, Command::NewText, Command::Open]
     } else if on_chart {
-        // A chart's own menu, over the chart `context_on_chart` has just selected — the three
+        // A chart's own menu, over the chart `context_on_chart` has just selected — the
         // verbs every window offers there, each of which has its key on a selected chart too.
         &[
             Command::ChartToBar,
             Command::ChartToLine,
             Command::ChartToPie,
+            Command::ChartToArea,
             Command::RestyleChart,
             Command::MoveChart,
             Command::DeleteChart,
@@ -4035,10 +4036,13 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::MergeCells => merge_cells(hwnd, true),
         Command::UnmergeCells => merge_cells(hwnd, false),
         Command::InsertChart => insert_chart(hwnd, None),
-        Command::InsertBarChart | Command::InsertLineChart | Command::InsertPieChart => {
+        Command::InsertBarChart
+        | Command::InsertLineChart
+        | Command::InsertPieChart
+        | Command::InsertAreaChart => {
             insert_chart(hwnd, command.inserts_chart_kind());
         }
-        Command::ChartToBar | Command::ChartToLine | Command::ChartToPie => {
+        Command::ChartToBar | Command::ChartToLine | Command::ChartToPie | Command::ChartToArea => {
             if let Some(kind) = command.chart_kind() {
                 set_chart_kind(hwnd, kind);
             }
@@ -4321,7 +4325,7 @@ fn merge_cells(hwnd: HWND, merge: bool) {
     refresh(hwnd);
 }
 
-/// Chart ▸ Insert Chart, and Insert Bar/Line/Pie Chart — `grind_sheet::verbs::insert_chart` over
+/// Chart ▸ Insert Chart, and Insert … Chart for each kind — `grind_sheet::verbs::insert_chart` over
 /// the selection, as `kind` or as the kind the cells want; this window says only where a column
 /// and a row sit, in millimetres.
 fn insert_chart(hwnd: HWND, kind: Option<grind_sheet::ChartKind>) {
@@ -4391,7 +4395,7 @@ fn preview_chart(hwnd: HWND) {
     refresh(hwnd);
 }
 
-/// Chart ▸ Change to Bar/Line/Pie Chart, and the same three on a chart's own menu — the selected
+/// Chart ▸ Change to … Chart for each kind, and the same on a chart's own menu — the selected
 /// chart, else the last, turned into `kind` (`verbs::set_chart_kind`).
 fn set_chart_kind(hwnd: HWND, kind: grind_sheet::ChartKind) {
     // SAFETY: one borrow, no dialog.
@@ -7034,9 +7038,11 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::InsertBarChart
         | Command::InsertLineChart
         | Command::InsertPieChart
+        | Command::InsertAreaChart
         | Command::ChartToBar
         | Command::ChartToLine
         | Command::ChartToPie
+        | Command::ChartToArea
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart
@@ -8061,9 +8067,11 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::InsertBarChart
         | Command::InsertLineChart
         | Command::InsertPieChart
+        | Command::InsertAreaChart
         | Command::ChartToBar
         | Command::ChartToLine
         | Command::ChartToPie
+        | Command::ChartToArea
         | Command::PreviewChart
         | Command::DeleteChart
         | Command::RestyleChart

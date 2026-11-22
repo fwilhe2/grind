@@ -210,11 +210,11 @@ Every spreadsheet can state a **locale**, which decides how numbers are written 
 
 ## 3.11 Charts
 
-To draw a chart, select the table, including its headings, and choose **Insert a Chart** from the command palette or the cell's context menu. The chart dialog shows a live preview. grind guesses which row or column holds the labels and whether the data runs down or across, and you can change the guess. Bar, line and pie charts are available.
+To draw a chart, select the table, including its headings, and choose **Insert a Chart** from the command palette or the cell's context menu. The chart dialog shows a live preview. grind guesses which row or column holds the labels and whether the data runs down or across, and you can change the guess. Bar, line, pie and area charts are available.
 
 A chart sits on the sheet. Click it to select it, drag it to move it, and drag one of its eight handles to resize it. **Shift** on a corner handle keeps the proportions. **Delete** removes the selected chart, the arrow keys nudge it, and **Esc** lets go.
 
-To change a chart after it is made, right-click it and choose **Edit Chart…**. The dialog changes the kind (bar, line or pie), the title, the legend, the cells it reads from, and the axes' titles, labels and gridlines, with a preview as you go. Colours of a series or of a single bar or slice are set with `grind sheet chart-style`. In the browser the palette offers **Change the chart…**, and the Windows and Mac programs have a Chart menu that does the same in words.
+To change a chart after it is made, right-click it and choose **Edit Chart…**. The dialog changes the kind (bar, line, pie or area), the title, the legend, the cells it reads from, and the axes' titles, labels and gridlines, with a preview as you go. Colours of a series or of a single bar or slice are set with `grind sheet chart-style`. In the browser the palette offers **Change the chart…**, and the Windows and Mac programs have a Chart menu that does the same in words.
 
 ## 3.12 Seeing what a spreadsheet is made of
 

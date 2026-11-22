@@ -76,11 +76,13 @@ pub enum Command {
     InsertBarChart,
     InsertLineChart,
     InsertPieChart,
+    InsertAreaChart,
     /// The selected chart, else the last, turned into one kind (`verbs::set_chart_kind`) —
     /// checked by the kind it already is.
     ChartToBar,
     ChartToLine,
     ChartToPie,
+    ChartToArea,
     /// The chart changed in words (`verbs::restyle_chart`).
     RestyleChart,
     /// The last chart's corner moved to the active cell, its size kept (`verbs::move_chart`).
@@ -383,9 +385,11 @@ impl Command {
         Command::InsertBarChart,
         Command::InsertLineChart,
         Command::InsertPieChart,
+        Command::InsertAreaChart,
         Command::ChartToBar,
         Command::ChartToLine,
         Command::ChartToPie,
+        Command::ChartToArea,
         Command::RestyleChart,
         Command::MoveChart,
         Command::WrapText,
@@ -515,17 +519,19 @@ impl Command {
         Command::CurrencyPound,
     ];
 
-    /// The three *Insert … Chart* verbs and the three *Change to …* ones, each in
+    /// The *Insert … Chart* verbs and the *Change to …* ones, each in
     /// `ChartKind::ALL`'s order.
-    pub const INSERT_CHART_KINDS: [Command; 3] = [
+    pub const INSERT_CHART_KINDS: [Command; 4] = [
         Command::InsertBarChart,
         Command::InsertLineChart,
         Command::InsertPieChart,
+        Command::InsertAreaChart,
     ];
-    pub const CHART_KINDS: [Command; 3] = [
+    pub const CHART_KINDS: [Command; 4] = [
         Command::ChartToBar,
         Command::ChartToLine,
         Command::ChartToPie,
+        Command::ChartToArea,
     ];
 
     /// The kind an *Insert … Chart* verb inserts, or `None` for every other verb.
@@ -898,6 +904,10 @@ pub const MENUS: &[Menu] = &[
                 label: "Insert P&ie Chart",
             },
             Item::Verb {
+                command: Command::InsertAreaChart,
+                label: "Insert A&rea Chart",
+            },
+            Item::Verb {
                 command: Command::PreviewChart,
                 label: "Chart &Preview…",
             },
@@ -913,6 +923,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::ChartToPie,
                 label: "Change to Pi&e Chart",
+            },
+            Item::Verb {
+                command: Command::ChartToArea,
+                label: "Change to Area Char&t",
             },
             Item::Verb {
                 command: Command::RestyleChart,
@@ -1368,9 +1382,11 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::InsertBarChart
         | Command::InsertLineChart
         | Command::InsertPieChart
+        | Command::InsertAreaChart
         | Command::ChartToBar
         | Command::ChartToLine
         | Command::ChartToPie
+        | Command::ChartToArea
         | Command::RestyleChart
         | Command::MoveChart
         | Command::WrapText
@@ -1859,9 +1875,11 @@ mod tests {
             Command::InsertBarChart,
             Command::InsertLineChart,
             Command::InsertPieChart,
+            Command::InsertAreaChart,
             Command::ChartToBar,
             Command::ChartToLine,
             Command::ChartToPie,
+            Command::ChartToArea,
             Command::RestyleChart,
             Command::MoveChart,
             Command::BordersAll,

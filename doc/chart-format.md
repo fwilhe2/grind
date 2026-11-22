@@ -129,7 +129,7 @@ things more, and nothing else:
   only the series of the chart's own class stack. That is the rule drawn here, for an area chart;
   a stacked bar or line chart from a file keeps the flag and is drawn side by side.
 
-Changing a chart's kind (Bar, Line, Pie in every window) makes a plain chart of that kind:
+Changing a chart's kind (Bar, Line, Pie, Area in every window) makes a plain chart of that kind:
 `stacked` and every series' own kind go, since they belonged to the kind they were made for. An
 edit that keeps the kind keeps both, a series' kind travelling with it as its colours do.
 

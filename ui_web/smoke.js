@@ -759,7 +759,7 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   // The kinds GNOME's dialog offers: pressing Pie redraws the picture as one, and Insert
   // inserts that kind.
   const pieButton = preview.querySelector('button[data-kind="pie"]');
-  check("the preview offers the three kinds", preview.querySelectorAll("button[data-kind]").length, 3);
+  check("the preview offers every kind", preview.querySelectorAll("button[data-kind]").length, 4);
   pieButton.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
   check("Pie is pressed", pieButton.getAttribute("aria-pressed"), "true");
   check("and the picture is a pie", preview.querySelectorAll("svg path").length > 0, true);

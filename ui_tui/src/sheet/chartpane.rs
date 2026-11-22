@@ -9,7 +9,7 @@
 //! too.
 //!
 //! Keys: `d`/`x`/Delete deletes it (`u` brings it back), `H`/`J`/`K`/`L` nudge it a cell, `+`/`-`
-//! resize, `m` moves it to the cursor's cell, `b`/`l`/`p` make it a bar, line or pie chart, Enter
+//! resize, `m` moves it to the cursor's cell, `b`/`l`/`p`/`a` make it a bar, line, pie or area chart, Enter
 //! changes it in words, Esc lets go. Pure state and a reply; `app.rs` acts on the reply.
 
 use ratatui::Frame;
@@ -40,7 +40,7 @@ pub enum Reply {
     Move(usize),
     /// Enter: the command line, ready for `:chart <words>` on this chart.
     Change(usize),
-    /// `b`, `l` or `p`: turned into a bar, line or pie chart.
+    /// `b`, `l`, `p` or `a`: turned into a bar, line, pie or area chart.
     Kind(usize, grind_sheet::ChartKind),
     /// A cell's step, columns and rows.
     Nudge(usize, i8, i8),
@@ -51,7 +51,7 @@ pub enum Reply {
 /// How much `+` and `-` change a chart's size.
 pub const STEP: f64 = 1.2;
 
-pub const KEYS: &str = " j/k choose · b/l/p bar/line/pie · Enter change · m move here · HJKL nudge · +/- size · d delete · Esc let go ";
+pub const KEYS: &str = " j/k choose · b/l/p/a kind · Enter change · m move here · HJKL nudge · +/- size · d delete · Esc let go ";
 
 impl Charts {
     pub fn is_open(self) -> bool {
@@ -94,6 +94,7 @@ impl Charts {
             KeyCode::Char('b') => Reply::Kind(at, grind_sheet::ChartKind::Bar),
             KeyCode::Char('l') => Reply::Kind(at, grind_sheet::ChartKind::Line),
             KeyCode::Char('p') => Reply::Kind(at, grind_sheet::ChartKind::Pie),
+            KeyCode::Char('a') => Reply::Kind(at, grind_sheet::ChartKind::Area),
             KeyCode::Char('H') => Reply::Nudge(at, -1, 0),
             KeyCode::Char('L') => Reply::Nudge(at, 1, 0),
             KeyCode::Char('K') => Reply::Nudge(at, 0, -1),

@@ -1541,6 +1541,11 @@ fn the_sample_script_still_builds_its_document() {
     assert_eq!(ok(&["get", &book, "M14", "--raw"]).trim(), "612.34");
     assert_eq!(ok(&["get", &book, "M15", "--raw"]).trim(), "179.85");
     assert_eq!(ok(&["get", &book, "M16"]).trim(), "Rent: 1,825.50");
+    let charts = ok(&["chart-list", &book]);
+    assert!(
+        charts.lines().any(|line| line.contains("\tArea\t")),
+        "{charts}"
+    );
     // LibreOffice's answer to the same call, to the digits it writes.
     assert_eq!(
         ok(&["get", &book, "M19", "--raw"]).trim(),

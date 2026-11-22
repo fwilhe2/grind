@@ -146,6 +146,7 @@ pub fn restyle_chart(
             "bar" => spec.kind = crate::ChartKind::Bar,
             "line" => spec.kind = crate::ChartKind::Line,
             "pie" => spec.kind = crate::ChartKind::Pie,
+            "area" => spec.kind = crate::ChartKind::Area,
             "no-title" => spec.title = None,
             "no-x-title" => spec.x_axis.label = None,
             "no-y-title" => spec.y_axis.label = None,
@@ -322,7 +323,7 @@ pub const CHART_HINT: &str =
     "In words, e.g. pie title=\"Sales by month\" y-grid color1=red width=12cm";
 
 /// Every word [`restyle_chart`] takes.
-pub const CHART_WORDS: &str = "bar, line, pie, title=…, no-title, x-title=…, y-title=…, \
+pub const CHART_WORDS: &str = "bar, line, pie, area, title=…, no-title, x-title=…, y-title=…, \
      legend=top|bottom|start|end|none, x-grid, y-grid, no-x-labels, color1=red|#0074d9|auto, \
      clockwise, anticlockwise, width=12cm, height=8cm, range=A1:C9";
 
@@ -557,6 +558,13 @@ mod tests {
         assert!(restyle_chart(&app, 0, 0, "shout").is_err());
         assert!(restyle_chart(&app, 0, 0, "").is_err());
         assert!(restyle_chart(&app, 0, 5, "pie").is_err());
+        // Every kind a picker offers is a word, area among them.
+        assert!(crate::ChartKind::ALL.contains(&crate::ChartKind::Area));
+        for kind in crate::ChartKind::ALL {
+            restyle_chart(&app, 0, 0, &kind.name().to_lowercase()).unwrap();
+            assert_eq!(app.charts(0).unwrap()[0].kind, kind);
+        }
+        restyle_chart(&app, 0, 0, "line").unwrap();
 
         // A size is words too, the look untouched by it.
         restyle_chart(&app, 0, 0, "width=12cm height=8cm").unwrap();

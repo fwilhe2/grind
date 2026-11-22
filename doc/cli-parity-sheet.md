@@ -122,7 +122,7 @@ stops ratcheting.
 - `stale` — every command that writes: the warning on stderr, and the `stale` field of its
   JSON report. Not a command of its own, because the answer is only interesting *after* an
   edit — asking it of an untouched document is what `grind sheet recalc --dry-run` is for.
-- `add_chart` — `grind sheet chart-add [--from <range>] [--type bar|line|pie] [--categories
+- `add_chart` — `grind sheet chart-add [--from <range>] [--type bar|line|pie|area] [--categories
   <range>] [--series <range>[=<label-range>]]… [--clockwise <bool>] [--title <text>] [--legend
   none|end|bottom|top|start] [--x-axis-label <text>]
   [--y-axis-label <text>] [--x-tick-labels <bool>] [--y-tick-labels <bool>] [--x-gridlines

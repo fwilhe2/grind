@@ -703,19 +703,13 @@ impl FilterChoice {
     }
 }
 
-/// A chart menu's tags: the title, a change in words, the three kinds from [`CHART_KIND`], the
+/// A chart menu's tags: the title, a change in words, `ChartKind::ALL` from [`CHART_KIND`], the
 /// five legends from [`CHART_LEGEND`], and removal.
 const CHART_TITLE: isize = 0;
 const CHART_WORDS: isize = 1;
 const CHART_KIND: isize = 10;
 const CHART_LEGEND: isize = 20;
 const CHART_DELETE: isize = 30;
-
-const CHART_KINDS: [(&str, ChartKind); 3] = [
-    ("Bar Chart", ChartKind::Bar),
-    ("Line Chart", ChartKind::Line),
-    ("Pie Chart", ChartKind::Pie),
-];
 
 const CHART_LEGENDS: [(&str, Option<ChartLegend>); 5] = [
     ("No Legend", None),
@@ -793,8 +787,8 @@ impl ChartChoice {
                 };
                 Change::Title(Some(title))
             }
-            tag if (CHART_KIND..CHART_KIND + 3).contains(&tag) => {
-                Change::Kind(CHART_KINDS[(tag - CHART_KIND) as usize].1)
+            tag if (CHART_KIND..CHART_KIND + ChartKind::ALL.len() as isize).contains(&tag) => {
+                Change::Kind(ChartKind::ALL[(tag - CHART_KIND) as usize])
             }
             tag if (CHART_LEGEND..CHART_LEGEND + 5).contains(&tag) => {
                 Change::Legend(CHART_LEGENDS[(tag - CHART_LEGEND) as usize].1)
@@ -1338,8 +1332,9 @@ impl GridView {
         item("Title…", CHART_TITLE, false);
         item("Change…", CHART_WORDS, false);
         menu.addItem(&NSMenuItem::separatorItem(mtm));
-        for (offset, (title, kind)) in CHART_KINDS.iter().enumerate() {
-            item(title, CHART_KIND + offset as isize, chart.kind == *kind);
+        for (offset, kind) in ChartKind::ALL.into_iter().enumerate() {
+            let title = format!("{} Chart", kind.name());
+            item(&title, CHART_KIND + offset as isize, chart.kind == kind);
         }
         menu.addItem(&NSMenuItem::separatorItem(mtm));
         for (offset, (title, legend)) in CHART_LEGENDS.iter().enumerate() {

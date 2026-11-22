@@ -1976,7 +1976,7 @@ pub(crate) enum Command {
         filter: Option<String>,
     },
 
-    /// Add a chart — bar, line or pie
+    /// Add a chart — bar, line, pie or area
     ///
     /// `sheet chart-add book.ods --from A1:C5` charts a table the way the windows' Insert Chart
     /// does: a first row of text names the series, a first column of text, dates or a counting
@@ -1992,7 +1992,7 @@ pub(crate) enum Command {
         /// A table to chart, read the way Insert Chart reads one; `--series` is then optional
         #[arg(long, value_name = "RANGE")]
         from: Option<String>,
-        /// Bar, line or pie; with `--from`, defaults to what the table suggests
+        /// Bar, line, pie or area; with `--from`, defaults to what the table suggests
         #[arg(value_enum, long)]
         r#type: Option<ChartType>,
         /// The range naming each category (the x axis), e.g. B3:B9
@@ -2173,12 +2173,13 @@ pub(crate) enum Command {
     },
 }
 
-/// The three shapes `sheet chart-add --type` takes (`doc/chart-format.md`).
+/// The shapes `sheet chart-add --type` takes (`doc/chart-format.md`).
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub(crate) enum ChartType {
     Bar,
     Line,
     Pie,
+    Area,
 }
 
 /// Where `--legend` puts a chart's legend, or `none` — ODF's own words (`chart:legend-position`),
@@ -2210,6 +2211,7 @@ impl From<ChartType> for grind_sheet::ChartKind {
             ChartType::Bar => grind_sheet::ChartKind::Bar,
             ChartType::Line => grind_sheet::ChartKind::Line,
             ChartType::Pie => grind_sheet::ChartKind::Pie,
+            ChartType::Area => grind_sheet::ChartKind::Area,
         }
     }
 }

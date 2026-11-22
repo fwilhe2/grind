@@ -367,7 +367,7 @@ pub const SHEET: &[Command] = &[
         "",
         false,
     ),
-    // The three kinds, as GNOME's dialog offers them: inserted as one (`verbs::insert_chart`'s
+    // The kinds, as GNOME's dialog offers them: inserted as one (`verbs::insert_chart`'s
     // `kind`) or the chart turned into one (`verbs::set_chart_kind`).
     cmd(
         "chart.insert-bar",
@@ -391,6 +391,13 @@ pub const SHEET: &[Command] = &[
         false,
     ),
     cmd(
+        "chart.insert-area",
+        "Insert an area chart from the selection",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
         "chart.kind-bar",
         "Make the chart a bar chart",
         "Charts",
@@ -407,6 +414,13 @@ pub const SHEET: &[Command] = &[
     cmd(
         "chart.kind-pie",
         "Make the chart a pie chart",
+        "Charts",
+        "",
+        false,
+    ),
+    cmd(
+        "chart.kind-area",
+        "Make the chart an area chart",
         "Charts",
         "",
         false,

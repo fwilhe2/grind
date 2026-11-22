@@ -170,7 +170,7 @@ pub enum Command {
     /// An autofilter over the selection, or off again — Edit ▸ Filter (`sheet/filter.rs`).
     Filter,
     /// A chart of the table the selection is in, beside it — Insert ▸ Chart as the cells want,
-    /// Insert ▸ Bar/Line/Pie Chart as that kind (`verbs::insert_chart`'s `kind`).
+    /// Insert ▸ Bar/Line/Pie/Area Chart as that kind (`verbs::insert_chart`'s `kind`).
     InsertChart(Option<ChartKind>),
     /// The chart Insert ▸ Chart would make, drawn in an alert with Insert and Cancel — nothing
     /// is written unless Insert is chosen (`verbs::preview_insert_chart`).
@@ -379,6 +379,7 @@ impl Command {
             Command::InsertChart(Some(ChartKind::Bar)),
             Command::InsertChart(Some(ChartKind::Line)),
             Command::InsertChart(Some(ChartKind::Pie)),
+            Command::InsertChart(Some(ChartKind::Area)),
             Command::PreviewChart,
             Command::Filter,
             Command::CopyValue,
@@ -1121,6 +1122,11 @@ pub static MENUS: &[Menu] = &[
                 "Pie Chart",
                 None,
                 Command::InsertChart(Some(ChartKind::Pie)),
+            ),
+            command(
+                "Area Chart",
+                None,
+                Command::InsertChart(Some(ChartKind::Area)),
             ),
             command("Chart Preview…", None, Command::PreviewChart),
             Item::Separator,

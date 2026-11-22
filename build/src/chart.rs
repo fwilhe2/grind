@@ -61,7 +61,10 @@ impl Chart {
             "bar" => ChartKind::Bar,
             "line" => ChartKind::Line,
             "pie" => ChartKind::Pie,
-            other => return Err(format!("{other}: a chart is a bar, a line or a pie").into()),
+            "area" => ChartKind::Area,
+            other => {
+                return Err(format!("{other}: a chart is a bar, a line, a pie or an area").into());
+            }
         };
         Ok(Chart(Request {
             kind,

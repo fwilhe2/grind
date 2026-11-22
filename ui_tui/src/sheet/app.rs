@@ -1631,7 +1631,7 @@ impl App {
     }
 
     /// `:chart` — a chart of the table the selection means (`grind_sheet::verbs::insert_chart`);
-    /// `:chart new bar|line|pie` makes it that kind. A terminal draws no chart on the grid, so it
+    /// `:chart new bar|line|pie|area` makes it that kind. A terminal draws no chart on the grid, so it
     /// is placed at a default column width and row height.
     fn cmd_chart(&mut self, kind: &str) {
         let Some(kind) = chart_kind(kind) else {
@@ -1674,7 +1674,7 @@ impl App {
                 };
                 let mut text = format!(
                     "Preview — not inserted yet; {insert} inserts it, \
-                     :chart preview bar|line|pie draws another kind\n\n"
+                     :chart preview bar|line|pie|area draws another kind\n\n"
                 );
                 for line in super::chartview::lines(&chart, &data, 72) {
                     text.push_str(&line);
@@ -3654,7 +3654,7 @@ fn chart_kind(word: &str) -> Option<Option<grind_sheet::ChartKind>> {
 }
 
 fn not_a_kind(word: &str) -> String {
-    format!("\u{201c}{word}\u{201d} is not a kind of chart \u{2014} bar, line or pie")
+    format!("\u{201c}{word}\u{201d} is not a kind of chart \u{2014} bar, line, pie or area")
 }
 
 #[cfg(test)]
@@ -4412,8 +4412,8 @@ mod tests {
         assert_eq!(app.chart_now(), None);
     }
 
-    /// The GNOME dialog's three kinds, here: `:chart new pie` inserts one, `:chart preview line`
-    /// draws one without writing, and `b`/`l`/`p` in `:charts` turn the selected chart into one.
+    /// The GNOME dialog's kinds, here: `:chart new pie` inserts one, `:chart preview line` draws
+    /// one without writing, and `b`/`l`/`p`/`a` in `:charts` turn the selected chart into one.
     #[test]
     fn a_chart_goes_in_as_a_chosen_kind_and_changes_kind_from_the_pane() {
         use grind_sheet::ChartKind;
@@ -4445,7 +4445,7 @@ mod tests {
 
         app.run_command("charts");
         let text = screen(&mut app, 140, 20).join("\n");
-        assert!(text.contains("b/l/p"), "the keys are said: {text}");
+        assert!(text.contains("b/l/p/a"), "the keys are said: {text}");
         press(&mut app, KeyCode::Char('l'));
         assert_eq!(
             app.core.charts(0).unwrap()[0].kind,
@@ -4454,13 +4454,15 @@ mod tests {
             app.status
         );
         assert!(app.chart_pane.is_open(), "the pane stays on it");
+        press(&mut app, KeyCode::Char('a'));
+        assert_eq!(app.core.charts(0).unwrap()[0].kind, ChartKind::Area);
         press(&mut app, KeyCode::Char('b'));
         assert_eq!(app.core.charts(0).unwrap()[0].kind, ChartKind::Bar);
         press(&mut app, KeyCode::Esc);
         press(&mut app, KeyCode::Char('u'));
         assert_eq!(
             app.core.charts(0).unwrap()[0].kind,
-            ChartKind::Line,
+            ChartKind::Area,
             "one u, one change"
         );
     }

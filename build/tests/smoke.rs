@@ -457,7 +457,7 @@ fn a_chart_with_nothing_to_draw_says_so() {
     let message = error(r#"let s = sheet("S"); s.push([1]); s.chart(chart("bar")); s"#);
     assert!(message.contains("at least one .series"), "{message}");
     let message = error(r#"chart("donut")"#);
-    assert!(message.contains("bar, a line or a pie"), "{message}");
+    assert!(message.contains("a pie or an area"), "{message}");
 }
 
 /// `check` compiles and never runs — what a language server may do with a script it merely has

@@ -211,7 +211,7 @@ run fit "$book" B:G
 # line is one colour per series, a pie one per slice (`series_color`'s own cycle); a colour
 # picked by hand — `--point-color`/`--series-color` — is a sticky override that survives every
 # later save, which is what `chart-style` is for.
-say "chart: bar, line and pie, tracking ranges rather than values"
+say "chart: bar, line, pie and area, tracking ranges rather than values"
 run chart-add "$book" --from A1:C7 --title "Budget against actual" \
   --x-axis-label Category --y-axis-label Budgeted --y-gridlines true \
   --x 1cm --y 30cm --width 12cm --height 8cm
@@ -232,6 +232,11 @@ run chart-edit "$book" 0 --x-tick-labels false --x-axis-label ""
 say "chart: a pie of the same categories, coloured per slice by default"
 run chart-add "$book" --type pie --categories A2:A7 --series C2:C7 --legend bottom \
   --x 16cm --y 30cm --width 10cm --height 8cm
+
+# Bands of an area chart, one series over the next as the figures run down the categories.
+say "chart: an area chart of budget and actual"
+run chart-add "$book" --type area --categories A2:A7 --series B2:B7=B1 --series C2:C7=C1 \
+  --legend bottom --x 27cm --y 30cm --width 12cm --height 8cm
 
 say "hide: a column or row by hand"
 run hide "$book" D

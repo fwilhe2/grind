@@ -33,13 +33,6 @@ use grind_sheet::{App, Chart, ChartData, ChartKind, ChartLegend, ChartShape, Cha
 use crate::geom::Rect;
 use crate::grid::Grid;
 
-/// The three kinds, in the order their buttons stand.
-const KINDS: [(ChartKind, &str); 3] = [
-    (ChartKind::Bar, "Bar"),
-    (ChartKind::Line, "Line"),
-    (ChartKind::Pie, "Pie"),
-];
-
 /// The legend's positions as the dropdown offers them, "None" first. `End` is the right-hand
 /// side and `Start` the left: ODF's words are about the writing direction, and this window
 /// lays a chart out left to right (`doc/text-layout.md` puts RTL out of scope).
@@ -186,7 +179,7 @@ impl Dialog {
         card.set_margin_bottom(6);
         card.append(&preview);
 
-        // The type, as three buttons that press each other out — a glyph and a word each,
+        // The type, as buttons that press each other out — a glyph and a word each,
         // since Adwaita's icon theme has no chart icons and a word is what a person reads.
         let type_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         type_row.add_css_class("linked");
@@ -194,16 +187,16 @@ impl Dialog {
         type_row.set_halign(gtk::Align::Center);
         type_row.set_margin_top(6);
         type_row.set_margin_bottom(6);
-        let kinds: Vec<gtk::ToggleButton> = KINDS
-            .iter()
-            .map(|(kind, name)| {
+        let kinds: Vec<gtk::ToggleButton> = ChartKind::ALL
+            .into_iter()
+            .map(|kind| {
                 let content = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                 content.set_halign(gtk::Align::Center);
-                content.append(&glyph(*kind));
-                content.append(&gtk::Label::new(Some(name)));
+                content.append(&glyph(kind));
+                content.append(&gtk::Label::new(Some(kind.name())));
                 let button = gtk::ToggleButton::builder()
                     .child(&content)
-                    .tooltip_text(format!("{name} Chart"))
+                    .tooltip_text(format!("{} Chart", kind.name()))
                     .build();
                 button.set_width_request(96);
                 type_row.append(&button);
@@ -501,11 +494,11 @@ impl Dialog {
     // --- reading the widgets ---
 
     fn kind(&self) -> ChartKind {
-        KINDS
-            .iter()
+        ChartKind::ALL
+            .into_iter()
             .zip(&self.kinds)
             .find(|(_, button)| button.is_active())
-            .map_or(ChartKind::Bar, |((kind, _), _)| *kind)
+            .map_or(ChartKind::Bar, |(kind, _)| kind)
     }
 
     fn shape(&self) -> ChartShape {
@@ -541,7 +534,7 @@ impl Dialog {
     // --- writing the widgets ---
 
     fn show_kind(&self, kind: ChartKind) {
-        if let Some(index) = KINDS.iter().position(|(k, _)| *k == kind) {
+        if let Some(index) = ChartKind::ALL.iter().position(|k| *k == kind) {
             self.kinds[index].set_active(true);
         }
     }
@@ -820,8 +813,9 @@ impl Preview {
     }
 }
 
-/// A chart type's glyph: three bars, a rising line, or a pie with a slice cut out — drawn in
-/// the button's own ink, so it follows the theme and the pressed state like the label beside it.
+/// A chart type's glyph: three bars, a rising line, a pie with a slice cut out, or a filled hill —
+/// drawn in the button's own ink, so it follows the theme and the pressed state like the label
+/// beside it.
 fn glyph(kind: ChartKind) -> gtk::DrawingArea {
     let area = gtk::DrawingArea::new();
     area.set_content_width(18);

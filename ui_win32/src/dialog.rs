@@ -2574,8 +2574,8 @@ pub fn choose_multi(
     .flatten()
 }
 
-/// Show the chart *Insert Chart* would make and ask whether to insert it, with Bar, Line and Pie
-/// buttons beside Insert, `shown`'s pressed: the kind for **Insert**, `None` for Cancel, Escape or
+/// Show the chart *Insert Chart* would make and ask whether to insert it, with a button per kind
+/// beside Insert, `shown`'s pressed: the kind for **Insert**, `None` for Cancel, Escape or
 /// closing. The picture is `sheet/chart.rs`'s marks over `grind_sheet::chart_paint`, so the
 /// preview is what the grid draws. Nothing is written here.
 pub fn chart_preview(

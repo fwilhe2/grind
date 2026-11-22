@@ -17,13 +17,17 @@ pub enum ChartKind {
     Bar,
     Line,
     Pie,
-    /// Read and drawn, not offered: the kind of an imported fan chart.
     Area,
 }
 
 impl ChartKind {
     /// The kinds a picker offers, in its order.
-    pub const ALL: [ChartKind; 3] = [ChartKind::Bar, ChartKind::Line, ChartKind::Pie];
+    pub const ALL: [ChartKind; 4] = [
+        ChartKind::Bar,
+        ChartKind::Line,
+        ChartKind::Pie,
+        ChartKind::Area,
+    ];
 
     /// The kind's name as a control shows it — `Bar`, `Line`, `Pie`, `Area`.
     #[must_use]
