@@ -283,16 +283,21 @@ fn concatenate(args: &mut Args) -> Answer {
 }
 
 /// §6.20.3 `CHAR` and §6.20.25 `UNICHAR`: the character with that Unicode code point — `CHAR` up
-/// to 255, so that `CODE(CHAR(N))` is `N` (§6.20.3 Note 1 allows Unicode).
+/// to 255, so that `CODE(CHAR(N))` is `N` (§6.20.3 Note 1 allows Unicode). Zero, and a control
+/// character XML 1.0 cannot carry in a cell, are empty text, as the oracle gives them.
 fn character(args: &mut Args, max: u32) -> Answer {
     args.arity(1..=1)?;
     let n = args.number(0)?.trunc();
-    if !(1.0..=f64::from(max)).contains(&n) {
+    if !(0.0..=f64::from(max)).contains(&n) {
         return Err(FormulaError::Value);
     }
-    char::from_u32(n as u32)
-        .map(|c| Value::Text(c.to_string()))
-        .ok_or(FormulaError::Value)
+    let c = char::from_u32(n as u32).ok_or(FormulaError::Value)?;
+    let storable = !c.is_control() || matches!(c, '\t' | '\n' | '\r') || u32::from(c) >= 0x7f;
+    Ok(Value::Text(if storable && c != '\0' {
+        c.to_string()
+    } else {
+        String::new()
+    }))
 }
 
 /// §6.20.5 `CODE` and §6.20.26 `UNICODE`: the first character's Unicode code point.

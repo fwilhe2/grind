@@ -1129,7 +1129,7 @@ fn the_standard_normal_and_its_inverse_agree_with_the_oracle() {
     close("=LEGACY.NORMSINV(0.9999999)", 5.199_337_582_290_66);
     close("=LEGACY.NORMSINV(1E-300)", -37.047_096_299_361_2);
     close("=LEGACY.NORMSINV(\"0.3\")", -0.524_400_512_708_041);
-    close("=LEGACY.NORMSINV(0.5)", 0.0);
+    assert_eq!(number("=LEGACY.NORMSINV(0.5)"), 0.0);
     // `0 < P < 1`: the oracle answers #VALUE! at either end and Err:502 past them; the domain
     // error is #NUM!, as everywhere else here.
     for p in ["0", "1", "-0.1"] {
@@ -1640,6 +1640,15 @@ fn excels_xlookup_and_xmatch_and_the_dotted_statistics() {
         error("=COM.MICROSOFT.XMATCH(\"kiwi\";[.A1:.A7])"),
         FormulaError::NA
     );
+    // An empty key matches nothing; a parameter's own error is the answer before a shape is.
+    assert_eq!(
+        error("=COM.MICROSOFT.XMATCH([.Z9];[.E1:.E7])"),
+        FormulaError::NA
+    );
+    assert_eq!(
+        error("=COM.MICROSOFT.XMATCH(1;[.A1:.C7];0;1/0)"),
+        FormulaError::DivZero
+    );
     assert_eq!(
         error("=COM.MICROSOFT.XMATCH(30;[.B1:.B7];0;3)"),
         FormulaError::Value
@@ -1689,7 +1698,19 @@ fn parity_references_errors_characters_and_lookup() {
     assert_eq!(text("=CHAR(169)"), "©");
     assert_eq!(number("=CODE(CHAR(233))"), 233.0);
     assert_eq!(error("=CHAR(256)"), FormulaError::Value);
-    assert_eq!(error("=CHAR(0)"), FormulaError::Value);
+    // Zero, and a control character XML 1.0 cannot carry in a cell, are empty text, as the
+    // oracle gives them; a tab, a line feed and a carriage return are themselves.
+    for empty in [
+        "=CHAR(0)",
+        "=CHAR(0.5)",
+        "=CHAR(1)",
+        "=UNICHAR(0)",
+        "=UNICHAR(2)",
+        "=UNICHAR(12)",
+    ] {
+        assert_eq!(text(empty), "", "{empty}");
+    }
+    assert_eq!(text("=CHAR(9)&CHAR(13)"), "\t\r");
     assert_eq!(number("=CODE(\"Apple\")"), 65.0);
     assert_eq!(number("=CODE(5)"), 53.0);
     assert_eq!(error("=CODE(\"\")"), FormulaError::Value);
@@ -1728,6 +1749,10 @@ fn isformula_and_formula_read_a_cells_formula() {
     // As the formula bar shows it.
     assert_eq!(eval("=FORMULA([.A1])"), Value::Text("=SUM(B1:B3)*2".into()));
     assert_eq!(eval("=FORMULA([.B1])"), Value::Error(FormulaError::NA));
+    assert_eq!(
+        eval("=FORMULA([.A1:.B1])"),
+        Value::Error(FormulaError::Value)
+    );
 }
 
 /// §6.20.23 `TEXT`: a value spelled in a format code, read as `numfmt::code` reads one (the

@@ -43,7 +43,7 @@ use grind_sheet::{CellValue, Pos};
 /// LibreOffice" in `doc/differential-fuzz.md` for the pin, `scripts/soffice-tests.sh` to run
 /// against it locally, and the upgrade procedure that keeps an image bump and a `FLOOR`
 /// change in the same commit.
-const FLOOR: usize = 913;
+const FLOOR: usize = 916;
 
 const DEFAULT_SEED: u64 = 0x5EED;
 const DEFAULT_FORMULAS: usize = 1000;

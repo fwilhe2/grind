@@ -192,6 +192,10 @@ fn xsearch(
     if !matches!(match_mode, -1..=2) || !matches!(search_mode, -2 | -1 | 1 | 2) {
         return Err(FormulaError::Value);
     }
+    // An empty key is nothing to look for.
+    if *key == Value::Empty {
+        return Err(FormulaError::NA);
+    }
     let visit: Vec<usize> = if search_mode < 0 {
         (0..values.len()).rev().collect()
     } else {
@@ -252,6 +256,7 @@ fn mode(args: &mut Args, i: usize, default: i64) -> Result<i64, FormulaError> {
 fn xlookup(args: &mut Args) -> Answer {
     args.arity(3..=6)?;
     let key = args.value(0);
+    let (match_mode, search_mode) = (mode(args, 4, 0)?, mode(args, 5, 1)?);
     let (values, rows, cols) = cells(args, 1);
     if rows > 1 && cols > 1 {
         return Err(FormulaError::Value);
@@ -261,7 +266,6 @@ fn xlookup(args: &mut Args) -> Answer {
     if (down && result_rows != values.len()) || (!down && result_cols != values.len()) {
         return Err(FormulaError::Value);
     }
-    let (match_mode, search_mode) = (mode(args, 4, 0)?, mode(args, 5, 1)?);
     match xsearch(&key, &values, match_mode, search_mode) {
         Ok(i) => Ok(if down {
             results[i * result_cols].clone()
@@ -278,11 +282,11 @@ fn xlookup(args: &mut Args) -> Answer {
 fn xmatch(args: &mut Args) -> Answer {
     args.arity(2..=4)?;
     let key = args.value(0);
+    let (match_mode, search_mode) = (mode(args, 2, 0)?, mode(args, 3, 1)?);
     let (values, rows, cols) = cells(args, 1);
     if rows > 1 && cols > 1 {
         return Err(FormulaError::Value);
     }
-    let (match_mode, search_mode) = (mode(args, 2, 0)?, mode(args, 3, 1)?);
     Ok(Value::number(
         xsearch(&key, &values, match_mode, search_mode)? as f64 + 1.0,
     ))

@@ -72,6 +72,9 @@ fn inverse_normal(p: f64) -> f64 {
     if p > 0.5 {
         return -inverse_normal(1.0 - p);
     }
+    if p == 0.5 {
+        return 0.0;
+    }
     let t = (-2.0 * p.ln()).sqrt();
     let mut x = -(t
         - (2.515_517 + 0.802_853 * t + 0.010_328 * t * t)

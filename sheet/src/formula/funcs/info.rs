@@ -164,6 +164,18 @@ fn first_cell(args: &mut Args) -> Option<super::super::eval::Address> {
     }
 }
 
+/// The one cell a reference argument names: `None` for a value, and `#VALUE!` for a range.
+fn one_cell(args: &mut Args) -> Result<Option<super::super::eval::Address>, FormulaError> {
+    match args.operand(0) {
+        Operand::Area(area) if area.rows.len() * area.cols.len() > 1 => Err(FormulaError::Value),
+        Operand::Area(area) => Ok(Some(super::super::eval::Address::new(
+            area.sheet,
+            crate::model::Pos::new(area.rows.start, area.cols.start),
+        ))),
+        Operand::Value(_) => Ok(None),
+    }
+}
+
 /// §6.13.18 `ISFORMULA`: whether the referenced cell holds a formula.
 fn is_formula(args: &mut Args) -> Answer {
     args.arity(1..=1)?;
@@ -174,10 +186,10 @@ fn is_formula(args: &mut Args) -> Answer {
 }
 
 /// §6.13.12 `FORMULA`: the referenced cell's formula as the formula bar shows it; `#N/A` for a
-/// cell without one, as the oracle answers.
+/// cell without one and `#VALUE!` for a range, as the oracle answers.
 fn formula(args: &mut Args) -> Answer {
     args.arity(1..=1)?;
-    let at = first_cell(args).ok_or(FormulaError::Value)?;
+    let at = one_cell(args)?.ok_or(FormulaError::Value)?;
     let stored = args.formula_at(at).ok_or(FormulaError::NA)?.to_owned();
     let shown = super::super::display::to_display(&stored).unwrap_or(stored);
     Ok(Value::Text(if shown.starts_with('=') {
