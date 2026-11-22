@@ -1256,6 +1256,22 @@ fn patched_table(
             }
         }
     }
+    // Charts written again all go in `table:shapes`, so a frame the file anchored in a cell comes
+    // out of it. A row rewritten drops it already; one patched around it keeps it, and the save's
+    // read-back refuses the doubled chart.
+    if sheet.origin.charts {
+        for range in &t.cell_charts {
+            let kept = t
+                .rows
+                .iter()
+                .zip(&plan.rows)
+                .find(|(e, _)| e.range.contains(&range.start))
+                .is_some_and(|(_, fix)| matches!(fix, RowFix::Keep));
+            if kept {
+                patches.push((range.clone(), String::new()));
+            }
+        }
+    }
     if let Some(range) = &plan.append {
         let mut ours = String::new();
         write_rows(

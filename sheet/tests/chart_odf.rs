@@ -274,3 +274,78 @@ fn a_blank_label_address_is_no_label() {
         );
     }
 }
+
+/// LibreOffice anchors a chart to a cell: the `draw:frame` sits in the `table:table-cell`, its
+/// `svg:x`/`svg:y` measured from that cell's corner (`doc/chart-format.md`).
+fn cell_anchored() -> String {
+    let frame = inline_chart("chart:line");
+    let start = frame.find("<draw:frame").unwrap();
+    let end = frame.find("</draw:frame>").unwrap() + "</draw:frame>".len();
+    let frame = frame[start..end].replace(
+        r#"svg:x="1cm" svg:y="2cm""#,
+        r#"svg:x="1cm" svg:y="0.25cm""#,
+    );
+    format!(
+        r#"<table:table table:name="Sheet1">
+  <table:table-column table:number-columns-repeated="3"/>
+  <table:table-row><table:table-cell office:value-type="string"><text:p>a</text:p></table:table-cell></table:table-row>
+  <table:table-row><table:table-cell/></table:table-row>
+  <table:table-row><table:table-cell table:number-columns-repeated="2"/><table:table-cell>{frame}</table:table-cell></table:table-row>
+ </table:table>"#
+    )
+}
+
+#[test]
+fn a_chart_anchored_to_a_cell_is_read_where_the_cell_is() {
+    let d = doc(&cell_anchored());
+    let charts = d.sheet(0).unwrap().charts();
+    assert_eq!(charts.len(), 1);
+    let mm = |l: &str| grind_core::style::length_mm(l).unwrap();
+    // Two columns of LibreOffice's default 2.258cm and 1cm into C3; two rows of 0.452cm and
+    // 0.25cm into it.
+    assert!(
+        (mm(&charts[0].x) - (2.0 * 22.58 + 10.0)).abs() < 0.01,
+        "{}",
+        charts[0].x
+    );
+    assert!(
+        (mm(&charts[0].y) - (2.0 * 4.52 + 2.5)).abs() < 0.01,
+        "{}",
+        charts[0].y
+    );
+}
+
+/// Saved untouched, the chart stays in its cell; moved, it is written once, in `table:shapes`.
+#[test]
+fn a_cell_anchored_chart_is_kept_or_moved_but_never_doubled() {
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" office:mimetype="application/vnd.oasis.opendocument.spreadsheet" office:version="1.4">
+ <office:body><office:spreadsheet>{}</office:spreadsheet></office:body>
+</office:document>"#,
+        cell_anchored()
+    );
+    let frames = |bytes: &[u8]| {
+        String::from_utf8_lossy(bytes)
+            .matches("<draw:frame")
+            .count()
+    };
+
+    let app = grind_sheet::App::new();
+    app.open_bytes("anchored.fods", xml.as_bytes()).unwrap();
+    app.set_cell(0, grind_sheet::Pos::new(0, 1), "b").unwrap();
+    let saved = app.save_bytes(grind_sheet::Form::Flat).unwrap();
+    assert_eq!(frames(&saved), 1);
+    assert!(
+        String::from_utf8_lossy(&saved).contains("svg:y=\"0.25cm\""),
+        "untouched, the cell keeps its own frame"
+    );
+
+    let app = grind_sheet::App::new();
+    app.open_bytes("anchored.fods", xml.as_bytes()).unwrap();
+    app.reshape_chart(0, 0, "3cm", "3cm", "8cm", "5cm").unwrap();
+    let saved = app.save_bytes(grind_sheet::Form::Flat).unwrap();
+    assert_eq!(frames(&saved), 1, "{}", String::from_utf8_lossy(&saved));
+    let back = grind_sheet::read_bytes("again.fods", &saved).unwrap();
+    assert_eq!(back.sheet(0).unwrap().charts()[0].x, "3cm");
+}

@@ -104,6 +104,9 @@ pub struct Table {
     /// The package directories of this table's charts (`Object 1`, …) — dropped from the
     /// package only by a save that writes this table's charts again.
     pub charts: Vec<String>,
+    /// Each chart's `draw:frame` that sits in a cell rather than in `table:shapes`: taken out by
+    /// a save that writes this table's charts again, which puts them all in `table:shapes`.
+    pub cell_charts: Vec<Range<usize>>,
 }
 
 impl Table {

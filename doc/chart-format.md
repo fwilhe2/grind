@@ -55,6 +55,19 @@ entry carrying the chart's media type (`grind_core::odf::package::SubDocument`).
 `ObjectReplacements/` preview is written — LibreOffice regenerates one, and nothing here reads
 it. Loop C now checks every chart in both forms, which is how this was found.
 
+### Anchored to a cell
+
+LibreOffice anchors a chart to a cell as often as to the sheet: the `draw:frame` sits inside the
+`table:table-cell` instead of `table:shapes`, with `table:end-cell-address`, `table:end-x` and
+`table:end-y` beside its size. **Measured** (LibreOffice 26.8.3.1, an Excel chart anchored 1cm
+right of and 0.5cm below `E2`'s corner, converted to `.fods`): the frame went into `E2` with
+`svg:x="0.3937in" svg:y="0.1768in"` — its offset from **that cell's** corner, not the sheet's.
+This build reads such a frame as a chart placed at the cell's corner, summed from the track sizes
+before it (a column the file sizes nowhere at LibreOffice's default 2.258cm, measured from its own
+documents), plus that offset. Saved untouched, the frame stays in its cell, byte for byte; a save
+that writes the sheet's charts again writes every one in `table:shapes` and takes the cell's
+frame out (`source::Table::cell_charts`), so a chart is never written twice.
+
 ## What a chart's own document holds
 
 ```xml

@@ -177,6 +177,8 @@ struct PendingChart {
     stacked: bool,
     /// The package directory the chart's document was read from, when it was a separate part.
     part: Option<String>,
+    /// The `draw:frame`'s extent when it sits in a cell rather than in `table:shapes`.
+    in_cell: Option<std::ops::Range<usize>>,
 }
 
 impl Default for PendingChart {
@@ -202,6 +204,7 @@ impl Default for PendingChart {
             stacking: std::collections::HashSet::new(),
             stacked: false,
             part: None,
+            in_cell: None,
         }
     }
 }
@@ -888,6 +891,24 @@ impl Context<Builder> for Forms {
     }
 }
 
+/// A cell's top-left corner on its sheet, in millimetres: the widths and heights of the tracks
+/// before it, a column the file sizes nowhere taken at LibreOffice's default 2.258cm and a row at
+/// [`crate::model::DEFAULT_ROW_MM`].
+fn cell_corner_mm(sheet: &Sheet, at: Pos) -> (f64, f64) {
+    let size = |length: Option<&str>, default: f64| {
+        length
+            .and_then(grind_core::style::length_mm)
+            .unwrap_or(default)
+    };
+    let left = (0..at.col)
+        .map(|col| size(sheet.col_width(col), 22.58))
+        .sum();
+    let top = (0..at.row)
+        .map(|row| size(sheet.row_height(row), crate::model::DEFAULT_ROW_MM))
+        .sum();
+    (left, top)
+}
+
 /// `table:shapes` (rng:15678) — a sheet's charts, and nothing else this build reads out of a
 /// shape (`doc/chart-format.md`).
 struct Shapes;
@@ -988,6 +1009,15 @@ impl Context<Builder> for Frame {
             legend: pending.legend,
             stacked: pending.stacked,
         };
+        if let Some(range) = pending.in_cell
+            && let Some(table) = b
+                .doc
+                .source
+                .as_deref_mut()
+                .and_then(|source| source.tables.last_mut())
+        {
+            table.cell_charts.push(range);
+        }
         if let Some(part) = pending.part {
             if let Some(table) = b
                 .doc
@@ -1933,6 +1963,29 @@ impl Cell {
 
 impl Context<Builder> for Cell {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        // A chart anchored to this cell, as LibreOffice anchors one: placed on the sheet at the
+        // cell's corner plus the frame's own offset (`doc/chart-format.md`).
+        if name.is(Ns::Draw, "frame") && self.repeat == 1 && b.row_repeat == 1 {
+            let at = Pos::new(b.row, self.start);
+            let sheet = b.doc.sheets.get(b.sheet)?;
+            let (left, top) = cell_corner_mm(sheet, at);
+            let offset = |local: &str| {
+                attrs
+                    .get(Ns::Svg, local)
+                    .and_then(grind_core::style::length_mm)
+                    .unwrap_or(0.0)
+            };
+            let mm = grind_core::style::mm_length;
+            b.pending_chart = Some(PendingChart {
+                x: Some(mm(left + offset("x"))),
+                y: Some(mm(top + offset("y"))),
+                width: attrs.get(Ns::Svg, "width").map(str::to_owned),
+                height: attrs.get(Ns::Svg, "height").map(str::to_owned),
+                in_cell: b.extent(attrs.span()),
+                ..Default::default()
+            });
+            return Some(Box::new(Frame));
+        }
         // A checkbox drawn in this cell, when it names one `office:forms` declared — only for a
         // cell standing for itself.
         if name.is(Ns::Draw, "control") {
