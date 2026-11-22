@@ -816,7 +816,14 @@ LibreOffice 26.8.3.1's conversion of it to `.fods`:
   `c:title` with rich text is its `chart:title`. An `xdr:twoCellAnchor` from `E2` to `K17` is
   6 columns × 15 rows the oracle sizes at 4.0161in × 2.6661in: a column no `<col>` sizes is Excel's
   64 pixels, and a row no `<row ht>` sizes is the oracle's own 0.452cm. An `a:schemeClr` with no
-  theme part is the oracle's default colour, so what it does with one is not measured here.
+  theme part is the oracle's default colour.
+- **Theme colours**, measured the same day with the Office theme's scheme in the workbook:
+  `a:schemeClr val="accent1"` is the scheme's `#4472c4`, `tx1`/`bg1`/`tx2`/`bg2` are
+  `dk1`/`lt1`/`dk2`/`lt2`; `a:lumMod` and `a:lumOff` (thousandths of a percent) multiply and then
+  offset the colour's HSL lightness — `accent2` at 75% is `#c55a11`, `accent6` at 60% + 40%
+  `#a9d18e`, `tx1` at 50% + 50% `#808080`, exactly; `a:alpha` 50% is `draw:opacity="50%"`.
+  `a:shade` and `a:tint` 50% on `accent1` gave `#325490` and `#c0c8e3`, which no blend in sRGB or
+  linear light reproduces to the unit, so they are `UNVERIFIED` and not read.
 - **Read past:** `c:manualLayout`, fonts and text colours (`c:txPr`), `c:smooth` (the oracle's
   `chart:interpolation="cubic-spline"`), `c:marker`, a value axis' `c:min` and number format, and
   line widths and dashes. The import draws a smoothed line straight and a dashed one solid.

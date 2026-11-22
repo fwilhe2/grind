@@ -21,6 +21,8 @@ grind-sheet = { path = "../sheet" }
 # OPC, markup compatibility and the tolerant walker — this crate's own until the word
 # processor's filter wanted them too (`grind-ooxml`'s lib.rs).
 grind-ooxml = { path = "../ooxml" }
+# Colour arithmetic for a chart's theme colours (HSL lightness, mixing over white).
+grind-core = { path = "../core" }
 # Zero new dependencies: both of these are already `grind-core`'s. That is half the argument
 # against `calamine` in doc/xlsx-import.md, so it is worth keeping true.
 quick-xml = "0.42"

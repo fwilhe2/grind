@@ -30,6 +30,7 @@ pub fn read(
     sheet_part: &str,
     sheet: &mut Sheet,
     renames: &[(String, String)],
+    theme: &[[u8; 3]],
     report: &mut Report,
     seen: &mut Seen,
 ) {
@@ -54,7 +55,7 @@ pub fn read(
                         .iter()
                         .find(|r| r.id == id && r.kind == RelType::Chart && !r.external)
                         .and_then(|r| package.part(&r.target))
-                        .and_then(|bytes| chart(&bytes, &sheet.name, renames));
+                        .and_then(|bytes| chart(&bytes, &sheet.name, renames, theme));
                     match read {
                         Some(mut chart) => {
                             place(&mut chart, &anchor.place, sheet);
@@ -295,7 +296,12 @@ struct Found {
 }
 
 /// A chart part as a [`Chart`] on the sheet named `own`, or `None` when the model cannot hold it.
-fn chart(bytes: &[u8], own: &str, renames: &[(String, String)]) -> Option<Chart> {
+fn chart(
+    bytes: &[u8],
+    own: &str,
+    renames: &[(String, String)],
+    theme: &[[u8; 3]],
+) -> Option<Chart> {
     let mut reader = Reader::new(bytes);
     if !matches!(reader.root(), Ok(Some((ref root, _))) if root.in_ns(Ns::Chart, "chartSpace")) {
         return None;
@@ -324,7 +330,7 @@ fn chart(bytes: &[u8], own: &str, renames: &[(String, String)]) -> Option<Chart>
                         })?;
                         found.legend = Some(position);
                     }
-                    (Ns::Chart, "plotArea") => plot_area(reader, &mut found)?,
+                    (Ns::Chart, "plotArea") => plot_area(reader, &mut found, theme)?,
                     _ => return Ok(Handled::No),
                 }
                 Ok(Handled::Yes)
@@ -335,7 +341,11 @@ fn chart(bytes: &[u8], own: &str, renames: &[(String, String)]) -> Option<Chart>
     build(found, own, renames)
 }
 
-fn plot_area(reader: &mut Reader<'_>, found: &mut Found) -> grind_ooxml::Result<()> {
+fn plot_area(
+    reader: &mut Reader<'_>,
+    found: &mut Found,
+    theme: &[[u8; 3]],
+) -> grind_ooxml::Result<()> {
     reader.children(|reader, name, _| {
         if name.ns != Ns::Chart {
             return Ok(Handled::No);
@@ -373,7 +383,7 @@ fn plot_area(reader: &mut Reader<'_>, found: &mut Found) -> grind_ooxml::Result<
                     Some("percentStacked") => found.refused = true,
                     _ => {}
                 },
-                (Ns::Chart, "ser") => group.series.push(series(reader)?),
+                (Ns::Chart, "ser") => group.series.push(series(reader, theme)?),
                 _ => return Ok(Handled::No),
             }
             Ok(Handled::Yes)
@@ -383,14 +393,14 @@ fn plot_area(reader: &mut Reader<'_>, found: &mut Found) -> grind_ooxml::Result<
     })
 }
 
-fn series(reader: &mut Reader<'_>) -> grind_ooxml::Result<RawSeries> {
+fn series(reader: &mut Reader<'_>, theme: &[[u8; 3]]) -> grind_ooxml::Result<RawSeries> {
     let mut raw = RawSeries::default();
     reader.children(|reader, name, _| {
         match (name.ns, name.local.as_str()) {
             (Ns::Chart, "tx") => (raw.name, raw.text) = source(reader)?,
             (Ns::Chart, "cat") => raw.categories = source(reader)?.0,
             (Ns::Chart, "val") => raw.values = source(reader)?.0,
-            (Ns::Chart, "spPr") => (raw.fill, raw.line) = colours(reader)?,
+            (Ns::Chart, "spPr") => (raw.fill, raw.line) = colours(reader, theme)?,
             _ => return Ok(Handled::No),
         }
         Ok(Handled::Yes)
@@ -422,17 +432,19 @@ fn source(reader: &mut Reader<'_>) -> grind_ooxml::Result<(Option<String>, Optio
     Ok((formula, text))
 }
 
-/// A shape's fill and its outline's colour, each `a:solidFill`'s `a:srgbClr`, seen through its
-/// `a:alpha` over white (thousandths of a percent).
-fn colours(reader: &mut Reader<'_>) -> grind_ooxml::Result<(Option<String>, Option<String>)> {
+/// A shape's fill and its outline's colour, each an `a:solidFill` ([`solid`]).
+fn colours(
+    reader: &mut Reader<'_>,
+    theme: &[[u8; 3]],
+) -> grind_ooxml::Result<(Option<String>, Option<String>)> {
     let (mut fill, mut line) = (None, None);
     reader.children(|reader, name, _| {
         match (name.ns, name.local.as_str()) {
-            (Ns::Drawing, "solidFill") => fill = solid(reader)?,
+            (Ns::Drawing, "solidFill") => fill = solid(reader, theme)?,
             (Ns::Drawing, "ln") => {
                 reader.children(|reader, name, _| {
                     if name.in_ns(Ns::Drawing, "solidFill") {
-                        line = solid(reader)?;
+                        line = solid(reader, theme)?;
                         return Ok(Handled::Yes);
                     }
                     Ok(Handled::No)
@@ -445,29 +457,61 @@ fn colours(reader: &mut Reader<'_>) -> grind_ooxml::Result<(Option<String>, Opti
     Ok((fill, line))
 }
 
-fn solid(reader: &mut Reader<'_>) -> grind_ooxml::Result<Option<String>> {
+/// The `theme` attribute order's slot a scheme colour names — `tx1` and `bg1` are `dk1` and
+/// `lt1` by another name.
+fn slot(name: &str) -> Option<usize> {
+    Some(match name {
+        "lt1" | "bg1" => 0,
+        "dk1" | "tx1" => 1,
+        "lt2" | "bg2" => 2,
+        "dk2" | "tx2" => 3,
+        "accent1" => 4,
+        "accent2" => 5,
+        "accent3" => 6,
+        "accent4" => 7,
+        "accent5" => 8,
+        "accent6" => 9,
+        "hlink" => 10,
+        "folHlink" => 11,
+        _ => return None,
+    })
+}
+
+/// An `a:solidFill`'s colour: an `a:srgbClr`, or an `a:schemeClr` read from the workbook's
+/// theme; its `a:lumMod` and `a:lumOff` move its lightness, as the oracle does, and its
+/// `a:alpha` (thousandths of a percent) is seen over white. Any other modifier is not measured,
+/// so such a colour is none rather than a guess (`doc/xlsx-format.md` §4.15).
+fn solid(reader: &mut Reader<'_>, theme: &[[u8; 3]]) -> grind_ooxml::Result<Option<String>> {
     let mut color = None;
     reader.children(|reader, name, attrs| {
-        if !name.in_ns(Ns::Drawing, "srgbClr") {
-            return Ok(Handled::No);
-        }
-        let hex = attrs
-            .plain("val")
-            .filter(|v| v.len() == 6 && v.chars().all(|c| c.is_ascii_hexdigit()))
-            .map(|v| format!("#{}", v.to_ascii_lowercase()));
-        let mut alpha = None;
+        let base = match (name.ns, name.local.as_str()) {
+            (Ns::Drawing, "srgbClr") => attrs.plain("val").and_then(crate::color::argb),
+            (Ns::Drawing, "schemeClr") => attrs
+                .plain("val")
+                .and_then(slot)
+                .and_then(|at| theme.get(at).copied()),
+            _ => return Ok(Handled::No),
+        };
+        let (mut lum_mod, mut lum_off, mut alpha, mut unread) = (1.0, 0.0, 1.0, false);
         reader.children(|_, name, attrs| {
-            if name.in_ns(Ns::Drawing, "alpha") {
-                alpha = attrs
-                    .plain("val")
-                    .and_then(|v| v.trim().parse::<f64>().ok());
+            let value = attrs
+                .plain("val")
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map(|v| v / 100_000.0);
+            match (name.ns, name.local.as_str(), value) {
+                (Ns::Drawing, "lumMod", Some(v)) => lum_mod = v,
+                (Ns::Drawing, "lumOff", Some(v)) => lum_off = v,
+                (Ns::Drawing, "alpha", Some(v)) => alpha = v,
+                _ => unread = true,
             }
             Ok(Handled::No)
         })?;
-        color = match (hex, alpha) {
-            (Some(hex), Some(alpha)) => grind_sheet::chart::over_white(&hex, alpha / 100_000.0),
-            (hex, _) => hex,
-        };
+        color = base.filter(|_| !unread).map(|[r, g, b]| {
+            let (h, s, l) = grind_core::color::hsl((r, g, b));
+            let (r, g, b) = grind_core::color::from_hsl(h, s, l * lum_mod + lum_off);
+            let (r, g, b) = grind_core::color::mix((255, 255, 255), (r, g, b), alpha);
+            format!("#{r:02x}{g:02x}{b:02x}")
+        });
         Ok(Handled::Yes)
     })?;
     Ok(color)
@@ -602,4 +646,73 @@ fn address(formula: &str, own: &str, renames: &[(String, String)]) -> Option<Str
         Some(end) => format!("{start}:{}", spell(end)?),
         None => start,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Office theme's scheme, in `theme` attribute order (`theme::read`).
+    const THEME: [[u8; 3]; 12] = [
+        [0xff, 0xff, 0xff],
+        [0x00, 0x00, 0x00],
+        [0xe7, 0xe6, 0xe6],
+        [0x44, 0x54, 0x6a],
+        [0x44, 0x72, 0xc4],
+        [0xed, 0x7d, 0x31],
+        [0xa5, 0xa5, 0xa5],
+        [0xff, 0xc0, 0x00],
+        [0x5b, 0x9b, 0xd5],
+        [0x70, 0xad, 0x47],
+        [0x05, 0x63, 0xc1],
+        [0x95, 0x4f, 0x72],
+    ];
+
+    fn fill(inner: &str) -> Option<String> {
+        let xml = format!(
+            r#"<a:solidFill xmlns:a="{}">{inner}</a:solidFill>"#,
+            crate::names::DRAWING_T
+        );
+        let mut reader = Reader::new(xml.as_bytes());
+        reader.root().unwrap();
+        solid(&mut reader, &THEME).unwrap()
+    }
+
+    /// Measured against LibreOffice 26.8's conversion (`doc/xlsx-format.md` §4.15).
+    #[test]
+    fn a_theme_colour_is_its_slot_with_its_luminance_moved() {
+        assert_eq!(
+            fill(r#"<a:schemeClr val="accent1"/>"#).as_deref(),
+            Some("#4472c4")
+        );
+        assert_eq!(
+            fill(r#"<a:schemeClr val="accent2"><a:lumMod val="75000"/></a:schemeClr>"#).as_deref(),
+            Some("#c55a11")
+        );
+        assert_eq!(
+            fill(r#"<a:schemeClr val="accent6"><a:lumMod val="60000"/><a:lumOff val="40000"/></a:schemeClr>"#)
+                .as_deref(),
+            Some("#a9d18e")
+        );
+        assert_eq!(
+            fill(r#"<a:schemeClr val="tx1"><a:lumMod val="50000"/><a:lumOff val="50000"/></a:schemeClr>"#)
+                .as_deref(),
+            Some("#808080")
+        );
+        // 50% of #ffc000 over white.
+        assert_eq!(
+            fill(r#"<a:schemeClr val="accent4"><a:alpha val="50000"/></a:schemeClr>"#).as_deref(),
+            Some("#ffe080")
+        );
+        // Shade and tint are not measured exactly: no colour rather than a guessed one.
+        assert_eq!(
+            fill(r#"<a:schemeClr val="accent1"><a:shade val="50000"/></a:schemeClr>"#),
+            None
+        );
+        assert_eq!(fill(r#"<a:schemeClr val="nosuch"/>"#), None);
+        assert_eq!(
+            fill(r#"<a:srgbClr val="2C3A82"/>"#).as_deref(),
+            Some("#2c3a82")
+        );
+    }
 }

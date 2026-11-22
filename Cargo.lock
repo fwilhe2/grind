@@ -1486,6 +1486,7 @@ dependencies = [
 name = "grind-xlsx"
 version = "0.1.2-dev"
 dependencies = [
+ "grind-core",
  "grind-ooxml",
  "grind-sheet",
  "quick-xml",
