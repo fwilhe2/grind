@@ -288,6 +288,12 @@ impl<'a> Engine<'a> {
             },
             Expr::Name(name) => self.named(name, at),
             Expr::Call { name, args } if name.eq_ignore_ascii_case("INDEX") => self.index(args, at),
+            Expr::Call { name, args } if name.eq_ignore_ascii_case("OFFSET") => {
+                self.offset(args, at)
+            }
+            Expr::Call { name, args } if name.eq_ignore_ascii_case("INDIRECT") => {
+                self.indirect(args, at)
+            }
             Expr::Call { name, args } => funcs::call(self, name, args, at).into(),
             Expr::Prefix(op, operand) => self.prefix(*op, operand, at).into(),
             // The only postfix operator is `%` (§6.4.14).
@@ -333,6 +339,80 @@ impl<'a> Engine<'a> {
         match picked {
             Ok(area) => Operand::Area(area),
             Err(error) => error.into(),
+        }
+    }
+
+    /// §6.14.11 `OFFSET(R; RowOffset; ColumnOffset; NewHeight; NewWidth)`: `R` moved and, where
+    /// given, resized — a reference. One that would leave the sheet, or a size below one, is
+    /// `#REF!`: no such reference can exist (the oracle answers `Err:502`).
+    fn offset(&mut self, args: &[Expr], at: Address) -> Operand {
+        if !(3..=5).contains(&args.len()) {
+            return FormulaError::Value.into();
+        }
+        let Operand::Area(source) = self.operand(&args[0], at) else {
+            return FormulaError::Value.into();
+        };
+        let mut number = |i: usize| -> Result<Option<i64>, FormulaError> {
+            match args.get(i) {
+                None | Some(Expr::Empty) => Ok(None),
+                Some(arg) => Ok(Some(self.value_of(arg, at).to_number()?.trunc() as i64)),
+            }
+        };
+        let moved = (|| {
+            let (down, right) = (number(1)?.unwrap_or(0), number(2)?.unwrap_or(0));
+            let height = number(3)?.unwrap_or(i64::from(source.rows.end - source.rows.start));
+            let width = number(4)?.unwrap_or(i64::from(source.cols.end - source.cols.start));
+            let top = i64::from(source.rows.start) + down;
+            let left = i64::from(source.cols.start) + right;
+            let fits = |start: i64, size: i64, max: u32| {
+                size >= 1 && start >= 0 && start + size <= i64::from(max)
+            };
+            if !fits(top, height, crate::MAX_ROWS) || !fits(left, width, crate::MAX_COLS) {
+                return Err(FormulaError::Ref);
+            }
+            Ok(Area {
+                sheet: source.sheet,
+                rows: top as u32..(top + height) as u32,
+                cols: left as u32..(left + width) as u32,
+            })
+        })();
+        match moved {
+            Ok(area) => Operand::Area(area),
+            Err(error) => error.into(),
+        }
+    }
+
+    /// §6.14.7 `INDIRECT(Ref; A1)`: the reference a text spells — in A1 style a cell or range with
+    /// `.` or `!` before a sheet's name, or a named range; with `A1` false in R1C1 style. Text
+    /// that names nothing is `#REF!`.
+    fn indirect(&mut self, args: &[Expr], at: Address) -> Operand {
+        if !(1..=2).contains(&args.len()) {
+            return FormulaError::Value.into();
+        }
+        let text = match self.value_of(&args[0], at) {
+            Value::Text(text) => text,
+            Value::Error(error) => return error.into(),
+            _ => return FormulaError::Ref.into(),
+        };
+        let a1 = match args.get(1) {
+            None | Some(Expr::Empty) => true,
+            Some(arg) => match self.value_of(arg, at).to_logical() {
+                Ok(a1) => a1,
+                Err(error) => return error.into(),
+            },
+        };
+        let text = text.trim();
+        if a1 && self.doc.name(text).is_some() {
+            return self.named(text, at);
+        }
+        let reference = if a1 {
+            crate::a1::parse(&bang_to_dot(text)).ok()
+        } else {
+            r1c1(text, at.pos)
+        };
+        match reference.and_then(|reference| self.area(&reference, at)) {
+            Some(area) => Operand::Area(area),
+            None => FormulaError::Ref.into(),
         }
     }
 
@@ -670,6 +750,73 @@ fn rank(value: &Value) -> u8 {
         Value::Bool(_) => 3,
         Value::Error(_) => 4,
     }
+}
+
+/// A reference typed with Excel's `!` before the cell (`Other!A1`, `'My Sheet'!A1`) in ODF's `.`
+/// spelling; a `!` inside a quoted sheet name stays.
+fn bang_to_dot(text: &str) -> String {
+    let mut quoted = false;
+    text.chars()
+        .map(|c| match c {
+            '\'' => {
+                quoted = !quoted;
+                c
+            }
+            '!' if !quoted => '.',
+            c => c,
+        })
+        .collect()
+}
+
+/// A reference in R1C1 style (`R3C2`, `R[-1]C[2]`, `R1C2:R3C2`, an optional `Sheet!` or `Sheet.`
+/// before it), relative parts counted from `at`.
+fn r1c1(text: &str, at: Pos) -> Option<Reference> {
+    let (sheet, cells) = match text.rfind(['!', '.']) {
+        Some(split) => (
+            Some(text[..split].trim_matches('\'').to_owned()),
+            &text[split + 1..],
+        ),
+        None => (None, text),
+    };
+    let axis = |part: &str, from: u32| -> Option<super::lex::Axis> {
+        if let Some(relative) = part.strip_prefix('[').and_then(|p| p.strip_suffix(']')) {
+            let index = i64::from(from) + relative.parse::<i64>().ok()?;
+            return Some(super::lex::Axis {
+                index: u32::try_from(index).ok()?,
+                absolute: false,
+            });
+        }
+        if part.is_empty() {
+            return Some(super::lex::Axis {
+                index: from,
+                absolute: false,
+            });
+        }
+        Some(super::lex::Axis {
+            index: part.parse::<u32>().ok()?.checked_sub(1)?,
+            absolute: true,
+        })
+    };
+    let cell = |spelled: &str| -> Option<CellRef> {
+        let upper = spelled.trim().to_ascii_uppercase();
+        let rest = upper.strip_prefix('R')?;
+        let c = rest.find('C')?;
+        Some(CellRef {
+            sheet: sheet.clone(),
+            sheet_absolute: sheet.is_some(),
+            row: Some(axis(&rest[..c], at.row)?),
+            col: Some(axis(&rest[c + 1..], at.col)?),
+        })
+    };
+    let (start, end) = match cells.split_once(':') {
+        Some((start, end)) => (cell(start)?, Some(cell(end)?)),
+        None => (cell(cells)?, None),
+    };
+    Some(Reference {
+        source: None,
+        start,
+        end,
+    })
 }
 
 #[cfg(test)]

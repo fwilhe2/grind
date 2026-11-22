@@ -15,6 +15,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- `OFFSET` and `INDIRECT`: a reference moved and resized, and a reference spelled as text — with
+  `.` or Excel's `!` before a sheet, a defined name, or in R1C1 style.
 - Four more spreadsheet functions: `FIXED`, `LEGACY.NORMSINV`, and Excel's `NORM.S.DIST` and
   `GAMMA.DIST`, so workbooks that simulate with the normal and gamma distributions recalculate
   instead of turning into errors.

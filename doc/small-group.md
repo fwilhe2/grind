@@ -286,6 +286,19 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   number format a cell would use, in the document's locale. Measured against LibreOffice 26.8
   (`doc/ods-format.md` §4.1), the spec winning where the two disagree. Decided 2026-11-22.
 
+- `OFFSET` — §6.14.11
+- `INDIRECT` — §6.14.7
+
+  **Evidence:** Enron's seventh by workbook (`OFFSET`, Jansen) and O'Beirne's fourteenth by
+  formula; `INDIRECT` the most-blocking function in LibreOffice's own test documents
+  (`doc/function-coverage.md`). Both return a reference, which `INDEX` already does: the engine
+  evaluates the three itself (`Engine::index`, `offset`, `indirect`) and `array.rs` reads the
+  cells of one inside an array. `INDIRECT` reads `.` and `!` before a sheet, quoted sheet names,
+  named ranges and, with `A1` false, R1C1. What `graph.rs` sees of either is the cells its
+  arguments name, not the ones it reaches at run time — so a cell read only through one is
+  invisible to the precedent views and to lint. Measured against LibreOffice 26.8
+  (`doc/ods-format.md` §4.1). Decided 2026-11-22.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,

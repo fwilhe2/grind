@@ -7,7 +7,8 @@
 //! read this cell, what is downstream of an edit.
 //!
 //! A forward index from one walk of the parsed formulas, and its transpose. No cycle detection,
-//! ordering or incremental maintenance; the evaluator does not use it. References resolve through
+//! ordering or incremental maintenance; the evaluator does not use it. A reference built while
+//! evaluating — `OFFSET`, `INDIRECT` — is seen as the cells its arguments name. References resolve through
 //! [`Engine::area`], the evaluator's own function, so the index cannot disagree with it about a
 //! name, a whole column or a missing sheet.
 //!

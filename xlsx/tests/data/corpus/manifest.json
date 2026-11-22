@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T19:14:42Z",
+  "generated": "2026-11-22T21:50:43Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -9214,6 +9214,122 @@
               "raw": "54",
               "kind": "Text",
               "value": "The same kind of address, relative"
+            },
+            {
+              "ref": "A14",
+              "t": "s",
+              "raw": "55",
+              "kind": "Text",
+              "value": "OFFSET"
+            },
+            {
+              "ref": "B14",
+              "t": "s",
+              "raw": "56",
+              "kind": "Text",
+              "value": "=SUM(OFFSET(Prices!D1,1,0,3))"
+            },
+            {
+              "ref": "C14",
+              "raw": "91.3",
+              "kind": "Number",
+              "value": "91.3",
+              "excel": "SUM(OFFSET(Prices!D1,1,0,3))",
+              "formula": "SUM(OFFSET([Prices.D1];1;0;3))"
+            },
+            {
+              "ref": "D14",
+              "t": "s",
+              "raw": "57",
+              "kind": "Text",
+              "value": "The first three prices, counted down from the heading"
+            },
+            {
+              "ref": "A15",
+              "t": "s",
+              "raw": "55",
+              "kind": "Text",
+              "value": "OFFSET"
+            },
+            {
+              "ref": "B15",
+              "t": "s",
+              "raw": "58",
+              "kind": "Text",
+              "value": "=OFFSET(Prices!A1,MATCH(\u0022P-30\u0022,Prices!A2:A6,0),3)"
+            },
+            {
+              "ref": "C15",
+              "raw": "3.2",
+              "kind": "Number",
+              "value": "3.2",
+              "excel": "OFFSET(Prices!A1,MATCH(\u0022P-30\u0022,Prices!A2:A6,0),3)",
+              "formula": "OFFSET([Prices.A1];MATCH(\u0022P-30\u0022;[Prices.A2:.A6];0);3)"
+            },
+            {
+              "ref": "D15",
+              "t": "s",
+              "raw": "59",
+              "kind": "Text",
+              "value": "The wall anchors\u0027 price, reached by moving"
+            },
+            {
+              "ref": "A16",
+              "t": "s",
+              "raw": "60",
+              "kind": "Text",
+              "value": "INDIRECT"
+            },
+            {
+              "ref": "B16",
+              "t": "s",
+              "raw": "61",
+              "kind": "Text",
+              "value": "=INDIRECT(\u0022Prices.D\u0022\u0026(MATCH(\u0022P-11\u0022,Prices!A2:A6,0)\u002B1))"
+            },
+            {
+              "ref": "C16",
+              "raw": "49.9",
+              "kind": "Number",
+              "value": "49.9",
+              "excel": "INDIRECT(\u0022Prices.D\u0022\u0026(MATCH(\u0022P-11\u0022,Prices!A2:A6,0)\u002B1))",
+              "formula": "INDIRECT(\u0022Prices.D\u0022\u0026(MATCH(\u0022P-11\u0022;[Prices.A2:.A6];0)\u002B1))"
+            },
+            {
+              "ref": "D16",
+              "t": "s",
+              "raw": "62",
+              "kind": "Text",
+              "value": "A price at an address built as text"
+            },
+            {
+              "ref": "A17",
+              "t": "s",
+              "raw": "60",
+              "kind": "Text",
+              "value": "INDIRECT"
+            },
+            {
+              "ref": "B17",
+              "t": "s",
+              "raw": "63",
+              "kind": "Text",
+              "value": "=SUM(INDIRECT(\u0022Shipping!B2:F2\u0022))"
+            },
+            {
+              "ref": "C17",
+              "raw": "61.5",
+              "kind": "Number",
+              "value": "61.5",
+              "excel": "SUM(INDIRECT(\u0022Shipping!B2:F2\u0022))",
+              "formula": "SUM(INDIRECT(\u0022Shipping!B2:F2\u0022))"
+            },
+            {
+              "ref": "D17",
+              "t": "s",
+              "raw": "64",
+              "kind": "Text",
+              "value": "Zone A\u0027s rates, named in Excel\u0027s spelling"
             }
           ]
         }
@@ -9225,8 +9341,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4362,
-      "sha256": "1faef67cd8cee93cf930ccd4465dbe9694edd36babb89b32134c493a632bda70"
+      "bytes": 4686,
+      "sha256": "ba082e60dda53ae52c3003b43381648a43d9e472a55fcda201a068fc1cfb0695"
     },
     {
       "file": "functions/math.xlsx",

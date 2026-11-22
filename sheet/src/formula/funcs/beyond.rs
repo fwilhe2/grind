@@ -1372,3 +1372,94 @@ fn index_over_a_reference_is_a_reference() {
     assert_eq!(number("=INDEX([.B1:.B7];3)"), 30.0);
     assert_eq!(error("=INDEX([.B1:.B7];9):[.B1]"), FormulaError::Ref);
 }
+
+/// The oracle's document for `OFFSET` and `INDIRECT`: `S` holds `r1`…`r4` in A, 10…40 in B,
+/// 1…4 in C and the text `B2` in D1; `Other.A1` is 111, `'My Sheet'.A1` is 222, and `total` names
+/// `S.B1:B2`. Formulas sit in `S.B21`, where the oracle's did.
+fn referring(formula: &str) -> Value {
+    let mut s = Sheet::new("S");
+    for i in 0..4u32 {
+        s.set(Pos::new(i, 0), CellValue::Text(format!("r{}", i + 1)));
+        s.set(Pos::new(i, 1), CellValue::Number(f64::from(i + 1) * 10.0));
+        s.set(Pos::new(i, 2), CellValue::Number(f64::from(i + 1)));
+    }
+    s.set(Pos::new(0, 3), CellValue::Text("B2".into()));
+    let mut other = Sheet::new("Other");
+    other.set(Pos::new(0, 0), CellValue::Number(111.0));
+    let mut mine = Sheet::new("My Sheet");
+    mine.set(Pos::new(0, 0), CellValue::Number(222.0));
+    let mut document = Document {
+        sheets: vec![s, other, mine],
+        ..Default::default()
+    };
+    document
+        .names
+        .insert("total".into(), "[$S.$B$1:.$B$2]".into());
+    Engine::new(&document).eval(formula, Address::new(0, Pos::new(20, 1)))
+}
+
+/// §6.14.11 `OFFSET` and §6.14.7 `INDIRECT` return references, as `INDEX` does. Measured
+/// against LibreOffice 26.8 (`doc/ods-format.md` §4.1).
+#[test]
+fn offset_and_indirect_build_references() {
+    let n = |formula: &str| match referring(formula) {
+        Value::Number(n) => n,
+        other => panic!("{formula} evaluated to {other:?}"),
+    };
+    let e = |formula: &str| match referring(formula) {
+        Value::Error(e) => e,
+        other => panic!("{formula} evaluated to {other:?}, not an error"),
+    };
+    assert_eq!(n("=SUM(OFFSET([.B1];1;0;3))"), 90.0);
+    assert_eq!(n("=OFFSET([.B1];2;0)"), 30.0);
+    assert_eq!(n("=SUM(OFFSET([.A1:.B2];1;1))"), 55.0);
+    assert_eq!(n("=ROWS(OFFSET([.B1];0;0;4;2))"), 4.0);
+    assert_eq!(n("=COLUMNS(OFFSET([.B1];0;0;4;2))"), 2.0);
+    assert_eq!(n("=SUM(OFFSET([.B1];0;0;;1))"), 10.0);
+    assert_eq!(n("=SUM([.B1]:OFFSET([.B1];2;0))"), 60.0);
+    assert_eq!(n("=OFFSET([.B1];1.9;0)"), 20.0);
+    assert_eq!(n("=OFFSET([.B1];\"1\";0)"), 20.0);
+    assert_eq!(n("=SUM(OFFSET([.B1:.B2];1;0;;))"), 50.0);
+    // Inside an array argument, too.
+    assert_eq!(n("=SUMPRODUCT(OFFSET([.B1];0;0;3)*2)"), 120.0);
+    assert_eq!(n("=SUMPRODUCT(INDIRECT(\"B1:B2\")*2)"), 60.0);
+    // Off the sheet, or no size at all: a reference that cannot exist. The oracle says Err:502.
+    for refused in [
+        "=OFFSET([.B1];-1;0)",
+        "=OFFSET([.B1];0;-2)",
+        "=OFFSET([.B1];0;0;0)",
+        "=SUM(OFFSET([.B4];0;0;-2))",
+    ] {
+        assert_eq!(e(refused), FormulaError::Ref, "{refused}");
+    }
+
+    assert_eq!(n("=INDIRECT(\"B3\")"), 30.0);
+    assert_eq!(n("=INDIRECT(\"$B$3\")"), 30.0);
+    assert_eq!(n("=INDIRECT(\"b3\")"), 30.0);
+    assert_eq!(n("=SUM(INDIRECT(\"B1:B3\"))"), 60.0);
+    assert_eq!(n("=INDIRECT(\"Other.A1\")"), 111.0);
+    assert_eq!(n("=INDIRECT(\"Other!A1\")"), 111.0);
+    assert_eq!(n("=INDIRECT(\"$Other.$A$1\")"), 111.0);
+    assert_eq!(n("=INDIRECT(\"'My Sheet'.A1\")"), 222.0);
+    assert_eq!(n("=INDIRECT(\"'My Sheet'!A1\")"), 222.0);
+    assert_eq!(n("=INDIRECT([.D1])"), 20.0);
+    assert_eq!(n("=INDIRECT(\"B\"&2)"), 20.0);
+    assert_eq!(n("=SUM(INDIRECT(\"total\"))"), 30.0);
+    // A whole column, as the same column typed in the formula reads (the engine keeps one to the
+    // rows the sheet uses).
+    assert_eq!(n("=ROWS(INDIRECT(\"A:A\"))"), n("=ROWS([.A:.A])"));
+    assert_eq!(n("=INDIRECT(\"R3C2\";FALSE())"), 30.0);
+    assert_eq!(n("=SUM(INDIRECT(\"R1C2:R3C2\";0))"), 60.0);
+    // Relative to the formula's own cell, B21: one row down and one column right is empty.
+    assert_eq!(n("=INDIRECT(\"R[1]C[1]\";FALSE())"), 0.0);
+    assert_eq!(n("=INDIRECT(\"R[-18]C[0]\";FALSE())"), 30.0);
+    for refused in [
+        "=INDIRECT(\"nonsense\")",
+        "=INDIRECT(\"\")",
+        "=INDIRECT(\"Other.A1\";FALSE())",
+        "=INDIRECT(\"R3C2\")",
+        "=INDIRECT(5)",
+    ] {
+        assert_eq!(e(refused), FormulaError::Ref, "{refused}");
+    }
+}

@@ -151,8 +151,8 @@ left says, in its last column, what stands in its way.
 | ✓ `IFERROR` | Large | LO 5; the standard wrapper since Excel 2007 |
 | ✓ `SUMIFS`, `COUNTIFS`, `AVERAGEIFS` | Large | What Enron's `{=SUM(IF(…))}` became |
 | `TEXT` | Large | LO 7 — a format code is implementation-defined, and LibreOffice reads it in the document's locale |
-| `INDIRECT` | Large | EUSES #10, LO 12 — the most-blocking function measured; needs a function that returns a reference |
-| `OFFSET` | Medium | Enron #7 (Jansen), O'Beirne #14; as `INDIRECT` |
+| ✓ `INDIRECT` | Large | EUSES #10, LO 12 — the most-blocking function measured; moved in on 2026-11-22 beside `OFFSET`, both returning a reference as `INDEX` now does |
+| ✓ `OFFSET` | Medium | Enron #7 (Jansen), O'Beirne #14 |
 | `CELL` | outside every group | Enron #14 — and a variance swamp, Part 4 leaves much of it implementation-defined |
 | ✓ `ROUNDUP`, `ROUNDDOWN`, `MROUND` | Medium | LO 3–5 each |
 | ✓ `CEILING`, `FLOOR` | Medium | LO 5 each — moved in on 2026-10-18 with Excel's own two beside them, `COM.MICROSOFT.CEILING` and `COM.MICROSOFT.FLOOR`, which is what LibreOffice's import (and now ours) calls Excel's; the worry about imported workbooks was about those names (`doc/xlsx-format.md` §5.1) |
@@ -281,7 +281,6 @@ which this build reads as wildcards by `wildcard.rs`'s decision.
 
 | Function | Unlocks | Needs | Decision owed |
 |---|---|---|---|
-| `INDIRECT`, `OFFSET` | 9 files, then 3 | a function that returns a reference: `funcs::call` hands back an `Operand`, and `INDEX` should too | `graph.rs` cannot see a reference built at run time, so cell roles, lint and sheet-rename rewriting go wrong for a cell read only through one — name that gap or close it |
 | `AGGREGATE` | — | `SUBTOTAL`'s machinery plus its option bits (errors, nested aggregates) | not Part 4: `COM.MICROSOFT.AGGREGATE`, as the next section's names are |
 | `TEXT` | 3 files | a format-code language | the code is implementation-defined and LibreOffice reads it in the document's locale; `numfmt` holds no format-code strings by rule, though `grind-xlsx`'s `numfmt.rs` parses Excel's and could be hoisted |
 | `CELL` | 3 files | an info-type vocabulary | outside every ODF group, and much of it implementation-defined |

@@ -97,15 +97,26 @@ pub fn evaluate(engine: &mut Engine, expr: &Expr, at: Address) -> Matrix {
                 scalar_binary(*op, v[0].clone(), v[1].clone())
             })
         }
+        // A function that returns a reference is the engine's; its cells are the array.
+        Expr::Call { name, .. }
+            if name.eq_ignore_ascii_case("OFFSET") || name.eq_ignore_ascii_case("INDIRECT") =>
+        {
+            of_operand(engine, expr, at)
+        }
         Expr::Call { name, args } => call(engine, name, args, at),
-        _ => match engine.operand(expr, at) {
-            Operand::Value(value) => Matrix::single(value),
-            Operand::Area(area) => {
-                let (rows, cols) = (area.rows.len(), area.cols.len());
-                let cells = engine.values_in(&area);
-                Matrix { rows, cols, cells }
-            }
-        },
+        _ => of_operand(engine, expr, at),
+    }
+}
+
+/// `expr` as the engine evaluates it, a reference read as the matrix of its cells.
+fn of_operand(engine: &mut Engine, expr: &Expr, at: Address) -> Matrix {
+    match engine.operand(expr, at) {
+        Operand::Value(value) => Matrix::single(value),
+        Operand::Area(area) => {
+            let (rows, cols) = (area.rows.len(), area.cols.len());
+            let cells = engine.values_in(&area);
+            Matrix { rows, cols, cells }
+        }
     }
 }
 

@@ -498,6 +498,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.14.6",
     },
     FuncInfo {
+        name: "INDIRECT",
+        signature: "INDIRECT( Text Ref [ ; Logical A1 = TRUE ] )",
+        brief: "Return a reference given a string representation of a reference.",
+        section: "6.14.7",
+    },
+    FuncInfo {
         name: "INT",
         signature: "INT( Number N )",
         brief: "Rounds a number down to the nearest integer.",
@@ -719,6 +725,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "ODD( Number N )",
         brief: "Rounds a number up to the nearest odd integer, where \"up\" means \"away from 0\".",
         section: "6.16.44",
+    },
+    FuncInfo {
+        name: "OFFSET",
+        signature: "OFFSET( Reference R ; Integer RowOffset ; Integer ColumnOffset [ ; [ Integer NewHeight ] [ ; [ Integer NewWidth ] ] ] )",
+        brief: "Modifies a reference's position and dimension.",
+        section: "6.14.11",
     },
     FuncInfo {
         name: "OR",

@@ -170,7 +170,11 @@ run set "$book" L18 'Share of spending below rent'
 run set "$book" M18 '=COM.MICROSOFT.NORM.S.DIST(([.C2]-AVERAGE([.C2:.C7]))/STDEV([.C2:.C7]);TRUE())'
 run set "$book" L19 'Chance a bill is at most 30'
 run set "$book" M19 '=COM.MICROSOFT.GAMMA.DIST(30;4;5;TRUE())'           # Excel's GAMMA.DIST, shape 4, scale 5
-sheet view "$book" L1:M19
+run set "$book" L20 'The last three actuals'
+run set "$book" M20 '=SUM(OFFSET([.C7];-2;0;3))'                          # a reference, moved and sized
+run set "$book" L21 'An actual, by address'
+run set "$book" M21 '=INDIRECT("C"&3)'                                    # a reference spelled as text
+sheet view "$book" L1:M21
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2
