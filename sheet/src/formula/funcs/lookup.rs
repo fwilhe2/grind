@@ -112,10 +112,21 @@ fn choose(args: &mut Args) -> Answer {
 fn match_(args: &mut Args) -> Answer {
     args.arity(2..=3)?;
     let key = args.value(0);
-    let area = args.area(1).ok_or(FormulaError::Value)?;
-    if area.rows.len() > 1 && area.cols.len() > 1 {
-        return Err(FormulaError::Value);
-    }
+    // A ForceArray region (§6.14.9): a reference searched where it is, anything else as the
+    // array it evaluates to.
+    let values = match args.area(1) {
+        Some(area) if area.rows.len() > 1 && area.cols.len() > 1 => {
+            return Err(FormulaError::Value);
+        }
+        Some(area) => args.values_in(&area),
+        None => {
+            let region = args.array(1);
+            if region.rows > 1 && region.cols > 1 {
+                return Err(FormulaError::Value);
+            }
+            region.values().to_vec()
+        }
+    };
     let mode = match if args.len() > 2 && !args.omitted(2) {
         args.integer(2)?
     } else {
@@ -126,7 +137,6 @@ fn match_(args: &mut Args) -> Answer {
         -1 => Mode::Descending,
         _ => return Err(FormulaError::Value),
     };
-    let values = args.values_in(&area);
     Ok(Value::number(search(&key, &values, mode)? as f64 + 1.0))
 }
 

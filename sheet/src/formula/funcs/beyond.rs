@@ -1322,3 +1322,35 @@ fn fixed_rounds_as_round_does_and_spells_the_result_in_the_documents_locale() {
         Value::Text("-1.234.567,89".into())
     );
 }
+
+/// §6.14.9: `MATCH`'s search region is `ForceArray`, so an expression there is an array, and
+/// `INDEX` over an array in that array mode picks a row or column of it (§6.14.6). Measured
+/// against LibreOffice 26.8.
+#[test]
+fn match_searches_an_array_and_index_picks_from_one() {
+    assert_eq!(number("=MATCH(TRUE();INDEX([.B1:.B7]>15;0);0)"), 2.0);
+    assert_eq!(number("=MATCH(TRUE();[.B1:.B7]>15;0)"), 2.0);
+    assert_eq!(number("=MATCH(TRUE();INDEX([.B1:.B7]>35;0);0)"), 4.0);
+    // Text is greater than every number (§6.4.9).
+    assert_eq!(number("=MATCH(TRUE();INDEX([.B1:.B7]>100;0);0)"), 5.0);
+    assert_eq!(number("=MATCH(TRUE();INDEX([.B1:.B7]>15;0;0);0)"), 2.0);
+    assert_eq!(number("=MATCH(60;[.B1:.B4]*2;0)"), 3.0);
+    assert_eq!(number("=MATCH(60;INDEX([.B1:.B4]*2;0;1);0)"), 3.0);
+    assert_eq!(number("=MATCH(35;[.B1:.B4]+0;1)"), 3.0);
+    assert_eq!(number("=MATCH(\"pear\";[.A1:.A7]&\"\";0)"), 2.0);
+    assert_eq!(number("=SUMPRODUCT(INDEX([.B1:.B4]*2;0;1))"), 200.0);
+    assert_eq!(number("=SUMPRODUCT(INDEX([.B1:.B4]*2;0))"), 200.0);
+    assert_eq!(number("=SUMPRODUCT(INDEX([.B1:.B4]*2;2;1))"), 40.0);
+    assert_eq!(number("=SUMPRODUCT(INDEX([.B1:.C4]>0;0;1)*1)"), 4.0);
+    assert_eq!(
+        error("=SUMPRODUCT(INDEX([.B1:.B4]*2;5;1))"),
+        FormulaError::Ref
+    );
+    // A region of two columns is no sequence to search.
+    assert_eq!(
+        error("=MATCH(TRUE();INDEX([.B1:.C2]>15;0);0)"),
+        FormulaError::Value
+    );
+    // Outside an array argument the range meets the formula at one cell, as before.
+    assert_eq!(error("=INDEX([.B1:.B4]*2;3)"), FormulaError::Value);
+}

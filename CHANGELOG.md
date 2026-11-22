@@ -29,6 +29,9 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- `MATCH` searches an array as well as a range, so `MATCH(TRUE(); INDEX(B1:B9>15; 0); 0)` finds
+  the first row over 15 instead of failing; `INDEX` picks a row or column of an array inside one.
+
 ## 0.1.1 — 2026-11-21
 
 ### Fixes

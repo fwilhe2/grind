@@ -114,6 +114,9 @@ pub fn evaluate(engine: &mut Engine, expr: &Expr, at: Address) -> Matrix {
 /// 2.2.3).
 fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Matrix {
     let upper = name.to_uppercase();
+    if upper == "INDEX" {
+        return index(engine, args, at);
+    }
     let mut arrays: Vec<(usize, Matrix)> = Vec::new();
     for (i, arg) in args.iter().enumerate() {
         if funcs::takes_one_value(&upper, i) && !matches!(arg, Expr::Empty) {
@@ -134,6 +137,58 @@ fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Matrix {
         }
         funcs::call(engine, name, &substituted, at)
     })
+}
+
+/// §6.14.6 `INDEX` inside an array: its `DataSource` evaluated as one, so an expression is as good
+/// as a reference, and a zero (or omitted) row or column takes the whole of it — the column
+/// `MATCH` searches in `MATCH(TRUE();INDEX([.B1:.B9]>15;0);0)`.
+fn index(engine: &mut Engine, args: &[Expr], at: Address) -> Matrix {
+    let single = |value| Matrix::single(Value::Error(value));
+    if args.is_empty() || args.len() > 4 {
+        return single(FormulaError::Value);
+    }
+    let mut number = |i: usize| -> Result<i64, FormulaError> {
+        match args.get(i) {
+            None | Some(Expr::Empty) => Ok(0),
+            Some(arg) => {
+                let matrix = evaluate(engine, arg, at);
+                Ok(matrix.get(0, 0).to_number()?.trunc() as i64)
+            }
+        }
+    };
+    let picked = (|| {
+        let (row, col, area) = (number(1)?, number(2)?, number(3)?);
+        if row < 0 || col < 0 || area > 1 {
+            return Err(FormulaError::Value);
+        }
+        Ok((row, col))
+    })();
+    let (row, col) = match picked {
+        Ok(picked) => picked,
+        Err(error) => return single(error),
+    };
+    let source = evaluate(engine, &args[0], at);
+    let axis = |index: i64, len: usize| -> Result<std::ops::Range<usize>, FormulaError> {
+        match index {
+            0 => Ok(0..len),
+            i if i as usize <= len => Ok(i as usize - 1..i as usize),
+            _ => Err(FormulaError::Ref),
+        }
+    };
+    let (rows, cols) = match (axis(row, source.rows), axis(col, source.cols)) {
+        (Ok(rows), Ok(cols)) => (rows, cols),
+        (Err(error), _) | (_, Err(error)) => return single(error),
+    };
+    let cells = rows
+        .clone()
+        .flat_map(|r| cols.clone().map(move |c| (r, c)))
+        .map(|(r, c)| source.get(r, c))
+        .collect();
+    Matrix {
+        rows: rows.len(),
+        cols: cols.len(),
+        cells,
+    }
 }
 
 /// A value as the expression that evaluates to it, so an element can stand in for the
