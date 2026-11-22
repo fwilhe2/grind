@@ -22,7 +22,8 @@ lands, and the release workflow publishes the section as it stands.
   same as an ordinary one, instead of freezing it to its saved value.
 - Area charts are shown: stacked bands, with lines drawn over them, as LibreOffice draws them.
 - Importing an Excel workbook brings its charts along — bar, line, pie and area, stacked or not,
-  with a line over bars or areas — placed where they were, drawn from the workbook's cells.
+  with a line over bars or areas — placed where they were, drawn from the workbook's cells, and
+  with their series' names even where the workbook gives a name as text rather than a cell.
 
 ### Fixes
 

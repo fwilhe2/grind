@@ -176,6 +176,9 @@ impl App {
                     new.color = old.color.clone();
                     new.point_colors = old.point_colors.clone();
                     new.kind = old.kind.filter(|_| same_kind);
+                    if new.label.is_none() {
+                        new.name.clone_from(&old.name);
+                    }
                 }
             }
         }
@@ -255,6 +258,7 @@ impl App {
                         .transpose()?,
                     color: None,
                     point_colors: Vec::new(),
+                    name: None,
                     kind: None,
                 })
             })

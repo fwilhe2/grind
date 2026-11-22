@@ -244,3 +244,33 @@ fn a_plot_area_that_says_nothing_is_not_stacked() {
     assert!(!chart.stacked);
     assert_eq!(chart.series[0].kind, None);
 }
+
+/// A series named by text no cell holds, as LibreOffice writes one: `loext:label-string`, a
+/// quoted string.
+#[test]
+fn a_series_named_by_text_reads_its_name() {
+    let d = doc(&inline_chart("chart:line").replace(
+        r#"chart:label-cell-address="Sheet1.B1:Sheet1.B1""#,
+        r#"xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" loext:label-string="&quot;Median&quot;""#,
+    ));
+    let series = &d.sheet(0).unwrap().charts()[0].series[0];
+    assert_eq!(series.label, None);
+    assert_eq!(series.name.as_deref(), Some("Median"));
+}
+
+/// LibreOffice writes `chart:label-cell-address=""` (or blanks) for a series it has no cell for:
+/// no address is no label.
+#[test]
+fn a_blank_label_address_is_no_label() {
+    for blank in ["", "  "] {
+        let d = doc(&inline_chart("chart:bar").replace(
+            r#"chart:label-cell-address="Sheet1.B1:Sheet1.B1""#,
+            &format!(r#"chart:label-cell-address="{blank}""#),
+        ));
+        assert_eq!(
+            d.sheet(0).unwrap().charts()[0].series[0].label,
+            None,
+            "{blank:?}"
+        );
+    }
+}

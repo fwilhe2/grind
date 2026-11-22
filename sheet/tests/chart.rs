@@ -918,6 +918,7 @@ fn a_stacked_area_chart_with_a_line_survives_a_save_and_an_edit() {
         label: None,
         color: None,
         point_colors: Vec::new(),
+        name: None,
         kind,
     };
     let mut chart = grind_sheet::Chart::new(

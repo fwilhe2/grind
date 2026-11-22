@@ -47,6 +47,7 @@ fn budget() -> (Chart, ChartData) {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            name: None,
             kind: None,
         })
         .into();
@@ -348,6 +349,7 @@ fn a_stacked_area_stacks_its_bands_and_leaves_a_line_at_its_own_values() {
         label: None,
         color: None,
         point_colors: Vec::new(),
+        name: None,
         kind,
     };
     chart.series = vec![series(None), series(None), series(Some(ChartKind::Line))];

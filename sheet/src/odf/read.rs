@@ -1214,7 +1214,16 @@ impl Context<Builder> for ChartPlotArea {
                     .to_owned();
                 let label = attrs
                     .get(Ns::Chart, "label-cell-address")
+                    .filter(|address| !address.trim().is_empty())
                     .map(str::to_owned);
+                // LibreOffice's name for a series no cell names: a quoted string.
+                let name = attrs.get(Ns::Loext, "label-string").map(|quoted| {
+                    quoted
+                        .strip_prefix('"')
+                        .and_then(|q| q.strip_suffix('"'))
+                        .unwrap_or(quoted)
+                        .to_owned()
+                });
                 let series_style = attrs.get(Ns::Chart, "style-name").map(str::to_owned);
                 let (index, chart_kind) = {
                     let pending = b.pending_chart.as_ref()?;
@@ -1266,6 +1275,7 @@ impl Context<Builder> for ChartPlotArea {
                     label,
                     color,
                     point_colors: Vec::new(),
+                    name,
                     kind: own_kind,
                 });
                 Some(Box::new(ChartSeries {

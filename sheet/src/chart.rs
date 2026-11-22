@@ -76,6 +76,10 @@ pub struct Series {
     /// `None` entry is no override ([`effective_color`]).
     #[serde(default)]
     pub point_colors: Vec<Option<String>>,
+    /// The series' name as text no cell holds — Excel's `c:tx/c:v`, LibreOffice's
+    /// `loext:label-string`; [`Series::label`] wins when both are there.
+    #[serde(default)]
+    pub name: Option<String>,
     /// This series' own `chart:class` (rng:892) where it differs from the chart's — a line among
     /// an area chart's bands; `None` is the chart's.
     #[serde(default)]
@@ -810,7 +814,7 @@ impl ChartData {
             }
             let label = match &s.label {
                 Some(range) => strip(app, range)?.into_iter().next().unwrap_or_default(),
-                None => String::new(),
+                None => s.name.clone().unwrap_or_default(),
             };
             series.push((label, values));
         }
@@ -945,6 +949,7 @@ mod tests {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            name: None,
             kind: None,
         }
     }

@@ -187,6 +187,7 @@ mod tests {
             label: None,
             color: None,
             point_colors: Vec::new(),
+            name: None,
             kind: None,
         }];
         chart

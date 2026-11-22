@@ -140,6 +140,20 @@ the fill over the chart's white (`chart::over_white`, `#000000` at 30% is `#b3b3
 what a reader sees on a white chart, and a chart regenerated after an edit is written opaque. A
 chart nobody edited is carried byte for byte, opacity and all (`sheet/tests/never_worse.rs`).
 
+**A series named by text no cell holds** — every band of an imported fan chart is — carries the
+text as `Series::name`, written as LibreOffice's `loext:label-string="&quot;Basis&quot;"`, the one
+`loext:` item this build writes (`doc/plan.md`, R4). **Measured** (LibreOffice 26.8.3.1): it
+writes the attribute for such a series and reads it back from no file, its own included, so
+outside this build the legend says "Column B"; a name containing `"` has no spelling and
+LibreOffice writes none.
+
+**Measured, and a limit of the flat form in LibreOffice:** a chart on one sheet plotting a sheet
+that comes *after* it in the document keeps its ranges when LibreOffice opens the package form,
+and loses them when it opens the flat form — every series gone, or, in LibreOffice's own file,
+turned into a static copy in the chart's `local-table`. An imported fan chart is exactly that
+shape (the calculator sheet first, the calculation last), so such a workbook is for LibreOffice
+best saved as `.ods`.
+
 ### Colour — verified, and where this build departs on purpose
 
 A series and a data point each carry a `style:style style:family="chart"` (rng:11059's

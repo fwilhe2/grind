@@ -272,6 +272,8 @@ struct Group {
 #[derive(Default)]
 struct RawSeries {
     name: Option<String>,
+    /// A name given as text, `c:tx/c:v`, rather than a cell.
+    text: Option<String>,
     categories: Option<String>,
     values: Option<String>,
     fill: Option<String>,
@@ -385,9 +387,9 @@ fn series(reader: &mut Reader<'_>) -> grind_ooxml::Result<RawSeries> {
     let mut raw = RawSeries::default();
     reader.children(|reader, name, _| {
         match (name.ns, name.local.as_str()) {
-            (Ns::Chart, "tx") => raw.name = reference(reader)?,
-            (Ns::Chart, "cat") => raw.categories = reference(reader)?,
-            (Ns::Chart, "val") => raw.values = reference(reader)?,
+            (Ns::Chart, "tx") => (raw.name, raw.text) = source(reader)?,
+            (Ns::Chart, "cat") => raw.categories = source(reader)?.0,
+            (Ns::Chart, "val") => raw.values = source(reader)?.0,
             (Ns::Chart, "spPr") => (raw.fill, raw.line) = colours(reader)?,
             _ => return Ok(Handled::No),
         }
@@ -396,23 +398,28 @@ fn series(reader: &mut Reader<'_>) -> grind_ooxml::Result<RawSeries> {
     Ok(raw)
 }
 
-/// The `c:f` inside a `c:strRef`, `c:numRef` or `c:multiLvlStrRef`: where the data is.
-fn reference(reader: &mut Reader<'_>) -> grind_ooxml::Result<Option<String>> {
-    let mut found = None;
+/// Where a series' name or data comes from: the `c:f` inside a `c:strRef`, `c:numRef` or
+/// `c:multiLvlStrRef`, and the literal text of a `c:v`.
+fn source(reader: &mut Reader<'_>) -> grind_ooxml::Result<(Option<String>, Option<String>)> {
+    let (mut formula, mut text) = (None, None);
     reader.children(|reader, name, _| {
+        if name.in_ns(Ns::Chart, "v") {
+            text = Some(reader.text()?);
+            return Ok(Handled::Yes);
+        }
         if name.ns != Ns::Chart || !name.local.ends_with("Ref") {
             return Ok(Handled::No);
         }
         reader.children(|reader, name, _| {
             if name.in_ns(Ns::Chart, "f") {
-                found = Some(reader.text()?.trim().to_owned());
+                formula = Some(reader.text()?.trim().to_owned());
                 return Ok(Handled::Yes);
             }
             Ok(Handled::No)
         })?;
         Ok(Handled::Yes)
     })?;
-    Ok(found)
+    Ok((formula, text))
 }
 
 /// A shape's fill and its outline's colour, each `a:solidFill`'s `a:srgbClr`, seen through its
@@ -560,6 +567,7 @@ fn build(found: Found, own: &str, renames: &[(String, String)]) -> Option<Chart>
                 label: raw.name.as_deref().and_then(|f| address(f, own, renames)),
                 color,
                 point_colors: Vec::new(),
+                name: raw.text.clone(),
                 kind: (group.kind != main.kind).then_some(group.kind),
             });
         }

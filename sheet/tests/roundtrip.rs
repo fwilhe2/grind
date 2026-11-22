@@ -489,6 +489,8 @@ fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String>
                 format!("{:?}", x.kind),
                 format!("{:?}", y.kind),
             );
+            // A series' literal name is not compared: LibreOffice 26.8 reads no
+            // `loext:label-string`, its own included (`doc/chart-format.md`, Area).
         }
     }
     out
@@ -1078,6 +1080,7 @@ fn fan() -> (String, Document) {
         label: None,
         color: Some(color.to_owned()),
         point_colors: Vec::new(),
+        name: None,
         kind,
     };
     let mut chart = grind_sheet::Chart::new(
@@ -1095,6 +1098,9 @@ fn fan() -> (String, Document) {
     ];
     chart.stacked = true;
     chart.legend = Some(grind_sheet::ChartLegend::Bottom);
+    // Named by text no cell holds, as an imported fan chart's bands are: LibreOffice reads past
+    // the name, and must still read the chart.
+    chart.series[1].name = Some("95% der Fälle & mehr".to_owned());
     sheet.insert_chart(0, chart);
     let doc = Document {
         sheets: vec![sheet],

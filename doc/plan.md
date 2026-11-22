@@ -43,7 +43,7 @@ a requirement nothing checks is a preference.
 | **R1** | The implementation is **fully independent**, and implements ODF natively rather than translating another format. | `CONTRIBUTING.md`'s clean-room rule; `funcs::implemented()` against `doc/small-group.md` |
 | **R2** | Everything written **MUST be valid** against the ODF schema. | `jing -i doc/OpenDocument-v1.4-schema.rng`, in `sheet/tests/kb.rs` and over `examples/sample-sheet.sh`'s output in `cli/tests/cli.rs` |
 | **R3** | Output **MUST carry minimal boilerplate** while staying compliant — nothing written that the document does not use. | the writer's own tests; a new document is 13 lines |
-| **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — nothing yet, because nothing needs it |
+| **R4** | Output **MAY carry `calcext:`** items where LibreOffice needs them. | see below — one item, `loext:label-string`, written only into a document that has a chart series named by text no cell holds |
 | **R5** | Files LibreOffice produces **MUST read**, and unknown elements and attributes **MUST be tolerated**. | loop A, 361 documents; `sheet/tests/kb.rs`'s three LibreOffice-authored files |
 | **R6** | Writing **MUST change as little of the XML as possible**. Editing one number must not produce a hundred-line diff the way LibreOffice's own save does; a flat ODF file must stay easy to `git diff`. | `sheet/tests/kb.rs`'s `setting_one_number_changes_one_element`, over all fourteen R7 documents |
 | **R7** | Two named corpora **MUST work**, and are vendored so the requirement cannot skip. Hand-written against the spec (`data/kb/`): `filter` · `fizzbuzz` · `formula` · `minimal` · `minimal-libreoffice` · `minimal-libreoffice-cleanup` · `minimal-with-styles` · `named-range`. LibreOffice-authored, `odslint-clean`-normalised (`data/samples/`): `Quarterly Sales Report` · `Sales Dashboard` · `conditional-formatting` · `custom-colors` · `spreadsheet` · `table`. All `.fods`. | `sheet/tests/kb.rs` |
@@ -56,6 +56,15 @@ validation because of it (along with `loext:opacity` and `loext:theme`). So `cal
 opt-in, never default, and an item only earns its place with a *measured* LibreOffice
 behaviour recorded in `doc/ods-format.md` that cannot be had any other way. "LO writes it"
 is not a reason; "LO gets it wrong without it" is.
+
+**The one item so far, and what opt-in means.** A chart series named by literal text (Excel's
+`c:tx/c:v`, as every band of an imported fan chart is) has no ODF 1.4 attribute; LibreOffice's
+own is `loext:label-string`. It is written on that series only, its namespace declared on the
+element, so a document opts in by containing such a name and every other document stays valid
+against the strict schema. Measured 2026-11-22 (`doc/chart-format.md`, Area): LibreOffice 26.8
+writes it and does not read it back, its own files included, so it keeps a name for this build
+and for whatever reads LibreOffice's extension — a name with a quote mark in it has no spelling
+at all and is not written.
 
 **R2 and R5 are not the same direction.** We validate what we *write*; we do not validate
 what we read, and must not — most of R7's documents are invalid against the 1.4 schema (an

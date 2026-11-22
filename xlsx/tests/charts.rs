@@ -77,7 +77,10 @@ fn fan_chart() -> String {
            </c:plotArea><c:legend><c:legendPos val="b"/></c:legend></c:chart></c:chartSpace>"#,
         series(0, "B", BAND),
         series(1, "C", BAND),
-        series(2, "D", LINE)
+        series(2, "D", LINE).replace(
+            "<c:tx><c:strRef><c:f>Calc!$D$1</c:f></c:strRef></c:tx>",
+            "<c:tx><c:v>Median line</c:v></c:tx>"
+        )
     )
 }
 
@@ -189,6 +192,9 @@ fn a_fan_chart_is_read_where_it_is_anchored() {
         ["Calc.B2:Calc.B5", "Calc.C2:Calc.C5", "Calc.D2:Calc.D5"]
     );
     assert_eq!(chart.series[0].label.as_deref(), Some("Calc.B1"));
+    // A name given as text rather than a cell.
+    assert_eq!(chart.series[2].label, None);
+    assert_eq!(chart.series[2].name.as_deref(), Some("Median line"));
     let kinds: Vec<_> = chart.series.iter().map(|s| s.kind).collect();
     assert_eq!(kinds, [None, None, Some(ChartKind::Line)]);
     // 30% black over white, and the line's own colour.
@@ -269,4 +275,16 @@ fn an_imported_chart_survives_its_own_writer() {
     let chart = &back.sheets[0].charts()[0];
     assert!(chart.stacked);
     assert_eq!(chart.series[2].kind, Some(ChartKind::Line));
+}
+
+/// The legend names a series by its text when no cell does.
+#[test]
+fn a_series_named_by_text_is_named_so_in_the_legend() {
+    let bytes = workbook(&fan_chart(), &drawing(&chart_anchor("rId1", 1, 2, 0)));
+    let (odf, _) = grind_xlsx::open(&bytes).unwrap();
+    let app = grind_sheet::App::new();
+    app.open_bytes("fan.fods", &odf).unwrap();
+    let data = app.chart_data(0, 0).unwrap();
+    let names: Vec<_> = data.series.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["Base", "Band", "Median line"]);
 }

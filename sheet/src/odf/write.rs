@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use super::names::{
-    CALCEXT, CHART, DRAW, FO, FORM, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
+    CALCEXT, CHART, DRAW, FO, FORM, LOEXT, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
 };
 use crate::chart::Axis;
 use crate::formula::date;
@@ -2891,10 +2891,16 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
     write_axis(out, "x", chart.categories.as_deref(), &chart.x_axis);
     write_axis(out, "y", None, &chart.y_axis);
     for (n, series) in chart.series.iter().enumerate() {
-        let label = series
-            .label
-            .as_deref()
-            .map_or_default(|l| format!(" chart:label-cell-address=\"{}\"", esc(l)));
+        let label = match (&series.label, &series.name) {
+            (Some(l), _) => format!(" chart:label-cell-address=\"{}\"", esc(l)),
+            // A name no cell holds has no ODF attribute: LibreOffice's own, opted into by the
+            // documents that have one (`doc/plan.md`, R4). A quote has no spelling in it.
+            (None, Some(name)) if !name.contains('"') => format!(
+                " xmlns:loext=\"{LOEXT}\" loext:label-string=\"&quot;{}&quot;\"",
+                esc(name)
+            ),
+            (None, _) => String::new(),
+        };
         let _ = writeln!(
             out,
             "           <chart:series chart:class=\"{}\" \
