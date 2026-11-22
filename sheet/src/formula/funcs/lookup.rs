@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! §6.14 Lookup Functions — the Small Group's five, and `ADDRESS` from beyond it.
+//! §6.14 Lookup Functions — the Small Group's five, and `ADDRESS` from beyond it. `INDEX` returns
+//! a reference, so the engine evaluates it (`Engine::index`, and `array.rs` inside an array).
 //!
 //! `MATCH`, `VLOOKUP` and `HLOOKUP` share one search with three modes:
 //!
@@ -35,7 +36,6 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "MATCH" => match_(args),
         "VLOOKUP" => lookup(args, true),
         "HLOOKUP" => lookup(args, false),
-        "INDEX" => index(args),
         "ADDRESS" => address(args),
         _ => return None,
     })
@@ -179,35 +179,6 @@ fn lookup(args: &mut Args, vertical: bool) -> Answer {
         return Err(FormulaError::Ref);
     }
     Ok(args.value_at(Address::new(source.sheet, Pos::new(row, col))))
-}
-
-/// §6.14.6 `INDEX(DataSource; Row; Column; AreaNumber)`, 1-based and relative to the area.
-///
-/// ponytail: a 0 or omitted index means the whole row or column (§6.14.6), a reference result, and
-/// a function here returns only values; so those forms work only when they name one cell. `OFFSET`
-/// and `INDIRECT` need reference results too: build it once for all three.
-fn index(args: &mut Args) -> Answer {
-    args.arity(1..=4)?;
-    let source = args.area(0).ok_or(FormulaError::Value)?;
-    let row = if args.omitted(1) { 0 } else { args.integer(1)? };
-    let col = if args.omitted(2) { 0 } else { args.integer(2)? };
-    if row < 0 || col < 0 {
-        return Err(FormulaError::Value);
-    }
-    // We hold no reference lists, so the only area a DataSource has is its first.
-    if !args.omitted(3) && args.integer(3)? != 1 {
-        return Err(FormulaError::Value);
-    }
-    let axis = |index: i64, range: std::ops::Range<u32>| -> Result<u32, FormulaError> {
-        match index {
-            0 if range.len() == 1 => Ok(range.start),
-            0 => Err(FormulaError::Value),
-            i if (i as u32) <= range.len() as u32 => Ok(range.start + i as u32 - 1),
-            _ => Err(FormulaError::Ref),
-        }
-    };
-    let pos = Pos::new(axis(row, source.rows)?, axis(col, source.cols)?);
-    Ok(args.value_at(Address::new(source.sheet, pos)))
 }
 
 /// §6.14.2 `ADDRESS( Row ; Column [ ; Abs = 1 [ ; A1Style = TRUE [ ; Sheet ] ] ] )`: a reference

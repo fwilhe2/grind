@@ -287,11 +287,52 @@ impl<'a> Engine<'a> {
                 None => FormulaError::Ref.into(),
             },
             Expr::Name(name) => self.named(name, at),
+            Expr::Call { name, args } if name.eq_ignore_ascii_case("INDEX") => self.index(args, at),
             Expr::Call { name, args } => funcs::call(self, name, args, at).into(),
             Expr::Prefix(op, operand) => self.prefix(*op, operand, at).into(),
             // The only postfix operator is `%` (§6.4.14).
             Expr::Postfix(_, operand) => percent(self.value_of(operand, at)).into(),
             Expr::Binary(op, lhs, rhs) => self.binary(*op, lhs, rhs, at),
+        }
+    }
+
+    /// §6.14.6 `INDEX` over a reference: the cell, row or column it picks, still a reference, so
+    /// it can end a range (`[.B1]:INDEX(…)`) or be a sequence. A zero or omitted row or column is
+    /// the whole of it; past the area is `#REF!`. Any other `DataSource` is no area to pick from
+    /// outside an array (`array.rs` evaluates one inside).
+    fn index(&mut self, args: &[Expr], at: Address) -> Operand {
+        if args.is_empty() || args.len() > 4 {
+            return FormulaError::Value.into();
+        }
+        let Operand::Area(source) = self.operand(&args[0], at) else {
+            return FormulaError::Value.into();
+        };
+        let mut number = |i: usize| match args.get(i) {
+            None | Some(Expr::Empty) => Ok(0),
+            Some(arg) => self.value_of(arg, at).to_number().map(|n| n.trunc() as i64),
+        };
+        let picked = (|| {
+            let (row, col, area) = (number(1)?, number(2)?, number(3)?);
+            if row < 0 || col < 0 || area > 1 {
+                return Err(FormulaError::Value);
+            }
+            let axis = |index: i64, range: Range<u32>| match index {
+                0 => Ok(range),
+                i if i as u64 <= u64::from(range.end - range.start) => {
+                    let at = range.start + i as u32 - 1;
+                    Ok(at..at + 1)
+                }
+                _ => Err(FormulaError::Ref),
+            };
+            Ok(Area {
+                sheet: source.sheet,
+                rows: axis(row, source.rows.clone())?,
+                cols: axis(col, source.cols.clone())?,
+            })
+        })();
+        match picked {
+            Ok(area) => Operand::Area(area),
+            Err(error) => error.into(),
         }
     }
 
@@ -324,10 +365,13 @@ impl<'a> Engine<'a> {
         // anything is converted to a scalar.
         match op {
             Op::Range => {
-                let (Operand::Area(a), Operand::Area(b)) =
-                    (self.operand(lhs, at), self.operand(rhs, at))
-                else {
-                    return FormulaError::Value.into();
+                let (a, b) = match (self.operand(lhs, at), self.operand(rhs, at)) {
+                    (Operand::Area(a), Operand::Area(b)) => (a, b),
+                    // An end that failed says why.
+                    (Operand::Value(Value::Error(e)), _) | (_, Operand::Value(Value::Error(e))) => {
+                        return e.into();
+                    }
+                    _ => return FormulaError::Value.into(),
                 };
                 if a.sheet != b.sheet {
                     // A cuboid across sheets (§4.8). Nothing in the Small Group evaluates

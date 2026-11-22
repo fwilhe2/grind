@@ -1354,3 +1354,21 @@ fn match_searches_an_array_and_index_picks_from_one() {
     // Outside an array argument the range meets the formula at one cell, as before.
     assert_eq!(error("=INDEX([.B1:.B4]*2;3)"), FormulaError::Value);
 }
+
+/// §6.14.6: `INDEX` over a reference returns the cell, row or column it picks as a reference —
+/// one end of a range, a sequence a function takes whole. Measured against LibreOffice 26.8.
+#[test]
+fn index_over_a_reference_is_a_reference() {
+    assert_eq!(number("=MAX([.B1]:INDEX([.B1:.B7];4))"), 40.0);
+    assert_eq!(number("=SUM([.B2]:INDEX([.B1:.B7];4))"), 90.0);
+    assert_eq!(number("=AVERAGE([.B1]:INDEX([.B1:.B7];[.B2]/10))"), 15.0);
+    assert_eq!(number("=MIN(INDEX([.B1:.B7];2):[.B4])"), 20.0);
+    assert_eq!(number("=SUM(INDEX([.B1:.B7];2):INDEX([.B1:.B7];3))"), 50.0);
+    assert_eq!(number("=MAX([.B1]:INDEX([.B1:.B7];0))"), 40.0);
+    assert_eq!(number("=SUM(INDEX([.B1:.B7];0))"), 135.0);
+    assert_eq!(number("=SUM(INDEX([.A1:.B7];0;2))"), 135.0);
+    assert_eq!(number("=ROWS(INDEX([.A1:.C7];0;2))"), 7.0);
+    assert_eq!(number("=COLUMNS(INDEX([.A1:.C7];2;0))"), 3.0);
+    assert_eq!(number("=INDEX([.B1:.B7];3)"), 30.0);
+    assert_eq!(error("=INDEX([.B1:.B7];9):[.B1]"), FormulaError::Ref);
+}

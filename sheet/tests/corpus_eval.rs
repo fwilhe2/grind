@@ -38,11 +38,12 @@ const CORPUS: &str = "sc/qa/unit/data";
 /// 14116 of 52812); the floor takes most of that, not all, since CI's sparse clone need not be
 /// the same checkout. `CEILING`, `FLOOR` and Excel's two beside them, `SUBTOTAL` and
 /// `SUMPRODUCT` followed on 2026-10-18 and were worth 355 more (14116 → 14471), with the
-/// margin kept. The gap to the total is mostly `missing` —
+/// margin kept; `INDEX` as a reference and `MATCH` over an array took it to 14623, and 1355
+/// disagreements to 1187. The gap to the total is mostly `missing` —
 /// fixtures for functions outside the Small Group entirely (`FOURIER`, `LINEST`, the whole
 /// `addin` category) — so the number to watch is the scoreboard's `wrong` column, not this
 /// one.
-const FLOOR: usize = 14_250;
+const FLOOR: usize = 14_500;
 
 fn corpus_root() -> Option<PathBuf> {
     let root = PathBuf::from(

@@ -31,6 +31,8 @@ lands, and the release workflow publishes the section as it stands.
 
 - `MATCH` searches an array as well as a range, so `MATCH(TRUE(); INDEX(B1:B9>15; 0); 0)` finds
   the first row over 15 instead of failing; `INDEX` picks a row or column of an array inside one.
+- `INDEX` over a range gives back a cell, row or column you can use as a range, so
+  `MAX(A2:INDEX(A2:A99; B1))` and `SUM(INDEX(A1:C9; 0; 2))` work instead of showing `#VALUE!`.
 
 ## 0.1.1 — 2026-11-21
 
