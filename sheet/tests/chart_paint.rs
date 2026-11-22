@@ -406,3 +406,77 @@ fn a_stacked_area_stacks_its_bands_and_leaves_a_line_at_its_own_values() {
         Some(Target::Area { series: 1 })
     );
 }
+
+/// A stacked bar chart draws one bar per category, each series a segment on the last; a stacked
+/// line runs through the running totals.
+#[test]
+fn stacked_bars_and_lines_stand_on_the_series_before() {
+    let draw = |kind: ChartKind| {
+        let mut chart = Chart::new(
+            kind,
+            "0cm".into(),
+            "0cm".into(),
+            "10cm".into(),
+            "6cm".into(),
+        );
+        chart.stacked = true;
+        chart.series = ["B1:B2", "C1:C2"]
+            .map(|values| Series {
+                values: values.into(),
+                label: None,
+                color: None,
+                point_colors: Vec::new(),
+                name: None,
+                kind: None,
+            })
+            .into();
+        let data = ChartData {
+            kind,
+            categories: vec!["a".into(), "b".into()],
+            series: vec![
+                ("x".into(), vec![10.0, 5.0]),
+                ("y".into(), vec![10.0, 15.0]),
+            ],
+            value_format: None,
+            kinds: Vec::new(),
+            stacked: true,
+        };
+        let picture = chart_paint::picture(
+            &chart,
+            &data,
+            Rect::new(0.0, 0.0, 400.0, 300.0),
+            &colours(),
+            &Letters,
+        );
+        let plot = picture.plot.expect("a plot");
+        let paths: Vec<Vec<(f64, f64)>> = picture
+            .marks
+            .iter()
+            .filter_map(|mark| match mark {
+                Mark::Path { points, .. } => Some(points.clone()),
+                _ => None,
+            })
+            .collect();
+        (plot, paths)
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+    let top = |p: &[(f64, f64)]| p.iter().map(|q| q.1).fold(f64::INFINITY, f64::min);
+    let bottom = |p: &[(f64, f64)]| p.iter().map(|q| q.1).fold(0.0, f64::max);
+    let left = |p: &[(f64, f64)]| p.iter().map(|q| q.0).fold(f64::INFINITY, f64::min);
+
+    let (plot, bars) = draw(ChartKind::Bar);
+    // The stack's top, 20, is the axis' top.
+    let y = |v: f64| plot.bottom() - v / 20.0 * plot.h;
+    assert_eq!(bars.len(), 4, "{bars:?}");
+    // Category a: x from 0 to 10, y from 10 to 20, in one column.
+    let (first, second) = (&bars[0], &bars[1]);
+    assert!(close(left(first), left(second)), "one column per category");
+    assert!(close(bottom(first), y(0.0)) && close(top(first), y(10.0)));
+    assert!(close(bottom(second), y(10.0)) && close(top(second), y(20.0)));
+
+    let (plot, lines) = draw(ChartKind::Line);
+    let y = |v: f64| plot.bottom() - v / 20.0 * plot.h;
+    assert_eq!(lines.len(), 2);
+    let ys: Vec<f64> = lines[1].iter().map(|p| p.1).collect();
+    assert!(close(ys[0], y(20.0)) && close(ys[1], y(20.0)), "{ys:?}");
+}

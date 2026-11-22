@@ -752,18 +752,26 @@ impl Painter<'_> {
         if count == 0 || series == 0 {
             return;
         }
+        // Stacked, a category is one column of segments rather than a bar per series.
+        let slots = if self.data.stacked { 1 } else { series };
         let group = plot.w / count as f64;
-        let gaps = BAR_GAP * (series - 1) as f64;
-        let w = ((group * (1.0 - GROUP_GAP) - gaps) / series as f64).clamp(1.0, BAR_MAX);
-        let lead = (group - (w * series as f64 + gaps)) / 2.0;
+        let gaps = BAR_GAP * (slots - 1) as f64;
+        let w = ((group * (1.0 - GROUP_GAP) - gaps) / slots as f64).clamp(1.0, BAR_MAX);
+        let lead = (group - (w * slots as f64 + gaps)) / 2.0;
         for cat in 0..count {
             for (slot, &s) in ours.iter().enumerate() {
                 let Some(value) = self.data.series[s].1.get(cat).copied() else {
                     continue;
                 };
+                let (slot, floor, value) = if self.data.stacked {
+                    let top = self.data.top(s, cat);
+                    (0, top - value.max(0.0), top)
+                } else {
+                    (slot, 0.0, value)
+                };
                 let y = value_y(value, ticks, plot);
                 let x = plot.x + cat as f64 * group + lead + slot as f64 * (w + BAR_GAP);
-                let bar = Rect::new(x, y, w, plot.bottom() - y);
+                let bar = Rect::new(x, y, w, value_y(floor, ticks, plot) - y);
                 self.out.hits.push((
                     Region::Rect(bar),
                     Target::Bar {
@@ -773,7 +781,10 @@ impl Painter<'_> {
                 ));
                 if bar.h > 0.0 {
                     let color = self.mark(s, Some(cat));
-                    self.shape(rounded(bar, BAR_ROUNDING, 0.0), color);
+                    // Only the top of a stack is rounded: segments meet square.
+                    let last = !self.data.stacked || Some(&s) == ours.last();
+                    let rounding = if last { BAR_ROUNDING } else { 0.0 };
+                    self.shape(rounded(bar, rounding, 0.0), color);
                 }
             }
         }
@@ -790,13 +801,17 @@ impl Painter<'_> {
             if values.len() < 2 {
                 continue;
             }
-            let points: Vec<(f64, f64)> = values
-                .iter()
-                .enumerate()
-                .map(|(i, value)| {
+            // Stacked, a line runs through its running totals ([`ChartData::top`]).
+            let points: Vec<(f64, f64)> = (0..values.len())
+                .map(|i| {
+                    let value = if self.data.stacked {
+                        self.data.top(s, i)
+                    } else {
+                        values[i]
+                    };
                     (
                         plot.x + (i as f64 + 0.5) * step,
-                        value_y(*value, ticks, plot),
+                        value_y(value, ticks, plot),
                     )
                 })
                 .collect();

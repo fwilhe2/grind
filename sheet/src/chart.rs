@@ -208,7 +208,7 @@ pub struct Chart {
     pub legend: Option<Legend>,
     /// `chart:stacked` on the plot area's style (rng:9978): the series of the chart's own kind
     /// stand on one another, and a series of another kind at its own values, as LibreOffice
-    /// draws them (`doc/chart-format.md`, Area). Drawn for an area chart.
+    /// draws them (`doc/chart-format.md`, Area); a pie has nothing to stack.
     #[serde(default)]
     pub stacked: bool,
 }
@@ -790,7 +790,7 @@ pub struct ChartData {
     pub value_format: Option<(crate::numfmt::Format, Option<crate::locale::Locale>)>,
     /// Each series' kind ([`Chart::series_kind`]); a series past its end is the chart's kind.
     pub kinds: Vec<ChartKind>,
-    /// [`Chart::stacked`], for an area chart: the bands stand on one another.
+    /// [`Chart::stacked`], for anything but a pie.
     pub stacked: bool,
 }
 
@@ -834,7 +834,7 @@ impl ChartData {
             kinds: (0..chart.series.len())
                 .map(|n| chart.series_kind(n))
                 .collect(),
-            stacked: chart.stacked && chart.kind == ChartKind::Area,
+            stacked: chart.stacked && chart.kind != ChartKind::Pie,
         })
     }
 

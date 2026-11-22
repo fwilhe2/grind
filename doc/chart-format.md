@@ -139,8 +139,9 @@ things more, and nothing else:
 - **`Chart::stacked`**. ODF has one flag for the whole plot area. **Measured** (LibreOffice
   26.8.3.1, a document of two area series of 10 and two line series of 15 and 25 under a stacked
   plot area, converted to a picture): the bands stand at 10 and 20 and the lines at 15 and 25 —
-  only the series of the chart's own class stack. That is the rule drawn here, for an area chart;
-  a stacked bar or line chart from a file keeps the flag and is drawn side by side.
+  only the series of the chart's own class stack. That is the rule drawn here for every kind but
+  a pie: an area's bands stand on one another, a bar chart draws one column per category in
+  segments, and a stacked line runs through the running totals.
 
 Changing a chart's kind (Bar, Line, Pie, Area in every window) makes a plain chart of that kind:
 `stacked` and every series' own kind go, since they belonged to the kind they were made for. An
@@ -438,7 +439,7 @@ axis title is schema-valid and opens correctly in LibreOffice 26.2.5.2 (the same
 on a pie alike — **correcting an earlier note here that said it did not**, which was measured
 before the axis carried a style of its own and does not reproduce against that build.
 No secondary axis, no percent
-variants, stacking drawn only for an area chart (Area, above), no more than one categories range
+variants, no more than one categories range
 or values range per series. A chart's
 embedded `table:table` (rng:463-483's own optional
 `table-table` — the fallback data LibreOffice caches inside the chart document itself, in case

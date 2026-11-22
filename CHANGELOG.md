@@ -23,6 +23,7 @@ lands, and the release workflow publishes the section as it stands.
 - Area charts: offered beside bar, line and pie wherever a chart is inserted or changed, and
   drawn as LibreOffice draws them — stacked bands, with lines over them.
 - Charts LibreOffice anchors to a cell are shown; they used to be invisible in grind.
+- Stacked bar and line charts are drawn stacked; they used to be drawn side by side.
 - Importing an Excel workbook brings its charts along — bar, line, pie and area, stacked or not,
   with a line over bars or areas — placed where they were, drawn from the workbook's cells, and
   with their series' names even where the workbook gives a name as text rather than a cell.
