@@ -78,6 +78,19 @@ const ORACLE_SPELLING: &str = "The manifest expects Excel's name with the `_xlfn
 /// no filter could satisfy.
 const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
     (
+        "document/chart.xlsx",
+        "dropped:Chart",
+        "The manifest expects the chart dropped, from when nothing read DrawingML; this build \
+         imports it since 2026-11-22 (`xlsx/src/drawing.rs`, `doc/xlsx-format.md` §4.15), so \
+         it counts none.",
+    ),
+    (
+        "document/chart.xlsx",
+        "dropped:Drawing",
+        "The manifest expects the drawing dropped; it anchors nothing but the chart, which is \
+         imported, so this build counts none.",
+    ),
+    (
         "document/defined-names.xlsx",
         "dropped:PageSetup",
         "The manifest expects none; this build counts one. `Data` has a print area and print \

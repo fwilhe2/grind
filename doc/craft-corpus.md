@@ -95,7 +95,8 @@ ODF, and every one that was a loss of the report rather than of the model is now
   `workbook::names`), which the matrix marks as altered.
 - **Not grind's.** The comment reply, the cell-style and the slicer rows are Craft's (below).
 
-What remains reported is what the models have no home for: charts and drawings in a workbook,
+What remains reported is what the models have no home for: charts of a kind not built yet
+(a waterfall) and other drawings in a workbook,
 conditional formats other than a cell-value or formula rule, data validation, pivot tables,
 cell comments, frozen panes, outline groups, protection and a font family other than the
 default (counted per cell, which on the openpyxl-written Northstar workbook is 168,870 times);
@@ -114,7 +115,7 @@ style scan, the never-worse check, the re-read that verifies the result); none d
 
 ### Spreadsheets (`.xlsx` → `.ods`)
 
-✅ carried: 30 · 🟡 kept, altered: 1 · ⚠️ dropped, reported: 31 · ❌ silent loss: 3 · ➖ Craft did not write it: 2
+✅ carried: 32 · 🟡 kept, altered: 1 · ⚠️ dropped, reported: 29 · ❌ silent loss: 3 · ➖ Craft did not write it: 2
 
 | Feature | Probe | Result | Grind reported |
 |---|---|---|---|
@@ -129,9 +130,9 @@ style scan, the never-worse check, the re-read that verifies the result); none d
 | Conditional format: formula | `cf-expression` | ✅ carried |  |
 | Conditional format: icon set | `cf-iconset` | ⚠️ dropped, reported | conditional format ×1 |
 | Conditional format: top 10 and duplicates | `cf-top10-dup` | ⚠️ dropped, reported | conditional format ×2 |
-| Column chart | `chart-column` | ⚠️ dropped, reported | chart ×1; drawing ×1 |
+| Column chart | `chart-column` | ✅ carried |  |
 | Waterfall chart (chartex) | `chart-combo-modern` | ⚠️ dropped, reported | drawing ×1 |
-| Line and pie charts | `chart-line-pie` | ⚠️ dropped, reported | chart ×2; drawing ×1 |
+| Line and pie charts | `chart-line-pie` | ✅ carried |  |
 | Cell checkboxes | `checkbox` | ✅ carried |  |
 | Column widths and row heights | `col-width-row-height` | ✅ carried |  |
 | Dates and times | `dates` | ✅ carried |  |
