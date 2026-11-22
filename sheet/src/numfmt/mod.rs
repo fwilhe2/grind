@@ -213,7 +213,7 @@ const MONTHS: [&str; 12] = [
     "December",
 ];
 
-/// Serial 0 is 1899-12-30, a Saturday — the offset that makes `weekday` line up.
+/// Indexed by `date::weekday`, Sunday first.
 const WEEKDAYS: [&str; 7] = [
     "Sunday",
     "Monday",
@@ -454,7 +454,8 @@ impl Format {
                 }
                 Part::Day { long } => out.push_str(&pad(d, *long)),
                 Part::DayOfWeek { long } => {
-                    let name = WEEKDAYS[date::weekday(n, null_date).clamp(1, 7) as usize - 1];
+                    // `weekday` counts from Sunday as 0, as the table does.
+                    let name = WEEKDAYS[date::weekday(n, null_date).rem_euclid(7) as usize];
                     out.push_str(if *long { name } else { &name[..3] });
                 }
                 Part::Hours { long } => {
@@ -1013,6 +1014,28 @@ mod tests {
         assert_eq!(
             render(&f, date::serial(2026, 8, 16, EPOCH)),
             "Sun, August 16"
+        );
+    }
+
+    /// Every day of a week by its own name — 2026-08-16 to 2026-08-22 run Sunday to Saturday.
+    #[test]
+    fn each_day_of_a_week_has_its_own_name() {
+        let mut f = Format::new(Kind::Date);
+        f.push(Part::DayOfWeek { long: true });
+        let names: Vec<String> = (16..=22)
+            .map(|day| render(&f, date::serial(2026, 8, day, EPOCH)))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "Sunday",
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday"
+            ]
         );
     }
 

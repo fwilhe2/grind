@@ -39,6 +39,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- A date format that shows the day of the week names the right day; every day but Sunday was
+  shown as the day before.
 - `MATCH` searches an array as well as a range, so `MATCH(TRUE(); INDEX(B1:B9>15; 0); 0)` finds
   the first row over 15 instead of failing; `INDEX` picks a row or column of an array inside one.
 - `INDEX` over a range gives back a cell, row or column you can use as a range, so
