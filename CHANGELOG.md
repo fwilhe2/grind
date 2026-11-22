@@ -24,6 +24,8 @@ lands, and the release workflow publishes the section as it stands.
   drawn as LibreOffice draws them — stacked bands, with lines over them.
 - Charts LibreOffice anchors to a cell are shown; they used to be invisible in grind.
 - Stacked bar and line charts are drawn stacked; they used to be drawn side by side.
+- A formula whose saved result was rounded to ten digits no longer counts as out of date: editing
+  such a workbook no longer warns about thousands of formulas, and recalculating leaves them be.
 - Importing an Excel workbook brings its charts along — bar, line, pie and area, stacked or not,
   with a line over bars or areas — placed where they were, drawn from the workbook's cells, and
   with their series' names even where the workbook gives a name as text rather than a cell, and

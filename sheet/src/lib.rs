@@ -2142,7 +2142,7 @@ fn differences(
             let at = formula::eval::Address::new(index, pos);
             let value = formula::eval::to_cell(engine.value(at));
             let previous = sheet.get(pos);
-            if value == previous {
+            if same_value(&value, &previous) {
                 continue;
             }
             let spoiled = is_error(&value) && !is_error(&previous) && !previous.is_empty();
@@ -2150,6 +2150,18 @@ fn differences(
         }
     }
     out
+}
+
+/// Whether a formula's computed value is what its cache holds: equal, or numbers equal to the ten
+/// significant digits a cache may be written to — a spreadsheet service exports `0.3333333333`
+/// for a third, and that is not a stale value.
+fn same_value(computed: &CellValue, cached: &CellValue) -> bool {
+    match (computed, cached) {
+        (CellValue::Number(a), CellValue::Number(b)) => {
+            a == b || (a - b).abs() <= 5e-10 * a.abs().max(b.abs())
+        }
+        _ => computed == cached,
+    }
 }
 
 /// Every edit a sheet rename implies besides the rename: each cell's formula, each named

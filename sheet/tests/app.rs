@@ -1491,3 +1491,26 @@ fn value_at(
     let view = app.get_viewport(sheet, pos.row..pos.row + 1, pos.col..pos.col + 1)?;
     Ok(view.get(pos.row, pos.col).cloned().unwrap_or_default())
 }
+
+/// A cached value written to ten significant digits — what a spreadsheet service exports — is
+/// the value its formula computes, not a stale one; a cache that is really wrong still counts.
+#[test]
+fn a_cache_rounded_to_ten_digits_is_not_stale() {
+    let cell = |value: &str| {
+        format!(
+            r#"<table:table-cell table:formula="of:=1/3" office:value-type="float" office:value="{value}"><text:p>{value}</text:p></table:table-cell>"#
+        )
+    };
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:mimetype="application/vnd.oasis.opendocument.spreadsheet" office:version="1.4">
+ <office:body><office:spreadsheet><table:table table:name="S">
+  <table:table-row>{}{}</table:table-row>
+ </table:table></office:spreadsheet></office:body></office:document>"#,
+        cell("0.3333333333"),
+        cell("0.5")
+    );
+    let app = App::new();
+    app.open_bytes("cache.fods", xml.as_bytes()).unwrap();
+    assert_eq!(app.stale().changed, 1, "only the 0.5 is wrong");
+}
