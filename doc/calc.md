@@ -8,7 +8,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 **Status: an experiment, built to be tried and removed if it does not earn its place.** The
 named expression list, the tape, extracting a constant (on a tape and on a sheet cell),
-promotion, `grind calc` and the terminal's tape pane are built. §8 lists what is not.
+promotion, `grind calc`, the terminal's tape pane and the spreadsheet window's tape window are
+built. §8 lists what is not.
 
 ## 1. What it is
 
@@ -102,6 +103,8 @@ line := '=' expr          a comparison or any expression, never a definition
   OpenFormula separates arguments with `;`, so `,` is never ambiguous. In de-DE,
   `1.234,5 * 2` is 2469 and `1.5` is refused. Values and lines are shown in the same locale.
 - Values show fifteen significant digits, as a spreadsheet does: `0.1 + 0.2` is `0.3`.
+- A circle is said in words by the tape itself (`Tape::circles`): `#3 reads itself`, or `#1, #2
+  read each other in a circle`, so every client says it the same way.
 
 ## 5. Extract constant
 
@@ -163,7 +166,9 @@ The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`
 extract is status 1. `doc/cli-parity-calc.md` maps every `Tape` method to its spelling.
 
 **The terminal shell** has a tape pane (`:tape`, or `grind-tui --tape`); `doc/tui-shell.md` has
-its keys. The graphical shells have none (`doc/feature-matrix.md`).
+its keys. **The GNOME spreadsheet window** has a tape window (*Scratch Calculator*, or
+`grind-sheet-gtk --tape`) and *Extract a Number into a Named Cell…*; `doc/sheet-shell.md` says
+how. The other graphical shells have neither (`doc/feature-matrix.md`).
 
 ## 8. Not built
 

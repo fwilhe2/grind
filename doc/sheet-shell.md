@@ -508,11 +508,19 @@ Stated as one sentence, which is the sentence to hold this window to:
 - **Sheet tab context menu** (`chrome::tab_menu_model`): Rename… · Delete, on the tab, which is
   the only spelling that says *which* sheet.
 - **Primary menu**: the four file verbs, the things done to a document as a whole
-  (Find and Replace…, Recalculate, Check the Document, Find a Calculation…, Names…, Document
-  Settings…), and Find a Command ·
+  (Find and Replace…, Recalculate, Check the Document, Find a Calculation…, Names…, Scratch
+  Calculator, Document Settings…), and Find a Command ·
   Keyboard Shortcuts · About. **Nothing about the selection**, which is the HIG's own rule for
   a primary menu and the thing that finally sizes it.
 - **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
+- **The tape** (`doc/calc.md`, an experiment; `tape.rs`): *Scratch Calculator* in the palette
+  and the primary menu, or `grind-sheet-gtk --tape`, opens a window of its own beside this one,
+  not a dialog, so the sheet stays usable while it is open. One `adw::EntryRow` per line (its
+  handle, its text to edit in place, its value, *Name…* and delete), an entry at the bottom for
+  the next line, undo and redo in its header, a banner for a circle. *Open as Spreadsheet* puts
+  the promoted tape into this window the way an import arrives: unsaved, with no path, and Save
+  offering `tape.fods`. *Extract a Number into a Named Cell…* is the same operation on the active
+  cell's formula, as a palette verb.
 
 Four `win.` actions were added so the context menu had something to point at — `copy`, `cut`,
 `paste`, `clear`, which the keyboard could already reach and no menu could. They deliberately

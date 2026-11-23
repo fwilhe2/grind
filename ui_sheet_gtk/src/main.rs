@@ -32,6 +32,7 @@ mod palette;
 mod rules;
 mod settings;
 mod state;
+mod tape;
 mod theme;
 mod words;
 
@@ -67,15 +68,17 @@ fn main() -> ExitCode {
     // with an exit code rather than an empty window with a dialog in front of it. Like
     // every other shell here, a missing file is an error and not a new document.
     let mut args = std::env::args_os().skip(1);
-    let mut path: Option<PathBuf> = args.next().map(PathBuf::from);
+    let mut path: Option<PathBuf> = None;
     // `--render-to <png>` draws one frame, writes it and exits — not a user feature, but how a
     // machine checks a custom-drawn widget still draws.
     let mut render_to: Option<PathBuf> = None;
     // `--overlay names|roles|all` turns the overlays on for that frame, so the modes are
     // assertable too.
     let mut overlays = grind_sheet::view::Overlays::NONE;
+    let mut tape = false;
     while let Some(flag) = args.next() {
         match flag.to_str() {
+            Some("--tape") => tape = true,
             Some("--render-to") => {
                 render_to = Some(PathBuf::from(
                     args.next().unwrap_or_else(|| "grid.png".into()),
@@ -95,6 +98,7 @@ fn main() -> ExitCode {
                     }
                 };
             }
+            _ if path.is_none() => path = Some(PathBuf::from(flag)),
             _ => {}
         }
     }
@@ -116,6 +120,9 @@ fn main() -> ExitCode {
             ui.grid.set_overlays(overlays);
         }
         ui.window.present();
+        if tape {
+            ui.open_tape();
+        }
         match given.clone() {
             Some(given) => {
                 let render_to = render_to.clone();
@@ -1346,6 +1353,126 @@ impl Ui {
         ));
     }
 
+    // --- the tape (`doc/calc.md`, an experiment) ---
+
+    /// *Scratch Calculator*: a tape window beside this one, reading numbers as this document
+    /// spells them.
+    fn open_tape(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        tape::present(
+            &self.window,
+            self.app.locale(),
+            Rc::new(move |doc| {
+                if let Some(ui) = weak.upgrade() {
+                    ui.adopt_tape(doc);
+                }
+            }),
+        );
+    }
+
+    /// A promoted tape in this window, as an import arrives: unsaved, with no path, and Save
+    /// offering `tape.fods`.
+    fn adopt_tape(self: &Rc<Self>, doc: grind_sheet::Document) {
+        self.confirm_discard(glib::clone!(
+            #[strong(rename_to = ui)]
+            self,
+            #[strong]
+            doc,
+            move || {
+                if let Err(error) = ui.app.open_document(doc.clone()) {
+                    return ui.toast(&error.to_string());
+                }
+                *ui.path.borrow_mut() = None;
+                *ui.imported.borrow_mut() = Some("tape.fods".to_owned());
+                ui.grid.set_sheet(0);
+                ui.refresh();
+                ui.window.present();
+            }
+        ));
+    }
+
+    /// *Extract a Number into a Named Cell…*: a number in the active cell's formula moves into
+    /// an empty cell, which is named, and the formula reads the name (`App::extract_constant`).
+    fn extract_constant(self: &Rc<Self>) {
+        let sheet = self.grid.sheet();
+        let at = self.grid.selection().active;
+        let here = a1::format(None, at);
+        let Some(formula) = self.app.formula(sheet, at).ok().flatten() else {
+            return self.toast(&format!("{here} holds no formula to take a number out of"));
+        };
+        let shown = grind_sheet::formula::display::to_display(&formula).unwrap_or(formula);
+        let number = gtk::Entry::builder()
+            .placeholder_text("The number, as the formula writes it: 0.19")
+            .activates_default(true)
+            .build();
+        let name = gtk::Entry::builder()
+            .placeholder_text("Its name: vat")
+            .activates_default(true)
+            .build();
+        let target = gtk::Entry::builder()
+            .text(a1::format(None, grind_sheet::Pos::new(at.row, at.col + 1)))
+            .activates_default(true)
+            .build();
+        let nth = gtk::Entry::builder()
+            .placeholder_text("Which one, if it is there twice: 2")
+            .activates_default(true)
+            .build();
+        let fields = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        for (label, entry) in [
+            ("Number", &number),
+            ("Name", &name),
+            ("Into the empty cell", &target),
+            ("Occurrence", &nth),
+        ] {
+            let caption = gtk::Label::builder().label(label).xalign(0.0).build();
+            caption.add_css_class("caption-heading");
+            fields.append(&caption);
+            fields.append(entry);
+        }
+        let dialog = adw::AlertDialog::new(
+            Some("Extract a Number into a Named Cell"),
+            Some(&format!("{here}: {shown}")),
+        );
+        dialog.set_extra_child(Some(&fields));
+        dialog.add_response("cancel", "Cancel");
+        dialog.add_response("extract", "Extract");
+        dialog.set_response_appearance("extract", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("extract"));
+        dialog.set_close_response("cancel");
+        dialog.choose(
+            &self.window,
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[strong(rename_to = ui)]
+                self,
+                move |response| {
+                    if response != "extract" {
+                        return;
+                    }
+                    let into = a1::parse(target.text().trim())
+                        .and_then(|reference| a1::resolve(&ui.app, &reference));
+                    let into = match into {
+                        Ok((into_sheet, into, _)) if into_sheet == sheet => into,
+                        Ok(_) => return ui.toast("The cell has to be on the same sheet"),
+                        Err(error) => return ui.toast(&error.to_string()),
+                    };
+                    let which = nth.text().trim().parse().ok();
+                    match ui.app.extract_constant(
+                        sheet,
+                        at,
+                        number.text().trim(),
+                        which,
+                        into,
+                        name.text().trim(),
+                    ) {
+                        Ok(()) => ui.toast(&format!("{} now reads {}", here, name.text().trim())),
+                        Err(error) => ui.toast(&error.to_string()),
+                    }
+                }
+            ),
+        );
+    }
+
     // --- names ---
 
     /// The names dialog: every defined name, editable in place, and a row to add one. Each row is
@@ -2459,6 +2586,14 @@ fn actions() -> Vec<Verb> {
             Ui::explore_calculations,
         ),
         verb("names", &[], "Names…", "Document", Ui::manage_names),
+        verb(
+            "extract-constant",
+            &[],
+            "Extract a Number into a Named Cell…",
+            "Selection",
+            Ui::extract_constant,
+        ),
+        verb("tape", &[], "Scratch Calculator", "Window", Ui::open_tape),
         // A palette verb rather than a format-bar control: a rule is something the sheet has,
         // not a property of the selection (`doc/conditional-format.md` §4).
         verb(
@@ -2663,6 +2798,7 @@ fn primary_menu() -> gio::Menu {
     document.append(Some("Check the Document"), Some("win.lint"));
     document.append(Some("Find a Calculation…"), Some("win.calculations"));
     document.append(Some("Names…"), Some("win.names"));
+    document.append(Some("Scratch Calculator"), Some("win.tape"));
     document.append(Some("Document Settings…"), Some("win.document-settings"));
     menu.append_section(None, &document);
 
