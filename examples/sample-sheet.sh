@@ -635,6 +635,12 @@ sheet set "$out/renamed.fods" K1 '=[.J1]*1.19' >/dev/null
 sheet extract "$out/renamed.fods" K1 1.19 --to K2 --name vat >/dev/null
 sheet view "$out/renamed.fods" K1:K2 --formulas
 
+# The tape (experimental): a scratch calculator whose lines read each other by #n or by name,
+# and which saves as a spreadsheet — one row per line, names as named ranges.
+say "calc: scratch lines, saved as a spreadsheet"
+"$GRIND" calc 'vat = 19%' 'net = 1200' 'net * (1 + vat)' '#3 / 12' --save "$out/tape.fods" --force
+sheet view "$out/tape.fods" A1:B4
+
 # --- lint: what the document says about itself ---------------------------------------------
 # `doc/dsl.md` §4.3. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is

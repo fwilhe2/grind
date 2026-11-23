@@ -354,6 +354,39 @@ pub(crate) enum Top {
         hosts: Vec<String>,
     },
 
+    /// A scratch calculator whose lines can become a spreadsheet (experimental)
+    ///
+    /// Each line is a formula without its leading =, as `1200 * 1.19`. `#3` reads line 3, and
+    /// `vat = 0.19` names a line so others can write `vat`. To compare instead of naming, start
+    /// the line with =, as in `=vat=0.19`. Numbers are written the way --locale writes them.
+    ///
+    /// With one line, prints its value; with several, one row per line. With no lines, reads them
+    /// from standard input, or, at a terminal, starts an interactive tape (`:help` there lists its
+    /// commands). --save writes the tape as a spreadsheet: one row per line, its name or #n in
+    /// column A and its number or formula in column B, every name a named range.
+    Calc {
+        /// The lines, in order
+        lines: Vec<String>,
+        /// How numbers are written, e.g. de-DE for 1.234,5
+        #[arg(long, value_parser = crate::sheet::locale)]
+        locale: Option<grind_sheet::locale::Locale>,
+        /// Write the tape as a spreadsheet: .ods for a package, .grind for its projection, any
+        /// other name one flat XML file
+        #[arg(long, value_name = "FILE")]
+        save: Option<PathBuf>,
+        /// Overwrite --save's file if it already exists
+        #[arg(long, requires = "save")]
+        force: bool,
+        /// Move a number out of a line into a named line before it: `--extract '#3' 0.19 vat`.
+        /// Prints the tape afterwards
+        #[arg(long, num_args = 3, value_names = ["LINE", "NUMBER", "NAME"])]
+        extract: Option<Vec<String>>,
+        /// With --extract, which occurrence of the number when the line has it more than once,
+        /// counting from 1
+        #[arg(long, requires = "extract")]
+        nth: Option<usize>,
+    },
+
     /// Set up a directory for writing scripts and projections in an editor
     ///
     /// Writes a starter — by default a script that builds a spreadsheet (model.rhai, with its

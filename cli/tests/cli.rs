@@ -2949,6 +2949,66 @@ fn diff_shows_what_changed_between_two_versions() {
     assert!(!grind(&["diff", &b, &ta]).status.success());
 }
 
+/// `grind calc` (`doc/calc.md`): one line prints a value, several print rows, stdin is lines, a
+/// line that does not read is status 2, and `--save` writes a spreadsheet the other verbs read.
+#[test]
+fn calc_evaluates_lines_and_saves_them_as_a_spreadsheet() {
+    assert_eq!(ok_top(&["calc", "1200 * 1.19"]), "1428\n");
+    let rows = ok_top(&["calc", "vat = 0.19", "net = 1200", "net*(1+vat)", "#3/12"]);
+    assert!(
+        rows.contains("#4   #3/12") && rows.trim_end().ends_with("119"),
+        "{rows}"
+    );
+    assert_eq!(ok_top(&["calc", "--locale", "de-DE", "1,5 * 2"]), "3\n");
+
+    let refused = grind(&["calc", "1+", "2"]);
+    assert_eq!(refused.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("line 1"));
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_grind"))
+        .arg("calc")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::io::Write::write_all(child.stdin.as_mut().unwrap(), b"2\n\n#1^10\n").unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("1024"));
+
+    let dir = Sandbox::new("calc");
+    let book = dir.path("tape.fods");
+    let extracted = ok_top(&[
+        "calc",
+        "1200",
+        "#1 * 1.19",
+        "--extract",
+        "#2",
+        "1.19",
+        "rate",
+        "--save",
+        &s(&book),
+    ]);
+    assert!(extracted.contains("rate = 1.19"), "{extracted}");
+    assert_eq!(
+        ok(&["get", &s(&book), "B3", "--formula"]).trim(),
+        "of:=[.B1]*rate"
+    );
+    assert_eq!(ok(&["get", &s(&book), "B3"]).trim(), "1428");
+    // Not overwritten without --force, and a circle is not saved at all.
+    assert_eq!(
+        grind(&["calc", "1", "--save", &s(&book)]).status.code(),
+        Some(1)
+    );
+    let circle = dir.path("circle.fods");
+    assert_eq!(
+        grind(&["calc", "#2", "#1", "--save", &s(&circle)])
+            .status
+            .code(),
+        Some(1)
+    );
+    assert!(!circle.exists());
+}
+
 #[test]
 fn extract_moves_a_number_into_a_named_cell() {
     let dir = Sandbox::new("extract");

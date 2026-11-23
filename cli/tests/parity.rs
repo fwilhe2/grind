@@ -19,9 +19,10 @@
 /// Every application, its core's crate root, and the document that has to account for it.
 ///
 /// Read at *compile* time, so this cannot pass by looking in the wrong place at runtime.
-const APPS: [App; 2] = [
+const APPS: [App; 3] = [
     App {
         name: "sheet",
+        ty: "App",
         core: &[
             ("sheet/src/lib.rs", include_str!("../../sheet/src/lib.rs")),
             (
@@ -51,6 +52,7 @@ const APPS: [App; 2] = [
     },
     App {
         name: "text",
+        ty: "App",
         core: &[
             ("text/src/lib.rs", include_str!("../../text/src/lib.rs")),
             (
@@ -82,11 +84,21 @@ const APPS: [App; 2] = [
         parity_path: "doc/cli-parity-text.md",
         least: 12,
     },
+    App {
+        name: "calc",
+        ty: "Tape",
+        core: &[("sheet/src/calc.rs", include_str!("../../sheet/src/calc.rs"))],
+        parity: include_str!("../../doc/cli-parity-calc.md"),
+        parity_path: "doc/cli-parity-calc.md",
+        least: 8,
+    },
 ];
 
 struct App {
     name: &'static str,
-    /// Every file holding an `impl App` block, by path.
+    /// The type whose methods are the application's API: `App`, or the tape's `Tape`.
+    ty: &'static str,
+    /// Every file holding an `impl` block of `ty`, by path.
     core: &'static [(&'static str, &'static str)],
     parity: &'static str,
     parity_path: &'static str,
@@ -96,13 +108,14 @@ struct App {
     least: usize,
 }
 
-/// Every `pub fn` in every `impl App` block of the application's files.
+/// Every `pub fn` in every `impl` block of the application's type, in its files.
 fn public_methods(app: &App) -> Vec<&'static str> {
     let mut methods = Vec::new();
     for (path, source) in app.core {
         let mut rest = *source;
         let mut blocks = 0;
-        while let Some((_, after)) = rest.split_once("impl App {") {
+        let header = format!("impl {} {{", app.ty);
+        while let Some((_, after)) = rest.split_once(header.as_str()) {
             // rustfmt puts the closing brace of a top-level impl in column 0, and nothing
             // inside the block is indented that far.
             let (body, tail) = after
@@ -116,7 +129,7 @@ fn public_methods(app: &App) -> Vec<&'static str> {
             rest = tail;
             blocks += 1;
         }
-        assert!(blocks > 0, "{path} still defines `impl App`");
+        assert!(blocks > 0, "{path} still defines `impl {}`", app.ty);
     }
     methods
 }
@@ -206,7 +219,8 @@ fn the_parity_document_names_no_method_that_is_gone() {
 #[test]
 fn every_file_of_app_methods_is_read() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    for app in &APPS {
+    // The tape is one file, already listed.
+    for app in APPS.iter().filter(|app| app.ty == "App") {
         let dir = root.join(app.name).join("src/app");
         for entry in std::fs::read_dir(&dir).expect("the app directory") {
             let name = entry.expect("an entry").file_name();

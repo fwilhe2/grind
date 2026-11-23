@@ -14,6 +14,7 @@
 //! format.
 
 mod args;
+mod calc;
 mod diff;
 mod failure;
 mod fit;
@@ -335,6 +336,25 @@ fn main() -> ExitCode {
     if let Top::Lsp = cli.command {
         return lsp();
     }
+    if let Top::Calc {
+        lines,
+        locale,
+        save,
+        force,
+        extract,
+        nth,
+    } = &cli.command
+    {
+        return calc::run(&calc::Options {
+            lines,
+            locale: locale.clone(),
+            save: save.as_deref(),
+            force: *force,
+            extract: extract.as_deref(),
+            nth: *nth,
+            format: cli.format,
+        });
+    }
     // The server runs until killed, and says where it is on stderr as it starts.
     if let Top::Serve {
         dir,
@@ -615,6 +635,7 @@ fn run(cli: &Cli) -> Result<Report, Failure> {
         // Handled in `main`, before anything that prints: the server owns stdout.
         Top::Lsp => unreachable!("`main` runs the language server itself"),
         Top::Serve { .. } => unreachable!("`main` runs the server itself"),
+        Top::Calc { .. } => unreachable!("`main` runs the tape itself"),
 
         // No document and no script: a directory around them (`doc/init.md`).
         Top::Init {

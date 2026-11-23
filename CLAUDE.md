@@ -67,11 +67,11 @@ semantics never are.
 | Scope lines | `doc/small-group.md` (functions), `doc/function-coverage.md` (the evidence for going past it), `doc/text-core.md` (text elements), `doc/not-doing.md` (the product line) |
 | Format notes | `doc/ods-format.md`, `doc/odt-format.md`, `doc/chart-format.md`, `doc/xlsx-format.md`, `doc/docx-format.md`, `doc/metafile-format.md` |
 | Keeping it simple | `doc/simplicity.md` (the rules, and the plan they come with) |
-| Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
+| Core design | `doc/local-only.md` (no network, R12), `doc/text-layout.md` (layout in the core, Path C), `doc/view-modes.md`, `doc/flat-first.md` (in doubt, write the flat form), `doc/conditional-format.md`, `doc/formula-workbench.md`, `doc/calc.md` (the tape, an experiment), `doc/spelling.md`, `doc/pdf-export.md` (paper is ISO 216, A4 by default), `doc/chart-handling.md` |
 | Projection and generator | `doc/dsl.md`, `doc/projection-sheet.md`, `doc/projection-text.md`, `doc/generator-spec.md`, `doc/projection-guide.md`, `doc/generator-guide.md`, `doc/editor-setup.md`, `doc/init.md` |
 | Import filters | `doc/xlsx-import.md`, `doc/docx-import.md`, `doc/craft-corpus.md` (the compatibility matrix and import timings) |
 | Shells | `doc/sheet-shell.md` (its "Four surfaces" governs the GTK chrome), `doc/text-shell.md`, `doc/tui-shell.md`, `doc/web-shell.md`, `doc/windows-shell.md`, `doc/macos-shell.md` |
-| Parity and licences | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md`, `doc/feature-matrix.md`, `doc/third-party.md` |
+| Parity and licences | `doc/cli-parity-sheet.md`, `doc/cli-parity-text.md`, `doc/cli-parity-calc.md`, `doc/feature-matrix.md`, `doc/third-party.md` |
 | The language | `doc/rust-idioms.md` (which spelling, what CI's lints hold, what to do when a toolchain arrives) |
 
 ## Commands
@@ -90,8 +90,8 @@ reuse lint                                     # CI gates on it
 ```
 
 `grind` is the CLI: `grind <app> <verb>`, plus suite-level verbs that read the kind from the file
-(`info`, `convert`, `lint`, `project`, `diff`) and four with no document (`build`, `test`, `init`,
-`serve`).
+(`info`, `convert`, `lint`, `project`, `diff`) and five with no document (`build`, `test`, `init`,
+`serve`, and the experimental `calc`, `doc/calc.md`).
 
 ```sh
 cargo run -p grind-cli -- sheet new book.ods
