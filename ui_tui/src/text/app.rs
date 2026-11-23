@@ -1073,6 +1073,8 @@ impl App {
             "licences" | "licenses" => self.licences.open(),
             "q" => self.cmd_quit(false),
             "welcome" => self.cmd_welcome(false),
+            "tape" => self.cmd_tape(false),
+            "tape!" => self.cmd_tape(true),
             "welcome!" => self.cmd_welcome(true),
             "new" => self.cmd_new("", false),
             "new!" => self.cmd_new("", true),
@@ -1363,6 +1365,16 @@ impl App {
             return;
         }
         self.switch = Some(crate::app::Switch::New(kind));
+    }
+
+    /// `:tape` — the scratch calculator in place of this pane, refused over unsaved work unless
+    /// the verb is `:tape!`.
+    fn cmd_tape(&mut self, force: bool) {
+        if !force && self.unsaved() {
+            "unsaved changes — :tape! to discard, :w to save".clone_into(&mut self.status);
+            return;
+        }
+        self.switch = Some(crate::app::Switch::Tape);
     }
 
     /// `:welcome` — back to the pane with no document in it, where either kind starts. Replaces

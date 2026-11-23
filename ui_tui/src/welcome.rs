@@ -22,8 +22,8 @@ use ratatui::widgets::Paragraph;
 use crate::app::{RedrawFlag, Switch};
 use crate::chrome;
 
-/// What the three cards are, in the order they are drawn.
-const CARDS: [(&str, char, &str); 3] = [
+/// What the cards are, in the order they are drawn.
+const CARDS: [(&str, char, &str); 4] = [
     ("New Spreadsheet", 's', "an empty workbook"),
     ("New Text Document", 't', "an empty page"),
     (
@@ -31,6 +31,7 @@ const CARDS: [(&str, char, &str); 3] = [
         'o',
         "a path: .ods .fods .odt .fodt .grind .xlsx .csv .md",
     ),
+    ("Scratch Calculator", 'c', "lines that become a spreadsheet"),
 ];
 
 /// How many recent documents are listed, each on a digit key.
@@ -91,6 +92,7 @@ impl Welcome {
             KeyCode::Char('s') => self.choose(0),
             KeyCode::Char('t') => self.choose(1),
             KeyCode::Char('o') => self.choose(2),
+            KeyCode::Char('c') if !key.modifiers.contains(KeyModifiers::CONTROL) => self.choose(3),
             KeyCode::Char(digit @ '1'..='9') => {
                 let n = digit as usize - '1' as usize;
                 if n < self.recent.len() {
@@ -121,6 +123,7 @@ impl Welcome {
             0 => self.switch = Some(Switch::New(DocumentKind::Spreadsheet)),
             1 => self.switch = Some(Switch::New(DocumentKind::Text)),
             2 => self.typing = Some(String::new()),
+            3 => self.switch = Some(Switch::Tape),
             _ => {
                 let path = self.recent[target - CARDS.len()].clone();
                 self.open(path);

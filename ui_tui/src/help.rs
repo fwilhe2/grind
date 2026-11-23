@@ -38,6 +38,7 @@ Saving and leaving, both:
   :welcome                               back to the pane that offers a new spreadsheet, a new
                                          text document or a file to open
                                          (:new! and :open! when unsaved work may go)
+  :tape                                  the scratch calculator, whose lines become a spreadsheet
 ";
 
 /// Which build this is, for `:about` — the same stamp `--version` prints and every other shell

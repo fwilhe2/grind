@@ -21,6 +21,7 @@ mod pick;
 mod problems;
 mod recent;
 mod sheet;
+mod tape;
 mod text;
 mod welcome;
 
@@ -46,13 +47,15 @@ type Tui = Terminal<CrosstermBackend<Stdout>>;
 /// What `--help` prints: the invocation, then the same two help texts `:help` shows.
 fn usage() -> String {
     format!(
-        "usage: grind-tui [--sheet|--text] [file]\n\n\
+        "usage: grind-tui [--sheet|--text|--tape] [file]\n\n\
          The document type is read out of the file, not guessed from its name. With no file,\n\
-         the welcome screen offers the choice; --sheet or --text skips it and starts that kind empty.\n\
-         \n{}\n{}\n{}",
+         the welcome screen offers the choice; --sheet or --text skips it and starts that kind empty,\n\
+         and --tape starts the scratch calculator.\n\
+         \n{}\n{}\n{}\n{}",
         crate::help::COMMON,
         crate::sheet::HELP,
         crate::text::HELP,
+        crate::tape::HELP,
     )
 }
 
@@ -65,6 +68,7 @@ fn main() -> ExitCode {
     let mut kind: Option<DocumentKind> = None;
     let mut path: Option<PathBuf> = None;
     let mut asked = false;
+    let mut tape = false;
     for arg in std::env::args().skip(1) {
         match arg.as_str() {
             "-h" | "--help" => {
@@ -82,6 +86,7 @@ fn main() -> ExitCode {
                 kind = Some(DocumentKind::Spreadsheet);
                 asked = true;
             }
+            "--tape" => tape = true,
             "--text" => {
                 kind = Some(DocumentKind::Text);
                 asked = true;
@@ -118,7 +123,11 @@ fn main() -> ExitCode {
 
     // Nothing named at all is the welcome screen, not a guess.
     let welcome = path.is_none() && !asked;
-    let result = session(kind, path, welcome);
+    let result = if tape {
+        session_from(tape_pane())
+    } else {
+        session(kind, path, welcome)
+    };
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -132,11 +141,15 @@ fn main() -> ExitCode {
 /// and `:new` and `:open` (`app::Switch`) replace it without leaving the terminal.
 fn session(kind: DocumentKind, path: Option<PathBuf>, welcome: bool) -> io::Result<()> {
     // Read before the terminal is taken, so an unreadable file is an error on a normal screen.
-    let mut next = Some(if welcome {
+    session_from(if welcome {
         welcome_pane()
     } else {
         prepare(kind, path)?
-    });
+    })
+}
+
+fn session_from(first: Pane) -> io::Result<()> {
+    let mut next = Some(first);
     let mut terminal = setup_terminal()?;
     let mut result = Ok(());
     while let Some(pane) = next.take() {
@@ -147,6 +160,10 @@ fn session(kind: DocumentKind, path: Option<PathBuf>, welcome: bool) -> io::Resu
                     app::Switch::Open(path, kind) => (kind, Some(path)),
                     app::Switch::Welcome => {
                         next = Some(welcome_pane());
+                        continue;
+                    }
+                    app::Switch::Tape => {
+                        next = Some(tape_pane());
                         continue;
                     }
                 };
@@ -168,6 +185,13 @@ enum Pane {
     Sheet(Box<sheet::app::App>),
     Text(Box<text::app::App>),
     Welcome(Box<welcome::Welcome>),
+    Tape(Box<tape::TapePane>),
+}
+
+fn tape_pane() -> Pane {
+    let redraw = Arc::new(RedrawFlag::default());
+    redraw.raise();
+    Pane::Tape(Box::new(tape::TapePane::new(redraw)))
 }
 
 fn welcome_pane() -> Pane {
@@ -232,6 +256,7 @@ fn run_pane(terminal: &mut Tui, pane: Pane) -> io::Result<Option<app::Switch>> {
         Pane::Sheet(mut pane) => event_loop(terminal, &mut *pane),
         Pane::Text(mut pane) => event_loop(terminal, &mut *pane),
         Pane::Welcome(mut pane) => event_loop(terminal, &mut *pane),
+        Pane::Tape(mut pane) => event_loop(terminal, &mut *pane),
     }
 }
 
@@ -287,6 +312,7 @@ macro_rules! shell {
 shell!(sheet::app::App);
 shell!(text::app::App);
 shell!(welcome::Welcome);
+shell!(tape::TapePane);
 
 fn event_loop<S: Shell>(terminal: &mut Tui, shell: &mut S) -> io::Result<Option<app::Switch>> {
     let redraw = shell.redraw();

@@ -17,7 +17,8 @@ lands, and the release workflow publishes the section as it stands.
 
 - `grind calc`, a scratch calculator (experimental): type formulas line by line, refer to an
   earlier line as `#3` or name one as `vat = 0.19`, and save the lines as a spreadsheet with
-  `--save`. Numbers follow `--locale`.
+  `--save`. Numbers follow `--locale`. In the terminal version it is `grind-tui --tape`, or
+  `:tape`.
 - `grind sheet extract` moves a number out of a formula into a named input cell, and has the
   formula use the name instead.
 - Excel's newer functions recalculate instead of showing `#NAME?`: `IFS`, `SWITCH`, `CONCAT`,

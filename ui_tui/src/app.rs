@@ -23,6 +23,8 @@ pub enum Switch {
     Open(PathBuf, DocumentKind),
     /// The pane with no document in it (`crate::welcome`) — what `:welcome` goes back to.
     Welcome,
+    /// The scratch calculator (`crate::tape`), what `:tape` opens.
+    Tape,
 }
 
 /// Set by the core whenever the document changes; the event loop redraws when it is (rule 3).
