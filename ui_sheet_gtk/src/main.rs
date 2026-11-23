@@ -181,6 +181,8 @@ struct Ui {
     undo: gtk::Button,
     redo: gtk::Button,
     path: RefCell<Option<PathBuf>>,
+    /// The scratch calculator, once opened: kept, so closing it keeps its lines.
+    tape: RefCell<Option<Rc<tape::TapeDialog>>>,
     /// The name an imported workbook goes by until it is saved — shown as the
     /// title and offered by Save As. `None` for every document that came from ODF.
     imported: RefCell<Option<String>>,
@@ -338,6 +340,7 @@ impl Ui {
             undo,
             redo,
             path: RefCell::new(path),
+            tape: RefCell::new(None),
             dirty: Cell::new(false),
             loading: Cell::new(false),
             opening: Cell::new(false),
@@ -1355,19 +1358,30 @@ impl Ui {
 
     // --- the tape (`doc/calc.md`, an experiment) ---
 
-    /// *Scratch Calculator*: a tape window beside this one, reading numbers as this document
-    /// spells them.
+    /// *Scratch Calculator*: the tape over this window, reading numbers as this document spells
+    /// them. The same tape every time, until the window closes.
     fn open_tape(self: &Rc<Self>) {
-        let weak = Rc::downgrade(self);
-        tape::present(
-            &self.window,
-            self.app.locale(),
-            Rc::new(move |doc| {
-                if let Some(ui) = weak.upgrade() {
-                    ui.adopt_tape(doc);
-                }
-            }),
-        );
+        let existing = self.tape.borrow().clone();
+        let tape = existing.unwrap_or_else(|| {
+            let weak = Rc::downgrade(self);
+            let tape = tape::new(
+                self.app.locale(),
+                Rc::new(move |doc| {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.adopt_tape(doc);
+                    }
+                }),
+            );
+            *self.tape.borrow_mut() = Some(tape.clone());
+            tape
+        });
+        tape.present(&self.window);
+    }
+
+    /// The tape, when its dialog is showing — whose Undo and Redo the window's then are, so
+    /// Ctrl+Z over the tape never reaches the sheet.
+    fn open_tape_dialog(&self) -> Option<Rc<tape::TapeDialog>> {
+        self.tape.borrow().clone().filter(|tape| tape.is_open())
     }
 
     /// A promoted tape in this window, as an import arrives: unsaved, with no path, and Save
@@ -2546,15 +2560,23 @@ fn actions() -> Vec<Verb> {
             ui.export_csv();
         }),
         verb("undo", &["<Control>z"], "Undo", "Document", |ui| {
-            ui.app.undo();
+            match ui.open_tape_dialog() {
+                Some(tape) => tape.step(true),
+                None => {
+                    ui.app.undo();
+                }
+            }
         }),
         verb(
             "redo",
             &["<Control><Shift>z", "<Control>y"],
             "Redo",
             "Document",
-            |ui| {
-                ui.app.redo();
+            |ui| match ui.open_tape_dialog() {
+                Some(tape) => tape.step(false),
+                None => {
+                    ui.app.redo();
+                }
             },
         ),
         verb("recalc", &["F9"], "Recalculate", "Document", |ui| {

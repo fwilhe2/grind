@@ -8,7 +8,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 **Status: an experiment, built to be tried and removed if it does not earn its place.** The
 named expression list, the tape, extracting a constant (on a tape and on a sheet cell),
-promotion, `grind calc`, the terminal's tape pane and the spreadsheet window's tape window are
+promotion, `grind calc`, the terminal's tape pane and the spreadsheet window's tape dialog are
 built. §8 lists what is not.
 
 ## 1. What it is
@@ -166,7 +166,7 @@ The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`
 extract is status 1. `doc/cli-parity-calc.md` maps every `Tape` method to its spelling.
 
 **The terminal shell** has a tape pane (`:tape`, or `grind-tui --tape`); `doc/tui-shell.md` has
-its keys. **The GNOME spreadsheet window** has a tape window (*Scratch Calculator*, or
+its keys. **The GNOME spreadsheet window** has a tape dialog (*Scratch Calculator*, or
 `grind-sheet-gtk --tape`) and *Extract a Number into a Named Cell…*; `doc/sheet-shell.md` says
 how. The other graphical shells have neither (`doc/feature-matrix.md`).
 

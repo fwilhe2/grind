@@ -2,11 +2,12 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tape window: `grind_sheet::Tape` (`doc/calc.md`), a scratch calculator beside the sheet.
-//! A window of its own rather than a dialog, so the sheet stays usable while it is open. Every
-//! decision is the tape's; this holds the widgets and redraws them after each call.
+//! The tape dialog: `grind_sheet::Tape` (`doc/calc.md`), a scratch calculator over the sheet. An
+//! `adw::Dialog`, so it opens centred on the window it belongs to; the window keeps it, so closing
+//! it keeps the tape for the next time. Every decision is the tape's; this holds the widgets and
+//! redraws them after each call.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use libadwaita as adw;
@@ -17,9 +18,11 @@ use grind_sheet::locale::Locale;
 use grind_sheet::{Document, Tape};
 use gtk::{gio, glib};
 
-struct Window {
+pub struct TapeDialog {
     tape: RefCell<Tape>,
-    window: adw::Window,
+    dialog: adw::Dialog,
+    /// Between `present` and the dialog's `closed`.
+    open: Cell<bool>,
     list: gtk::ListBox,
     empty: gtk::Label,
     banner: adw::Banner,
@@ -31,27 +34,9 @@ struct Window {
     open_as_sheet: Rc<dyn Fn(Document)>,
 }
 
-/// Open a tape window over `parent`, reading numbers in `locale`.
-pub fn present(
-    parent: &adw::ApplicationWindow,
-    locale: Option<Locale>,
-    open_as_sheet: Rc<dyn Fn(Document)>,
-) {
-    let this = build(locale, open_as_sheet);
-    this.window.set_transient_for(Some(parent));
-    this.window.present();
-    this.input.grab_focus();
-}
-
-/// The window, wired, and kept alive until it closes: every handler holds the state weakly, so
-/// something has to hold it strongly or the first Enter finds nothing.
-fn build(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Window> {
-    let window = adw::Window::builder()
-        .title("Scratch Calculator")
-        .default_width(560)
-        .default_height(560)
-        .build();
-
+/// A tape reading numbers in `locale`, not yet shown. Whoever holds it keeps the tape: every
+/// handler holds it weakly.
+pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<TapeDialog> {
     let input = gtk::Entry::builder()
         .placeholder_text("1200 * 1.19")
         .hexpand(true)
@@ -135,11 +120,17 @@ fn build(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Wind
     let view = adw::ToolbarView::builder().content(&toasts).build();
     view.add_top_bar(&header);
     view.add_bottom_bar(&bottom);
-    window.set_content(Some(&view));
+    let dialog = adw::Dialog::builder()
+        .title("Scratch Calculator")
+        .content_width(560)
+        .content_height(560)
+        .child(&view)
+        .build();
 
-    let this = Rc::new(Window {
+    let this = Rc::new(TapeDialog {
         tape: RefCell::new(Tape::new(locale)),
-        window,
+        dialog,
+        open: Cell::new(false),
         list,
         empty,
         banner,
@@ -185,7 +176,11 @@ fn build(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Wind
         move |_| {
             let promoted = this.tape.borrow().promote();
             match promoted {
-                Ok(doc) => (this.open_as_sheet)(doc),
+                Ok(doc) => {
+                    // The sheet is what to look at now; the tape stays for the next time.
+                    this.dialog.close();
+                    (this.open_as_sheet)(doc);
+                }
                 Err(error) => this.say(&error.to_string()),
             }
         }
@@ -214,25 +209,36 @@ fn build(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Wind
             })),
         ));
     }
-    this.window.add_controller(keys);
-
-    // The window owns its state until it closes, and lets go of it then.
-    let keep = RefCell::new(Some(this.clone()));
-    this.window.connect_close_request(move |_| {
-        keep.borrow_mut().take();
-        glib::Propagation::Proceed
-    });
+    this.dialog.add_controller(keys);
+    this.dialog.connect_closed(glib::clone!(
+        #[weak]
+        this,
+        move |_| this.open.set(false)
+    ));
 
     this.refresh();
     this
 }
 
-impl Window {
+impl TapeDialog {
+    /// Show the tape over `parent`, centred on its window.
+    pub fn present(&self, parent: &impl IsA<gtk::Widget>) {
+        self.open.set(true);
+        self.dialog.present(Some(parent));
+        self.input.grab_focus();
+    }
+
+    /// Whether the dialog is showing — while it is, the window's Undo and Redo are the tape's.
+    pub fn is_open(&self) -> bool {
+        self.open.get()
+    }
+
     fn say(&self, text: &str) {
         self.toasts.add_toast(adw::Toast::new(text));
     }
 
-    fn step(self: &Rc<Self>, back: bool) {
+    /// Undo, or redo with `back` false.
+    pub fn step(self: &Rc<Self>, back: bool) {
         let done = if back {
             self.tape.borrow_mut().undo()
         } else {
@@ -355,7 +361,7 @@ impl Window {
         dialog.set_default_response(Some("name"));
         dialog.set_close_response("cancel");
         dialog.choose(
-            &self.window,
+            &self.dialog,
             gio::Cancellable::NONE,
             glib::clone!(
                 #[weak(rename_to = this)]
@@ -386,8 +392,9 @@ impl Window {
             .filters(&crate::spreadsheet_save_filters())
             .initial_name("tape.fods")
             .build();
+        let parent = self.dialog.root().and_downcast::<gtk::Window>();
         dialog.save(
-            Some(&self.window),
+            parent.as_ref(),
             gio::Cancellable::NONE,
             glib::clone!(
                 #[weak(rename_to = this)]
@@ -424,35 +431,43 @@ mod tests {
         n
     }
 
-    /// With nothing but the widgets left to hold — as after `present` returns — Enter still
-    /// adds a line and Undo still takes it away.
+    /// Enter adds a line and Undo takes it away, and closing the dialog keeps the tape for the
+    /// next time it is shown.
     #[test]
-    fn the_window_still_answers_after_whoever_built_it_has_let_go() {
+    fn lines_are_typed_undone_and_kept_across_closing() {
         if gtk::init().is_err() || adw::init().is_err() {
-            eprintln!("no display — skipping the tape window's widget case");
+            eprintln!("no display — skipping the tape dialog's widget case");
             return;
         }
-        let built = build(None, Rc::new(|_| {}));
-        let (input, list, undo, window) = (
-            built.input.clone(),
-            built.list.clone(),
-            built.undo.clone(),
-            built.window.clone(),
+        let tape = new(None, Rc::new(|_| {}));
+        let parent = adw::Window::new();
+        parent.present();
+        tape.present(&parent);
+        assert!(tape.is_open());
+
+        tape.input.set_text("1200 * 1.19");
+        tape.input.emit_activate();
+        assert_eq!(rows(&tape.list), 1, "Enter adds the line");
+        assert_eq!(tape.input.text(), "", "and clears the entry for the next");
+        tape.input.set_text("1 +");
+        tape.input.emit_activate();
+        assert_eq!(
+            rows(&tape.list),
+            1,
+            "a line that does not read is not added"
         );
-        drop(built);
+        assert_eq!(tape.input.text(), "1 +", "and stays to be fixed");
 
-        input.set_text("1200 * 1.19");
-        input.emit_activate();
-        assert_eq!(rows(&list), 1, "Enter adds the line");
-        assert_eq!(input.text(), "", "and clears the entry for the next");
-        input.set_text("1 +");
-        input.emit_activate();
-        assert_eq!(rows(&list), 1, "a line that does not read is not added");
-        assert_eq!(input.text(), "1 +", "and stays to be fixed");
+        assert!(tape.undo.is_sensitive());
+        tape.undo.emit_clicked();
+        assert!(!tape.list.is_visible(), "undo took the line away");
+        tape.step(false);
+        assert_eq!(rows(&tape.list), 1, "and redo brought it back");
 
-        assert!(undo.is_sensitive());
-        undo.emit_clicked();
-        assert!(!list.is_visible(), "undo took the line away");
-        window.close();
+        tape.dialog.close();
+        assert!(!tape.is_open());
+        tape.present(&parent);
+        assert_eq!(rows(&tape.list), 1, "closing kept the tape");
+        parent.close();
     }
 }
