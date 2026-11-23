@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, RwLock};
 
 mod app;
+mod calc;
 
 // The document and what changes it.
 pub mod a1;
@@ -59,6 +60,7 @@ pub mod view;
 pub use grind_core::{DocumentKind, Form, Observer, build_info, kind, locale};
 
 pub use action::Action;
+pub use calc::{Tape, TapeLine};
 pub use chart::{
     Axis as ChartAxis, Chart, ChartData, ChartKind, Guess as ChartGuess, Legend as ChartLegend,
     Series as ChartSeries, Shape as ChartShape, Slice, Spec as ChartSpec, Ticks, effective_color,
@@ -2071,7 +2073,7 @@ fn check_sheet_name(doc: &Document, name: &str, except: Option<usize>) -> Result
 ///
 /// A column or row alone (`SALES` lexes as a whole column) is allowed: OpenFormula brackets every
 /// reference, so `SUM(SALES)` is unambiguous.
-fn validate_name(name: &str) -> Result<()> {
+pub(crate) fn validate_name(name: &str) -> Result<()> {
     let refused = |why: &str| {
         Err(Error::Formula(format!(
             "{name:?} is not a valid name: {why}"
