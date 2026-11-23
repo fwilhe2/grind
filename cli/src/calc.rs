@@ -70,8 +70,8 @@ pub(crate) fn run(options: &Options) -> ExitCode {
         }
         Format::Text => print!("{}", rows(&tape)),
     }
-    for cycle in tape.cycles() {
-        eprintln!("grind calc: {} read each other in a circle", names(&cycle));
+    if let Some(circles) = tape.circles() {
+        eprintln!("grind calc: {circles}");
     }
     ExitCode::SUCCESS
 }
@@ -236,14 +236,6 @@ fn rows(tape: &Tape) -> String {
         let _ = writeln!(out, "{handle:<4} {:<width$}  {}", line.text, line.value);
     }
     out
-}
-
-fn names(handles: &[usize]) -> String {
-    handles
-        .iter()
-        .map(|h| format!("#{h}"))
-        .collect::<Vec<_>>()
-        .join(", ")
 }
 
 fn json(tape: &Tape) -> String {

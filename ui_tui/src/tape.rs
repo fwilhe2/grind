@@ -418,18 +418,10 @@ impl TapePane {
             ),
             body,
         );
-        let cycles = self.tape.cycles();
         let foot_text = match &self.mode {
             Mode::Command(buf) => format!(":{buf}"),
             _ if !self.status.is_empty() => self.status.clone(),
-            _ if !cycles.is_empty() => format!(
-                "{} read each other in a circle",
-                cycles[0]
-                    .iter()
-                    .map(|h| format!("#{h}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+            _ if let Some(circles) = self.tape.circles() => circles,
             Mode::Insert { .. } => "-- INSERT --  Enter commits, Esc stops".into(),
             _ => String::new(),
         };
@@ -485,7 +477,7 @@ mod tests {
         let mut p = pane();
         typed(&mut p, "1 +");
         assert!(matches!(p.mode, Mode::Insert { .. }));
-        assert!(!p.status.is_empty());
+        assert_ne!(p.status, "");
         assert!(p.tape.is_empty());
     }
 

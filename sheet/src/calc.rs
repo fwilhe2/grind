@@ -87,6 +87,21 @@ impl Tape {
             .collect()
     }
 
+    /// The circles in words, `None` when there are none: `#3 reads itself`, `#1, #2 read each
+    /// other in a circle`, joined when there are several.
+    #[must_use]
+    pub fn circles(&self) -> Option<String> {
+        let said: Vec<String> = self
+            .cycles()
+            .iter()
+            .map(|cycle| match cycle.as_slice() {
+                [one] => format!("#{one} reads itself"),
+                many => format!("{} read each other in a circle", handles(many)),
+            })
+            .collect();
+        (!said.is_empty()).then(|| said.join("; "))
+    }
+
     /// Add a line at the end; returns its handle.
     pub fn push(&mut self, text: &str) -> Result<usize> {
         self.insert(self.len(), text)?;
@@ -142,6 +157,16 @@ impl Tape {
         })
     }
 
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
+
     pub fn undo(&mut self) -> bool {
         let Some(before) = self.undo.pop() else {
             return false;
@@ -162,10 +187,9 @@ impl Tape {
     /// or formula in B, a name a named range over its B cell, and `#k` the name of line k or a
     /// reference to it. Refused while there is a cycle.
     pub fn promote(&self) -> Result<Document> {
-        if let Some(cycle) = self.cycles().first() {
+        if let Some(circles) = self.circles() {
             return Err(Error::Formula(format!(
-                "{} read each other in a circle; break it before saving",
-                handles(cycle)
+                "{circles}; break the circle before saving"
             )));
         }
         let mut doc = self.list.document();
@@ -631,6 +655,15 @@ mod tests {
     #[test]
     fn a_tape_with_a_cycle_is_not_promoted() {
         let t = tape(&["#2", "#1"]);
-        assert!(t.promote().unwrap_err().to_string().contains("#1, #2"));
+        assert!(
+            t.promote()
+                .unwrap_err()
+                .to_string()
+                .contains("#1, #2 read each other")
+        );
+        assert_eq!(
+            tape(&["#1 + 1"]).circles().as_deref(),
+            Some("#1 reads itself")
+        );
     }
 }

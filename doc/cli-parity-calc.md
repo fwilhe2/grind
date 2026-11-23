@@ -14,12 +14,15 @@ of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that r
 - `len` — the rows `grind calc` prints, one per line
 - `is_empty` — `grind calc` with no lines on stdin prints nothing
 - `lines` — `grind calc <line>…`, or `--format json` for handles, names, text and values
-- `cycles` — printed to stderr after the rows, and `cycles` in `--format json`
+- `cycles` — `cycles` in `--format json`
+- `circles` — printed to stderr after the rows
 - `push` — each argument, each line of stdin, and each line typed at the interactive tape
 - `insert` — `:insert N <line>` at the interactive tape
 - `edit` — `:edit N <line>` at the interactive tape
 - `delete` — `:del N` at the interactive tape
 - `extract` — `grind calc … --extract '#N' <number> <name> [--nth K]`, or `:extract N <number> <name> [K]`
+- `can_undo` — `:undo` at the interactive tape answers *nothing to undo* when it is false
+- `can_redo` — `:redo` answers *nothing to redo* when it is false
 - `undo` — `:undo` at the interactive tape
 - `redo` — `:redo` at the interactive tape
 - `promote` — `grind calc … --save <file>`, which writes what it returns
