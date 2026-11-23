@@ -42,6 +42,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- Formulas in a spreadsheet grind saved open as formulas in current LibreOffice, rather than as
+  `Err:510` in every formula cell.
 - A date format that shows the day of the week names the right day; every day but Sunday was
   shown as the day before.
 - `MATCH` searches an array as well as a range, so `MATCH(TRUE(); INDEX(B1:B9>15; 0); 0)` finds

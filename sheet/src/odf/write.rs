@@ -15,7 +15,7 @@ use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use super::names::{
-    CALCEXT, CHART, DRAW, FO, FORM, LOEXT, NUMBER, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
+    CALCEXT, CHART, DRAW, FO, FORM, LOEXT, NUMBER, OF, OFFICE, STYLE, SVG, TABLE, TEXT, XLINK,
 };
 use crate::chart::Axis;
 use crate::formula::date;
@@ -660,12 +660,19 @@ fn content(
         pool.adopt_bases(&source.bytes);
     }
     let mut out = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    // Declare only the namespaces this part actually uses (§1.4). `table:formula`'s `of:`
-    // prefix is part of the *string*, not a namespace-resolved name (§4), so no `xmlns:of`.
+    // Declare only the namespaces this part actually uses (§1.4). A formula's `of:` is a prefix
+    // LibreOffice resolves: undeclared, every such formula is `Err:510` (`doc/ods-format.md` §2).
     let _ = write!(
         out,
         "<{root} xmlns:office=\"{OFFICE}\" xmlns:table=\"{TABLE}\" xmlns:text=\"{TEXT}\""
     );
+    if doc
+        .sheets
+        .iter()
+        .any(|s| s.formulas().any(|(_, f)| f.starts_with("of:")))
+    {
+        let _ = write!(out, " xmlns:of=\"{OF}\"");
+    }
     // The style namespaces only in a document that has styles (§1.4), and the cell-only ones only
     // when a cell uses one. A chart's `style:family="chart"` styles need `style:` regardless, and
     // the flat form's locale on the default cell style needs `style:` and `fo:`.
@@ -4021,6 +4028,7 @@ mod tests {
             "{xml}"
         );
         assert!(xml.contains("office:value=\"30\""), "{xml}");
+        assert!(xml.contains("xmlns:of=\"urn:oasis:names:tc:opendocument:xmlns:of:1.2\""));
     }
 
     #[test]

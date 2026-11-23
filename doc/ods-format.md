@@ -124,7 +124,7 @@ two LO-only extension namespaces:
 | `number` | `urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0` | number/date/currency formats |
 | `fo` | `urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0` | fo:* style props (font-size, borders, padding, background-color) |
 | `svg` | `urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0` | width/height on some props, e.g. draw objects |
-| `of` | `urn:oasis:names:tc:opendocument:xmlns:of:1.2` | only if you write `table:formula` (the value is a plain string like `of:=SUM(...)`; the namespace declaration is documentation convention, not structurally validated, but LO and real files always declare it — do the same) |
+| `of` | `urn:oasis:names:tc:opendocument:xmlns:of:1.2` | whenever a `table:formula` value starts with `of:`. The schema does not check it, but LibreOffice resolves the prefix: measured 2026-11-23 with 26.8.3, `of:=[.A1]+1` is `Err:510` without the declaration and 2 with it, and `=[.A1]+1` is 2 either way |
 | `xlink` | `http://www.w3.org/1999/xlink` | hyperlinks in cells, external data links |
 | `meta` | `urn:oasis:names:tc:opendocument:xmlns:meta:1.0` | only in `meta.xml` |
 | `dc` | `http://purl.org/dc/elements/1.1/` | only in `meta.xml` (dc:title/creator/date) |
