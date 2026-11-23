@@ -628,6 +628,13 @@ say "inline: a name, written into every formula that used it"
 sheet name "$out/renamed.fods" biggestBudget --inline >/dev/null
 sheet view "$out/renamed.fods" J2:J2 --formulas
 
+# Extract a constant, the other direction: the 1.19 in K1 moves into the empty K2, K2 is named
+# `vat`, and K1 reads `vat` — one undo step, refused if the answer would change.
+say "extract: a number in a formula becomes a named input cell"
+sheet set "$out/renamed.fods" K1 '=[.J1]*1.19' >/dev/null
+sheet extract "$out/renamed.fods" K1 1.19 --to K2 --name vat >/dev/null
+sheet view "$out/renamed.fods" K1:K2 --formulas
+
 # --- lint: what the document says about itself ---------------------------------------------
 # `doc/dsl.md` §4.3. The rules are about *documents*, which is why no third-party linter can
 # have them: a cached value that disagrees with its formula, a formula naming a sheet that is

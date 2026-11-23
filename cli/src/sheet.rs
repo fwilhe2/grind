@@ -799,6 +799,25 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             finish(&app, cli, file, true)
         }
 
+        Command::Extract {
+            file,
+            cell,
+            number,
+            to,
+            name,
+            nth,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, pos, _) = single(&app, cell)?;
+            let (target_sheet, target, _) = single(&app, to)?;
+            if target_sheet != sheet {
+                return Err(format!("{to} is on another sheet than {cell}").into());
+            }
+            app.extract_constant(sheet, pos, number, *nth, target, name)
+                .say()?;
+            finish(&app, cli, file, true)
+        }
+
         Command::Name {
             file,
             name,

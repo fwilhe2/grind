@@ -99,6 +99,9 @@ stops ratcheting.
   `Action::Batch`, rewritten through `formula::rename::rename_name` — an AST substitution, so the
   function `RATE(…)`, the longer name `rate_2` and the string `"rate"` are left alone. The count
   of rewritten uses goes to stderr, as `rename_sheet`'s does
+- `extract_constant` — `grind sheet extract <file> <cell> <number> --to <cell> --name <name> [--nth K]`:
+  the number moves into an empty cell, the cell is named, and the formula reads the name, in one
+  `Action::Batch`; refused when the formula would compute something else (`doc/calc.md` §4.2)
 - `inline_name` — `grind sheet name <name> --inline`, `doc/dsl.md` §6.5's Inline row: the
   definition is written into every formula and every other name that uses it and the name is
   deleted, in one `Action::Batch`, through `formula::rename::inline_name` — the same substitution

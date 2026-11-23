@@ -43,7 +43,8 @@ the point of the feature, and they are where the work is.
 1. **No new syntax.** The workbench edits one OpenFormula expression in display syntax: the
    formula bar's grammar, `formula::display`, and no other. There are no variables, no
    statements and no `x = 5` lines. A scratch language would be a language no cell can hold
-   (R1), and a step towards the macro line `doc/not-doing.md` §1 draws. When names for
+   (R1), and a step towards the macro line `doc/not-doing.md` §1 draws. `doc/calc.md`'s tape is
+   an experiment against this decision, on the reading that each of its lines is a cell. When names for
    intermediate values are wanted, the answers are a cell, a defined name, and one day `LET`,
    which waits on `doc/function-coverage.md` §7.
 2. **Multi-line means a layout, not a program.** IntelliJ needs a multi-line mode because Java
@@ -290,7 +291,9 @@ three columns stacked), `ui_mac`. Each gets a row in `doc/feature-matrix.md`.
 
 ## 8. What is not built
 
-* **Extraction**: `App::extract`, `grind sheet extract`, every row of §5 — each §4.2 row a test
+* **Extraction**, beyond a number literal: `App::extract_constant` and `grind sheet extract` move a
+  number into a named input cell, with the dynamic check and the *Occupied* rule
+  (`doc/calc.md` §5). The rest of §5 — each §4.2 row a test
   that is refused, warned or allowed as §5 says, undo restoring the bytes, loop C holding an
   extracted document. It is where the risk is, which is why §4.2 was measured first.
 * **The GTK pane**, its examples in a shared table, rendered by `--render-to` and its palette

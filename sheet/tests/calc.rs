@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tape (`doc/calc.md`): promoted tapes held to
+//! The tape (`doc/calc.md`): extracting a constant from a sheet cell, and promoted tapes held to
 //! the schema (R2) and to LibreOffice's recalculation. `jing` and `soffice` on `PATH` are what can
 //! skip.
 
@@ -10,11 +10,95 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use grind_sheet::locale::Locale;
-use grind_sheet::{App, CellValue, Pos, Tape};
+use grind_sheet::{App, CellValue, Form, Pos, Tape};
 
 fn number(app: &App, row: u32, col: u32) -> CellValue {
     let v = app.get_viewport(0, row..row + 1, col..col + 1).unwrap();
     v.get(row, col).cloned().unwrap_or_default()
+}
+
+fn book() -> App {
+    let app = App::new();
+    app.set_cell(0, Pos::new(0, 0), 1200.0).unwrap();
+    app.set_formula(0, Pos::new(0, 1), "of:=[.A1]*0.19+0.19*0")
+        .unwrap();
+    app
+}
+
+#[test]
+fn a_constant_becomes_a_named_input_cell_in_one_undo_step() {
+    let app = book();
+    let before = app.save_bytes(Form::Flat).unwrap();
+    assert!(
+        app.extract_constant(0, Pos::new(0, 1), "0.19", None, Pos::new(0, 3), "vat")
+            .is_err()
+    );
+    app.extract_constant(0, Pos::new(0, 1), "0.19", Some(1), Pos::new(0, 3), "vat")
+        .unwrap();
+    assert_eq!(
+        app.formula(0, Pos::new(0, 1)).unwrap().as_deref(),
+        Some("of:=[.A1]*vat+0.19*0")
+    );
+    assert_eq!(number(&app, 0, 3), CellValue::Number(0.19));
+    assert!(
+        app.names()
+            .iter()
+            .any(|(n, e)| n == "vat" && e == "[$Sheet1.$D$1]")
+    );
+    assert!(app.undo());
+    assert_eq!(app.save_bytes(Form::Flat).unwrap(), before);
+}
+
+#[test]
+fn extraction_never_overwrites_and_never_reuses_a_name() {
+    let app = book();
+    let at = Pos::new(0, 1);
+    assert!(
+        app.extract_constant(0, at, "0.19", Some(1), Pos::new(0, 0), "vat")
+            .is_err()
+    );
+    app.set_name("vat", "1").unwrap();
+    assert!(
+        app.extract_constant(0, at, "0.19", Some(1), Pos::new(0, 3), "vat")
+            .is_err()
+    );
+    assert!(
+        app.extract_constant(0, at, "0.19", Some(1), Pos::new(0, 3), "C1")
+            .is_err()
+    );
+    assert!(
+        app.extract_constant(0, at, "7", None, Pos::new(0, 3), "seven")
+            .is_err()
+    );
+}
+
+#[test]
+fn a_percent_goes_into_the_cell_as_its_value() {
+    let app = App::new();
+    app.set_formula(0, Pos::new(0, 0), "of:=200*5%").unwrap();
+    app.extract_constant(0, Pos::new(0, 0), "5%", None, Pos::new(1, 0), "rate")
+        .unwrap();
+    assert_eq!(number(&app, 1, 0), CellValue::Number(0.05));
+    assert_eq!(
+        app.formula(0, Pos::new(0, 0)).unwrap().as_deref(),
+        Some("of:=200*rate")
+    );
+}
+
+#[test]
+fn an_extraction_that_would_change_the_answer_is_refused() {
+    let app = App::new();
+    app.set_formula(0, Pos::new(0, 0), "of:=ISREF(3)").unwrap();
+    let refused = app
+        .extract_constant(0, Pos::new(0, 0), "3", None, Pos::new(1, 0), "three")
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("would change"), "{refused}");
+    assert_eq!(
+        app.formula(0, Pos::new(0, 0)).unwrap().as_deref(),
+        Some("of:=ISREF(3)")
+    );
+    assert_eq!(app.names().len(), 0);
 }
 
 // --- promoted tapes ----------------------------------------------------------------------

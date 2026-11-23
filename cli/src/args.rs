@@ -1716,6 +1716,28 @@ pub(crate) enum Command {
         border: Option<String>,
     },
 
+    /// Move a number out of a formula into a named input cell
+    ///
+    /// The number goes into --to, which must be empty and on the same sheet; --name names that
+    /// cell, and the formula reads the name instead of the number. Refused when that would
+    /// change what the formula computes. One undo step.
+    Extract {
+        file: PathBuf,
+        /// The cell whose formula holds the number
+        cell: String,
+        /// The number as the formula writes it, e.g. 0.19 or 5%
+        number: String,
+        /// The empty cell the number moves to
+        #[arg(long)]
+        to: String,
+        /// What to call it
+        #[arg(long)]
+        name: String,
+        /// Which occurrence, counting from 1, when the formula has the number more than once
+        #[arg(long)]
+        nth: Option<usize>,
+    },
+
     /// Define, redefine, rename, inline or delete a named range or expression
     ///
     /// With no target, prints what the name stands for. `sheet info` lists them all.

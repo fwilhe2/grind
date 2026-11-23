@@ -222,6 +222,105 @@ impl App {
         .is_ok()
     }
 
+    /// Move a number out of the formula at `pos` into the empty cell `target` on the same sheet,
+    /// name that cell, and have the formula read the name (`doc/calc.md` §4.2). `literal` is the
+    /// number in formula syntax, `%` allowed; `nth` picks one of several. One undo step.
+    ///
+    /// Refused when the target holds anything, the name is taken or not a name, the number is not
+    /// in the formula, or the formula's answer would change (`ISREF` sees a name where it saw a
+    /// number).
+    pub fn extract_constant(
+        &self,
+        sheet: usize,
+        pos: Pos,
+        literal: &str,
+        nth: Option<usize>,
+        target: Pos,
+        name: &str,
+    ) -> Result<()> {
+        validate_name(name)?;
+        let typed = literal.trim();
+        let value: f64 = typed
+            .trim_end_matches('%')
+            .trim()
+            .parse()
+            .map_err(|_| Error::Formula(format!("{typed} is not a number")))?;
+        self.mutate(|state| {
+            let doc = &state.doc;
+            let s = doc.sheet(sheet).ok_or(Error::NoSuchSheet(sheet))?;
+            let here = a1::format(None, pos);
+            let Some(text) = s.formula(pos) else {
+                return Err(Error::Formula(format!("{here} holds no formula")));
+            };
+            if !s.get(target).is_empty() || s.formula(target).is_some() {
+                return Err(Error::Formula(format!(
+                    "{} is not empty, and extracting never overwrites",
+                    a1::format(None, target)
+                )));
+            }
+            if doc.names.contains_key(&name.to_lowercase()) {
+                return Err(Error::Formula(format!("{name} is already a name")));
+            }
+            let expr = formula::parse::parse(text).map_err(|e| Error::Formula(e.to_string()))?;
+            let (rewritten, found) = formula::list::replace_literal(
+                &expr,
+                value,
+                nth,
+                &formula::parse::Expr::Name(name.to_owned()),
+            )
+            .map_err(|why| Error::Formula(format!("{here}: {why}")))?;
+            let at = formula::eval::Address::new(sheet, pos);
+            let before = formula::eval::Engine::new(doc).value(at);
+            let reference = formula::lex::Reference {
+                source: None,
+                start: formula::lex::CellRef {
+                    sheet: Some(s.name.clone()),
+                    sheet_absolute: true,
+                    col: Some(formula::lex::Axis {
+                        index: target.col,
+                        absolute: true,
+                    }),
+                    row: Some(formula::lex::Axis {
+                        index: target.row,
+                        absolute: true,
+                    }),
+                },
+                end: None,
+            };
+            let stored = if found.percent { value / 100.0 } else { value };
+            let actions = Action::Batch(vec![
+                Action::SetCell {
+                    sheet,
+                    pos: target,
+                    value: CellValue::Number(stored),
+                },
+                Action::SetName {
+                    name: name.to_owned(),
+                    expression: Some(reference.to_string()),
+                },
+                Action::SetFormula {
+                    sheet,
+                    pos,
+                    formula: Some(format!("of:={rewritten}")),
+                    value: s.get(pos),
+                },
+            ]);
+            let inverse = state.doc.apply(actions).ok_or(Error::NoSuchSheet(sheet))?;
+            let after = formula::eval::Engine::new(&state.doc).value(at);
+            if after != before {
+                let _ = state.doc.apply(inverse);
+                return Err(Error::Formula(format!(
+                    "{here} would change from {} to {}, so the number stays",
+                    shown(&before),
+                    shown(&after)
+                )));
+            }
+            state.undo.push(inverse);
+            state.redo.clear();
+            Ok(())
+        })
+    }
+
     /// Every named expression, name and expression alike (§5.11).
     pub fn names(&self) -> Vec<(String, String)> {
         let state = self.state.read().unwrap();
@@ -230,5 +329,15 @@ impl App {
             .iter()
             .map(|(name, expr)| (doc.name_spelling(name).to_owned(), expr.clone()))
             .collect()
+    }
+}
+
+fn shown(value: &formula::value::Value) -> String {
+    match value {
+        formula::value::Value::Error(e) => e.name().to_owned(),
+        formula::value::Value::Text(t) => format!("{t:?}"),
+        formula::value::Value::Number(n) => n.to_string(),
+        formula::value::Value::Bool(b) => if *b { "TRUE" } else { "FALSE" }.to_owned(),
+        formula::value::Value::Empty => "nothing".to_owned(),
     }
 }

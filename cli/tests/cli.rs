@@ -2948,3 +2948,26 @@ fn diff_shows_what_changed_between_two_versions() {
     // Two kinds of document are not two versions of one.
     assert!(!grind(&["diff", &b, &ta]).status.success());
 }
+
+#[test]
+fn extract_moves_a_number_into_a_named_cell() {
+    let dir = Sandbox::new("extract");
+    let book = s(&dir.path("book.fods"));
+    ok(&["new", &book]);
+    ok(&["set", &book, "A1", "100"]);
+    ok(&["set", &book, "B1", "=[.A1]*0.19"]);
+    ok(&[
+        "extract", &book, "B1", "0.19", "--to", "C1", "--name", "vat",
+    ]);
+    assert_eq!(
+        ok(&["get", &book, "B1", "--formula"]).trim(),
+        "of:=[.A1]*vat"
+    );
+    assert_eq!(ok(&["get", &book, "C1"]).trim(), "0.19");
+    // C1 is taken now.
+    assert!(
+        !sheet(&["extract", &book, "B1", "100", "--to", "C1", "--name", "x"])
+            .status
+            .success()
+    );
+}
