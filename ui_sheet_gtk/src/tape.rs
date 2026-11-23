@@ -37,11 +37,19 @@ pub fn present(
     locale: Option<Locale>,
     open_as_sheet: Rc<dyn Fn(Document)>,
 ) {
+    let this = build(locale, open_as_sheet);
+    this.window.set_transient_for(Some(parent));
+    this.window.present();
+    this.input.grab_focus();
+}
+
+/// The window, wired, and kept alive until it closes: every handler holds the state weakly, so
+/// something has to hold it strongly or the first Enter finds nothing.
+fn build(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Window> {
     let window = adw::Window::builder()
         .title("Scratch Calculator")
         .default_width(560)
         .default_height(560)
-        .transient_for(parent)
         .build();
 
     let input = gtk::Entry::builder()
@@ -208,9 +216,15 @@ pub fn present(
     }
     this.window.add_controller(keys);
 
+    // The window owns its state until it closes, and lets go of it then.
+    let keep = RefCell::new(Some(this.clone()));
+    this.window.connect_close_request(move |_| {
+        keep.borrow_mut().take();
+        glib::Propagation::Proceed
+    });
+
     this.refresh();
-    this.window.present();
-    this.input.grab_focus();
+    this
 }
 
 impl Window {
@@ -393,5 +407,52 @@ impl Window {
                 }
             ),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rows(list: &gtk::ListBox) -> usize {
+        let mut n = 0;
+        let mut child = list.first_child();
+        while let Some(row) = child {
+            n += 1;
+            child = row.next_sibling();
+        }
+        n
+    }
+
+    /// With nothing but the widgets left to hold — as after `present` returns — Enter still
+    /// adds a line and Undo still takes it away.
+    #[test]
+    fn the_window_still_answers_after_whoever_built_it_has_let_go() {
+        if gtk::init().is_err() || adw::init().is_err() {
+            eprintln!("no display — skipping the tape window's widget case");
+            return;
+        }
+        let built = build(None, Rc::new(|_| {}));
+        let (input, list, undo, window) = (
+            built.input.clone(),
+            built.list.clone(),
+            built.undo.clone(),
+            built.window.clone(),
+        );
+        drop(built);
+
+        input.set_text("1200 * 1.19");
+        input.emit_activate();
+        assert_eq!(rows(&list), 1, "Enter adds the line");
+        assert_eq!(input.text(), "", "and clears the entry for the next");
+        input.set_text("1 +");
+        input.emit_activate();
+        assert_eq!(rows(&list), 1, "a line that does not read is not added");
+        assert_eq!(input.text(), "1 +", "and stays to be fixed");
+
+        assert!(undo.is_sensitive());
+        undo.emit_clicked();
+        assert!(!list.is_visible(), "undo took the line away");
+        window.close();
     }
 }
