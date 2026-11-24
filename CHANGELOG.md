@@ -20,7 +20,8 @@ lands, and the release workflow publishes the section as it stands.
   `--save`. Numbers follow `--locale`. In the terminal version it is `grind-tui --tape`, or
   `:tape`; in the spreadsheet window, the calculator button in the header bar or *Scratch
   Calculator* in the menu, with *Open as Spreadsheet* to carry on in a sheet; in the browser,
-  the calculator button over a spreadsheet, or *Scratch calculator* in Ctrl+K.
+  the calculator button over a spreadsheet, or *Scratch calculator* in Ctrl+K; on Windows,
+  *Data ▸ Scratch Calculator…*.
 - `grind sheet extract`, and *Extract a Number into a Named Cell…* in the spreadsheet window,
   move a number out of a formula into a named input cell, and have the formula use the name
   instead.

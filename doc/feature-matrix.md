@@ -325,7 +325,7 @@ grown to hold them, as the GNOME window grows one. ² The toolbar's two steps an
 | Rename a name, carrying every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Inline a name into every use (§6.5) | ● | ● ᵖᵇ | ● ᵗᵘ | ● ᵖᵃ | ● ʷⁿ | ● ³ |
 | Extract a number into a named input cell (`doc/calc.md`) | ● | ● | ○ | ○ | ○ | ○ |
-| The tape, a scratch calculator that saves as a sheet (`doc/calc.md`, experimental) | ● | ● | ● | ● | ○ | ○ |
+| The tape, a scratch calculator that saves as a sheet (`doc/calc.md`, experimental) | ● | ● | ● | ● | ● | ○ |
 | Sees the document's defined names | ● | ● ᶜ | ● ᵈ | ● ᵉ | ● ᶠ | ● ¹ |
 | Add, edit, remove, move or restyle a chart | ● | ● | ● ᶜʰ | ● ᶜʰ | ● ᶜʰ | ● ⁵ |
 | **Take hold of** a chart — select it (accent outline, eight handles), drag to move, a handle to resize, Delete, a menu on it (`doc/chart-handling.md`) | ● ᵍʳ | ● | ◐ ᵍʳ | ● ᵍʳ | ● ᵍʳ | ● ᵍʳ |

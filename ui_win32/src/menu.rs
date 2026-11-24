@@ -133,6 +133,9 @@ pub enum Command {
     /// Every formula in the document in a list, filtered by a word, each a jump to its cell
     /// (`App::calculations`, the GNOME window's *Find a Calculation*).
     FindCalculation,
+    /// The tape (`doc/calc.md`, an experiment): a scratch calculator over the window, kept until
+    /// it closes, that opens as a spreadsheet.
+    ScratchCalculator,
     /// A formula worked out at the active cell and said in the notice bar, storing nothing and
     /// making no undo step (`grind_sheet::verbs::evaluated`, `grind sheet eval`'s call).
     Evaluate,
@@ -412,6 +415,7 @@ impl Command {
         Command::DeleteName,
         Command::DocumentLocale,
         Command::FindCalculation,
+        Command::ScratchCalculator,
         Command::Evaluate,
         Command::GoTo,
         Command::Find,
@@ -852,6 +856,10 @@ pub const MENUS: &[Menu] = &[
             Item::Verb {
                 command: Command::FindCalculation,
                 label: "Find a Calc&ulation…",
+            },
+            Item::Verb {
+                command: Command::ScratchCalculator,
+                label: "&Scratch Calculator…",
             },
             Item::Verb {
                 command: Command::DocumentLocale,
@@ -1407,6 +1415,7 @@ pub fn applies_to(command: Command, kind: grind_core::DocumentKind) -> bool {
         | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
+        | Command::ScratchCalculator
         | Command::Evaluate
         | Command::SheetAdd
         | Command::SheetRename
@@ -1901,6 +1910,7 @@ mod tests {
             Command::DeleteName,
             Command::DocumentLocale,
             Command::FindCalculation,
+            Command::ScratchCalculator,
             Command::Evaluate,
             Command::FunctionList,
             Command::ExplainFormula,

@@ -269,6 +269,12 @@ so the classic Win32 bug of two items sharing an id cannot be spelled here; the 
 take ids below `FIRST_ID`, which is what keeps a control's notification and a menu click apart
 in the one message Win32 uses for both.
 
+So where the GNOME window gives the tape (`doc/calc.md`, an experiment) a header-bar button, this
+shell gives it **Data ▸ Scratch Calculator…**. It is the list modal again (`tape.rs`, portable):
+one row per line with its value, then *Add a Line…*, *Undo*, *Redo* and *Open as Spreadsheet*;
+picking a line edits it in the prompt, and emptying it deletes it. The tape stays with the window,
+and goes along into the spreadsheet it opens as. Not built: *Name a number* (`Tape::extract`).
+
 ### 5. `--render-to`, with no window and no display
 
 The GTK shells draw one frame to a PNG and exit so that a refactor can be proved by a

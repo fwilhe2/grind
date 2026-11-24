@@ -433,6 +433,9 @@ struct Sheet {
     pointing: Option<(std::ops::Range<usize>, Pos)>,
     /// Whether a formula cell draws its formula instead of its result (View ▸ Show Formulas).
     formulas: bool,
+    /// Data ▸ Scratch Calculator's tape, made the first time it opens and kept with the window,
+    /// carried into the spreadsheet it opens as.
+    tape: Option<grind_sheet::Tape>,
     /// Whether the formula bar shows the friendly *reading* of a formula — View ▸ Friendly
     /// Formulas. Presentation state; the stored formula stays ODF's (R1).
     friendly: bool,
@@ -1367,6 +1370,7 @@ fn opened_sheet_on(app: grind_sheet::App, path: Option<PathBuf>, theme: Theme) -
         hint: Vec::new(),
         pointing: None,
         formulas: false,
+        tape: None,
         // **On**, as in the GNOME window, so a formula reads the same in both unless somebody says
         // otherwise. The reading is only shown; opening the cell brings back the text that will be
         // stored.
@@ -4071,6 +4075,7 @@ fn do_command(hwnd: HWND, command: Command) {
         Command::DeleteName => delete_name(hwnd),
         Command::DocumentLocale => document_locale(hwnd),
         Command::FindCalculation => find_calculation(hwnd),
+        Command::ScratchCalculator => scratch_calculator(hwnd),
         Command::Evaluate => evaluate(hwnd),
         Command::GoTo => open_name_box(hwnd),
         Command::Find => find(hwnd),
@@ -4788,6 +4793,119 @@ fn find_calculation(hwnd: HWND) {
     if let Some(calc) = found.get(at) {
         go_to_address(hwnd, &calc.address());
     }
+}
+
+/// Data ▸ Scratch Calculator… — the tape as a list modal (`tape::rows`): picking a line edits it
+/// (emptied, it goes), and the rows after the lines add one, undo, redo and open the tape as a
+/// spreadsheet. The list comes back after each step until it is dismissed.
+fn scratch_calculator(hwnd: HWND) {
+    let mut chosen = 0;
+    loop {
+        // SAFETY: one borrow, released before the list.
+        let Some((rows, picks, texts, label)) = (unsafe {
+            with_sheet(hwnd, |state| {
+                let locale = state.app.locale();
+                let tape = state
+                    .tape
+                    .get_or_insert_with(|| grind_sheet::Tape::new(locale));
+                let (rows, picks) = crate::tape::rows(tape);
+                let texts: Vec<String> = tape.lines().into_iter().map(|line| line.text).collect();
+                (rows, picks, texts, crate::tape::label(tape))
+            })
+        }) else {
+            return;
+        };
+        let Some(at) = dialog::choose(
+            hwnd,
+            "Scratch Calculator",
+            &rows,
+            chosen.min(rows.len() - 1),
+        ) else {
+            return;
+        };
+        chosen = at;
+        let Some(&pick) = picks.get(at) else {
+            return;
+        };
+        let typed = match pick {
+            crate::tape::Pick::Add => match dialog::prompt(hwnd, "Add a Line", &label, "") {
+                Some(text) if !text.trim().is_empty() => Some(text),
+                _ => continue,
+            },
+            crate::tape::Pick::Line(line) => {
+                let initial = texts.get(line).cloned().unwrap_or_default();
+                match dialog::prompt(hwnd, &format!("Line #{}", line + 1), &label, &initial) {
+                    Some(text) => Some(text),
+                    None => continue,
+                }
+            }
+            crate::tape::Pick::Open => return open_tape(hwnd),
+            crate::tape::Pick::Undo | crate::tape::Pick::Redo => None,
+        };
+        // SAFETY: one borrow, released before the error box.
+        let refused = unsafe {
+            with_sheet(hwnd, |state| {
+                let tape = state.tape.as_mut()?;
+                let done = match (pick, typed) {
+                    (crate::tape::Pick::Add, Some(text)) => tape.push(&text).map(|_| ()),
+                    (crate::tape::Pick::Line(line), Some(text)) if text.trim().is_empty() => {
+                        tape.delete(line)
+                    }
+                    (crate::tape::Pick::Line(line), Some(text)) => tape.edit(line, &text),
+                    (crate::tape::Pick::Undo, _) => {
+                        tape.undo();
+                        Ok(())
+                    }
+                    (crate::tape::Pick::Redo, _) => {
+                        tape.redo();
+                        Ok(())
+                    }
+                    _ => Ok(()),
+                };
+                done.err().map(|error| error.to_string())
+            })
+        }
+        .flatten();
+        if let Some(refused) = refused {
+            dialog::error(hwnd, &refused);
+        }
+    }
+}
+
+/// The tape as a new spreadsheet in this window, the way an import arrives: unsaved, no path, and
+/// Save As offering `tape.fods`. The tape comes along, for the next time.
+fn open_tape(hwnd: HWND) {
+    // SAFETY: one borrow, released before any dialog.
+    let Some(promoted) = (unsafe {
+        with_sheet(hwnd, |state| {
+            state.tape.as_ref().map(grind_sheet::Tape::promote)
+        })
+    })
+    .flatten() else {
+        return;
+    };
+    let doc = match promoted {
+        Ok(doc) => doc,
+        Err(error) => return dialog::error(hwnd, &error.to_string()),
+    };
+    if !offer_to_save(hwnd) {
+        return;
+    }
+    let app = grind_sheet::App::new();
+    if let Err(error) = app.open_document(doc) {
+        return dialog::error(hwnd, &error.to_string());
+    }
+    // SAFETY: one borrow, no dialog.
+    let Some((theme, tape)) =
+        (unsafe { with_sheet(hwnd, |state| (state.theme, state.tape.take())) })
+    else {
+        return;
+    };
+    let mut sheet = opened_sheet_on(app, None, theme);
+    sheet.imported = Some(PathBuf::from("tape.fods"));
+    sheet.dirty = true;
+    sheet.tape = tape;
+    adopt(hwnd, Pane::Sheet(Box::new(sheet)));
 }
 
 /// Data ▸ Document Locale… — a tag (`de-DE`, `fr`; empty for none) for how this document spells and
@@ -7065,6 +7183,7 @@ fn welcome_command(hwnd: HWND, command: Command) {
         | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
+        | Command::ScratchCalculator
         | Command::Evaluate
         | Command::GoTo
         | Command::Find
@@ -8094,6 +8213,7 @@ fn text_command(hwnd: HWND, command: Command) {
         | Command::DeleteName
         | Command::DocumentLocale
         | Command::FindCalculation
+        | Command::ScratchCalculator
         | Command::Evaluate
         | Command::SheetAdd
         | Command::SheetRename

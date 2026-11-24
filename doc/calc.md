@@ -170,7 +170,8 @@ its keys. **The GNOME spreadsheet window** has a tape dialog (*Scratch Calculato
 `grind-sheet-gtk --tape`) and *Extract a Number into a Named Cell…*; `doc/sheet-shell.md` says
 how. **The browser shell** has the tape as a dialog (the calculator button over a spreadsheet,
 or Ctrl+K → *Scratch calculator*; `ui_web/src/tape.rs`): lines typed, edited in place and
-deleted, undo and redo, and *Open as spreadsheet*. `doc/feature-matrix.md` says which shells
+deleted, undo and redo, and *Open as spreadsheet*. **The Windows shell** has the same as
+*Data ▸ Scratch Calculator…*, over its list modal (`doc/windows-shell.md` §4). `doc/feature-matrix.md` says which shells
 have which.
 
 ## 8. Not built

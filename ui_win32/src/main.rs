@@ -49,6 +49,8 @@ mod strip;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod surrogate;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
+mod tape;
+#[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod text;
 #[cfg_attr(not(windows), allow(dead_code, unused_imports))]
 mod theme;
