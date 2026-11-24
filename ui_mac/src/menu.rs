@@ -143,6 +143,9 @@ pub enum Command {
     PageSetup,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
+    /// The tape (`doc/calc.md`, an experiment), kept for the session, that opens as a
+    /// spreadsheet — Edit ▸ Scratch Calculator….
+    ScratchCalculator,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….
     DocumentLocale,
     /// A conditional-format rule over the selection — Format ▸ Conditional Formatting ▸ Add
@@ -385,6 +388,7 @@ impl Command {
             Command::CopyValue,
             Command::FormulaToValue,
             Command::Evaluate,
+            Command::ScratchCalculator,
             Command::DocumentLocale,
             Command::AddRule,
             Command::RemoveRule,
@@ -434,6 +438,7 @@ impl Command {
                 | Command::ImageDescription
                 | Command::PreviewChart
                 | Command::Evaluate
+                | Command::ScratchCalculator
                 | Command::DocumentLocale
                 | Command::AddRule
                 | Command::RemoveRule
@@ -533,6 +538,7 @@ impl Command {
             | Command::CopyValue
             | Command::FormulaToValue
             | Command::Evaluate
+            | Command::ScratchCalculator
             | Command::DocumentLocale
             | Command::AddRule
             | Command::RemoveRule
@@ -1085,6 +1091,7 @@ pub static MENUS: &[Menu] = &[
             command("Filter", key("f", SHIFT_CMD), Command::Filter),
             command("Formula to Value", None, Command::FormulaToValue),
             command("Evaluate…", None, Command::Evaluate),
+            command("Scratch Calculator…", None, Command::ScratchCalculator),
             Item::Submenu {
                 title: "Fill",
                 menu: &FILL,

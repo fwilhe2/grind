@@ -786,6 +786,34 @@ mod mac {
             Ok(document)
         }
 
+        /// `doc` as a new spreadsheet, shown: untitled, edited, and going by `name` until it is
+        /// saved, the way an import does.
+        pub fn new_sheet(
+            &self,
+            doc: grind_sheet::Document,
+            name: &str,
+        ) -> Result<Retained<NSDocument>, String> {
+            let type_name =
+                super::type_name(DocumentKind::Spreadsheet).ok_or("not a kind this build makes")?;
+            let document = self
+                .makeUntitledDocumentOfType_error(&NSString::from_str(type_name))
+                .map_err(|error| error.localizedDescription().to_string())?;
+            let ours = document
+                .clone()
+                .downcast::<Document>()
+                .map_err(|_| "not a grind document")?;
+            let app = grind_sheet::App::new();
+            app.open_document(doc).map_err(|error| error.to_string())?;
+            *ours.ivars().content.borrow_mut() = Some(Content::Sheet(Arc::new(app)));
+            *ours.ivars().imported.borrow_mut() =
+                Some((name.to_owned(), "From the scratch calculator".to_owned()));
+            self.addDocument(&document);
+            document.makeWindowControllers();
+            document.showWindows();
+            document.updateChangeCount(NSDocumentChangeType::ChangeDone);
+            Ok(document)
+        }
+
         /// The document at `path`, opened and shown — the same path File ▸ Open takes, minus
         /// the panel.
         pub fn open_path(&self, path: &Path) -> Result<Retained<NSDocument>, String> {

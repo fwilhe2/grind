@@ -171,7 +171,8 @@ its keys. **The GNOME spreadsheet window** has a tape dialog (*Scratch Calculato
 how. **The browser shell** has the tape as a dialog (the calculator button over a spreadsheet,
 or Ctrl+K → *Scratch calculator*; `ui_web/src/tape.rs`): lines typed, edited in place and
 deleted, undo and redo, and *Open as spreadsheet*. **The Windows shell** has the same as
-*Data ▸ Scratch Calculator…*, over its list modal (`doc/windows-shell.md` §4). `doc/feature-matrix.md` says which shells
+*Data ▸ Scratch Calculator…*, over its list modal (`doc/windows-shell.md` §4), and **the Mac
+shell** as *Edit ▸ Scratch Calculator…* (`doc/macos-shell.md` §3). `doc/feature-matrix.md` says which shells
 have which.
 
 ## 8. Not built

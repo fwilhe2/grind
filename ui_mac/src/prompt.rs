@@ -7,7 +7,9 @@
 //! table's size. One function, so every question in the shell looks and behaves alike.
 
 use objc2::{MainThreadMarker, MainThreadOnly};
-use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSPopUpButton, NSTextField};
+use objc2_app_kit::{
+    NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSPopUpButton, NSTextField,
+};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
 /// Ask for one line: `title` and `detail` above a field holding `initial`, answered with
@@ -34,6 +36,37 @@ pub fn ask(
     (alert.runModal() == NSAlertFirstButtonReturn)
         .then(|| field.stringValue().to_string().trim().to_owned())
         .filter(|answer| !answer.is_empty())
+}
+
+/// Change `initial`, or delete it: `Some(Some(text))` changed, `Some(None)` deleted, and `None`
+/// when cancelled. Emptied is deleted too.
+pub fn change(
+    mtm: MainThreadMarker,
+    title: &str,
+    detail: &str,
+    initial: &str,
+) -> Option<Option<String>> {
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(title));
+    alert.setInformativeText(&NSString::from_str(detail));
+    alert.addButtonWithTitle(&NSString::from_str("Change"));
+    alert.addButtonWithTitle(&NSString::from_str("Delete"));
+    alert.addButtonWithTitle(&NSString::from_str("Cancel"));
+    let field = NSTextField::textFieldWithString(&NSString::from_str(initial), mtm);
+    field.setFrame(NSRect::new(
+        NSPoint::new(0.0, 0.0),
+        NSSize::new(240.0, 24.0),
+    ));
+    alert.setAccessoryView(Some(&field));
+    alert.window().setInitialFirstResponder(Some(&field));
+    let answer = alert.runModal();
+    if answer == NSAlertSecondButtonReturn {
+        return Some(None);
+    }
+    (answer == NSAlertFirstButtonReturn).then(|| {
+        let text = field.stringValue().to_string().trim().to_owned();
+        (!text.is_empty()).then_some(text)
+    })
 }
 
 /// Ask for one of `items`: a pop-up under an alert, `initial` chosen, answered with `action` or

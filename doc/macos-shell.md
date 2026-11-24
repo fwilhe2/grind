@@ -129,6 +129,13 @@ these surfaces, each with a membership rule:
 A notice (a recalculation refused, a parse error) is a banner under the accessory. It is still
 a *state*, never an event, and `notice.rs` holds every sentence, as in `ui_win32`.
 
+So the tape (`doc/calc.md`, an experiment), which has a header-bar button in the GNOME window,
+is a menu verb here: **Edit ▸ Scratch Calculator…** (`tape.rs`). It is `prompt.rs`'s alerts —
+a pop-up of *Add a Line…*, the lines with their values, *Undo*, *Redo* and *Open as
+Spreadsheet*; choosing a line offers Change and Delete. One tape for the session, and *Open as
+Spreadsheet* is a new untitled window going by `tape.fods`. Not built: *Name a number*
+(`Tape::extract`).
+
 ### 4. CoreText measures and draws — decision 3 of the Windows shell, answered by a shaping engine
 
 `doc/windows-shell.md` decision 3 is the argument this one rests on: **the engine that measures

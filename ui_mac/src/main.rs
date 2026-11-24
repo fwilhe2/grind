@@ -84,6 +84,8 @@ mod spelling;
 #[cfg(target_os = "macos")]
 mod structure;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
+mod tape;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod text;
 #[cfg(target_os = "macos")]
 mod toolbar;
