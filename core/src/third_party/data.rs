@@ -304,7 +304,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "clap",
-        version: "4.6.7",
+        version: "4.6.9",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright Individual contributors",
         source: "https://github.com/clap-rs/clap",
@@ -322,7 +322,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "clap_derive",
-        version: "4.6.7",
+        version: "4.6.9",
         licence: "MIT OR Apache-2.0",
         copyright: "Copyright Individual contributors",
         source: "https://github.com/clap-rs/clap",
@@ -1105,7 +1105,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "harfrust",
-        version: "0.16.0",
+        version: "0.16.1",
         licence: "MIT",
         copyright: "Copyright (c) HarfBuzz developers",
         source: "https://github.com/harfbuzz/harfrust",
@@ -2581,7 +2581,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "syn",
-        version: "3.0.4",
+        version: "3.0.10",
         licence: "MIT OR Apache-2.0",
         copyright: "By David Tolnay <dtolnay@gmail.com>",
         source: "https://github.com/dtolnay/syn",
@@ -3454,7 +3454,7 @@ pub(super) const COMPONENTS: &[Component] = &[
     },
     Component {
         name: "zip",
-        version: "9.6.0",
+        version: "9.8.1",
         licence: "MIT",
         copyright: "Copyright (c) 2014 Mathijs van de Nes",
         source: "https://github.com/zip-rs/zip2",
