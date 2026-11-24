@@ -33,6 +33,7 @@ mod server;
 pub mod sheet;
 pub mod spelling;
 pub mod swatch;
+mod tape;
 pub mod text;
 
 use std::cell::{Cell, RefCell};
@@ -137,6 +138,7 @@ pub fn start() -> Result<(), JsValue> {
         dom: Chrome::find(&document)?,
         palette: palette::Palette::find(&document)?,
         swatches: Rc::new(swatch::Swatches::find(&document)?),
+        tape: tape::TapeDialog::find(&document)?,
         pending,
         mode: Cell::new(Mode::Welcome),
         dirty_told: Cell::new(false),
@@ -274,6 +276,7 @@ struct Chrome {
     undo: HtmlButtonElement,
     redo: HtmlButtonElement,
     recalc: HtmlButtonElement,
+    tape: HtmlButtonElement,
     palette_open: HtmlButtonElement,
     file_input: HtmlInputElement,
     /// The code view — a third pane, shown instead of whichever of the two is open
@@ -338,6 +341,7 @@ impl Chrome {
             undo: element(document, "undo")?,
             redo: element(document, "redo")?,
             recalc: element(document, "recalc")?,
+            tape: element(document, "tape-button")?,
             palette_open: element(document, "palette-open")?,
             file_input: element(document, "file-input")?,
             drop: element(document, "drop")?,
@@ -352,6 +356,8 @@ struct Shell {
     dom: Chrome,
     palette: palette::Palette,
     swatches: Rc<swatch::Swatches>,
+    /// The scratch calculator (`doc/calc.md`), one for the visit.
+    tape: Rc<tape::TapeDialog>,
     /// Set by either observer, cleared by the repaint it asked for.
     pending: Arc<AtomicBool>,
     mode: Cell<Mode>,
@@ -524,6 +530,7 @@ impl Shell {
         // Recalculation is a spreadsheet's word. The button goes rather than greying out:
         // there is no such thing as an unrecalculated paragraph.
         self.dom.recalc.set_hidden(!sheet);
+        self.dom.tape.set_hidden(!sheet);
         // Saving and the two history buttons need a document; with none they go the same way the
         // sheet-only verbs do over a text document, rather than staying and doing nothing.
         self.dom.save.set_hidden(welcome);
@@ -704,6 +711,8 @@ impl Shell {
             "view.source" => self.toggle_source(),
             "view.problems" => self.toggle_problems(),
             "sheet.calculations" => self.find_calculations(),
+            "sheet.tape" => self.tape.open(self.sheet.app.locale()),
+            "sheet.tape-open" => self.open_tape_sheet(),
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
@@ -1552,15 +1561,47 @@ impl Shell {
                     .map_err(|error| error.to_string()),
             ),
         };
-        let opened = bytes.and_then(|bytes| match mode {
-            Mode::Sheet => self.sheet.open(name, &bytes),
-            _ => self.text.open(name, &bytes),
-        });
+        match bytes {
+            // Untitled, so a download names itself after the kind — `document_name`'s two
+            // constants.
+            Ok(bytes) => self.adopt(mode, name, &bytes, ""),
+            Err(error) => self.set_message(error),
+        }
+    }
+
+    /// The tape's lines as a new spreadsheet, the way a new one arrives, downloading as
+    /// `tape.fods`.
+    fn open_tape_sheet(&self) {
+        let Some(doc) = self.tape.promote() else {
+            return;
+        };
+        let bytes = match grind_sheet::write_bytes(&doc, Form::Flat) {
+            Ok(bytes) => bytes,
+            Err(error) => return self.set_message(error.to_string()),
+        };
+        if self.sheet.app.can_undo()
+            && !confirm(
+                "Open the tape as a new spreadsheet? Unsaved changes to the one you have will be lost.",
+            )
+        {
+            return;
+        }
+        self.tape.close();
+        self.adopt(Mode::Sheet, "tape.fods", &bytes, "tape.fods");
+    }
+
+    /// `bytes` open in `mode`'s pane as a document that is no file yet, named `name` for the
+    /// pane and `download` for Save — empty for one named after its kind.
+    fn adopt(&self, mode: Mode, name: &str, bytes: &[u8], download: &str) {
+        let Some(kind) = mode.kind() else { return };
+        let opened = match mode {
+            Mode::Sheet => self.sheet.open(name, bytes),
+            _ => self.text.open(name, bytes),
+        };
         if let Err(error) = opened {
             return self.set_message(error);
         }
-        // Untitled, so a download names itself after the kind — `document_name`'s two constants.
-        self.name.borrow_mut().clear();
+        download.clone_into(&mut self.name.borrow_mut());
         *self.backend.borrow_mut() = server::Backend::Local;
         self.versions.borrow_mut().clear();
         // Both readings close with the document they were of.
@@ -2083,6 +2124,9 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         ("undo", "doc.undo", false),
         ("redo", "doc.redo", false),
         ("recalc", "sheet.recalc", false),
+        // Keeps the focus: it belongs in the dialog's entry.
+        ("tape-button", "sheet.tape", true),
+        ("tape-open", "sheet.tape-open", false),
         ("sheet-add", "sheet.add", false),
         ("numbers", "doc.locale", false),
         // Keeps the focus: it belongs in the palette the flag opens.

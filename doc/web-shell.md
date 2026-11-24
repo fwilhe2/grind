@@ -20,8 +20,8 @@ charts. This file is where its own answers live now; the other two link here.
 copy of a desktop application.** There is no window manager to borrow chrome from, no platform
 menu conventions to honour, and no reason to pretend otherwise. So:
 
-- **One bar of verbs** across the top: open, save, undo, redo, recalculate, the document's
-  name. The things somebody reaches for without thinking.
+- **One bar of verbs** across the top: open, save, undo, redo, recalculate, the scratch
+  calculator, the document's name. The things somebody reaches for without thinking.
 - **One tool row** for whichever document type is open — the toggles and swatches a *pointer*
   wants, and nothing that is only a word.
 - **Ctrl+K opens everything else.** `ui_web/src/command.rs` is a table of every verb either
@@ -74,6 +74,7 @@ because a page has no icon theme to ask.
 | CSV | Ctrl+K → *Import CSV…* raises the same file input the open verb does, with a different `accept` (`Pick` is which of the two a `change` event is about); the fields land at the **cursor**, with the delimiter read out of the file's own content. Out is two rows rather than one — *Export as CSV* and *Export as TSV* — because a download names itself, so the choice a save dialog carries as two filters has to be made before the file exists (`csv::Dialect::for_name` still reads it back off the name) | — |
 | Pictures | — | decoded and drawn, as a `data:` URL, the picture's title its `alt`. **Alt text**: every picture wears a chip — *+ Alt text* in the accent until it has some, a quiet *ALT* on hover after — and the chip, or Ctrl+K → *Alt text for the picture…* beside one, opens `index.html`'s `#alt` `<dialog>`: the picture, the short field with `grind_text::picture::advice` and a count under it, a collapsed long description, Cancel and Save |
 | Charts | **drawn as SVG** — bar, line, pie and area, scaled against `grind_sheet::axis_ticks` so the axis is the one the GTK shell draws | — |
+| The tape (`doc/calc.md`, an experiment) | the calculator button in the bar of verbs, beside Recalc, or Ctrl+K → *Scratch calculator*: `index.html`'s `#tape` dialog, one tape for the visit (`ui_web/src/tape.rs`). A line per row — its handle, its text to edit in place, its value, delete — an entry for the next, undo and redo (Ctrl+Z inside the dialog is the tape's), a note for a circle or a line that does not read, and *Open as spreadsheet*, which puts the promoted tape in the grid as a new document downloading as `tape.fods`. Not built: *Name a number* (`Tape::extract`) | — |
 | Structure | add, rename (double-click a tab) and delete sheets | the outline, in the palette |
 | View modes | Ctrl+K → *Show what each cell is* / *Show where names live*: `doc/view-modes.md`'s two overlays, as one attribute per cell and no extra elements | Ctrl+K → *Show where bookmarks are* (§3.6) |
 | Code view | Ctrl+K → *Show the source*: `doc/dsl.md` §6's read-only projection, one `<div>` per line, a class per `TokenKind`, the selection's own line drawn as current and clicking a line selecting what it projects | the same |

@@ -733,6 +733,109 @@ input[type="text"] {
   font-weight: 600;
 }
 
+/* The tape dialog: the alt dialog's frame, a numbered list of lines with their values. */
+.tape {
+  width: min(36rem, calc(100vw - 2rem));
+}
+
+.tape-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem 1.25rem 1rem;
+}
+
+.tape-head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tape-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.tape-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.tape-lines li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.tape-lines li + li {
+  border-top: 1px solid var(--line);
+}
+
+.tape-handle {
+  min-width: 2.2em;
+  color: color-mix(in srgb, CanvasText 62%, Canvas);
+  font-variant-numeric: tabular-nums;
+}
+
+.tape input {
+  box-sizing: border-box;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: Canvas;
+  color: CanvasText;
+  font: 13px/1.4 ui-monospace, monospace;
+}
+
+.tape-lines .tape-text {
+  flex: 1;
+  min-width: 0;
+  border-color: transparent;
+}
+
+.tape-lines .tape-text:hover,
+.tape-lines .tape-text:focus {
+  border-color: var(--line);
+}
+
+.tape-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tape-lines li.error .tape-value {
+  color: #d6342c;
+}
+
+.tape-delete {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.tape-delete:hover,
+.tape-delete:focus-visible {
+  opacity: 1;
+}
+
+.tape-note {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+}
+
 /* A word the spell checker does not know (`doc/spelling.md`): a wavy red line under it and
    nothing else, as the pages mark it. */
 .cell .wrong {

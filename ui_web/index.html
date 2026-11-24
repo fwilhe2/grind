@@ -60,6 +60,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span class="sr">Redo</span>
       </button>
       <button id="recalc" type="button" class="text" title="Recalculate (F9)" hidden>Recalc</button>
+      <button id="tape-button" type="button" class="icon" title="Scratch calculator" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="3" y="1.5" width="10" height="13" rx="1.5" />
+          <path d="M5 4.5h6M5.5 8h1M9.5 8h1M5.5 11h1M9.5 11h1" />
+        </svg>
+        <span class="sr">Scratch calculator</span>
+      </button>
       <span class="gap"></span>
       <span id="name" class="name"></span>
       <button id="palette-open" type="button" class="text keyed">
@@ -295,6 +302,43 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Explain this formula: the active cell's formula unfolded in plain words, read and
          dismissed like About (ui_web/src/sheet/mod.rs's `explain`). -->
     <dialog id="explain" class="about"></dialog>
+
+    <!--
+      The tape (doc/calc.md, an experiment): a scratch calculator, one line per formula with its
+      value beside it, kept by ui_web/src/tape.rs for the rest of the visit. "Open as spreadsheet"
+      puts its lines into the grid, one row each.
+    -->
+    <dialog id="tape" class="alt tape" aria-labelledby="tape-heading">
+      <div class="tape-body">
+        <div class="tape-head">
+          <h2 id="tape-heading">Scratch calculator <span class="alt-hint">Experimental</span></h2>
+          <button id="tape-undo" type="button" class="icon" title="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 4 2.5 7.5 6 11" />
+              <path d="M2.5 7.5H9a4 4 0 0 1 0 8H6" />
+            </svg>
+            <span class="sr">Undo</span>
+          </button>
+          <button id="tape-redo" type="button" class="icon" title="Redo (Ctrl+Shift+Z)" disabled>
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M10 4 13.5 7.5 10 11" />
+              <path d="M13.5 7.5H7a4 4 0 0 0 0 8h3" />
+            </svg>
+            <span class="sr">Redo</span>
+          </button>
+        </div>
+        <p id="tape-empty" class="alt-hint">Type a formula without its =, as in a cell, and press
+          Enter. #2 reads line 2; vat = 0.19 names a line so others can write vat.</p>
+        <ol id="tape-lines" class="tape-lines" hidden></ol>
+        <input id="tape-input" type="text" autocomplete="off" spellcheck="false"
+               placeholder="1200 * 1.19" aria-label="Next line">
+        <p id="tape-note" class="tape-note" aria-live="polite"></p>
+        <div class="alt-actions">
+          <button id="tape-close" type="button">Close</button>
+          <button id="tape-open" class="alt-save" type="button">Open as spreadsheet</button>
+        </div>
+      </div>
+    </dialog>
 
     <!--
       Alt text: a picture's alternative text, short and long (`svg:title`, `svg:desc`), written

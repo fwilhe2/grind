@@ -1041,6 +1041,44 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("with nothing to undo across the boundary", byId("undo").disabled, true);
   check("named after its kind", byId("name").textContent, "untitled.fods");
 
+  // The tape (doc/calc.md): lines typed with their values beside them, undone, and opened
+  // as a spreadsheet one row each.
+  check("the bar offers the scratch calculator over a grid", byId("tape-button").hidden, false);
+  await press_button("tape-button");
+  check("its button opens the tape", byId("tape").open, true);
+  const tapeLine = (text) => {
+    byId("tape-input").value = text;
+    byId("tape-input").dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  };
+  const tapeValues = () => [...document.querySelectorAll("#tape-lines .tape-value")].map((v) => v.textContent);
+  tapeLine("vat = 0.19");
+  tapeLine("1200 * (1 + vat)");
+  check("each line shows its value", tapeValues(), ["0.19", "1428"]);
+  tapeLine("1 +");
+  check("a line that does not read is not added", tapeValues().length, 2);
+  check("and stays to be fixed", byId("tape-input").value, "1 +");
+  byId("tape-undo").click();
+  check("undo takes a line away", tapeValues(), ["0.19"]);
+  byId("tape-redo").click();
+  check("and redo brings it back", tapeValues(), ["0.19", "1428"]);
+  const tapeFirst = document.querySelector("#tape-lines .tape-text");
+  tapeFirst.value = "vat = 0.07";
+  tapeFirst.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  check("editing a line in place recomputes what reads it", tapeValues(), ["0.07", "1284"]);
+  byId("tape-close").click();
+  await command("Scratch calculator");
+  check("closing keeps the tape", tapeValues(), ["0.07", "1284"]);
+  await press_button("tape-open");
+  check("Open as spreadsheet closes the tape", byId("tape").open, false);
+  check("and puts its lines in the grid, a name in A", shown(), "vat");
+  press("ArrowRight");
+  await frame();
+  check("its number in B", shown(), "0.07");
+  press("ArrowDown");
+  await frame();
+  check("and a formula that reads the name", [shown(), byId("formula").value], ["1284", "=1200*(1+vat)"]);
+  check("named for the tape", byId("name").textContent, "tape.fods");
+
   await command("New text document");
   check("and a new text document replaces that", byId("page").hidden, false);
   check("with the grid away", byId("surface").hidden, true);

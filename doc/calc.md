@@ -168,7 +168,10 @@ extract is status 1. `doc/cli-parity-calc.md` maps every `Tape` method to its sp
 **The terminal shell** has a tape pane (`:tape`, or `grind-tui --tape`); `doc/tui-shell.md` has
 its keys. **The GNOME spreadsheet window** has a tape dialog (*Scratch Calculator*, or
 `grind-sheet-gtk --tape`) and *Extract a Number into a Named Cell…*; `doc/sheet-shell.md` says
-how. The other graphical shells have neither (`doc/feature-matrix.md`).
+how. **The browser shell** has the tape as a dialog (the calculator button over a spreadsheet,
+or Ctrl+K → *Scratch calculator*; `ui_web/src/tape.rs`): lines typed, edited in place and
+deleted, undo and redo, and *Open as spreadsheet*. `doc/feature-matrix.md` says which shells
+have which.
 
 ## 8. Not built
 
