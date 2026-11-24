@@ -18,8 +18,8 @@ lands, and the release workflow publishes the section as it stands.
 - `grind calc`, a scratch calculator (experimental): type formulas line by line, refer to an
   earlier line as `#3` or name one as `vat = 0.19`, and save the lines as a spreadsheet with
   `--save`. Numbers follow `--locale`. In the terminal version it is `grind-tui --tape`, or
-  `:tape`; in the spreadsheet window, *Scratch Calculator* in the menu, with *Open as
-  Spreadsheet* to carry on in a sheet.
+  `:tape`; in the spreadsheet window, the calculator button in the header bar or *Scratch
+  Calculator* in the menu, with *Open as Spreadsheet* to carry on in a sheet.
 - `grind sheet extract`, and *Extract a Number into a Named Cell…* in the spreadsheet window,
   move a number out of a formula into a named input cell, and have the formula use the name
   instead.

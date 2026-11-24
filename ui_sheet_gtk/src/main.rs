@@ -271,15 +271,15 @@ impl Ui {
         header.pack_end(&menu);
         header.pack_end(&chrome::view_menu(&grid));
 
-        // The palette's own button. A header bar has no room to teach Ctrl+K, and a verb
-        // nobody can find is a verb that does not exist — so the growth valve gets the one
-        // affordance that says it is there (`doc/sheet-shell.md`, "Four surfaces").
-        let find = gtk::Button::builder()
-            .icon_name("system-search-symbolic")
-            .action_name("win.palette")
-            .tooltip_text("Find a command (Ctrl+K)")
-            .build();
-        header.pack_end(&find);
+        for (icon, action, tooltip) in HEADER_BUTTONS {
+            header.pack_end(
+                &gtk::Button::builder()
+                    .icon_name(*icon)
+                    .action_name(*action)
+                    .tooltip_text(*tooltip)
+                    .build(),
+            );
+        }
 
         let banner = adw::Banner::new("");
         let spelling_badge = chrome::number_badge();
@@ -2793,6 +2793,22 @@ fn actions() -> Vec<Verb> {
     ]
 }
 
+/// The header bar's plain buttons after View, packed right to left. The palette's own comes
+/// first: a header bar has no room to teach Ctrl+K, and a verb nobody can find does not exist
+/// (`doc/sheet-shell.md`, "Four surfaces"). The tape's is there by the author's call.
+const HEADER_BUTTONS: &[(&str, &str, &str)] = &[
+    (
+        "system-search-symbolic",
+        "win.palette",
+        "Find a command (Ctrl+K)",
+    ),
+    (
+        "accessories-calculator-symbolic",
+        "win.tape",
+        "Scratch Calculator",
+    ),
+];
+
 /// The primary menu: **the document and the window, nothing about the selection** — the HIG's
 /// rule. Cell verbs are in the grid's context menu, how the document is shown in the View menu,
 /// the sheet verbs on the tab. What is left is the file verbs, what is done to a document as a
@@ -3110,6 +3126,22 @@ mod chrome_tests {
                 );
             }
         }
+    }
+
+    /// The same for the header bar's buttons, which a missing action greys just as silently.
+    #[test]
+    fn every_header_button_names_an_action_the_window_has() {
+        let known = every_action();
+        for (_, action, tooltip) in HEADER_BUTTONS {
+            let name = action.trim_prefix("win.");
+            assert!(known.contains(&name), "{tooltip} points at {action}");
+        }
+        assert!(
+            HEADER_BUTTONS
+                .iter()
+                .any(|(_, action, _)| *action == "win.tape"),
+            "the scratch calculator has a button"
+        );
     }
 
     /// The surfaces divide the verbs rather than repeat them; the two exceptions mean different

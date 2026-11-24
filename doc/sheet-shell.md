@@ -472,7 +472,7 @@ Four surfaces. Each has a test that says what may go in it, and only one of them
 
 | Surface | A control belongs here when… | Grows with features? |
 |---|---|---|
-| **Header bar** | it is about the document as a whole, or about the window | **No** — five slots, and they are spoken for |
+| **Header bar** | it is about the document as a whole, or about the window | **No** — six slots, and they are spoken for |
 | **Format bar** (`chrome::format_bar`) | it **reads *and* writes** a property of the selection | No — bounded by `CellStyle` + `Format` |
 | **Context menus** (cells, sheet tab, column/row header, chart) | it acts on the thing under the pointer | Slowly, bounded by what the thing *is* |
 | **Command palette** (`palette.rs`) + the menus | anything else | **Yes. This is the growth valve** |
@@ -483,9 +483,11 @@ Stated as one sentence, which is the sentence to hold this window to:
 
 ### Where everything went
 
-- **Header bar**: Open · Undo/Redo · | · Find a Command (Ctrl+K) · View · ☰. The *Chart*
-  button left it — inserting a chart is a verb about a selection, so it is in the cell menu and
-  the palette. Nothing is added to this bar again.
+- **Header bar**: Open · Undo/Redo · | · Scratch Calculator · Find a Command (Ctrl+K) · View ·
+  ☰. The *Chart* button left it — inserting a chart is a verb about a selection, so it is in the
+  cell menu and the palette. The calculator came in by the author's call: it is about the window,
+  not the document or the selection, and a tape is wanted before there is anything to select.
+  Nothing else is added to this bar.
 - **Format bar**: exactly the old Format page, unwrapped from the stack. It is now the window's
   only toolbar and its membership rule is the whole reason it can stay visible.
 - **View menu** (`chrome::view_menu`): the zoom group as a custom child, Fit Content, and the
@@ -513,8 +515,8 @@ Stated as one sentence, which is the sentence to hold this window to:
   Keyboard Shortcuts · About. **Nothing about the selection**, which is the HIG's own rule for
   a primary menu and the thing that finally sizes it.
 - **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
-- **The tape** (`doc/calc.md`, an experiment; `tape.rs`): *Scratch Calculator* in the palette
-  and the primary menu, or `grind-sheet-gtk --tape`, opens an `adw::Dialog` centred over this
+- **The tape** (`doc/calc.md`, an experiment; `tape.rs`): *Scratch Calculator* in the header bar,
+  the palette and the primary menu, or `grind-sheet-gtk --tape`, opens an `adw::Dialog` centred over this
   window. The window keeps it, so closing it keeps the tape for the next time, and while it is
   open the window's Undo and Redo step the tape. One `adw::EntryRow` per line (its
   handle, its text to edit in place, its value, *Name…* and delete), an entry at the bottom for
