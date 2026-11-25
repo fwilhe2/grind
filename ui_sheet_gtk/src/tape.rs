@@ -14,9 +14,10 @@ use libadwaita as adw;
 use libadwaita::gtk;
 use libadwaita::prelude::*;
 
+use grind_sheet::formula::assist::{self, Assist, Ink};
 use grind_sheet::locale::Locale;
-use grind_sheet::{Document, Tape};
-use gtk::{gio, glib};
+use grind_sheet::{Document, Tape, TapeInk};
+use gtk::{gio, glib, pango};
 
 pub struct TapeDialog {
     tape: RefCell<Tape>,
@@ -28,6 +29,9 @@ pub struct TapeDialog {
     banner: adw::Banner,
     toasts: adw::ToastOverlay,
     input: gtk::Entry,
+    /// The offers for the word the entry's caret is in, or the call it is inside.
+    assist: RefCell<Assist>,
+    band: gtk::Label,
     undo: gtk::Button,
     redo: gtk::Button,
     /// Hands a promoted tape to the sheet window.
@@ -87,14 +91,22 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
     let toasts = adw::ToastOverlay::new();
     toasts.set_child(Some(&body));
 
+    let band = gtk::Label::builder()
+        .xalign(0.0)
+        .ellipsize(pango::EllipsizeMode::End)
+        .build();
+    band.add_css_class("caption");
+    band.add_css_class("monospace");
     let bottom = gtk::Box::builder()
-        .spacing(6)
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(4)
         .margin_top(6)
         .margin_bottom(6)
         .margin_start(12)
         .margin_end(12)
         .build();
     bottom.append(&input);
+    bottom.append(&band);
 
     let undo = gtk::Button::from_icon_name("edit-undo-symbolic");
     undo.set_tooltip_text(Some("Undo (Ctrl+Z)"));
@@ -133,6 +145,8 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
         banner,
         toasts,
         input,
+        assist: RefCell::new(Assist::default()),
+        band,
         undo,
         redo,
         open_as_sheet,
@@ -157,6 +171,44 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
             }
         }
     ));
+    this.input.connect_changed(glib::clone!(
+        #[weak]
+        this,
+        move |_| this.typed()
+    ));
+    this.input.connect_notify_local(
+        Some("cursor-position"),
+        glib::clone!(
+            #[weak]
+            this,
+            move |_, _| this.typed()
+        ),
+    );
+    // Tab takes the offer and the arrows choose one, while there are offers; Escape puts them
+    // away rather than closing the dialog.
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    keys.connect_key_pressed(glib::clone!(
+        #[weak]
+        this,
+        #[upgrade_or]
+        glib::Propagation::Proceed,
+        move |_, key, _, modifiers| {
+            if !this.assist.borrow().is_offering() || !modifiers.is_empty() {
+                return glib::Propagation::Proceed;
+            }
+            match key {
+                gtk::gdk::Key::Tab => this.accept(),
+                gtk::gdk::Key::Down => this.assist.borrow_mut().step(1),
+                gtk::gdk::Key::Up => this.assist.borrow_mut().step(-1),
+                gtk::gdk::Key::Escape => this.assist.borrow_mut().dismiss(),
+                _ => return glib::Propagation::Proceed,
+            }
+            this.draw_band();
+            glib::Propagation::Stop
+        }
+    ));
+    this.input.add_controller(keys);
     this.undo.connect_clicked(glib::clone!(
         #[weak]
         this,
@@ -234,6 +286,60 @@ impl TapeDialog {
         self.toasts.add_toast(adw::Toast::new(text));
     }
 
+    /// The entry's words coloured, and the offers for the one its caret is in.
+    fn typed(&self) {
+        let text = self.input.text().to_string();
+        let caret = byte_at(&text, self.input.position());
+        {
+            let tape = self.tape.borrow();
+            tape.assist(&mut self.assist.borrow_mut(), &text, caret);
+            self.input.set_attributes(&inked(&tape, &text, Some(caret)));
+        }
+        self.draw_band();
+    }
+
+    /// Tab: the chosen offer into the entry, the caret after it.
+    fn accept(&self) {
+        let Some((span, insert)) = self.assist.borrow_mut().accept() else {
+            return;
+        };
+        let mut text = self.input.text().to_string();
+        if text.get(span.clone()).is_none() {
+            return;
+        }
+        text.replace_range(span.clone(), &insert);
+        let caret = text[..span.start + insert.len()].chars().count();
+        self.input.set_text(&text);
+        self.input.set_position(i32::try_from(caret).unwrap_or(-1));
+        self.typed();
+    }
+
+    fn draw_band(&self) {
+        let pieces = assist::band(&self.assist.borrow(), true);
+        if pieces.is_empty() {
+            self.band.set_markup(&format!(
+                "<span alpha=\"60%\">{}</span>",
+                glib::markup_escape_text(
+                    "Enter: add the line  \u{b7}  Tab: complete a name or a function"
+                )
+            ));
+            return;
+        }
+        let accent = rgb_hex(ink_rgb(TapeInk::Name, is_dark()).unwrap_or((0, 0, 0)));
+        let markup: String = pieces
+            .iter()
+            .map(|piece| {
+                let text = glib::markup_escape_text(&piece.text);
+                match piece.ink {
+                    Ink::Strong => format!("<b><span foreground=\"{accent}\">{text}</span></b>"),
+                    Ink::Muted => format!("<span alpha=\"60%\">{text}</span>"),
+                    Ink::Plain => text.to_string(),
+                }
+            })
+            .collect();
+        self.band.set_markup(&markup);
+    }
+
     /// Undo, or redo with `back` false.
     pub fn step(self: &Rc<Self>, back: bool) {
         let done = if back {
@@ -268,6 +374,9 @@ impl TapeDialog {
         }
         self.undo.set_sensitive(tape.can_undo());
         self.redo.set_sensitive(tape.can_redo());
+        drop(tape);
+        // A name the entry reads may have come or gone with the line.
+        self.typed();
     }
 
     /// One line: its handle, its text editable in place, its value, and what can be done to it.
@@ -278,6 +387,15 @@ impl TapeDialog {
             .show_apply_button(true)
             .build();
         row.add_css_class("monospace");
+        row.set_attributes(Some(&inked(&self.tape.borrow(), &line.text, None)));
+        row.connect_changed(glib::clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |row| {
+                let text = row.text().to_string();
+                row.set_attributes(Some(&inked(&this.tape.borrow(), &text, None)));
+            }
+        ));
         row.connect_apply(glib::clone!(
             #[weak(rename_to = this)]
             self,
@@ -414,6 +532,57 @@ impl TapeDialog {
     }
 }
 
+fn is_dark() -> bool {
+    adw::StyleManager::default().is_dark()
+}
+
+/// Adwaita's palette for each kind of word; `None` for the label's own ink.
+fn ink_rgb(ink: TapeInk, dark: bool) -> Option<(u8, u8, u8)> {
+    let pick = |light, night| Some(if dark { night } else { light });
+    match ink {
+        TapeInk::Definition => None,
+        TapeInk::Name | TapeInk::Handle => pick((0x1c, 0x71, 0xd8), (0x78, 0xae, 0xed)),
+        TapeInk::Function => pick((0x81, 0x3d, 0x9c), (0xdc, 0x8a, 0xdd)),
+        TapeInk::Number => pick((0x26, 0xa2, 0x69), (0x8f, 0xf0, 0xa4)),
+        TapeInk::Text => pick((0xc6, 0x46, 0x00), (0xff, 0xbe, 0x6f)),
+        TapeInk::Error | TapeInk::Unknown => pick((0xc0, 0x1c, 0x28), (0xff, 0x7b, 0x63)),
+    }
+}
+
+fn rgb_hex((r, g, b): (u8, u8, u8)) -> String {
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+/// Pango's attributes for `text`'s words, in the byte ranges `Tape::spans` gives, which are
+/// Pango's own unit. The name a line defines is bold.
+fn inked(tape: &Tape, text: &str, caret: Option<usize>) -> pango::AttrList {
+    let list = pango::AttrList::new();
+    let dark = is_dark();
+    for span in tape.spans(text, caret) {
+        let mut attr: pango::Attribute = match ink_rgb(span.ink, dark) {
+            Some((r, g, b)) => pango::AttrColor::new_foreground(
+                u16::from(r) * 257,
+                u16::from(g) * 257,
+                u16::from(b) * 257,
+            )
+            .into(),
+            None => pango::AttrInt::new_weight(pango::Weight::Bold).into(),
+        };
+        attr.set_start_index(u32::try_from(span.range.start).unwrap_or(u32::MAX));
+        attr.set_end_index(u32::try_from(span.range.end).unwrap_or(u32::MAX));
+        list.insert(attr);
+    }
+    list
+}
+
+/// The byte offset of the `chars`th character, as a GTK caret position counts them.
+fn byte_at(text: &str, chars: i32) -> usize {
+    usize::try_from(chars)
+        .ok()
+        .and_then(|n| text.char_indices().nth(n).map(|(at, _)| at))
+        .unwrap_or(text.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,10 +630,20 @@ mod tests {
         tape.step(false);
         assert_eq!(rows(&tape.list), 1, "and redo brought it back");
 
+        // A word offers the tape's names first, Tab takes it, and the entry colours it.
+        tape.input.set_text("net = 1200");
+        tape.input.emit_activate();
+        tape.input.set_text("2 * ne");
+        tape.input.set_position(-1);
+        assert!(tape.band.text().starts_with("net"), "{}", tape.band.text());
+        tape.accept();
+        assert_eq!(tape.input.text(), "2 * net");
+        tape.input.set_text("");
+
         tape.dialog.close();
         assert!(!tape.is_open());
         tape.present(&parent);
-        assert_eq!(rows(&tape.list), 1, "closing kept the tape");
+        assert_eq!(rows(&tape.list), 2, "closing kept the tape");
         parent.close();
     }
 }

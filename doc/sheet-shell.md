@@ -520,7 +520,10 @@ Stated as one sentence, which is the sentence to hold this window to:
   window. The window keeps it, so closing it keeps the tape for the next time, and while it is
   open the window's Undo and Redo step the tape. One `adw::EntryRow` per line (its
   handle, its text to edit in place, its value, *Name…* and delete), an entry at the bottom for
-  the next line, undo and redo in its header, a banner for a circle. *Open as Spreadsheet*
+  the next line, undo and redo in its header, a banner for a circle. Every line's text and the
+  entry are coloured by `Tape::spans` (Pango attributes, which count bytes as the spans do), and a
+  line under the entry shows `Tape::assist`'s offers: Tab takes one, the arrows choose, Escape
+  puts them away. *Open as Spreadsheet*
   closes the dialog and puts the promoted tape into this window the way an import arrives: unsaved, with no path, and Save
   offering `tape.fods`. *Extract a Number into a Named Cell…* is the same operation on the active
   cell's formula, as a palette verb.

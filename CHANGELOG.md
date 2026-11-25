@@ -22,10 +22,12 @@ lands, and the release workflow publishes the section as it stands.
   Calculator* in the menu, with *Open as Spreadsheet* to carry on in a sheet; in the browser,
   the calculator button over a spreadsheet, or *Scratch calculator* in Ctrl+K; on Windows,
   *Data ▸ Scratch Calculator…*; on a Mac, *Edit ▸ Scratch Calculator…*.
-- The scratch calculator in the browser, on Windows and on a Mac is a notebook: type a line, press Enter, and the next
-  one is ready; Enter on an earlier line opens a new one under it, the arrow keys move between
-  lines, and Backspace in an empty line removes it. While you type, Tab completes the names your
-  lines define and the functions, and a name the tape knows is coloured apart from a misspelt one.
+- The scratch calculator in the browser, on Windows and on a Mac is a notebook: type a line,
+  press Enter, and the next one is ready; Enter on an earlier line opens a new one under it, the
+  arrow keys move between lines, and Backspace in an empty line removes it.
+- The scratch calculator completes as you type: Tab takes the names your lines define, offered
+  first with their values, and the functions. A name the tape knows is coloured apart from a
+  misspelt one. In the browser, on Windows, on a Mac and in the spreadsheet window.
 - `grind sheet extract`, and *Extract a Number into a Named Cell…* in the spreadsheet window,
   move a number out of a formula into a named input cell, and have the formula use the name
   instead.
