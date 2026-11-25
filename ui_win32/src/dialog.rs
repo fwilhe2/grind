@@ -357,11 +357,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetLayeredWindowAttributes, SetPropW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
     TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT,
     WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_GETDLGCODE, WM_KEYDOWN,
-    WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY,
-    WM_NCHITTEST, WM_PAINT, WM_SETFONT, WM_USER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
-    WS_DISABLED, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_TABSTOP,
-    WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    WM_LBUTTONDOWN, WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE,
+    WM_NCDESTROY, WM_NCHITTEST, WM_NOTIFY, WM_PAINT, WM_SETFONT, WM_USER, WNDCLASSW, WS_CAPTION,
+    WS_CHILD, WS_CLIPCHILDREN, WS_DISABLED, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WS_POPUP, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
 };
+
+mod notebook;
+pub use notebook::scratch;
 
 use crate::gdi::{Across, Brush, Font, Measure, Selected};
 use crate::modal::{self, Edges, End};
@@ -474,6 +477,8 @@ enum Body {
     /// A picture's alternative text: the picture, the short field and its advice, and the long
     /// description (`grind_text::picture`).
     Alt(Alt),
+    /// The scratch calculator's notebook (`notebook.rs`).
+    Tape(Box<notebook::TapeBody>),
 }
 
 /// The alt text modal's own state.
@@ -801,6 +806,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
                 modal::list_body(rows.len(), widest, chrome, dpi)
             }
             Body::Chart { .. } => (s(520.0), s(320.0)),
+            Body::Tape(_) => (s(600.0), s(460.0)),
             Body::Alt(_) => modal::alt_wanted(dpi),
             Body::Pages(pages) => {
                 // As tall as the screen allows, and as wide as the page is at that height.
@@ -953,6 +959,12 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
             if message.message == WM_KEYDOWN && turn_page(popup, message.wParam.0 as u16) {
                 continue;
             }
+            // The tape's keys, before the dialog manager spends Enter, Tab and the arrows.
+            if message.message == WM_KEYDOWN
+                && notebook::key(popup, message.hwnd, message.wParam.0 as u16)
+            {
+                continue;
+            }
             if IsDialogMessageW(popup, &raw const message).as_bool() {
                 continue;
             }
@@ -1020,6 +1032,7 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
                 Body::Reader { .. } => 2,
                 Body::List { is_multi, .. } => 3 + u8::from(*is_multi),
                 Body::Alt(_) => 5,
+                Body::Tape(_) => 6,
                 _ => 0,
             };
             (modal.dpi, specs, kind)
@@ -1248,6 +1261,11 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
                 }
                 (list, well)
             }
+            6 => {
+                let edit = notebook::control(popup, &make, theme());
+                set_font(edit);
+                (edit, RECT::default())
+            }
             _ => (HWND::default(), RECT::default()),
         };
 
@@ -1283,6 +1301,9 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
             }
         });
         enable_page_buttons(popup);
+        if body_kind == 6 {
+            notebook::sync(popup);
+        }
     }
 }
 
@@ -1440,6 +1461,8 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
             let id = unsafe { with_modal(hwnd, |modal| modal.default_id()) }.unwrap_or(IDOK.0);
             LRESULT((DC_HASDEFID << 16) | id as isize)
         }
+        WM_NOTIFY if notebook::notify(hwnd, lparam) => LRESULT(0),
+        WM_LBUTTONDOWN if notebook::click(hwnd, lparam) => LRESULT(0),
         WM_COMMAND => {
             command(
                 hwnd,
@@ -1470,6 +1493,9 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
 
 /// A button, a double click on a row, or the field gaining or losing the keyboard.
 fn command(hwnd: HWND, id: i32, code: u32) {
+    if notebook::command(hwnd, id, code) {
+        return;
+    }
     // SAFETY: one borrow per step, with repaints queued after it is released.
     unsafe {
         if id as usize == ID_EDIT && code == EN_CHANGE {
@@ -1809,6 +1835,7 @@ fn paint_body(modal: &mut Modal, out: HDC, body: Rect) {
         Body::List { .. } => {
             gdi::round_rect(out, modal.well, radius, theme.background, theme.stroke);
         }
+        Body::Tape(_) => notebook::paint(modal, out, body),
         Body::Chart {
             pictures,
             shown,

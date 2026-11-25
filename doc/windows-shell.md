@@ -270,10 +270,13 @@ take ids below `FIRST_ID`, which is what keeps a control's notification and a me
 in the one message Win32 uses for both.
 
 So where the GNOME window gives the tape (`doc/calc.md`) a header-bar button, this
-shell gives it **Data ▸ Scratch Calculator…**. It is the list modal again (`tape.rs`, portable):
-one row per line with its value, then *Add a Line…*, *Undo*, *Redo* and *Open as Spreadsheet*;
-picking a line edits it in the prompt, and emptying it deletes it. The tape stays with the window,
-and goes along into the spreadsheet it opens as. Not built: *Name a number* (`Tape::extract`).
+shell gives it **Data ▸ Scratch Calculator…**: a notebook (`doc/calc.md` §7) in the modal's
+own frame (`dialog/notebook.rs`, its layout, keys and colours portable in `tape.rs`). The rows are
+drawn, words coloured by `Tape::spans`; one rich edit (Msftedit's `RICHEDIT50W`, a plain `EDIT`
+where it will not load) sits over the caret's row and colours what is typed. Its keys go to
+`grind_sheet::TapeEditor` before the dialog manager's, and a click on a row moves the caret
+there. The offers sit under the rows, Ctrl+Z is the tape's undo, and *Open as Spreadsheet*
+closes it. The tape stays with the window, and goes along into the spreadsheet it opens as. Not built: *Name a number* (`Tape::extract`).
 
 ### 5. `--render-to`, with no window and no display
 

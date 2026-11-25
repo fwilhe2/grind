@@ -4795,80 +4795,28 @@ fn find_calculation(hwnd: HWND) {
     }
 }
 
-/// Data ▸ Scratch Calculator… — the tape as a list modal (`tape::rows`): picking a line edits it
-/// (emptied, it goes), and the rows after the lines add one, undo, redo and open the tape as a
-/// spreadsheet. The list comes back after each step until it is dismissed.
+/// Data ▸ Scratch Calculator… — the tape as a notebook (`dialog::scratch`), kept with the window
+/// between openings, and opened as a spreadsheet when it closes on that button.
 fn scratch_calculator(hwnd: HWND) {
-    let mut chosen = 0;
-    loop {
-        // SAFETY: one borrow, released before the list.
-        let Some((rows, picks, texts, label)) = (unsafe {
-            with_sheet(hwnd, |state| {
-                let locale = state.app.locale();
-                let tape = state
-                    .tape
-                    .get_or_insert_with(|| grind_sheet::Tape::new(locale));
-                let (rows, picks) = crate::tape::rows(tape);
-                let texts: Vec<String> = tape.lines().into_iter().map(|line| line.text).collect();
-                (rows, picks, texts, crate::tape::label(tape))
-            })
-        }) else {
-            return;
-        };
-        let Some(at) = dialog::choose(
-            hwnd,
-            "Scratch Calculator",
-            &rows,
-            chosen.min(rows.len() - 1),
-        ) else {
-            return;
-        };
-        chosen = at;
-        let Some(&pick) = picks.get(at) else {
-            return;
-        };
-        let typed = match pick {
-            crate::tape::Pick::Add => match dialog::prompt(hwnd, "Add a Line", &label, "") {
-                Some(text) if !text.trim().is_empty() => Some(text),
-                _ => continue,
-            },
-            crate::tape::Pick::Line(line) => {
-                let initial = texts.get(line).cloned().unwrap_or_default();
-                match dialog::prompt(hwnd, &format!("Line #{}", line + 1), &label, &initial) {
-                    Some(text) => Some(text),
-                    None => continue,
-                }
-            }
-            crate::tape::Pick::Open => return open_tape(hwnd),
-            crate::tape::Pick::Undo | crate::tape::Pick::Redo => None,
-        };
-        // SAFETY: one borrow, released before the error box.
-        let refused = unsafe {
-            with_sheet(hwnd, |state| {
-                let tape = state.tape.as_mut()?;
-                let done = match (pick, typed) {
-                    (crate::tape::Pick::Add, Some(text)) => tape.push(&text).map(|_| ()),
-                    (crate::tape::Pick::Line(line), Some(text)) if text.trim().is_empty() => {
-                        tape.delete(line)
-                    }
-                    (crate::tape::Pick::Line(line), Some(text)) => tape.edit(line, &text),
-                    (crate::tape::Pick::Undo, _) => {
-                        tape.undo();
-                        Ok(())
-                    }
-                    (crate::tape::Pick::Redo, _) => {
-                        tape.redo();
-                        Ok(())
-                    }
-                    _ => Ok(()),
-                };
-                done.err().map(|error| error.to_string())
-            })
-        }
-        .flatten();
-        if let Some(refused) = refused {
-            dialog::error(hwnd, &refused);
-        }
+    // SAFETY: one borrow, released before the modal.
+    let Some(tape) = (unsafe {
+        with_sheet(hwnd, |state| {
+            let locale = state.app.locale();
+            state
+                .tape
+                .take()
+                .unwrap_or_else(|| grind_sheet::Tape::new(locale))
+        })
+    }) else {
+        return;
+    };
+    let (tape, open) = dialog::scratch(hwnd, tape);
+    // SAFETY: one borrow, no dialog.
+    unsafe {
+        with_sheet(hwnd, |state| state.tape = Some(tape));
+    }
+    if open {
+        open_tape(hwnd);
     }
 }
 

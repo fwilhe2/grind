@@ -76,6 +76,7 @@ windows = { version = "0.62", features = [
     # `GetCurrentThreadId`, for the drawn menu bar's message filter (`menubar.rs`).
     "Win32_System_Threading",
     "Win32_UI_Controls",
+    "Win32_UI_Controls_RichEdit",
     # Print… (doc/pdf-export.md): the system's print dialog, and the print job its DC is for.
     "Win32_UI_Controls_Dialogs",
     "Win32_Storage_Xps",
