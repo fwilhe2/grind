@@ -1041,30 +1041,63 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("with nothing to undo across the boundary", byId("undo").disabled, true);
   check("named after its kind", byId("name").textContent, "untitled.fods");
 
-  // The tape (doc/calc.md): lines typed with their values beside them, undone, and opened
-  // as a spreadsheet one row each.
+  // The tape (doc/calc.md): a notebook of rows typed in place, Enter for the next, names
+  // completed and coloured, undone, and opened as a spreadsheet one row each.
   check("the bar offers the scratch calculator over a grid", byId("tape-button").hidden, false);
   await press_button("tape-button");
   check("its button opens the tape", byId("tape").open, true);
-  const tapeLine = (text) => {
-    byId("tape-input").value = text;
-    byId("tape-input").dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  const tapeRows = () => [...document.querySelectorAll("#tape-lines .tape-text")];
+  const tapeKey = (input, key) =>
+    input.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true }));
+  const tapeEdit = (text) => {
+    const input = document.activeElement;
+    input.value = text;
+    input.setSelectionRange(text.length, text.length);
+    input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    return input;
   };
-  const tapeValues = () => [...document.querySelectorAll("#tape-lines .tape-value")].map((v) => v.textContent);
-  tapeLine("vat = 0.19");
-  tapeLine("1200 * (1 + vat)");
+  const tapeType = (text, key = "Enter") => tapeKey(tapeEdit(text), key);
+  const tapeValues = () =>
+    [...document.querySelectorAll("#tape-lines li:not(.blank) .tape-value")].map((v) => v.textContent);
+  check("the caret starts in the blank row", document.activeElement === tapeRows()[0], true);
+  tapeType("vat = 0.19");
+  tapeType("1200 * (1 + vat)");
   check("each line shows its value", tapeValues(), ["0.19", "1428"]);
-  tapeLine("1 +");
+  check("and Enter leaves the caret in a new blank row", document.activeElement === tapeRows()[2], true);
+  const typing = tapeEdit("2 * va");
+  check("a word offers the tape's names first", byId("tape-assist").textContent.startsWith("vat"), true);
+  check("with the line and value", byId("tape-assist").textContent.includes("#1 = 0.19"), true);
+  tapeKey(typing, "Tab");
+  check("Tab takes the offer", typing.value, "2 * vat");
+  check("and the name is coloured as one the tape has",
+    typing.closest("li").querySelector(".ink-name")?.textContent, "vat");
+  tapeEdit("2 * fo");
+  check("but not the word still being typed", typing.closest("li").querySelector(".ink-unknown"), null);
+  tapeEdit("nope * 2");
+  check("a name no line has is marked", typing.closest("li").querySelector(".ink-unknown")?.textContent, "nope");
+  tapeType("1 +");
   check("a line that does not read is not added", tapeValues().length, 2);
-  check("and stays to be fixed", byId("tape-input").value, "1 +");
+  check("and keeps the caret to be fixed", [document.activeElement === typing, typing.value], [true, "1 +"]);
+  check("saying why", byId("tape-note").textContent.length > 0, true);
+  tapeType("", "Backspace");
+  check("Backspace in an empty row goes up a line", document.activeElement === tapeRows()[1], true);
+  tapeKey(document.activeElement, "ArrowUp");
+  check("and so does the up arrow", document.activeElement === tapeRows()[0], true);
   byId("tape-undo").click();
   check("undo takes a line away", tapeValues(), ["0.19"]);
   byId("tape-redo").click();
   check("and redo brings it back", tapeValues(), ["0.19", "1428"]);
-  const tapeFirst = document.querySelector("#tape-lines .tape-text");
+  const tapeFirst = tapeRows()[0];
   tapeFirst.value = "vat = 0.07";
   tapeFirst.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
   check("editing a line in place recomputes what reads it", tapeValues(), ["0.07", "1284"]);
+  tapeFirst.focus();
+  tapeKey(tapeFirst, "Enter");
+  check("Enter on a line opens a row under it", tapeRows().length, 4);
+  tapeType("5");
+  check("which becomes a line there", tapeValues(), ["0.07", "5", "1284"]);
+  byId("tape-undo").click();
+  check("and undo takes it back", tapeValues(), ["0.07", "1284"]);
   byId("tape-close").click();
   await command("Scratch calculator");
   check("closing keeps the tape", tapeValues(), ["0.07", "1284"]);

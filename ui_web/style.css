@@ -784,25 +784,98 @@ input[type="text"] {
   font-variant-numeric: tabular-nums;
 }
 
-.tape input {
-  box-sizing: border-box;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: Canvas;
-  color: CanvasText;
-  font: 13px/1.4 ui-monospace, monospace;
-}
-
-.tape-lines .tape-text {
+/* A row's text is an input over a layer that colours its words: the input's own letters are
+   transparent, its caret and selection are not, and both boxes measure alike. */
+.tape-edit {
+  position: relative;
   flex: 1;
   min-width: 0;
-  border-color: transparent;
 }
 
-.tape-lines .tape-text:hover,
-.tape-lines .tape-text:focus {
+.tape .tape-text,
+.tape .tape-ink {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: 13px/1.4 ui-monospace, monospace;
+  letter-spacing: 0;
+}
+
+.tape .tape-text {
+  position: relative;
+  display: block;
+  background: transparent;
+  color: transparent;
+  caret-color: CanvasText;
+}
+
+.tape .tape-text::placeholder {
+  color: color-mix(in srgb, CanvasText 40%, Canvas);
+}
+
+.tape .tape-text:hover,
+.tape .tape-text:focus {
   border-color: var(--line);
+  outline: none;
+}
+
+.tape .tape-text:focus {
+  border-color: AccentColor;
+}
+
+.tape-ink {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  white-space: pre;
+  color: CanvasText;
+  pointer-events: none;
+}
+
+.ink-def {
+  font-weight: 600;
+}
+
+.ink-name,
+.ink-handle {
+  color: light-dark(#1c6fd1, #6cb2ff);
+  font-weight: 600;
+}
+
+.ink-func {
+  color: light-dark(#7c3aed, #c4a1ff);
+}
+
+.ink-num {
+  color: light-dark(#047857, #5fd3a5);
+}
+
+.ink-text {
+  color: light-dark(#b45309, #f0b46a);
+}
+
+.ink-error,
+.ink-unknown {
+  color: light-dark(#d6342c, #ff7b72);
+  text-decoration: underline wavy currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.tape-lines li.blank .tape-handle {
+  opacity: 0.6;
+}
+
+.tape-assist {
+  min-height: 1.4em;
+  margin: 0;
+}
+
+.tape-assist.idle {
+  color: color-mix(in srgb, CanvasText 45%, Canvas);
 }
 
 .tape-value {

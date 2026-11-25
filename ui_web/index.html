@@ -304,8 +304,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <dialog id="explain" class="about"></dialog>
 
     <!--
-      The tape (doc/calc.md): a scratch calculator, one line per formula with its
-      value beside it, kept by ui_web/src/tape.rs for the rest of the visit. "Open as spreadsheet"
+      The tape (doc/calc.md): a scratch calculator, one row per line edited in place with its
+      value beside it and a blank row after the last, kept by ui_web/src/tape.rs for the visit. "Open as spreadsheet"
       puts its lines into the grid, one row each.
     -->
     <dialog id="tape" class="alt tape" aria-labelledby="tape-heading">
@@ -328,10 +328,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </button>
         </div>
         <p id="tape-empty" class="alt-hint">Type a formula without its =, as in a cell, and press
-          Enter. #2 reads line 2; vat = 0.19 names a line so others can write vat.</p>
-        <ol id="tape-lines" class="tape-lines" hidden></ol>
-        <input id="tape-input" type="text" autocomplete="off" spellcheck="false"
-               placeholder="1200 * 1.19" aria-label="Next line">
+          Enter for the next line. #2 reads line 2; vat = 0.19 names a line so others can write
+          vat, and Tab completes a name or a function.</p>
+        <ol id="tape-lines" class="tape-lines"></ol>
+        <p id="tape-assist" class="assist tape-assist idle"></p>
         <p id="tape-note" class="tape-note" aria-live="polite"></p>
         <div class="alt-actions">
           <button id="tape-close" type="button">Close</button>
