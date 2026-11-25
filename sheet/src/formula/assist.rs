@@ -273,6 +273,16 @@ impl Assist {
         self.offers = offers;
     }
 
+    /// [`refresh`](Self::refresh) over a formula's body with no `=`, as a tape's line is typed.
+    pub fn refresh_bare(&mut self, text: &str, caret: usize, names: &[String]) {
+        let on = |r: Range<usize>| r.start + 1..r.end + 1;
+        let off = |r: Range<usize>| r.start.saturating_sub(1)..r.end.saturating_sub(1);
+        self.dismissed = self.dismissed.take().map(on);
+        self.refresh(&format!("={text}"), caret.min(text.len()) + 1, names);
+        self.span = off(self.span.clone());
+        self.dismissed = self.dismissed.take().map(off);
+    }
+
     /// Whether there is a list to steer, which gives Tab and the arrows their meaning while
     /// editing.
     #[must_use]
@@ -708,6 +718,22 @@ mod tests {
         // Typing on is a new word, and it offers again.
         assist.refresh("=SUM", 4, &names());
         assert!(assist.is_offering());
+    }
+
+    /// A body without its `=` offers the same, in offsets into the body itself.
+    #[test]
+    fn a_bare_body_offers_in_its_own_offsets() {
+        let mut assist = Assist::default();
+        assist.refresh_bare("1+SU", 4, &names());
+        assert_eq!(assist.span, 2..4);
+        assert_eq!(assist.accept().map(|(span, _)| span), Some(2..4));
+        assist.refresh_bare("SU", 2, &names());
+        assert_eq!(assist.span, 0..2, "a word at the very start offers too");
+        assist.dismiss();
+        assist.refresh_bare("SU", 2, &names());
+        assert!(!assist.is_offering(), "and stays dismissed");
+        assist.refresh_bare("SU", 99, &names());
+        assert!(!assist.is_offering(), "a caret past the end is the end");
     }
 
     #[test]

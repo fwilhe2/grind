@@ -103,6 +103,12 @@ line := '=' expr          a comparison or any expression, never a definition
   OpenFormula separates arguments with `;`, so `,` is never ambiguous. In de-DE,
   `1.234,5 * 2` is 2469 and `1.5` is refused. Values and lines are shown in the same locale.
 - Values show fifteen significant digits, as a spreadsheet does: `0.1 + 0.2` is `0.3`.
+- **Completion and colour** are the tape's too, so every client offers and colours alike.
+  `Tape::assist` fills the formula bar's `Assist` for a line being typed: the tape's names first,
+  each with its handle and value (`foo` · `#1 = 3`), then the functions. `Tape::spans` cuts a line
+  into runs to colour: the name a line defines, a name some line has, `#n` for a line that exists,
+  a function, a number, text, and everything unknown (a name no line has, a cell, `#9` on a
+  two-line tape).
 - A circle is said in words by the tape itself (`Tape::circles`): `#3 reads itself`, or `#1, #2
   read each other in a circle`, so every client says it the same way.
 

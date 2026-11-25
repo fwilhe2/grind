@@ -2,12 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tape: a scratch calculator whose lines become a spreadsheet's rows (`doc/calc.md`). An
-//! experiment. A line is `[name =] expression`, `#n` reads line n, and numbers are read in the
+//! The tape: a scratch calculator whose lines become a spreadsheet's rows (`doc/calc.md`). A line is `[name =] expression`, `#n` reads line n, and numbers are read in the
 //! tape's locale with the CSV import's rule.
 
+use std::ops::Range;
 use std::path::Path;
 
+use crate::formula::assist::{Assist, Candidate};
 use crate::formula::display;
 use crate::formula::eval::to_cell;
 use crate::formula::lex::Op;
@@ -31,6 +32,31 @@ pub struct TapeLine {
     /// The value in the tape's locale; an error by its name.
     pub value: String,
     pub error: bool,
+}
+
+/// What a run of a typed line is, for colouring it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TapeInk {
+    /// The name a line gives itself, before its `=`.
+    Definition,
+    /// A name some line has.
+    Name,
+    /// `#n` for a line that exists.
+    Handle,
+    Function,
+    Number,
+    Text,
+    /// A constant error, `#N/A`.
+    Error,
+    /// A name no line has, a function the catalog does not know, a cell, a `#n` past the end.
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TapeSpan {
+    /// Bytes of the text that was scanned.
+    pub range: Range<usize>,
+    pub ink: TapeInk,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -100,6 +126,109 @@ impl Tape {
             })
             .collect();
         (!said.is_empty()).then(|| said.join("; "))
+    }
+
+    /// What to offer while a line is typed, `caret` a byte offset into `text`: the tape's own
+    /// names first, each with its handle and value, then the functions.
+    pub fn assist(&self, assist: &mut Assist, text: &str, caret: usize) {
+        let names: Vec<String> = self
+            .list
+            .entries()
+            .iter()
+            .filter_map(|entry| entry.name.clone())
+            .collect();
+        assist.refresh_bare(text, caret, &names);
+        let lines = self.lines();
+        let (mut named, functions): (Vec<Candidate>, Vec<Candidate>) =
+            std::mem::take(&mut assist.offers)
+                .into_iter()
+                .partition(|offer| !offer.insert.ends_with('('));
+        for offer in &mut named {
+            if let Some(line) = self.list.index_of(&offer.name).and_then(|i| lines.get(i)) {
+                offer.detail = format!("#{} = {}", line.handle, line.value);
+            }
+        }
+        named.extend(functions);
+        assist.offers = named;
+    }
+
+    /// `text`, a line as typed, in runs to colour: a known name apart from one no line has.
+    /// Byte ranges; anything not listed is an operator, a separator or space.
+    #[must_use]
+    pub fn spans(&self, text: &str) -> Vec<TapeSpan> {
+        let mut out = Vec::new();
+        let lead = text.len() - text.trim_start().len();
+        let trimmed = &text[lead..];
+        let body = if let Some(rest) = trimmed.strip_prefix('=') {
+            text.len() - rest.len()
+        } else if let Some((name, rest)) = definition(trimmed) {
+            out.push(TapeSpan {
+                range: lead..lead + name.len(),
+                ink: TapeInk::Definition,
+            });
+            text.len() - rest.len()
+        } else {
+            lead
+        };
+        // `#n` is the tape's own, so it is taken out before the display scanner, which would
+        // read `#3/12` as one error constant.
+        let mut masked = text[body..].to_owned();
+        let mut handles = Vec::new();
+        let bytes = &text.as_bytes()[body..];
+        let mut quoted = false;
+        let mut i = 0;
+        while i < bytes.len() {
+            match bytes[i] {
+                b'"' => quoted = !quoted,
+                b'#' if !quoted && bytes.get(i + 1).is_some_and(u8::is_ascii_digit) => {
+                    let end = i
+                        + 1
+                        + bytes[i + 1..]
+                            .iter()
+                            .take_while(|b| b.is_ascii_digit())
+                            .count();
+                    let known = text[body + i + 1..body + end]
+                        .parse::<usize>()
+                        .is_ok_and(|n| (1..=self.len()).contains(&n));
+                    handles.push((i..end, known));
+                    masked.replace_range(i..end, &" ".repeat(end - i));
+                    i = end;
+                    continue;
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        let at = |r: Range<usize>| body + r.start..body + r.end;
+        for (range, known) in handles {
+            out.push(TapeSpan {
+                range: at(range),
+                ink: if known {
+                    TapeInk::Handle
+                } else {
+                    TapeInk::Unknown
+                },
+            });
+        }
+        for span in display::spans(&masked) {
+            let word = &masked[span.range.clone()];
+            let ink = match span.kind {
+                display::TokenKind::Func if is_function(word) => TapeInk::Function,
+                display::TokenKind::Name if self.list.index_of(word).is_some() => TapeInk::Name,
+                display::TokenKind::Func | display::TokenKind::Name | display::TokenKind::Ref => {
+                    TapeInk::Unknown
+                }
+                display::TokenKind::Number | display::TokenKind::Bool => TapeInk::Number,
+                display::TokenKind::Text => TapeInk::Text,
+                display::TokenKind::Error => TapeInk::Error,
+            };
+            out.push(TapeSpan {
+                range: at(span.range),
+                ink,
+            });
+        }
+        out.sort_by_key(|span| span.range.start);
+        out
     }
 
     /// Add a line at the end; returns its handle.
@@ -444,6 +573,12 @@ impl Tape {
     }
 }
 
+fn is_function(name: &str) -> bool {
+    crate::formula::funcs::catalog()
+        .iter()
+        .any(|info| info.name.eq_ignore_ascii_case(name))
+}
+
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '.' || c == '$'
 }
@@ -535,6 +670,56 @@ mod tests {
                 ("net*(1+vat)", "1428"),
                 ("#3/12", "119"),
             ])
+        );
+    }
+
+    #[test]
+    fn completion_offers_the_tapes_names_first_with_their_values() {
+        let t = tape(&["foo = 3", "food = foo * 2"]);
+        let mut assist = Assist::default();
+        t.assist(&mut assist, "1 + fo", 6);
+        let offered: Vec<(&str, &str)> = assist
+            .offers
+            .iter()
+            .map(|o| (o.name.as_str(), o.detail.as_str()))
+            .collect();
+        assert_eq!(offered[..2], [("foo", "#1 = 3"), ("food", "#2 = 6")]);
+        assert!(offered[2..].iter().any(|(name, _)| *name == "FORECAST"));
+        assert_eq!(assist.accept(), Some((4..6, "foo".to_owned())));
+        // A function is still a call, offered with its `(`.
+        t.assist(&mut assist, "ROU", 3);
+        assert_eq!(assist.offers[0].insert, "ROUND(");
+    }
+
+    #[test]
+    fn a_line_is_coloured_by_what_each_word_is() {
+        let t = tape(&["foo = 3", "2"]);
+        let text = "bar = foo + #2 * ROUND(baz; 2) + #9 & \"#1\"";
+        let inks: Vec<(&str, TapeInk)> = t
+            .spans(text)
+            .into_iter()
+            .map(|s| (&text[s.range], s.ink))
+            .collect();
+        assert_eq!(
+            inks,
+            [
+                ("bar", TapeInk::Definition),
+                ("foo", TapeInk::Name),
+                ("#2", TapeInk::Handle),
+                ("ROUND", TapeInk::Function),
+                ("baz", TapeInk::Unknown),
+                ("2", TapeInk::Number),
+                ("#9", TapeInk::Unknown),
+                ("\"#1\"", TapeInk::Text),
+            ]
+        );
+        // A comparison names nothing, and `#2/12` is a handle, then a number.
+        let inks: Vec<TapeInk> = t.spans("=foo=#2/12").into_iter().map(|s| s.ink).collect();
+        assert_eq!(inks, [TapeInk::Name, TapeInk::Handle, TapeInk::Number]);
+        assert_eq!(
+            t.spans("  B2")[0].ink,
+            TapeInk::Unknown,
+            "a tape has no cells"
         );
     }
 
