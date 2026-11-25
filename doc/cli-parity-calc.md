@@ -39,3 +39,5 @@ of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that r
 - `Notebook` — which row of a tape's editor the caret goes to after Enter, an arrow or
   Backspace. It has no CLI of its own: every change it makes is a `push`, `insert`, `edit` or
   `delete` above, and `:insert`, `:edit` and `:del` are the interactive tape's spellings of them.
+- `TapeEditor` — a `Notebook` with the caret's row, its text and its offers, for a client with
+  one edit control. The same: every change it makes is one of the `Tape` methods above.

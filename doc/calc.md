@@ -173,7 +173,9 @@ into it and closes when it is left empty. Up and Down commit the row and move. B
 empty row deletes its line and goes to the end of the one above, and a line emptied and left is
 deleted. A row that does not read keeps the caret, and the tape says why. Tab takes the offered
 completion and Escape dismisses it. Which keys these are is each client's own; where the caret
-goes is the core's.
+goes is the core's. A client with one edit control for the caret's row keeps a `TapeEditor`:
+it holds that row's text, caret and offers, answers each key, and the client copies its text
+into the control after every call.
 
 The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`,
 `:insert N <line>`, `:del N`, `:extract N <number> <name> [K]`, `:undo`, `:redo`,
