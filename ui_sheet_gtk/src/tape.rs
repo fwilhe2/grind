@@ -131,8 +131,10 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
     view.add_bottom_bar(&bottom);
     let dialog = adw::Dialog::builder()
         .title("Scratch Calculator")
-        .content_width(560)
-        .content_height(560)
+        // As wide as a window allows up to this, so a long formula and its name stay in view;
+        // adw::Dialog shrinks it to fit a narrower one.
+        .content_width(880)
+        .content_height(640)
         .child(&view)
         .build();
 
@@ -412,6 +414,7 @@ impl TapeDialog {
             .label(&line.value)
             .selectable(true)
             .valign(gtk::Align::Center)
+            .xalign(1.0)
             .build();
         value.add_css_class("numeric");
         value.add_css_class(if line.error { "error" } else { "heading" });
