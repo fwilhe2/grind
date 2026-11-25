@@ -153,9 +153,10 @@ impl Tape {
     }
 
     /// `text`, a line as typed, in runs to colour: a known name apart from one no line has.
-    /// Byte ranges; anything not listed is an operator, a separator or space.
+    /// Byte ranges; anything not listed is an operator, a separator or space. A word that ends at
+    /// `caret` is still being typed, and is not called unknown yet.
     #[must_use]
-    pub fn spans(&self, text: &str) -> Vec<TapeSpan> {
+    pub fn spans(&self, text: &str, caret: Option<usize>) -> Vec<TapeSpan> {
         let mut out = Vec::new();
         let lead = text.len() - text.trim_start().len();
         let trimmed = &text[lead..];
@@ -227,6 +228,7 @@ impl Tape {
                 ink,
             });
         }
+        out.retain(|span| !(span.ink == TapeInk::Unknown && Some(span.range.end) == caret));
         out.sort_by_key(|span| span.range.start);
         out
     }
@@ -705,7 +707,7 @@ mod tests {
         let t = tape(&["foo = 3", "2"]);
         let text = "bar = foo + #2 * ROUND(baz; 2) + #9 & \"#1\"";
         let inks: Vec<(&str, TapeInk)> = t
-            .spans(text)
+            .spans(text, None)
             .into_iter()
             .map(|s| (&text[s.range], s.ink))
             .collect();
@@ -723,12 +725,22 @@ mod tests {
             ]
         );
         // A comparison names nothing, and `#2/12` is a handle, then a number.
-        let inks: Vec<TapeInk> = t.spans("=foo=#2/12").into_iter().map(|s| s.ink).collect();
+        let inks: Vec<TapeInk> = t
+            .spans("=foo=#2/12", None)
+            .into_iter()
+            .map(|s| s.ink)
+            .collect();
         assert_eq!(inks, [TapeInk::Name, TapeInk::Handle, TapeInk::Number]);
         assert_eq!(
-            t.spans("  B2")[0].ink,
+            t.spans("  B2", None)[0].ink,
             TapeInk::Unknown,
             "a tape has no cells"
+        );
+        assert!(
+            t.spans("2 * fo", Some(6))
+                .iter()
+                .all(|s| s.ink != TapeInk::Unknown),
+            "the word at the caret is still being typed"
         );
     }
 
