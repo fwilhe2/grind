@@ -15,8 +15,8 @@ use crate::metrics::{Family, Font};
 use crate::ops::Op;
 use crate::sheet::geom::Rect;
 
-pub const WIDTH: f64 = 600.0;
-pub const HEIGHT: f64 = 460.0;
+pub const WIDTH: f64 = 820.0;
+pub const HEIGHT: f64 = 560.0;
 /// The face's size, in points.
 pub const SIZE: f64 = 13.0;
 const PAD: f64 = 16.0;
