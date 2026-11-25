@@ -806,7 +806,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
                 modal::list_body(rows.len(), widest, chrome, dpi)
             }
             Body::Chart { .. } => (s(520.0), s(320.0)),
-            Body::Tape(_) => (s(600.0), s(460.0)),
+            Body::Tape(_) => (s(820.0), s(560.0)),
             Body::Alt(_) => modal::alt_wanted(dpi),
             Body::Pages(pages) => {
                 // As tall as the screen allows, and as wide as the page is at that height.
