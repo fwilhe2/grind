@@ -165,6 +165,16 @@ grind --format json calc …
 grind sheet extract book.fods B1 0.19 --to C1 --name vat [--nth 2]
 ```
 
+**A tape in a window is a notebook** (`Notebook`, `notebook.rs`). Each line is a row edited in
+place, with its value beside it, and a blank row follows the last one. Typing into that row and
+pressing Enter adds the line and moves the caret to the new blank row. Enter on a line commits
+it and opens a blank row under it (shown as `+`), which becomes a line when something is typed
+into it and closes when it is left empty. Up and Down commit the row and move. Backspace in an
+empty row deletes its line and goes to the end of the one above, and a line emptied and left is
+deleted. A row that does not read keeps the caret, and the tape says why. Tab takes the offered
+completion and Escape dismisses it. Which keys these are is each client's own; where the caret
+goes is the core's.
+
 The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`,
 `:insert N <line>`, `:del N`, `:extract N <number> <name> [K]`, `:undo`, `:redo`,
 `:save <file> [!]`, `:help` and `:q`. A line that does not read is status 2. A refused save or

@@ -249,6 +249,15 @@ impl Tape {
         self.edit_with(|list| list.set(at, name.as_deref(), &formula))
     }
 
+    /// Whether `text` reads as line `at` already is, however it is spaced.
+    pub(crate) fn reads_as(&self, at: usize, text: &str) -> bool {
+        let Some(entry) = self.list.entries().get(at) else {
+            return false;
+        };
+        self.read(text)
+            .is_ok_and(|(name, formula)| name == entry.name && formula == entry.formula)
+    }
+
     pub fn delete(&mut self, at: usize) -> Result<()> {
         self.edit_with(|list| list.remove(at))
     }

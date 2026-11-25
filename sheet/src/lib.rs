@@ -15,6 +15,7 @@ use std::sync::{Arc, RwLock};
 
 mod app;
 mod calc;
+mod notebook;
 
 // The document and what changes it.
 pub mod a1;
@@ -69,6 +70,7 @@ pub use chart::{
 pub(crate) use chart::{axis_ticks, pie_slice_at, pie_slices};
 pub use filter::Filter;
 pub use model::{CellValue, Checkbox, Document, Link, Pos, Sheet, Span};
+pub use notebook::{Done, Notebook, Row, Step};
 pub use reading::Reading;
 pub use spell::{Lexicon, Misspelling};
 pub use table_format::{TableOptions, TotalsFunction};

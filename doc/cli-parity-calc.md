@@ -36,3 +36,6 @@ of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that r
 - `formula::ExprList` — the named expression list under the tape, crate-private until a second
   caller needs it, with no CLI of its own:
   everything it does is reached through the `Tape` method above that calls it.
+- `Notebook` — which row of a tape's editor the caret goes to after Enter, an arrow or
+  Backspace. It has no CLI of its own: every change it makes is a `push`, `insert`, `edit` or
+  `delete` above, and `:insert`, `:edit` and `:del` are the interactive tape's spellings of them.
