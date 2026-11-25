@@ -151,7 +151,9 @@ screen's `c`, or `:tape` from either document. It opens typing. `Enter` commits 
 the next one, and `Esc` stops. `j k g G` move, `i` edits the line under the cursor, `o O` add a
 line, `dd` deletes one, and `u` and `Ctrl+r` undo and redo. `:extract <number> <name> [n]` moves a
 number in the current line into a named line before it. `:promote <file>` (or `:w`) writes the
-spreadsheet, and `!` overwrites. Every decision is `grind_sheet::Tape`'s.
+spreadsheet, and `!` overwrites. While a line is typed, the status line shows `Tape::assist`'s
+offers: `Tab` takes one, the arrows choose and `Esc` puts them away. Every line is coloured by
+`Tape::spans`. Every decision is `grind_sheet::Tape`'s.
 
 ## What it does not do
 

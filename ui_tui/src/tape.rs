@@ -16,7 +16,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
 use grind_core::DocumentKind;
-use grind_sheet::Tape;
+use grind_sheet::formula::assist::{self, Assist, Ink};
+use grind_sheet::{Tape, TapeInk};
 
 use crate::app::{RedrawFlag, Switch};
 
@@ -24,6 +25,7 @@ pub const HELP: &str = "\
 The tape — a scratch calculator:
   a line is a formula without its =      #3 reads line 3      vat = 0.19 names a line
   j k / arrows  move     g G  first / last     i Enter  edit the line     o O  new line below / above
+  Tab  complete a name or a function while typing (the line under the tape shows what is offered)
   dd  delete the line    u / Ctrl+r  undo / redo    Esc  stop typing (a new line goes on to the next)
   :extract <number> <name> [n]   move a number in this line into a named line before it
   :promote <file>   :promote! <file>   write the tape as a spreadsheet (:w is the same)
@@ -49,6 +51,8 @@ pub struct TapePane {
     mode: Mode,
     /// `d` waiting for its second `d`.
     pending_d: bool,
+    /// The offers for the word being typed.
+    assist: Assist,
     status: String,
     saved: bool,
     redraw: Arc<RedrawFlag>,
@@ -68,6 +72,7 @@ impl TapePane {
                 caret: 0,
             },
             pending_d: false,
+            assist: Assist::default(),
             status: String::new(),
             saved: true,
             redraw,
@@ -190,6 +195,34 @@ impl TapePane {
     }
 
     fn insert(&mut self, key: KeyEvent) {
+        self.typing(key);
+        if let Mode::Insert { buf, caret, .. } = &self.mode {
+            self.tape.assist(&mut self.assist, buf, *caret);
+        } else {
+            self.assist.clear();
+        }
+    }
+
+    fn typing(&mut self, key: KeyEvent) {
+        // While there are offers, Tab takes one, the arrows choose and Esc puts them away.
+        if self.assist.is_offering() {
+            match key.code {
+                KeyCode::Tab => {
+                    if let (Some((span, with)), Mode::Insert { buf, caret, .. }) =
+                        (self.assist.accept(), &mut self.mode)
+                        && buf.get(span.clone()).is_some()
+                    {
+                        buf.replace_range(span.clone(), &with);
+                        *caret = span.start + with.len();
+                    }
+                    return;
+                }
+                KeyCode::Down => return self.assist.step(1),
+                KeyCode::Up => return self.assist.step(-1),
+                KeyCode::Esc => return self.assist.dismiss(),
+                _ => {}
+            }
+        }
         let Mode::Insert {
             at,
             new,
@@ -358,17 +391,22 @@ impl TapePane {
             Mode::Insert { at, new, buf, .. } => Some((*at, *new, buf.clone())),
             _ => None,
         };
+        let caret = match &self.mode {
+            Mode::Insert { caret, .. } => Some(*caret),
+            _ => None,
+        };
+        let tape = &self.tape;
         let typed_line = |handle: usize, buf: &str| {
-            Line::from(vec![
-                Span::styled(
-                    format!("#{handle:<4}"),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::styled(
-                    buf.to_owned(),
-                    Style::default().add_modifier(Modifier::UNDERLINED),
-                ),
-            ])
+            let mut spans = vec![Span::styled(
+                format!("#{handle:<4}"),
+                Style::default().fg(Color::DarkGray),
+            )];
+            spans.extend(
+                coloured(tape, buf, caret)
+                    .into_iter()
+                    .map(|span| span.patch_style(Modifier::UNDERLINED)),
+            );
+            Line::from(spans)
         };
         for (i, line) in lines.iter().enumerate() {
             if let Some((at, true, buf)) = &typing
@@ -387,14 +425,15 @@ impl TapePane {
             } else {
                 Style::default().add_modifier(Modifier::BOLD)
             };
-            let mut row = Line::from(vec![
-                Span::styled(
-                    format!("#{:<4}", line.handle),
-                    Style::default().fg(Color::DarkGray),
-                ),
-                Span::raw(format!("{:<text_width$}   ", line.text)),
-                Span::styled(line.value.clone(), value_style),
-            ]);
+            let mut spans = vec![Span::styled(
+                format!("#{:<4}", line.handle),
+                Style::default().fg(Color::DarkGray),
+            )];
+            spans.extend(coloured(&self.tape, &line.text, None));
+            let pad = text_width.saturating_sub(line.text.chars().count());
+            spans.push(Span::raw(" ".repeat(pad + 3)));
+            spans.push(Span::styled(line.value.clone(), value_style));
+            let mut row = Line::from(spans);
             if typing.is_none() && i == self.cursor {
                 row = row.style(Style::default().bg(Color::Indexed(236)));
             }
@@ -418,14 +457,31 @@ impl TapePane {
             ),
             body,
         );
-        let foot_text = match &self.mode {
-            Mode::Command(buf) => format!(":{buf}"),
-            _ if !self.status.is_empty() => self.status.clone(),
-            _ if let Some(circles) = self.tape.circles() => circles,
-            Mode::Insert { .. } => "-- INSERT --  Enter commits, Esc stops".into(),
-            _ => String::new(),
+        let band = assist::band(&self.assist, true);
+        let foot_line = match &self.mode {
+            Mode::Command(buf) => Line::raw(format!(":{buf}")),
+            _ if !self.status.is_empty() => Line::raw(self.status.clone()),
+            Mode::Insert { .. } if !band.is_empty() => Line::from(
+                band.into_iter()
+                    .map(|piece| {
+                        let style = match piece.ink {
+                            Ink::Strong => Style::default()
+                                .fg(Color::LightBlue)
+                                .add_modifier(Modifier::BOLD),
+                            Ink::Muted => Style::default().fg(Color::DarkGray),
+                            Ink::Plain => Style::default(),
+                        };
+                        Span::styled(piece.text, style)
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            _ if let Some(circles) = self.tape.circles() => Line::raw(circles),
+            Mode::Insert { .. } => {
+                Line::raw("-- INSERT --  Enter commits, Tab completes, Esc stops")
+            }
+            _ => Line::default(),
         };
-        frame.render_widget(Paragraph::new(foot_text), foot);
+        frame.render_widget(Paragraph::new(foot_line), foot);
         // The caret, where text is typed.
         if let Mode::Insert { at, buf, caret, .. } = &self.mode {
             let row = (*at).min(lines.len());
@@ -437,6 +493,40 @@ impl TapePane {
             frame.set_cursor_position((x, foot.y));
         }
     }
+}
+
+/// `text`'s words in their colours, as the tape reads them; the name a line gives itself bold.
+fn coloured(tape: &Tape, text: &str, caret: Option<usize>) -> Vec<Span<'static>> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    for span in tape.spans(text, caret) {
+        let (Some(gap), Some(word)) =
+            (text.get(at..span.range.start), text.get(span.range.clone()))
+        else {
+            continue;
+        };
+        if !gap.is_empty() {
+            out.push(Span::raw(gap.to_owned()));
+        }
+        let style = match span.ink {
+            TapeInk::Definition => Style::default().add_modifier(Modifier::BOLD),
+            TapeInk::Name | TapeInk::Handle => Style::default().fg(Color::LightBlue),
+            TapeInk::Function => Style::default().fg(Color::Magenta),
+            TapeInk::Number => Style::default().fg(Color::Green),
+            TapeInk::Text => Style::default().fg(Color::Yellow),
+            TapeInk::Error | TapeInk::Unknown => Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::UNDERLINED),
+        };
+        out.push(Span::styled(word.to_owned(), style));
+        at = span.range.end;
+    }
+    if let Some(rest) = text.get(at..)
+        && !rest.is_empty()
+    {
+        out.push(Span::raw(rest.to_owned()));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -533,6 +623,23 @@ mod tests {
         typed(&mut p, "q");
         assert!(p.should_quit());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tab_completes_a_name_the_tape_has_and_colours_it() {
+        let mut p = pane();
+        typed(&mut p, "net = 1200");
+        for c in "2 * ne".chars() {
+            press(&mut p, KeyCode::Char(c));
+        }
+        assert!(p.assist.is_offering());
+        assert_eq!(p.assist.offers[0].name, "net");
+        press(&mut p, KeyCode::Tab);
+        press(&mut p, KeyCode::Enter);
+        assert_eq!(values(&p), ["1200", "2400"]);
+        let named = coloured(&p.tape, "net + nope", None);
+        assert_eq!(named[0].style.fg, Some(Color::LightBlue));
+        assert_eq!(named.last().map(|s| s.style.fg), Some(Some(Color::Red)));
     }
 
     #[test]

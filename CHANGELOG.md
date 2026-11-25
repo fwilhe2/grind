@@ -27,7 +27,7 @@ lands, and the release workflow publishes the section as it stands.
   arrow keys move between lines, and Backspace in an empty line removes it.
 - The scratch calculator completes as you type: Tab takes the names your lines define, offered
   first with their values, and the functions. A name the tape knows is coloured apart from a
-  misspelt one. In the browser, on Windows, on a Mac and in the spreadsheet window.
+  misspelt one. In every window and in the terminal.
 - `grind sheet extract`, and *Extract a Number into a Named Cell…* in the spreadsheet window,
   move a number out of a formula into a named input cell, and have the formula use the name
   instead.
