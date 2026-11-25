@@ -185,12 +185,12 @@ extract is status 1. `doc/cli-parity-calc.md` maps every `Tape` method to its sp
 **The terminal shell** has a tape pane (`:tape`, or `grind-tui --tape`); `doc/tui-shell.md` has
 its keys. **The GNOME spreadsheet window** has a tape dialog (*Scratch Calculator*, or
 `grind-sheet-gtk --tape`) and *Extract a Number into a Named Cell…*; `doc/sheet-shell.md` says
-how. **The browser shell** has the tape as a dialog (the calculator button over a spreadsheet,
-or Ctrl+K → *Scratch calculator*; `ui_web/src/tape.rs`): lines typed, edited in place and
-deleted, undo and redo, and *Open as spreadsheet*. **The Windows shell** has the same as
-*Data ▸ Scratch Calculator…*, over its list modal (`doc/windows-shell.md` §4), and **the Mac
-shell** as *Edit ▸ Scratch Calculator…* (`doc/macos-shell.md` §3). `doc/feature-matrix.md` says which shells
-have which.
+how. Three clients show the tape as the notebook above, with completion and colour. **The
+browser shell** has it as a dialog (the calculator button over a spreadsheet, or Ctrl+K →
+*Scratch calculator*; `ui_web/src/tape.rs`). **The Windows shell** has it as *Data ▸ Scratch
+Calculator…*, in its modal's frame (`doc/windows-shell.md` §4). **The Mac shell** has it as
+*Edit ▸ Scratch Calculator…*, a window of its own kept for the session (`doc/macos-shell.md`
+§3). `doc/feature-matrix.md` says which shells have which.
 
 ## 8. Not built
 

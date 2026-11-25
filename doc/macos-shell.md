@@ -130,11 +130,13 @@ A notice (a recalculation refused, a parse error) is a banner under the accessor
 a *state*, never an event, and `notice.rs` holds every sentence, as in `ui_win32`.
 
 So the tape (`doc/calc.md`), which has a header-bar button in the GNOME window,
-is a menu verb here: **Edit ▸ Scratch Calculator…** (`tape.rs`). It is `prompt.rs`'s alerts —
-a pop-up of *Add a Line…*, the lines with their values, *Undo*, *Redo* and *Open as
-Spreadsheet*; choosing a line offers Change and Delete. One tape for the session, and *Open as
-Spreadsheet* is a new untitled window going by `tape.fods`. Not built: *Name a number*
-(`Tape::extract`).
+is a menu verb here: **Edit ▸ Scratch Calculator…**, a window of its own (`tape_window.rs`)
+kept hidden between openings, one tape for the session. It is a notebook (`doc/calc.md` §7).
+Its rows are `tape.rs`'s frame as `Op`s, set in the fixed-pitch face so a word's place is its
+column, and tested on Linux. One `NSTextField` sits over the caret's row: its delegate hands
+every selector to `grind_sheet::TapeEditor` first, and colours the field editor's storage with
+`Tape::spans`. *Open as Spreadsheet* is a new untitled window going by `tape.fods`. Not built:
+*Name a number* (`Tape::extract`), and ⌘Z in the field is the field's own undo.
 
 ### 4. CoreText measures and draws — decision 3 of the Windows shell, answered by a shaping engine
 

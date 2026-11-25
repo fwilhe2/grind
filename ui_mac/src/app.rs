@@ -42,8 +42,9 @@ pub struct Launch {
     controller: Retained<Controller>,
     /// The welcome window, while it exists (decision 6).
     welcome: RefCell<Option<Retained<NSWindow>>>,
-    /// Edit ▸ Scratch Calculator…'s tape, made the first time and kept until the app quits.
-    tape: RefCell<Option<grind_sheet::Tape>>,
+    /// Edit ▸ Scratch Calculator…'s window, made the first time and kept, hidden, until the app
+    /// quits — and its tape with it.
+    tape: RefCell<Option<Retained<NSWindow>>>,
 }
 
 define_class!(
@@ -358,21 +359,26 @@ impl Delegate {
             .and_then(|document| document.downcast::<Document>().ok())
     }
 
-    /// Edit ▸ Scratch Calculator…: the tape in numbers as the front spreadsheet spells them,
-    /// and a new spreadsheet window when it ends on *Open as Spreadsheet*.
+    /// Edit ▸ Scratch Calculator…: the tape's window, made the first time in numbers as the front
+    /// spreadsheet spells them, and a new spreadsheet window when it is opened as one.
     fn scratch_calculator(&self) {
-        let locale = self.front_pane().and_then(|pane| pane.app.locale());
-        let promoted = {
-            let mut tape = self.ivars().tape.borrow_mut();
-            let tape = tape.get_or_insert_with(|| grind_sheet::Tape::new(locale));
-            crate::tape::run(self.mtm(), tape)
-        };
-        let Some(doc) = promoted else {
+        if let Some(window) = self.ivars().tape.borrow().as_ref() {
+            window.makeKeyAndOrderFront(None);
             return;
-        };
-        if let Err(message) = self.ivars().controller.new_sheet(doc, "tape.fods") {
-            alert(self.mtm(), "The spreadsheet could not be made.", &message);
         }
+        let locale = self.front_pane().and_then(|pane| pane.app.locale());
+        let controller = self.ivars().controller.clone();
+        let mtm = self.mtm();
+        let window = crate::tape_window::show(
+            grind_sheet::Tape::new(locale),
+            move |doc| {
+                if let Err(message) = controller.new_sheet(doc, "tape.fods") {
+                    alert(mtm, "The spreadsheet could not be made.", &message);
+                }
+            },
+            mtm,
+        );
+        *self.ivars().tape.borrow_mut() = Some(window);
     }
 
     /// The front document's grid, when the front document is a spreadsheet with a window.

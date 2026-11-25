@@ -85,6 +85,8 @@ mod spelling;
 mod structure;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod tape;
+#[cfg(target_os = "macos")]
+mod tape_window;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]
 mod text;
 #[cfg(target_os = "macos")]
