@@ -109,10 +109,7 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
     save.set_tooltip_text(Some("Save as Spreadsheet…"));
 
     let header = adw::HeaderBar::new();
-    header.set_title_widget(Some(&adw::WindowTitle::new(
-        "Scratch Calculator",
-        "Experimental",
-    )));
+    header.set_title_widget(Some(&adw::WindowTitle::new("Scratch Calculator", "")));
     header.pack_start(&undo);
     header.pack_start(&redo);
     header.pack_end(&open);

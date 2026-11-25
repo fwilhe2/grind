@@ -1356,7 +1356,7 @@ impl Ui {
         ));
     }
 
-    // --- the tape (`doc/calc.md`, an experiment) ---
+    // --- the tape (`doc/calc.md`) ---
 
     /// *Scratch Calculator*: the tape over this window, reading numbers as this document spells
     /// them. The same tape every time, until the window closes.

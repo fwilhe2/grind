@@ -6,10 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # The tape — a scratch calculator that becomes a spreadsheet
 
-**Status: an experiment, built to be tried and removed if it does not earn its place.** The
-named expression list, the tape, extracting a constant (on a tape and on a sheet cell),
-promotion, `grind calc`, the terminal's tape pane and the spreadsheet window's tape dialog are
-built. §8 lists what is not.
+**Status: built, and kept.** It began as an experiment to be removed if it did not earn its
+place; it earned it (2026-11-25). The named expression list, the tape, extracting a constant (on
+a tape and on a sheet cell), promotion, `grind calc` and a tape in every graphical client and the
+terminal are built. §8 lists what is not.
 
 ## 1. What it is
 
@@ -39,8 +39,7 @@ can hold (R1). The tape reads it this way:
 > no scopes. Every tape without a cycle promotes, and the promoted sheet computes the same values
 > because the tape is evaluated *as* that sheet (§3).
 
-That reading is the experiment's premise. If it does not hold up in use, the tape goes and the
-decision stands as written.
+That reading held up in use: the decision stands for cells, and the tape is its one exception.
 
 ## 3. The model
 

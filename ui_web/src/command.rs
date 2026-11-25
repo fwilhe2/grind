@@ -133,7 +133,7 @@ pub const SHEET: &[Command] = &[
         false,
     ),
     cmd("sheet.recalc", "Recalculate", "Document", "F9", true),
-    // The tape (`doc/calc.md`, an experiment): a scratch calculator that opens as a sheet.
+    // The tape (`doc/calc.md`): a scratch calculator that opens as a sheet.
     cmd("sheet.tape", "Scratch calculator", "Document", "", false),
     // CSV, the one non-ODF format read and written (`doc/not-doing.md` §2). Two export rows, since
     // the delimiter comes from the name a download takes (`csv::Dialect::for_name`); importing

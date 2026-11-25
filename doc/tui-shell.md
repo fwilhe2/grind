@@ -146,7 +146,7 @@ decides it, the same in every shell, and the crate's `xlsx` feature compiles it 
 `grind-tui letter.docx` is a text document titled `letter.fodt`, unsaved and with no path, the
 report's sentence on the status line — `grind-open` again, behind the crate's `docx` feature.
 
-**The tape** (`doc/calc.md`, an experiment) is a third pane: `grind-tui --tape`, the welcome
+**The tape** (`doc/calc.md`) is a third pane: `grind-tui --tape`, the welcome
 screen's `c`, or `:tape` from either document. It opens typing. `Enter` commits a line and opens
 the next one, and `Esc` stops. `j k g G` move, `i` edits the line under the cursor, `o O` add a
 line, `dd` deletes one, and `u` and `Ctrl+r` undo and redo. `:extract <number> <name> [n]` moves a

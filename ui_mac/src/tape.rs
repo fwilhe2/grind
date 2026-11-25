@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! Edit ▸ Scratch Calculator…: the tape (`doc/calc.md`, an experiment) in `prompt.rs`'s alerts —
+//! Edit ▸ Scratch Calculator…: the tape (`doc/calc.md`) in `prompt.rs`'s alerts —
 //! a pop-up of its lines with their values, then the verbs. The rows are portable, so what a
 //! pick means tests on any host; the alerts that show them are AppKit's.
 

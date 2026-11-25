@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//! The tape (`doc/calc.md`, an experiment) as this shell's list modal shows it: one row per line
+//! The tape (`doc/calc.md`) as this shell's list modal shows it: one row per line
 //! with its value, then the verbs. Portable, so what a pick means tests on any host; the loop
 //! that shows it is `win.rs`'s.
 

@@ -21,7 +21,7 @@ use grind_sheet::Tape;
 use crate::app::{RedrawFlag, Switch};
 
 pub const HELP: &str = "\
-The tape — a scratch calculator (experimental):
+The tape — a scratch calculator:
   a line is a formula without its =      #3 reads line 3      vat = 0.19 names a line
   j k / arrows  move     g G  first / last     i Enter  edit the line     o O  new line below / above
   dd  delete the line    u / Ctrl+r  undo / redo    Esc  stop typing (a new line goes on to the next)

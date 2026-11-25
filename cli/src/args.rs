@@ -354,7 +354,7 @@ pub(crate) enum Top {
         hosts: Vec<String>,
     },
 
-    /// A scratch calculator whose lines can become a spreadsheet (experimental)
+    /// A scratch calculator whose lines can become a spreadsheet
     ///
     /// Each line is a formula without its leading =, as `1200 * 1.19`. `#3` reads line 3, and
     /// `vat = 0.19` names a line so others can write `vat`. To compare instead of naming, start

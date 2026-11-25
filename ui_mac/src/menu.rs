@@ -143,7 +143,7 @@ pub enum Command {
     PageSetup,
     /// A formula worked out at the active cell without storing it — Edit ▸ Evaluate….
     Evaluate,
-    /// The tape (`doc/calc.md`, an experiment), kept for the session, that opens as a
+    /// The tape (`doc/calc.md`), kept for the session, that opens as a
     /// spreadsheet — Edit ▸ Scratch Calculator….
     ScratchCalculator,
     /// The locale the document speaks in, asked for — Format ▸ Document Locale….

@@ -269,7 +269,7 @@ so the classic Win32 bug of two items sharing an id cannot be spelled here; the 
 take ids below `FIRST_ID`, which is what keeps a control's notification and a menu click apart
 in the one message Win32 uses for both.
 
-So where the GNOME window gives the tape (`doc/calc.md`, an experiment) a header-bar button, this
+So where the GNOME window gives the tape (`doc/calc.md`) a header-bar button, this
 shell gives it **Data ▸ Scratch Calculator…**. It is the list modal again (`tape.rs`, portable):
 one row per line with its value, then *Add a Line…*, *Undo*, *Redo* and *Open as Spreadsheet*;
 picking a line edits it in the prompt, and emptying it deletes it. The tape stays with the window,

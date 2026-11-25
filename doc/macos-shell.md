@@ -129,7 +129,7 @@ these surfaces, each with a membership rule:
 A notice (a recalculation refused, a parse error) is a banner under the accessory. It is still
 a *state*, never an event, and `notice.rs` holds every sentence, as in `ui_win32`.
 
-So the tape (`doc/calc.md`, an experiment), which has a header-bar button in the GNOME window,
+So the tape (`doc/calc.md`), which has a header-bar button in the GNOME window,
 is a menu verb here: **Edit ▸ Scratch Calculator…** (`tape.rs`). It is `prompt.rs`'s alerts —
 a pop-up of *Add a Line…*, the lines with their values, *Undo*, *Redo* and *Open as
 Spreadsheet*; choosing a line offers Change and Delete. One tape for the session, and *Open as
