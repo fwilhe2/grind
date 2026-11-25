@@ -8,7 +8,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 The tape's half of R9 (`doc/cli-parity-sheet.md` says why this file exists). Every public method
 of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that reaches it.
-`cli/tests/parity.rs` holds the two to each other. The tape is an experiment (`doc/calc.md`).
+`cli/tests/parity.rs` holds the two to each other. The tape is `doc/calc.md`.
 
 - `new` — `grind calc [--locale <tag>]`
 - `len` — the rows `grind calc` prints, one per line
@@ -16,6 +16,9 @@ of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that r
 - `lines` — `grind calc <line>…`, or `--format json` for handles, names, text and values
 - `cycles` — `cycles` in `--format json`
 - `circles` — printed to stderr after the rows
+- `assist` — not exposed: it is help for a line half typed, at a caret; a line given to
+  `grind calc` is already whole, and the names it could offer are the ones `lines` prints
+- `spans` — not exposed: it is colour for an editor, and `lines` prints the same words
 - `push` — each argument, each line of stdin, and each line typed at the interactive tape
 - `insert` — `:insert N <line>` at the interactive tape
 - `edit` — `:edit N <line>` at the interactive tape
