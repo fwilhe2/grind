@@ -43,7 +43,7 @@ extended-description = """\
 Installs the four applications of grind, an office suite whose native format is \
 OpenDocument: the grind command line, the grind-tui terminal shell, and the spreadsheet \
 and word processor windows. This package contains nothing itself."""
-depends = "grind-cli (= 0.2.0-1), grind-tui (= 0.2.0-1), grind-sheet-gtk (= 0.2.0-1), grind-text-gtk (= 0.2.0-1)"
+depends = "grind-cli (= 0.2.1~dev-1), grind-tui (= 0.2.1~dev-1), grind-sheet-gtk (= 0.2.1~dev-1), grind-text-gtk (= 0.2.1~dev-1)"
 assets = [["README.md", "usr/share/doc/grind/README.md", "644"]]
 
 # Read by `cargo generate-rpm` (artifacts.yml). No `$auto` exists there, so the `requires`
@@ -55,7 +55,7 @@ assets = [
     { source = "../LICENSES/AGPL-3.0-or-later.txt", dest = "/usr/share/licenses/grind/AGPL-3.0-or-later.txt", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
-grind-cli = "= 0.2.0-1"
-grind-tui = "= 0.2.0-1"
-grind-sheet-gtk = "= 0.2.0-1"
-grind-text-gtk = "= 0.2.0-1"
+grind-cli = "= 0.2.1~dev-1"
+grind-tui = "= 0.2.1~dev-1"
+grind-sheet-gtk = "= 0.2.1~dev-1"
+grind-text-gtk = "= 0.2.1~dev-1"

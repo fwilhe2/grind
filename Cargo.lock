@@ -1207,11 +1207,11 @@ dependencies = [
 
 [[package]]
 name = "grind"
-version = "0.2.0"
+version = "0.2.1-dev"
 
 [[package]]
 name = "grind-build"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "grind-cli"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "clap",
  "grind-build",
@@ -1244,7 +1244,7 @@ dependencies = [
 
 [[package]]
 name = "grind-core"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "base64 0.23.1",
  "kdl",
@@ -1258,7 +1258,7 @@ dependencies = [
 
 [[package]]
 name = "grind-docx"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1269,7 +1269,7 @@ dependencies = [
 
 [[package]]
 name = "grind-grammar"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-spell",
@@ -1277,7 +1277,7 @@ dependencies = [
 
 [[package]]
 name = "grind-lsp"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "grind-mac"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "grind-ooxml"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "quick-xml",
@@ -1320,7 +1320,7 @@ dependencies = [
 
 [[package]]
 name = "grind-open"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-docx",
@@ -1331,7 +1331,7 @@ dependencies = [
 
 [[package]]
 name = "grind-print"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "foldhash",
  "fontdb 0.24.0",
@@ -1352,7 +1352,7 @@ dependencies = [
 
 [[package]]
 name = "grind-server"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1364,7 +1364,7 @@ dependencies = [
 
 [[package]]
 name = "grind-sheet"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "libm",
@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "grind-sheet-gtk"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "async-channel",
  "grind-core",
@@ -1389,7 +1389,7 @@ dependencies = [
 
 [[package]]
 name = "grind-spell"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-sheet",
@@ -1399,7 +1399,7 @@ dependencies = [
 
 [[package]]
 name = "grind-text"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1409,7 +1409,7 @@ dependencies = [
 
 [[package]]
 name = "grind-text-gtk"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "async-channel",
  "grind-core",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "grind-tui"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-grammar",
@@ -1440,7 +1440,7 @@ dependencies = [
 
 [[package]]
 name = "grind-web"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "base64 0.23.1",
  "grind-core",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "grind-web-print"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-print",
@@ -1469,7 +1469,7 @@ dependencies = [
 
 [[package]]
 name = "grind-win32"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "embed-resource",
  "grind-core",
@@ -1484,7 +1484,7 @@ dependencies = [
 
 [[package]]
 name = "grind-xlsx"
-version = "0.2.0"
+version = "0.2.1-dev"
 dependencies = [
  "grind-core",
  "grind-ooxml",
