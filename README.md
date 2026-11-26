@@ -116,7 +116,15 @@ s.push(row(["Total", sum_above(), sum_above()]).bold());
 s
 ```
 
-## 4. A CLI that can do everything
+## 4. A Scratch Calculator
+
+For the times where you start with a 'calculator' app first, but notice a spreadsheet would have been easier to work with later. Define variables, use familiar functions, edit your calculations, promote them to a *real* spreadsheet later.
+
+![](README.images/img-d03c40d80709803a.png)
+
+![](README.images/img-b5ded4bb29bad01b.png)
+
+## 5. A CLI that can do everything
 
 The cli is a first class citizen, no matter if it is used by a human, in shell scripts or by AI Agents.
 
