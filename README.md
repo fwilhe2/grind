@@ -2,7 +2,7 @@
 
 grind is an office suite written from scratch. It is 100% written using AI agents. Uses OpenDocument (odf) as its native format.
 
-![](README.images/img-22ab4340147932d5.png)
+![](README.images/img-e2d2c068cf3d7120.png)
 
 ![](README.images/img-1d885cb694c634d7.png)
 
@@ -120,9 +120,9 @@ s
 
 For the times where you start with a 'calculator' app first, but notice a spreadsheet would have been easier to work with later. Define variables, use familiar functions, edit your calculations, promote them to a *real* spreadsheet later.
 
-![](README.images/img-d03c40d80709803a.png)
+![](README.images/img-cd1ab59a25c455fb.png)
 
-![](README.images/img-b5ded4bb29bad01b.png)
+![](README.images/img-bf59effb3dc2528a.png)
 
 ## 5. A CLI that can do everything
 
