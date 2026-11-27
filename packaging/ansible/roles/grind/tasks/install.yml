@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+- name: Query the installed grind packages
+  ansible.builtin.command:
+    argv: "{{ grind_query_command[ansible_facts['os_family']] + grind_packages }}"
+  register: grind_installed
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Look up the grind release
+  ansible.builtin.uri:
+    url: >-
+      https://api.github.com/repos/{{ grind_repository }}/releases/{{
+      'latest' if grind_version == 'latest' else 'tags/' ~ grind_version }}
+    headers: >-
+      {{ {'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+      | combine({'Authorization': 'Bearer ' ~ grind_github_token} if grind_github_token else {}) }}
+  register: grind_release
+  check_mode: false
+  no_log: "{{ grind_github_token | length > 0 }}"
+
+# "name=version-revision" for what is installed and for what the release would install; the
+# difference is what to download. Both formats are revision 1 (artifacts.yml).
+- name: Work out what to install
+  vars:
+    grind_release_version: "{{ grind_release.json.tag_name | regex_replace('^v', '') }}"
+    grind_have: >-
+      {{ grind_installed.stdout_lines
+      | select('match', '^installed ')
+      | map('regex_replace', '^installed (\S+) (\S+)$', '\1=\2')
+      | list }}
+    grind_wanted: >-
+      {{ grind_packages | map('regex_replace', '$', '=' ~ grind_release_version ~ '-1') | list }}
+    grind_outdated: "{{ grind_wanted | difference(grind_have) | map('regex_replace', '=.*$', '') | list }}"
+    # The metapackage depends on each application at exactly its own version, so a new
+    # metapackage installs only together with all four.
+    grind_names: >-
+      {{ grind_outdated | union(['grind-cli', 'grind-tui', 'grind-sheet-gtk', 'grind-text-gtk']
+      if 'grind' in grind_outdated else []) }}
+    grind_pattern: >-
+      ^({{ grind_names | map('regex_escape') | join('|') }})[_-]{{
+      grind_release_version | regex_escape }}{{ grind_asset_suffix[ansible_facts['os_family']] }}$
+  ansible.builtin.set_fact:
+    grind_release_tag: "{{ grind_release.json.tag_name }}"
+    grind_install_names: "{{ grind_names }}"
+    grind_install_assets: >-
+      {{ grind_release.json.assets | selectattr('name', 'match', grind_pattern) | list
+      if grind_names | length > 0 else [] }}
+
+- name: Check the release has every package, with its digest
+  ansible.builtin.assert:
+    that:
+      - grind_install_assets | length == grind_install_names | length
+      - grind_install_assets | selectattr('digest', 'defined') | rejectattr('digest', 'none') | list | length
+        == grind_install_assets | length
+    fail_msg: >-
+      grind {{ grind_release_tag }} has no {{ ansible_facts['os_family'] }} package with a sha256 digest
+      for some of {{ grind_install_names | join(', ') }}; found
+      {{ grind_install_assets | map(attribute='name') | join(', ') or 'none' }}.
+    quiet: true
+
+- name: Report what would be installed
+  when: grind_install_assets | length > 0 and ansible_check_mode
+  ansible.builtin.debug:
+    msg: "Would install {{ grind_install_assets | map(attribute='name') | join(', ') }}"
+  changed_when: true
+
+- name: Download and install grind {{ grind_release_tag }}
+  when: grind_install_assets | length > 0 and not ansible_check_mode
+  block:
+    - name: Create a download directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: grind-
+      register: grind_download_dir
+
+    # GitHub publishes each asset's sha256 with the release; a mismatch fails the download.
+    - name: Download the grind packages
+      ansible.builtin.get_url:
+        url: "{{ item.browser_download_url }}"
+        dest: "{{ grind_download_dir.path }}/{{ item.name }}"
+        checksum: "{{ item.digest }}"
+        mode: "0644"
+      loop: "{{ grind_install_assets }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Install the grind packages
+      vars:
+        grind_files: >-
+          {{ grind_install_assets | map(attribute='name')
+          | map('regex_replace', '^', grind_download_dir.path ~ '/') | list }}
+      ansible.builtin.include_tasks: "install-{{ ansible_facts['os_family'] | lower }}.yml"
+
+  always:
+    - name: Remove the download directory
+      when: grind_download_dir.path is defined
+      ansible.builtin.file:
+        path: "{{ grind_download_dir.path }}"
+        state: absent

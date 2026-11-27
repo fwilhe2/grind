@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+namespace: fwilhe2
+name: grind
+# The collection's own version, not grind's: the role installs whichever release it is told to.
+version: 1.0.0
+readme: README.md
+authors:
+  - Florian Wilhelm
+description: Install the released grind office suite on Linux, from its GitHub releases
+license:
+  - MIT
+tags: [office, desktop, linux]
+dependencies:
+  community.general: ">=8.0.0"
+repository: https://github.com/fwilhe2/grind
+issues: https://github.com/fwilhe2/grind/issues
+build_ignore:
+  - "*.tar.gz"

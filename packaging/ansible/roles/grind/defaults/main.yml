@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# A release tag such as "v0.2.0", or "latest".
+grind_version: latest
+
+# The desktop applications and the command line by default. "grind" is the metapackage, which pulls in
+# all four applications at exactly its own version.
+grind_packages:
+  - grind-sheet-gtk
+  - grind-text-gtk
+  - grind-cli
+
+# "present" installs, and upgrades to grind_version; "absent" removes.
+grind_state: present
+
+grind_repository: fwilhe2/grind
+
+# Anonymous GitHub API requests share 60 an hour per address; a token lifts that.
+grind_github_token: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"

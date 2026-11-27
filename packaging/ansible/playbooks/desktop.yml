@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# ansible-playbook fwilhe2.grind.desktop --ask-become-pass
+- name: Install the grind desktop applications and command line
+  hosts: "{{ target | default('localhost') }}"
+  become: true
+  roles:
+    - role: fwilhe2.grind.grind

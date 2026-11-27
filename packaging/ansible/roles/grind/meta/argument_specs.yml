@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+argument_specs:
+  main:
+    short_description: Install the released grind desktop applications and command line
+    description:
+      - Downloads grind's .deb or .rpm packages from a GitHub release, checks each against
+        the sha256 digest GitHub publishes for it, and installs them in one transaction.
+      - Does nothing when the installed packages are already that release.
+      - x86_64 only, on the Debian, Red Hat and SUSE families.
+    options:
+      grind_version:
+        type: str
+        default: latest
+        description: A release tag such as C(v0.2.0), or C(latest).
+      grind_packages:
+        type: list
+        elements: str
+        default: [grind-sheet-gtk, grind-text-gtk, grind-cli]
+        choices: [grind, grind-cli, grind-tui, grind-sheet-gtk, grind-text-gtk]
+        description:
+          - The packages to install or remove.
+          - C(grind) is the metapackage, which depends on the four applications at its own version.
+      grind_state:
+        type: str
+        default: present
+        choices: [present, absent]
+        description: C(present) installs and upgrades to I(grind_version); C(absent) removes.
+      grind_repository:
+        type: str
+        default: fwilhe2/grind
+        description: The GitHub repository whose releases are installed.
+      grind_github_token:
+        type: str
+        default: ""
+        no_log: true
+        description: A GitHub token for the release lookup. Defaults to C(GITHUB_TOKEN) in the controller's environment.
