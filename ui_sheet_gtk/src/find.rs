@@ -410,8 +410,8 @@ mod tests {
     /// lives on the thread that initialised it and a second test would be a second thread.
     #[test]
     fn the_bar_finds_across_sheets_and_replaces_through_the_core() {
-        if gtk::init().is_err() {
-            eprintln!("no display — skipping the find bar's widget case");
+        if !crate::gtk_for_test() {
+            eprintln!("no display, or GTK is another test's — skipping the find bar's widget case");
             return;
         }
         let app = Arc::new(App::new());

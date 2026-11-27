@@ -3040,6 +3040,21 @@ fn render_after(window: adw::ApplicationWindow, target: PathBuf, tries: u32) {
     });
 }
 
+/// Whether a widget test may use GTK: initialised once, by the first test thread that asks,
+/// and `false` there without a display and on every other thread. GTK lives on one thread, and two
+/// tests initialising it at once crashed the test binary.
+#[cfg(test)]
+fn gtk_for_test() -> bool {
+    static FIRST: std::sync::OnceLock<(std::thread::ThreadId, bool)> = std::sync::OnceLock::new();
+    let (thread, ready) = *FIRST.get_or_init(|| {
+        (
+            std::thread::current().id(),
+            gtk::init().is_ok() && adw::init().is_ok(),
+        )
+    });
+    ready && thread == std::thread::current().id()
+}
+
 #[cfg(test)]
 mod chrome_tests {
     use super::*;

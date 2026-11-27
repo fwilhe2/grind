@@ -604,8 +604,10 @@ mod tests {
     /// next time it is shown.
     #[test]
     fn lines_are_typed_undone_and_kept_across_closing() {
-        if gtk::init().is_err() || adw::init().is_err() {
-            eprintln!("no display — skipping the tape dialog's widget case");
+        if !crate::gtk_for_test() {
+            eprintln!(
+                "no display, or GTK is another test's — skipping the tape dialog's widget case"
+            );
             return;
         }
         let tape = new(None, Rc::new(|_| {}));
