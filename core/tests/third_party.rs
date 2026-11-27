@@ -71,6 +71,8 @@ const NOT_SHIPPED: &[&str] = &[
     "scripts/craft-corpus/",
     // The container recipe: it builds an image of `grind`, and nothing of it is in one.
     "Containerfile.distroless-cli",
+    // The Ansible collection that installs the released packages; it is in none of them.
+    "packaging/ansible/",
 ];
 
 /// Our own files under a licence other than the suite's **on purpose**, as path prefixes — so

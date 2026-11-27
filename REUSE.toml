@@ -8,9 +8,9 @@
 # - CC-BY-4.0: prose — `doc/`, the READMEs, the user guide, CONTRIBUTING.md and CLAUDE.md.
 #   Prose is quoted, translated and excerpted, and a copyleft written for programs fits none
 #   of that.
-# - MIT: what is meant to be copied — `examples/` and the editor snippets in `.vscode/`. A
-#   script somebody starts their own model from should owe this project a line of credit, not
-#   its licence.
+# - MIT: what is meant to be copied — `examples/`, the editor snippets in `.vscode/` and the
+#   Ansible collection in `packaging/ansible/`. A script somebody starts their own model or
+#   playbook from should owe this project a line of credit, not its licence.
 # - CC0-1.0: data, and what `grind init` seeds into somebody else's project — the test
 #   fixtures and `cli/templates/`. Even MIT's notice is too much to ask of a `.gitignore`.
 # - Everything vendored keeps its upstream's licence.
