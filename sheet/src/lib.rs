@@ -15,6 +15,7 @@ use std::sync::{Arc, RwLock};
 
 mod app;
 mod calc;
+mod kinds;
 mod notebook;
 
 // The document and what changes it.

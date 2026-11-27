@@ -16,10 +16,10 @@ terminal are built. §8 lists what is not.
 A list of lines, each an OpenFormula expression with no leading `=`, evaluated as you type:
 
 ```
-#1   vat = 19%        0.19
-#2   net = 1200       1200
-#3   net*(1+vat)      1428
-#4   #3/12            119
+#1   vat = 19%            19%
+#2   net = 1200 EUR       1,200.00 €
+#3   net*(1+vat)          1,428.00 €
+#4   #3/12                119.00 €
 ```
 
 Every line has a handle (`#n`). A line can name itself (`vat = …`), and any line can read
@@ -102,6 +102,19 @@ line := '=' expr          a comparison or any expression, never a definition
   OpenFormula separates arguments with `;`, so `,` is never ambiguous. In de-DE,
   `1.234,5 * 2` is 2469 and `1.5` is refused. Values and lines are shown in the same locale.
 - Values show fifteen significant digits, as a spreadsheet does: `0.1 + 0.2` is `0.3`.
+- **A number can carry a currency**: an ISO 4217 code before or after it, in any case
+  (`1200 eur`, `EUR 1200`, `1200EUR`), or one of `€ $ £ ¥` (euros, US dollars, pounds, yen).
+  The value stays a number; the currency is how it is shown, in its own minor unit
+  (`1,200.00 €`, `1,200 ¥`), and the line is shown again with the code after the number. The
+  tape keeps each literal's currency beside the formula (`kinds.rs`).
+- **A line's kind follows its arithmetic**, as a spreadsheet's format follows a formula: a sum,
+  a difference, a multiple or a share of an amount is that amount's currency (`net * vat`,
+  `net / 12`, `SUM`, `ROUND`, …); an amount divided by an amount is a plain ratio; a percentage
+  stays one through `+`, `−` and division by a number, and a percentage of a plain number is a
+  plain number (`19% * 1200` is 228). **Two currencies do not add up**: a line adding, subtracting
+  or comparing euros and dollars is refused, and so is an edit that would make a later line do
+  it. A rate is written as a ratio (`eur_per_usd = 92 eur / 100 usd`) and multiplied in. There
+  are no other units.
 - **Completion and colour** are the tape's too, so every client offers and colours alike.
   `Tape::assist` fills the formula bar's `Assist` for a line being typed: the tape's names first,
   each with its handle and value (`foo` · `#1 = 3`), then the functions. `Tape::spans` cuts a line
@@ -143,6 +156,7 @@ It is refused when:
 | any other line | its formula in B, with its value cached |
 | `#k` | the name of line *k* if it has one, else `[.Bk]` |
 | `name = …` | a named range over `$Sheet1.$B$n` |
+| a line's kind | its B cell's number format: the currency in its minor unit, a percentage with the decimals it was typed with (two at most when computed) |
 | the tape's locale | the document's locale |
 
 There is no tape metadata in the file. The format comes from the extension (`App::save_file`):
@@ -198,6 +212,6 @@ Calculator…*, in its modal's frame (`doc/windows-shell.md` §4). **The Mac she
   copy. The workbench says to refuse with the count; that check is not here yet.
 - **Array formulas and covered cells**, on a sheet: not refused by name.
 - **Reading a promoted sheet back as a tape.**
-- **A percentage format** on a promoted `%` input: it holds 0.19 and shows `0.19`.
+- **Dates and times** on a tape: `2026-11-27` is a subtraction there, as in a formula.
 - **Tests not run here**: `promoted_tapes_are_valid_odf` skips without `jing` on `PATH`.
   `scripts/claude-vm.sh` has it.

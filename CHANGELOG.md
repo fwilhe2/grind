@@ -28,6 +28,10 @@ lands, and the release workflow publishes the section as it stands.
   `CEILING.PRECISE`, `ISO.CEILING`, `FLOOR.PRECISE`, `CEILING.MATH` and `FLOOR.MATH`; and the
   normal distribution in ODF's own names, `NORMDIST`, `NORMINV`, `LEGACY.NORMSDIST` and
   `STANDARDIZE`.
+- The scratch calculator takes currencies without their symbol: `1200 eur`, `EUR 1200` or `$5`
+  show as `1,200.00 €` and `$5.00`, and the result of a calculation keeps the currency
+  (`net * 19%` is euros, `net / net` a plain number). Adding euros to dollars is refused. A
+  percentage shows as `19%`, and a tape saved as a spreadsheet formats every cell the same way.
 - Dates: `DAYS`, `DAYS360`, `DATEDIF` and `YEARFRAC`, and Excel's `WORKDAY.INTL` and
   `NETWORKDAYS.INTL` for a working week that is not Monday to Friday.
 - `ROMAN`, `BASE`, `DECIMAL` and the binary, octal and hexadecimal conversions (`DEC2HEX`,

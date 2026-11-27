@@ -17,6 +17,7 @@ use crate::formula::parse::{Expr, parse};
 use crate::formula::serialize::Bare;
 use crate::formula::value::Value;
 use crate::formula::{Entry, ExprList};
+use crate::kinds::{self, Currency, Kind};
 use crate::locale::{self, Locale};
 use crate::model::{CellValue, Document, Pos};
 use crate::{App, Error, Result};
@@ -62,10 +63,18 @@ pub struct TapeSpan {
 #[derive(Clone, Debug, Default)]
 pub struct Tape {
     list: ExprList,
+    /// Per line, the currency each number literal was typed with, in the order they stand.
+    money: Vec<Vec<Option<Currency>>>,
     locale: Option<Locale>,
-    undo: Vec<ExprList>,
-    redo: Vec<ExprList>,
+    undo: Vec<State>,
+    redo: Vec<State>,
 }
+
+/// What an undo step restores.
+type State = (ExprList, Vec<Vec<Option<Currency>>>);
+
+/// A line as read: its name, its canonical formula, and its literals' currencies.
+type Read = (Option<String>, String, Vec<Option<Currency>>);
 
 impl Tape {
     #[must_use]
@@ -88,19 +97,105 @@ impl Tape {
 
     #[must_use]
     pub fn lines(&self) -> Vec<TapeLine> {
+        let kinds = self.kinds();
         self.list
             .entries()
             .iter()
             .zip(self.list.values())
             .enumerate()
-            .map(|(i, (entry, value))| TapeLine {
-                handle: i + 1,
-                name: entry.name.clone(),
-                text: self.shown(entry),
-                value: self.value_text(value),
-                error: matches!(value, Value::Error(_)),
+            .map(|(i, (entry, value))| {
+                let (value, error) = match &kinds[i] {
+                    Ok(kind) => (
+                        self.value_text(value, self.format(i, *kind, value)),
+                        matches!(value, Value::Error(_)),
+                    ),
+                    Err(_) => ("#VALUE!".to_owned(), true),
+                };
+                TapeLine {
+                    handle: i + 1,
+                    name: entry.name.clone(),
+                    text: self.shown(i, entry),
+                    value,
+                    error,
+                }
             })
             .collect()
+    }
+
+    /// Each line's kind, or why its currencies do not go together.
+    fn kinds(&self) -> Vec<std::result::Result<Kind, String>> {
+        let entries = self.list.entries();
+        let memo: std::cell::RefCell<Vec<Option<std::result::Result<Kind, String>>>> =
+            std::cell::RefCell::new(vec![None; entries.len()]);
+        let visiting = std::cell::RefCell::new(vec![false; entries.len()]);
+        fn kind_of(
+            tape: &Tape,
+            i: usize,
+            memo: &std::cell::RefCell<Vec<Option<std::result::Result<Kind, String>>>>,
+            visiting: &std::cell::RefCell<Vec<bool>>,
+        ) -> std::result::Result<Kind, String> {
+            // `#9` on a shorter tape is #REF! already.
+            if i >= memo.borrow().len() {
+                return Ok(Kind::Plain);
+            }
+            if let Some(known) = memo.borrow()[i].clone() {
+                return known;
+            }
+            // A circle is #NUM! already; its kind is nothing in particular.
+            if std::mem::replace(&mut visiting.borrow_mut()[i], true) {
+                return Ok(Kind::Plain);
+            }
+            let entries = tape.list.entries();
+            let answer = match parse(&entries[i].formula) {
+                Err(_) => Ok(Kind::Plain),
+                Ok(expr) => {
+                    let money = tape.money.get(i).cloned().unwrap_or_default();
+                    let mut literals = money.into_iter();
+                    let mut literal = || literals.next().flatten();
+                    let line = |e: &Expr| -> Option<Kind> {
+                        let read = |j: usize| kind_of(tape, j, memo, visiting).ok();
+                        match e {
+                            Expr::Name(name) => tape.list.index_of(name).and_then(read),
+                            Expr::Ref(r) if r.start.sheet.is_none() => {
+                                let first = r.start.row?.index as usize;
+                                let last = r
+                                    .end
+                                    .as_ref()
+                                    .and_then(|e| e.row)
+                                    .map_or(first, |r| r.index as usize);
+                                let mut shared = None;
+                                for j in first.min(last)..=first.max(last) {
+                                    let k = read(j)?;
+                                    match shared {
+                                        None => shared = Some(k),
+                                        Some(s) if s == k => {}
+                                        Some(_) => return Some(Kind::Plain),
+                                    }
+                                }
+                                shared
+                            }
+                            _ => None,
+                        }
+                    };
+                    kinds::of(&expr, &mut literal, &line)
+                }
+            };
+            memo.borrow_mut()[i] = Some(answer.clone());
+            answer
+        }
+        (0..entries.len())
+            .map(|i| kind_of(self, i, &memo, &visiting))
+            .collect()
+    }
+
+    /// The format line `i` is shown and promoted in: a percentage typed as a number keeps every
+    /// decimal it was typed with, one computed shows two at most.
+    fn format(&self, i: usize, kind: Kind, value: &Value) -> Option<crate::numfmt::Format> {
+        let Value::Number(n) = value else {
+            return None;
+        };
+        let typed = parse(&self.list.entries()[i].formula).is_ok_and(|e| is_input(&e));
+        kind.format(*n, if typed { 15 } else { 2 })
     }
 
     /// Every circular group, by handle.
@@ -213,6 +308,25 @@ impl Tape {
         }
         for span in display::spans(&masked) {
             let word = &masked[span.range.clone()];
+            // `1200 EUR`, `EUR 1200`: a currency beside a number is part of the number.
+            let beside_number = || {
+                let before = masked[..span.range.start].trim_end_matches(' ');
+                let after = masked[span.range.end..].trim_start_matches(' ');
+                before.ends_with(|c: char| c.is_ascii_digit())
+                    || after.starts_with(|c: char| c.is_ascii_digit())
+            };
+            if matches!(
+                span.kind,
+                display::TokenKind::Name | display::TokenKind::Func
+            ) && Currency::named(word).is_some()
+                && beside_number()
+            {
+                out.push(TapeSpan {
+                    range: at(span.range),
+                    ink: TapeInk::Number,
+                });
+                continue;
+            }
             let ink = match span.kind {
                 display::TokenKind::Func if is_function(word) => TapeInk::Function,
                 display::TokenKind::Name if self.list.index_of(word).is_some() => TapeInk::Name,
@@ -241,14 +355,24 @@ impl Tape {
 
     /// Put a line before the one at `at` (0-based), renumbering those after it.
     pub fn insert(&mut self, at: usize, text: &str) -> Result<()> {
-        let (name, formula) = self.read(text)?;
-        self.edit_with(|list| list.insert(at, name.as_deref(), &formula))
+        let (name, formula, money) = self.read(text)?;
+        self.edit_with(|list, lines| {
+            list.insert(at, name.as_deref(), &formula)?;
+            lines.insert(at, money);
+            Ok(())
+        })
     }
 
     /// Replace the line at `at`.
     pub fn edit(&mut self, at: usize, text: &str) -> Result<()> {
-        let (name, formula) = self.read(text)?;
-        self.edit_with(|list| list.set(at, name.as_deref(), &formula))
+        let (name, formula, money) = self.read(text)?;
+        self.edit_with(|list, lines| {
+            list.set(at, name.as_deref(), &formula)?;
+            if let Some(line) = lines.get_mut(at) {
+                *line = money;
+            }
+            Ok(())
+        })
     }
 
     /// Whether `text` reads as line `at` already is, however it is spaced.
@@ -256,12 +380,19 @@ impl Tape {
         let Some(entry) = self.list.entries().get(at) else {
             return false;
         };
-        self.read(text)
-            .is_ok_and(|(name, formula)| name == entry.name && formula == entry.formula)
+        self.read(text).is_ok_and(|(name, formula, money)| {
+            name == entry.name && formula == entry.formula && Some(&money) == self.money.get(at)
+        })
     }
 
     pub fn delete(&mut self, at: usize) -> Result<()> {
-        self.edit_with(|list| list.remove(at))
+        self.edit_with(|list, lines| {
+            list.remove(at)?;
+            if at < lines.len() {
+                lines.remove(at);
+            }
+            Ok(())
+        })
     }
 
     /// Move a number out of line `at` into a named input line just before it, and have the line
@@ -273,7 +404,8 @@ impl Tape {
         nth: Option<usize>,
         name: &str,
     ) -> Result<()> {
-        let value = self.number(literal.trim().trim_end_matches('%').trim())?;
+        let (literal, _) = strip_currency(literal.trim());
+        let value = self.number(literal.trim_end_matches('%').trim())?;
         let Some(entry) = self.list.entries().get(at) else {
             return Err(Error::Formula(format!("there is no line #{}", at + 1)));
         };
@@ -286,14 +418,32 @@ impl Tape {
         } else {
             Expr::Number(value)
         };
-        self.edit_with(|list| {
+        // Which of the line's literals moves, so its currency moves with it.
+        let mut numbers = Vec::new();
+        literals(&expr, &mut numbers);
+        let moved = numbers
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n == value)
+            .nth(nth.unwrap_or(1).saturating_sub(1))
+            .map(|(i, _)| i);
+        self.edit_with(|list, lines| {
             list.insert(at, Some(name), &input.to_string())?;
             let line = &list.entries()[at + 1];
             let shifted = parse(&line.formula).map_err(|e| Error::Formula(e.to_string()))?;
             let (rewritten, _) =
                 replace_literal(&shifted, value, nth, &with).map_err(Error::Formula)?;
             let name = line.name.clone();
-            list.set(at + 1, name.as_deref(), &rewritten.to_string())
+            list.set(at + 1, name.as_deref(), &rewritten.to_string())?;
+            let mut rest = lines.get(at).cloned().unwrap_or_default();
+            let currency = moved
+                .and_then(|i| (i < rest.len()).then(|| rest.remove(i)))
+                .flatten();
+            if let Some(line) = lines.get_mut(at) {
+                *line = rest;
+            }
+            lines.insert(at.min(lines.len()), vec![currency]);
+            Ok(())
         })
     }
 
@@ -311,7 +461,8 @@ impl Tape {
         let Some(before) = self.undo.pop() else {
             return false;
         };
-        self.redo.push(std::mem::replace(&mut self.list, before));
+        let now = self.restore(before);
+        self.redo.push(now);
         true
     }
 
@@ -319,8 +470,16 @@ impl Tape {
         let Some(after) = self.redo.pop() else {
             return false;
         };
-        self.undo.push(std::mem::replace(&mut self.list, after));
+        let now = self.restore(after);
+        self.undo.push(now);
         true
+    }
+
+    fn restore(&mut self, (list, money): State) -> State {
+        (
+            std::mem::replace(&mut self.list, list),
+            std::mem::replace(&mut self.money, money),
+        )
     }
 
     /// The tape as a spreadsheet: line n is row n, its label (name, or `#n`) in A and its number
@@ -335,9 +494,17 @@ impl Tape {
         let mut doc = self.list.document();
         doc.locale.clone_from(&self.locale);
         let entries = self.list.entries();
+        let kinds = self.kinds();
         for (i, (entry, value)) in entries.iter().zip(self.list.values()).enumerate() {
             let row = u32::try_from(i).unwrap_or(u32::MAX);
             let sheet = &mut doc.sheets[0];
+            if let Some(format) = kinds[i]
+                .as_ref()
+                .ok()
+                .and_then(|kind| self.format(i, *kind, value))
+            {
+                sheet.set_format(Pos::new(row, 1), format);
+            }
             let label = entry.name.clone().unwrap_or_else(|| format!("#{}", i + 1));
             sheet.set(Pos::new(row, 0), CellValue::Text(label));
             let b = Pos::new(row, 1);
@@ -363,10 +530,25 @@ impl Tape {
         app.save_file(path)
     }
 
-    fn edit_with(&mut self, f: impl FnOnce(&mut ExprList) -> Result<Vec<usize>>) -> Result<()> {
-        let mut next = self.list.clone();
-        f(&mut next)?;
-        self.undo.push(std::mem::replace(&mut self.list, next));
+    /// Apply an edit to a copy, refused when it leaves a line adding one currency to another.
+    fn edit_with(
+        &mut self,
+        f: impl FnOnce(&mut ExprList, &mut Vec<Vec<Option<Currency>>>) -> Result<()>,
+    ) -> Result<()> {
+        let (mut list, mut money) = (self.list.clone(), self.money.clone());
+        money.resize(list.entries().len(), Vec::new());
+        f(&mut list, &mut money)?;
+        let before = self.restore((list, money));
+        if let Some((i, why)) = self
+            .kinds()
+            .into_iter()
+            .enumerate()
+            .find_map(|(i, k)| k.err().map(|why| (i, why)))
+        {
+            self.restore(before);
+            return Err(Error::Formula(format!("#{}: {why}", i + 1)));
+        }
+        self.undo.push(before);
         self.redo.clear();
         Ok(())
     }
@@ -394,8 +576,8 @@ impl Tape {
             })
     }
 
-    /// A typed line → its name and its canonical formula.
-    fn read(&self, text: &str) -> Result<(Option<String>, String)> {
+    /// A typed line → its name, its canonical formula and its literals' currencies.
+    fn read(&self, text: &str) -> Result<Read> {
         let text = text.trim();
         let (name, expression) = match text.strip_prefix('=') {
             Some(rest) => (None, rest),
@@ -410,7 +592,7 @@ impl Tape {
         if expression.trim().is_empty() {
             return Err(Error::Formula("the line has no expression".into()));
         }
-        let typed = self.canonical_numbers(expression)?;
+        let (typed, money) = self.canonical_numbers(expression)?;
         for span in display::spans(&typed) {
             if span.kind == display::TokenKind::Ref && !typed[span.range.clone()].starts_with('[') {
                 return Err(Error::Formula(format!(
@@ -421,19 +603,59 @@ impl Tape {
         }
         let canonical =
             display::from_display(&format!("={typed}")).map_err(|e| Error::Formula(e.message))?;
-        Ok((name, canonical.trim_start_matches('=').to_owned()))
+        Ok((name, canonical.trim_start_matches('=').to_owned(), money))
     }
 
     /// `expression` with every number respelled in OpenFormula's, `#n` as a reference to line n,
-    /// and bracketed text refused.
-    fn canonical_numbers(&self, expression: &str) -> Result<String> {
+    /// and bracketed text refused; and the currency each number was typed with — an ISO code or
+    /// one of `€ $ £ ¥` before or after it — in the order the numbers stand.
+    fn canonical_numbers(&self, expression: &str) -> Result<(String, Vec<Option<Currency>>)> {
         let (decimal, group) = self.separators();
         let chars: Vec<char> = expression.chars().collect();
         let mut out = String::new();
+        let mut money = Vec::new();
+        let mut pending: Option<Currency> = None;
         let mut i = 0;
         while i < chars.len() {
             let c = chars[i];
-            let after_word = i > 0 && is_word(chars[i - 1]);
+            // `$5`: the symbol was read as a currency, so the digits start a number.
+            let after_word = i > 0 && is_word(chars[i - 1]) && pending.is_none();
+            let next_digit = |from: usize| {
+                chars[from..]
+                    .iter()
+                    .find(|c| **c != ' ')
+                    .is_some_and(char::is_ascii_digit)
+            };
+            if !after_word && matches!(c, '€' | '$' | '£' | '¥') && next_digit(i + 1) {
+                pending = Currency::named(&c.to_string());
+                i += 1;
+                while chars.get(i) == Some(&' ') {
+                    i += 1;
+                }
+                continue;
+            }
+            if !after_word && c.is_ascii_alphabetic() {
+                let start = i;
+                let mut end = i;
+                while end < chars.len() && is_word(chars[end]) {
+                    end += 1;
+                }
+                let word: String = chars[start..end].iter().collect();
+                // `EUR 1200`: a code, a space, a number.
+                if let Some(currency) = Currency::named(&word)
+                    .filter(|_| chars.get(end) == Some(&' ') && next_digit(end))
+                {
+                    pending = Some(currency);
+                    i = end;
+                    while chars.get(i) == Some(&' ') {
+                        i += 1;
+                    }
+                    continue;
+                }
+                out.push_str(&word);
+                i = end;
+                continue;
+            }
             if c == '"' {
                 out.push(c);
                 i += 1;
@@ -498,19 +720,53 @@ impl Tape {
                     ))
                 })?;
                 out.push_str(&number);
+                // `1200 EUR`, `1200EUR`, `5 €`: a currency after the number.
+                let mut j = i;
+                while chars.get(j) == Some(&' ') {
+                    j += 1;
+                }
+                let mut end = j;
+                while end < chars.len() && chars[end].is_ascii_alphabetic() {
+                    end += 1;
+                }
+                let after = if end > j && !chars.get(end).is_some_and(|c| is_word(*c)) {
+                    Currency::named(&chars[j..end].iter().collect::<String>()).map(|c| (c, end))
+                } else {
+                    chars
+                        .get(j)
+                        .and_then(|c| matches!(c, '€' | '$' | '£' | '¥').then(|| c.to_string()))
+                        .and_then(|symbol| Currency::named(&symbol))
+                        .map(|c| (c, j + 1))
+                };
+                let before = pending.take();
+                money.push(match (before, after) {
+                    (Some(_), Some(_)) => {
+                        return Err(Error::Formula(format!(
+                            "{run} has a currency on both sides: write one"
+                        )));
+                    }
+                    (Some(c), None) => Some(c),
+                    (None, Some((c, end))) => {
+                        i = end;
+                        Some(c)
+                    }
+                    (None, None) => None,
+                });
             } else {
                 out.push(c);
                 i += 1;
             }
         }
-        Ok(out)
+        Ok((out, money))
     }
 
-    /// An entry as it would be typed: display form, `#n` for a reference, the locale's decimal.
-    fn shown(&self, entry: &Entry) -> String {
+    /// Line `i` as it would be typed: display form, `#n` for a reference, the locale's decimal,
+    /// and each number's currency code after it.
+    fn shown(&self, i: usize, entry: &Entry) -> String {
+        let money = self.money.get(i).map_or(&[][..], Vec::as_slice);
         let expression = parse(&entry.formula).map_or_else(
             |_| entry.formula.clone(),
-            |expr| self.localised(&Bare(&expr).to_string()),
+            |expr| self.localised(&Bare(&expr).to_string(), money),
         );
         match &entry.name {
             Some(name) => format!("{name} = {expression}"),
@@ -518,9 +774,11 @@ impl Tape {
         }
     }
 
-    /// Display form → the tape's spelling: `B3` as `#3`, `0.5` as `0,5` in de-DE.
-    fn localised(&self, text: &str) -> String {
+    /// Display form → the tape's spelling: `B3` as `#3`, `0.5` as `0,5` in de-DE, and `money[k]`
+    /// after the k-th number.
+    fn localised(&self, text: &str, money: &[Option<Currency>]) -> String {
         let (decimal, _) = self.separators();
+        let mut money = money.iter();
         let chars: Vec<char> = text.chars().collect();
         let mut out = String::new();
         let mut i = 0;
@@ -556,9 +814,17 @@ impl Tape {
                     _ => out.push_str(&word),
                 }
             } else if c.is_ascii_digit() && !after_word {
-                while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '.') {
+                while i < chars.len()
+                    && (chars[i].is_ascii_alphanumeric()
+                        || chars[i] == '.'
+                        || (matches!(chars[i], '+' | '-') && matches!(chars[i - 1], 'E' | 'e')))
+                {
                     out.push(if chars[i] == '.' { decimal } else { chars[i] });
                     i += 1;
+                }
+                if let Some(Some(currency)) = money.next() {
+                    out.push(' ');
+                    out.push_str(currency.code);
                 }
             } else {
                 out.push(c);
@@ -568,9 +834,13 @@ impl Tape {
         out
     }
 
-    fn value_text(&self, value: &Value) -> String {
+    fn value_text(&self, value: &Value, format: Option<crate::numfmt::Format>) -> String {
         let (decimal, _) = self.separators();
         match value {
+            Value::Number(n) if format.is_some() => format.map_or_else(String::new, |f| {
+                f.in_locale(self.locale.clone())
+                    .render(&CellValue::Number(*n), 0)
+            }),
             Value::Number(n) => {
                 // Fifteen significant digits, as a spreadsheet shows: 0.1+0.2 is 0.3.
                 let rounded: f64 = format!("{n:.14e}").parse().unwrap_or(*n);
@@ -615,6 +885,62 @@ fn definition(text: &str) -> Option<(&str, &str)> {
     }
     let rest = text[end..].trim_start().strip_prefix('=')?;
     Some((name, rest))
+}
+
+/// `text` without a currency before or after it, and that currency.
+fn strip_currency(text: &str) -> (&str, Option<Currency>) {
+    let symbol = |t: &str| {
+        t.chars()
+            .next()
+            .map(String::from)
+            .and_then(|c| Currency::named(&c))
+    };
+    if let Some(c) = symbol(text).filter(|_| text.starts_with(['€', '$', '£', '¥'])) {
+        return (
+            text[text.chars().next().map_or(0, char::len_utf8)..].trim(),
+            Some(c),
+        );
+    }
+    if let Some(last) = text
+        .chars()
+        .last()
+        .filter(|c| matches!(c, '€' | '$' | '£' | '¥'))
+    {
+        return (
+            text[..text.len() - last.len_utf8()].trim(),
+            Currency::named(&last.to_string()),
+        );
+    }
+    let letters = text.len()
+        - text
+            .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+            .len();
+    if letters > 0 {
+        let (number, code) = text.split_at(text.len() - letters);
+        if let Some(c) = Currency::named(code) {
+            return (number.trim(), Some(c));
+        }
+    }
+    if let Some((code, number)) = text.split_once(' ')
+        && let Some(c) = Currency::named(code)
+    {
+        return (number.trim(), Some(c));
+    }
+    (text, None)
+}
+
+/// Every number literal of `expr`, in the order they stand.
+fn literals(expr: &Expr, out: &mut Vec<f64>) {
+    match expr {
+        Expr::Number(n) => out.push(*n),
+        Expr::Call { args, .. } => args.iter().for_each(|a| literals(a, out)),
+        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => literals(e, out),
+        Expr::Binary(_, a, b) => {
+            literals(a, out);
+            literals(b, out);
+        }
+        _ => {}
+    }
 }
 
 /// A number as typed, perhaps negated or a percentage: what promotion stores as a value.
@@ -871,5 +1197,117 @@ mod tests {
             tape(&["#1 + 1"]).circles().as_deref(),
             Some("#1 reads itself")
         );
+    }
+
+    #[test]
+    fn a_currency_is_typed_by_its_code_or_symbol_on_either_side() {
+        let t = tape(&[
+            "1200 eur", "EUR 1200", "1200EUR", "€1200", "$5", "5 £", "1200 jpy",
+        ]);
+        let values: Vec<String> = t.lines().into_iter().map(|l| l.value).collect();
+        assert_eq!(
+            values,
+            [
+                "1,200.00\u{a0}€",
+                "1,200.00\u{a0}€",
+                "1,200.00\u{a0}€",
+                "1,200.00\u{a0}€",
+                "$5.00",
+                "£5.00",
+                "1,200\u{a0}¥",
+            ]
+        );
+        // Shown again as it would be typed: the code after the number.
+        assert_eq!(t.lines()[1].text, "1200 EUR");
+        assert_eq!(t.lines()[4].text, "5 USD");
+        let de = {
+            let mut t = Tape::new(Locale::parse("de-DE"));
+            t.push("net = 1.200,5 eur").unwrap();
+            t
+        };
+        assert_eq!(de.lines()[0].value, "1.200,50\u{a0}€");
+        assert_eq!(de.lines()[0].text, "net = 1200,5 EUR");
+    }
+
+    #[test]
+    fn a_kind_is_carried_through_the_arithmetic() {
+        let t = tape(&[
+            "vat = 19%",
+            "net = 1200 eur",
+            "net * vat",
+            "net * (1 + vat)",
+            "net / net",
+            "SUM(#2:#4)",
+            "ROUND(net / 7; 2)",
+            "19% * 1200",
+            "net / 12",
+        ]);
+        let values: Vec<String> = t.lines().into_iter().map(|l| l.value).collect();
+        assert_eq!(
+            values,
+            [
+                "19%",
+                "1,200.00\u{a0}€",
+                "228.00\u{a0}€",
+                "1,428.00\u{a0}€",
+                "1",
+                "2,856.00\u{a0}€",
+                "171.43\u{a0}€",
+                "228",
+                "100.00\u{a0}€",
+            ]
+        );
+        assert_eq!(tape(&["12.5%"]).lines()[0].value, "12.5%");
+        assert_eq!(tape(&["1/3 * 100%"]).lines()[0].value, "0.333333333333333");
+        assert_eq!(tape(&["10% / 3"]).lines()[0].value, "3.33%");
+    }
+
+    #[test]
+    fn two_currencies_do_not_add_up() {
+        let mut t = tape(&["a = 100 eur"]);
+        let refused = t.push("a + 50 usd").unwrap_err().to_string();
+        assert!(refused.contains("EUR and USD do not add up"), "{refused}");
+        assert!(t.push("a > 50 usd").is_err(), "nor compare");
+        // A rate between them is a plain ratio, and converts.
+        t.push("eur_per_usd = 92 eur / 100 usd").unwrap();
+        t.push("a + 50 * eur_per_usd").unwrap();
+        assert_eq!(t.lines()[2].value, "146.00\u{a0}€");
+        // An edit that would make a later line mix is refused too, and changes nothing.
+        let mut t = tape(&["a = 100", "a + 50 usd"]);
+        let refused = t.edit(0, "a = 100 eur").unwrap_err().to_string();
+        assert!(refused.starts_with("#2:"), "{refused}");
+        assert_eq!(t.lines()[0].text, "a = 100");
+    }
+
+    #[test]
+    fn a_currency_is_coloured_as_its_number_and_moves_with_an_extract() {
+        let t = tape(&["x = 1"]);
+        let spans = t.spans("1200 eur * 2", None);
+        assert_eq!(spans[1].range, 5..8);
+        assert_eq!(spans[1].ink, TapeInk::Number);
+        let mut t = tape(&["1200 eur * 19%"]);
+        t.extract(0, "1200 eur", None, "price").unwrap();
+        assert_eq!(t.lines()[0].text, "price = 1200 EUR");
+        assert_eq!(t.lines()[1].text, "price*19%");
+        assert_eq!(t.lines()[1].value, "228.00\u{a0}€");
+        assert!(t.undo());
+        assert_eq!(t.lines()[0].text, "1200 EUR*19%");
+    }
+
+    #[test]
+    fn promotion_formats_each_cell_for_its_kind() {
+        let t = tape(&["vat = 19%", "net = 1200 eur", "net * vat", "2 + 2"]);
+        let doc = t.promote().unwrap();
+        let sheet = &doc.sheets[0];
+        let shown = |row| {
+            sheet.format(Pos::new(row, 1)).map(|f| {
+                f.clone()
+                    .render(&sheet.get(Pos::new(row, 1)), doc.null_date)
+            })
+        };
+        assert_eq!(shown(0).as_deref(), Some("19%"));
+        assert_eq!(shown(1).as_deref(), Some("1,200.00\u{a0}€"));
+        assert_eq!(shown(2).as_deref(), Some("228.00\u{a0}€"));
+        assert_eq!(shown(3), None);
     }
 }
