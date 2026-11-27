@@ -105,8 +105,9 @@ env:
   CARGO_TERM_COLOR: never
 
 jobs:
-  # The four Linux binaries: one `cargo build --release`, then the packages, the sizes and the
-  # breakdown all read what it produced.
+  # The four Linux binaries: one `cargo build --release` per architecture, then the packages,
+  # the sizes and the breakdown all read what it produced. Each architecture builds natively on
+  # a runner of its own, so nothing here cross-compiles.
   #
   # This job must stay **first in the file**: `cli/tests/packaging.rs` finds the one line that
   # names every packaged binary by looking for the first `cargo build --release` in this
@@ -117,9 +118,18 @@ jobs:
     # Ubuntu 24.04's glibc 2.39 covers Debian 13, Ubuntu 24.04, EL 10 and Leap 16, and its
     # GTK 4.14 and libadwaita 1.5 are exactly the `v4_14` and `v1_5` features the shells ask
     # for. On 26.04 the packages needed glibc 2.43 (atan2f and acosf got new symbol versions).
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    runs-on: ${{ matrix.runner }}
     env:
       PY: python3
+      ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -175,9 +185,9 @@ jobs:
             cp "target/release/$1" "stripped/$1"
             strip "stripped/$1"
             $PY .github/scripts/sizes.py record \
-              --artifact "$1" --platform linux-x86_64 \
+              --artifact "$1" --platform "linux-$ARCH" \
               --file "target/release/$1" --stripped "stripped/$1" \
-              --note "$2" --out sizes-linux.jsonl
+              --note "$2" --out "sizes-linux-$ARCH.jsonl"
           }
           measure grind          'the CLI — grind-cli'
           measure grind-tui      'the terminal shell'
@@ -188,8 +198,8 @@ jobs:
       # steps below do. They are the deliverable; the breakdowns are the bonus.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sizes-linux
-          path: sizes-linux.jsonl
+          name: sizes-linux-${{ matrix.arch }}
+          path: sizes-linux-${{ matrix.arch }}.jsonl
           if-no-files-found: error
 
       # Prebuilt, from `install-action`'s own manifest — this used to be `cargo install
@@ -235,7 +245,7 @@ jobs:
           cargo deb -p grind --no-build --deb-version "$PKG_VERSION-1"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: deb-packages
+          name: deb-packages-${{ matrix.arch }}
           path: target/debian/*.deb
           if-no-files-found: error
 
@@ -245,12 +255,15 @@ jobs:
           cargo generate-rpm -p ui_sheet_gtk -s "version = \"$PKG_VERSION\""
           cargo generate-rpm -p ui_text_gtk -s "version = \"$PKG_VERSION\""
           cargo generate-rpm -p ui_tui -s "version = \"$PKG_VERSION\""
-          # `noarch`: it holds no machine code. `cargo deb` has no equivalent switch, so the
-          # .deb says amd64 — `suite/Cargo.toml` has the note.
-          cargo generate-rpm -p suite -a noarch -s "version = \"$PKG_VERSION\""
+          # `noarch`: it holds no machine code, so one architecture builds it, or the release
+          # would get the same file twice. `cargo deb` has no equivalent switch, so each
+          # architecture builds a .deb of its own — `suite/Cargo.toml` has the note.
+          if [ "$ARCH" = x86_64 ]; then
+            cargo generate-rpm -p suite -a noarch -s "version = \"$PKG_VERSION\""
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: rpm-packages
+          name: rpm-packages-${{ matrix.arch }}
           path: target/generate-rpm/*.rpm
           if-no-files-found: error
 
@@ -267,7 +280,7 @@ jobs:
       - name: Upload the Linux binaries
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: linux-binaries
+          name: linux-binaries-${{ matrix.arch }}
           path: |
             target/release/grind
             target/release/grind-tui
@@ -276,8 +289,10 @@ jobs:
           if-no-files-found: error
 
       # Not in `install-action`'s manifest and no prebuilt releases; see the note on
-      # `cargo-generate-rpm` above for why that is acceptable.
+      # `cargo-generate-rpm` above for why that is acceptable. The breakdown and the duplicates
+      # below are about the code, not the architecture, so one architecture reports them.
       - name: Install cargo-bloat
+        if: matrix.arch == 'x86_64'
         run: cargo install cargo-bloat --locked
 
       # What is in each of them, per crate. `--crates` attributes every symbol to the crate
@@ -286,6 +301,7 @@ jobs:
       # **This step REBUILDS AND REPLACES the binaries measured and packaged above**, which is
       # fine only because it is last. See the header.
       - name: What went into each binary
+        if: matrix.arch == 'x86_64'
         # The release profile strips; cargo bloat needs the symbols back.
         env:
           CARGO_PROFILE_RELEASE_STRIP: "false"
@@ -315,6 +331,7 @@ jobs:
       # it is the cheapest size regression there is to fix — a version bump. It is also
       # invisible in `cargo bloat`, which sums both copies under one name.
       - name: Crates linked at more than one version
+        if: matrix.arch == 'x86_64'
         run: |
           # `--duplicates` exits 0 and prints nothing when there are none, so the "none"
           # case has to be detected from the output rather than from the status.

@@ -15,6 +15,9 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- The spreadsheet, the word processor and every Linux package now come for 64-bit Arm too
+  (`arm64` `.deb`, `aarch64` `.rpm`).
+
 ### Fixes
 
 ## 0.2.0 — 2026-11-26

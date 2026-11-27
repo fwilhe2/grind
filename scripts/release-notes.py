@@ -54,9 +54,9 @@ def downloads(version: str, repo: str) -> str:
         return link(target.split("-")[0], f"grind-v{version}-{target}.{ext}")
 
     def pkg(label: str, name: str) -> str:
-        deb = f"{name}_{version}-1_amd64.deb"
-        rpm = f"{name}-{version}-1.x86_64.rpm"
-        return f"| {label} | {link(deb, deb)} | {link(rpm, rpm)} |"
+        debs = " · ".join(link(a, f"{name}_{version}-1_{a}.deb") for a in ("amd64", "arm64"))
+        rpms = " · ".join(link(a, f"{name}-{version}-1.{a}.rpm") for a in ("x86_64", "aarch64"))
+        return f"| {label} | {debs} | {rpms} |"
 
     pkgs = "\n".join(
         pkg(label, name)
@@ -74,7 +74,7 @@ def downloads(version: str, repo: str) -> str:
 
 **Windows**, x64 and Arm: {link(f"grind-win32-{version}-x86_64.exe", f"grind-win32-{version}-x86_64.exe")} is the whole app, no installer. It is not signed, so SmartScreen asks first: *More info* ▸ *Run anyway*.
 
-**Linux**, x86_64: one package per program, Debian and Ubuntu take the `.deb`, Fedora the `.rpm`. Download the ones you want and install them together.
+**Linux**, x86_64 and Arm: one package per program, Debian and Ubuntu take the `.deb`, Fedora the `.rpm`. Download the ones you want and install them together.
 
 | | Debian, Ubuntu | Fedora |
 |---|---|---|
@@ -85,9 +85,9 @@ All of them in one command:
 ```sh
 v={version} u={base}
 # Debian, Ubuntu
-cd "$(mktemp -d)" && curl -fL --remote-name-all "$u"/grind{{,-cli,-tui,-sheet-gtk,-text-gtk}}_$v-1_amd64.deb && sudo apt install ./*.deb
+cd "$(mktemp -d)" && curl -fL --remote-name-all "$u"/grind{{,-cli,-tui,-sheet-gtk,-text-gtk}}_$v-1_$(dpkg --print-architecture).deb && sudo apt install ./*.deb
 # Fedora
-sudo dnf install "$u/grind-$v-1.noarch.rpm" "$u"/grind-{{cli,tui,sheet-gtk,text-gtk}}-$v-1.x86_64.rpm
+sudo dnf install "$u/grind-$v-1.noarch.rpm" "$u"/grind-{{cli,tui,sheet-gtk,text-gtk}}-$v-1.$(uname -m).rpm
 ```
 
 **Only the command line**, no spreadsheet or word processor: `grind` and `grind-tui` in one archive, nothing to install (the Linux ones run on any distribution):
