@@ -35,10 +35,9 @@ maintainer = "Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 copyright = "2026, Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 license-file = ["../packaging/copyright", "0"]
 section = "metapackages"
-# ponytail: `Architecture: amd64` rather than the `all` a meta-package would normally carry,
-# because `cargo deb` takes the architecture from the build target and has no key to override
-# it. Harmless in practice — the four it depends on are `amd64` too, from the same job — and
-# the fix is an arm64 leg in `artifacts.yml`, which would produce its own.
+# `cargo deb` takes the architecture from the build target and has no key for the `all` a
+# meta-package would normally carry, so each architecture's job builds one of its own,
+# depending on the four built beside it.
 extended-description = """\
 Installs the four applications of grind, an office suite whose native format is \
 OpenDocument: the grind command line, the grind-tui terminal shell, and the spreadsheet \

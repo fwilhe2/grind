@@ -227,8 +227,8 @@ breaking and every line motion come from the core.
 `.deb` through `cargo deb`, `.rpm` through `cargo generate-rpm`. The meta-package is `suite/`, a
 stub crate with no code, so that one mechanism builds all five; `generate-rpm` has no `$auto`,
 so its `requires` are spelled out. `cargo deb` takes the architecture from the build target and
-has no `all`, so the `.deb` says `amd64` (harmless: its dependencies come from the same job)
-while the `.rpm` is `noarch`. `cli/tests/packaging.rs` holds `artifacts.yml` to all of it.
+has no `all`, so there is a `.deb` per architecture (`amd64`, `arm64`), each beside the four it
+depends on, while the `.rpm` is `noarch` and built once. `cli/tests/packaging.rs` holds `artifacts.yml` to all of it.
 
 The container (`Containerfile.distroless-cli`) carries `grind`; the GUI applications are not
 containerised. Flatpak is not built; if it is, Flathub prefers one app ID per manifest, so it
