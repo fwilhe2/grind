@@ -1,0 +1,86 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The `action.yml` at the root, used the way another repository would use it, on every runner
+# the release has a binary for.
+name: setup-action
+
+on:
+  push:
+    branches: [main]
+    paths: [action.yml, .github/workflows/setup-action.yml]
+  pull_request:
+    paths: [action.yml, .github/workflows/setup-action.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: setup-action-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  use:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: latest
+        uses: ./
+
+      - name: The latest release is on the PATH
+        shell: bash
+        env:
+          TAG: ${{ steps.latest.outputs.version }}
+        run: |
+          set -euo pipefail
+          grind --version | grep -F "grind ${TAG#v} "
+          grind-tui --version
+          grind sheet new book.ods
+          grind sheet set book.ods A1 2
+          grind sheet set book.ods A2 '=[.A1]*21'
+          grind sheet recalc book.ods
+          grind --format json info book.ods
+
+      - name: A second call in the same job downloads nothing
+        id: again
+        uses: ./
+
+      - shell: bash
+        env:
+          FIRST: ${{ steps.latest.outputs.path }}
+          SECOND: ${{ steps.again.outputs.path }}
+        run: test "$FIRST" = "$SECOND"
+
+      - name: A pinned version, without the v
+        id: pinned
+        uses: ./
+        with:
+          version: 0.2.0
+          cache: false
+
+      - shell: bash
+        env:
+          TAG: ${{ steps.pinned.outputs.version }}
+        run: test "$TAG" = v0.2.0
+
+      - name: A version that is not a release fails
+        id: missing
+        continue-on-error: true
+        uses: ./
+        with:
+          version: v0.0.0
+          cache: false
+
+      - shell: bash
+        env:
+          OUTCOME: ${{ steps.missing.outcome }}
+        run: test "$OUTCOME" = failure

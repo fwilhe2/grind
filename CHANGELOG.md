@@ -20,6 +20,8 @@ lands, and the release workflow publishes the section as it stands.
 - An Ansible role installs the latest released desktop apps and the `grind` command on
   Debian, Ubuntu, Fedora, RHEL and openSUSE, and upgrades them when a new release comes out
   (`ansible-galaxy collection install 'git+https://github.com/fwilhe2/grind.git#/packaging/ansible,main'`).
+- A GitHub Action puts the `grind` command on the path of a workflow, on Linux, macOS and
+  Windows, x64 and Arm, the latest release or a pinned one: `uses: fwilhe2/grind@main`.
 
 ### Fixes
 

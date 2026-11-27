@@ -1,0 +1,130 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+# Puts the released `grind` and `grind-tui` on the PATH of a workflow job (doc/github-action.md).
+name: Set up grind
+description: Install the grind command line, the ODF office suite's CLI, from its GitHub releases
+author: Florian Wilhelm
+branding:
+  icon: file-text
+  color: green
+
+inputs:
+  version:
+    description: A release tag such as v0.2.0, or latest
+    required: false
+    default: latest
+  cache:
+    description: Keep the binaries in the Actions cache for later runs (true or false)
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: The release tag installed, such as v0.2.0
+    value: ${{ steps.resolve.outputs.tag }}
+  path:
+    description: The directory holding grind and grind-tui
+    value: ${{ steps.resolve.outputs.dir }}
+  cache-hit:
+    description: Whether the binaries came from the Actions cache
+    value: ${{ steps.cache.outputs.cache-hit == 'true' }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        REPO: fwilhe2/grind
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS/$RUNNER_ARCH" in
+          Linux/X64)     target=x86_64-unknown-linux-musl ext=tar.gz ;;
+          Linux/ARM64)   target=aarch64-unknown-linux-musl ext=tar.gz ;;
+          macOS/X64)     target=x86_64-apple-darwin ext=tar.gz ;;
+          macOS/ARM64)   target=aarch64-apple-darwin ext=tar.gz ;;
+          Windows/X64)   target=x86_64-pc-windows-msvc ext=zip ;;
+          Windows/ARM64) target=aarch64-pc-windows-msvc ext=zip ;;
+          *) echo "::error::grind publishes no binary for $RUNNER_OS on $RUNNER_ARCH"; exit 1 ;;
+        esac
+
+        # The release page redirects to the latest tag: no API call, so no token and no rate limit.
+        if [ "$VERSION" = latest ]; then
+          url="$(curl -fsSL --retry 3 -o /dev/null -w '%{url_effective}' \
+                   "https://github.com/$REPO/releases/latest")"
+          tag="${url##*/}"
+        else
+          tag="v${VERSION#v}"
+        fi
+        if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::'$VERSION' is not a grind release; give a tag such as v0.2.0, or latest"
+          exit 1
+        fi
+
+        dir="$RUNNER_TOOL_CACHE/grind/${tag#v}/$target"
+        present=false
+        if [ -f "$dir/grind" ] || [ -f "$dir/grind.exe" ]; then
+          present=true
+        fi
+        {
+          echo "tag=$tag"
+          echo "target=$target"
+          echo "ext=$ext"
+          echo "dir=$dir"
+          echo "present=$present"
+        } >> "$GITHUB_OUTPUT"
+
+    # A second call in the same job finds the directory above and skips the rest.
+    - id: cache
+      if: steps.resolve.outputs.present != 'true' && inputs.cache == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ steps.resolve.outputs.dir }}
+        key: grind-${{ steps.resolve.outputs.tag }}-${{ steps.resolve.outputs.target }}
+
+    - if: steps.resolve.outputs.present != 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        TAG: ${{ steps.resolve.outputs.tag }}
+        TARGET: ${{ steps.resolve.outputs.target }}
+        EXT: ${{ steps.resolve.outputs.ext }}
+        DIR: ${{ steps.resolve.outputs.dir }}
+        REPO: fwilhe2/grind
+      run: |
+        set -euo pipefail
+        name="grind-$TAG-$TARGET"
+        base="https://github.com/$REPO/releases/download/$TAG"
+        work="$(mktemp -d)"
+        cd "$work"
+        curl -fsSL --retry 3 -o "$name.$EXT" "$base/$name.$EXT" || {
+          echo "::error::grind $TAG has no $name.$EXT; is $TAG a release of $REPO?"
+          exit 1
+        }
+        curl -fsSL --retry 3 -o "$name.sha256" "$base/$name.sha256"
+        if command -v sha256sum >/dev/null; then
+          sha256sum -c "$name.sha256"
+        else
+          shasum -a 256 -c "$name.sha256"
+        fi
+        mkdir -p "$DIR"
+        if [ "$EXT" = zip ]; then
+          # Windows' own tar is bsdtar, which reads zip; the tar Git for Windows puts first does not.
+          "$SYSTEMROOT/System32/tar.exe" -xf "$name.$EXT" -C "$DIR"
+        else
+          tar -xzf "$name.$EXT" -C "$DIR"
+        fi
+        cd - >/dev/null
+        rm -rf "$work"
+
+    # Putting the binaries on the PATH is this action's purpose; DIR is the runner's tool cache,
+    # a tag that matched ^v[0-9.]+$ and a target from the list above.
+    - shell: bash
+      env:
+        DIR: ${{ steps.resolve.outputs.dir }}
+      run: | # zizmor: ignore[github-env]
+        set -euo pipefail
+        echo "$DIR" >> "$GITHUB_PATH"
+        "$DIR/grind" --version

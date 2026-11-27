@@ -73,6 +73,8 @@ const NOT_SHIPPED: &[&str] = &[
     "Containerfile.distroless-cli",
     // The Ansible collection that installs the released packages; it is in none of them.
     "packaging/ansible/",
+    // The GitHub Action that downloads the released CLI into somebody else's workflow.
+    "action.yml",
 ];
 
 /// Our own files under a licence other than the suite's **on purpose**, as path prefixes — so
