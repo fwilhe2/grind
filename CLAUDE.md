@@ -201,7 +201,9 @@ later step in the same job. Debug checks (`ci.yml`, `gtk.yml`, `win32.yml`, `mac
 release artifacts (`artifacts.yml`) are the two tiers. `container.yml` builds the images (the
 CLI, and the page with `grind serve`); `documents.yml`, `screenshots.yml` and `mac-drive.yml`
 compile nothing and use published binaries; `mac-session.yml` is dispatch-only;
-`dependabot-third-party.yml` commits the regenerated licence list on Dependabot's branches.
+`setup-action.yml` runs the root `action.yml` (the GitHub Action that installs the released CLI,
+`doc/github-action.md`) on every runner kind; `dependabot-third-party.yml` commits the
+regenerated licence list on Dependabot's branches.
 
 Things that bite if forgotten:
 
