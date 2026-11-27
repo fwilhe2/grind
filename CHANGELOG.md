@@ -28,6 +28,11 @@ lands, and the release workflow publishes the section as it stands.
   `CEILING.PRECISE`, `ISO.CEILING`, `FLOOR.PRECISE`, `CEILING.MATH` and `FLOOR.MATH`; and the
   normal distribution in ODF's own names, `NORMDIST`, `NORMINV`, `LEGACY.NORMSDIST` and
   `STANDARDIZE`.
+- Dates: `DAYS`, `DAYS360`, `DATEDIF` and `YEARFRAC`, and Excel's `WORKDAY.INTL` and
+  `NETWORKDAYS.INTL` for a working week that is not Monday to Friday.
+- `ROMAN`, `BASE`, `DECIMAL` and the binary, octal and hexadecimal conversions (`DEC2HEX`,
+  `HEX2DEC`, `BIN2DEC` and the rest); `NUMBERVALUE`, `CLEAN`, `AVERAGEA`, `MAXA`, `MINA`,
+  `SHEET`, `SHEETS`, `DB`, `XNPV`, `XIRR`, `RAND` and `RANDBETWEEN`.
 
 ### Fixes
 

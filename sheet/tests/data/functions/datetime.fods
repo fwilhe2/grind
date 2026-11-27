@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <office:document xmlns:grddl="http://www.w3.org/2003/g/data-view#" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xforms="http://www.w3.org/2002/xforms" xmlns:dom="http://www.w3.org/2001/xml-events" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0" xmlns:math="http://www.w3.org/1998/Math/MathML" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:field="urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0" xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:ooo="http://openoffice.org/2004/office" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" xmlns:ooow="http://openoffice.org/2004/writer" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:drawooo="http://openoffice.org/2010/draw" xmlns:oooc="http://openoffice.org/2004/calc" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:tableooo="http://openoffice.org/2009/table" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0" xmlns:rpt="http://openoffice.org/2005/report" xmlns:css3t="http://www.w3.org/TR/css3-text/" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:formx="urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
- <office:meta><meta:generator>LibreOffice/26.8.2.2$Linux_X86_64 LibreOffice_project/680$Build-2</meta:generator><meta:document-statistic meta:table-count="4" meta:cell-count="132" meta:object-count="0"/></office:meta>
+ <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="4" meta:cell-count="176" meta:object-count="0"/></office:meta>
  <office:settings>
   <config:config-item-set config:name="ooo:view-settings">
    <config:config-item config:name="VisibleAreaTop" config:type="int">0</config:config-item>
@@ -297,7 +297,7 @@
      <text:p><text:sheet-name>???</text:sheet-name><text:s/>(<text:title>???</text:title>)</text:p>
     </style:region-left>
     <style:region-right>
-     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-09">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
+     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-27">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
     </style:region-right>
    </style:header>
    <style:header-left style:display="false"/>
@@ -793,6 +793,160 @@
      </table:table-cell>
      <table:table-cell office:value-type="string" calcext:value-type="string">
       <text:p>NOW is today plus the time of day</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DAYS</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DAYS(Schedule.D7;Schedule.B2)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DAYS([Schedule.D7];[Schedule.B2])" office:value-type="float" office:value="70" calcext:value-type="float">
+      <text:p>70</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Calendar days from the kick-off to the launch</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DAYS360</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DAYS360(Schedule.B2;Schedule.D7)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DAYS360([Schedule.B2];[Schedule.D7])" office:value-type="float" office:value="69" calcext:value-type="float">
+      <text:p>69</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The same span in a bank&apos;s 360-day year</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DAYS360</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DAYS360(DATE(2026;1;31);DATE(2026;3;31);TRUE())</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DAYS360(DATE(2026;1;31);DATE(2026;3;31);TRUE())" office:value-type="float" office:value="60" calcext:value-type="float">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The European method: both month ends are the 30th</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DATEDIF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DATEDIF(DATE(1990;5;17);Schedule.B2;&quot;y&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DATEDIF(DATE(1990;5;17);[Schedule.B2];&quot;y&quot;)" office:value-type="float" office:value="36" calcext:value-type="float">
+      <text:p>36</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>How old someone born on 1990-05-17 is at the kick-off</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DATEDIF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DATEDIF(Schedule.B2;Schedule.D7;&quot;m&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DATEDIF([Schedule.B2];[Schedule.D7];&quot;m&quot;)" office:value-type="float" office:value="2" calcext:value-type="float">
+      <text:p>2</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Whole months from the kick-off to the launch</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DATEDIF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DATEDIF(Schedule.B2;Schedule.D7;&quot;md&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DATEDIF([Schedule.B2];[Schedule.D7];&quot;md&quot;)" office:value-type="float" office:value="9" calcext:value-type="float">
+      <text:p>9</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>…and the days left over</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>YEARFRAC</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=YEARFRAC(Schedule.B2;Schedule.D7)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=YEARFRAC([Schedule.B2];[Schedule.D7])" office:value-type="float" office:value="0.191666666666667" calcext:value-type="float">
+      <text:p>0.191666666666667</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The project as a share of a year, 30/360</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>YEARFRAC</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=YEARFRAC(Schedule.B2;Schedule.D7;1)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=YEARFRAC([Schedule.B2];[Schedule.D7];1)" office:value-type="float" office:value="0.191780821917808" calcext:value-type="float">
+      <text:p>0.191780821917808</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The same in actual days over the year&apos;s actual length</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.WORKDAY.INTL</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.WORKDAY.INTL(Schedule.B2;10;7;Holidays.A2:A4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="ce5" table:formula="of:=COM.MICROSOFT.WORKDAY.INTL([Schedule.B2];10;7;[Holidays.A2:.A4])" office:value-type="date" office:date-value="2026-09-15" calcext:value-type="date">
+      <text:p>2026-09-15</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Excel&apos;s WORKDAY.INTL: ten working days on, for a team off on Fridays and Saturdays</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.WORKDAY.INTL</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.WORKDAY.INTL(Schedule.B4;5;&quot;0000001&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="ce5" table:formula="of:=COM.MICROSOFT.WORKDAY.INTL([Schedule.B4];5;&quot;0000001&quot;)" office:value-type="date" office:date-value="2026-09-19" calcext:value-type="date">
+      <text:p>2026-09-19</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Five working days after the design starts, in a six-day week</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>COM.MICROSOFT.NETWORKDAYS.INTL</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=COM.MICROSOFT.NETWORKDAYS.INTL(Schedule.B2;Schedule.D7;11;Holidays.A2:A4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=COM.MICROSOFT.NETWORKDAYS.INTL([Schedule.B2];[Schedule.D7];11;[Holidays.A2:.A4])" office:value-type="float" office:value="60" calcext:value-type="float">
+      <text:p>60</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Excel&apos;s NETWORKDAYS.INTL: working days in the project when only Sunday is off</text:p>
      </table:table-cell>
     </table:table-row>
    </table:table>

@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-27T21:14:36Z",
+  "generated": "2026-11-27T21:38:45Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -5804,6 +5804,327 @@
               "raw": "80",
               "kind": "Text",
               "value": "NOW is today plus the time of day"
+            },
+            {
+              "ref": "A23",
+              "t": "s",
+              "raw": "81",
+              "kind": "Text",
+              "value": "DAYS"
+            },
+            {
+              "ref": "B23",
+              "t": "s",
+              "raw": "82",
+              "kind": "Text",
+              "value": "=DAYS(Schedule!D7,Schedule!B2)"
+            },
+            {
+              "ref": "C23",
+              "raw": "70",
+              "kind": "Number",
+              "value": "70",
+              "excel": "DAYS(Schedule!D7,Schedule!B2)",
+              "formula": "DAYS([Schedule.D7];[Schedule.B2])"
+            },
+            {
+              "ref": "D23",
+              "t": "s",
+              "raw": "83",
+              "kind": "Text",
+              "value": "Calendar days from the kick-off to the launch"
+            },
+            {
+              "ref": "A24",
+              "t": "s",
+              "raw": "84",
+              "kind": "Text",
+              "value": "DAYS360"
+            },
+            {
+              "ref": "B24",
+              "t": "s",
+              "raw": "85",
+              "kind": "Text",
+              "value": "=DAYS360(Schedule!B2,Schedule!D7)"
+            },
+            {
+              "ref": "C24",
+              "raw": "69",
+              "kind": "Number",
+              "value": "69",
+              "excel": "DAYS360(Schedule!B2,Schedule!D7)",
+              "formula": "DAYS360([Schedule.B2];[Schedule.D7])"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "86",
+              "kind": "Text",
+              "value": "The same span in a bank\u0027s 360-day year"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "84",
+              "kind": "Text",
+              "value": "DAYS360"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "87",
+              "kind": "Text",
+              "value": "=DAYS360(DATE(2026,1,31),DATE(2026,3,31),TRUE)"
+            },
+            {
+              "ref": "C25",
+              "raw": "60",
+              "kind": "Number",
+              "value": "60",
+              "excel": "DAYS360(DATE(2026,1,31),DATE(2026,3,31),TRUE)",
+              "formula": "DAYS360(DATE(2026;1;31);DATE(2026;3;31);TRUE())"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "88",
+              "kind": "Text",
+              "value": "The European method: both month ends are the 30th"
+            },
+            {
+              "ref": "A26",
+              "t": "s",
+              "raw": "89",
+              "kind": "Text",
+              "value": "DATEDIF"
+            },
+            {
+              "ref": "B26",
+              "t": "s",
+              "raw": "90",
+              "kind": "Text",
+              "value": "=DATEDIF(DATE(1990,5,17),Schedule!B2,\u0022y\u0022)"
+            },
+            {
+              "ref": "C26",
+              "raw": "36",
+              "kind": "Number",
+              "value": "36",
+              "excel": "DATEDIF(DATE(1990,5,17),Schedule!B2,\u0022y\u0022)",
+              "formula": "DATEDIF(DATE(1990;5;17);[Schedule.B2];\u0022y\u0022)"
+            },
+            {
+              "ref": "D26",
+              "t": "s",
+              "raw": "91",
+              "kind": "Text",
+              "value": "How old someone born on 1990-05-17 is at the kick-off"
+            },
+            {
+              "ref": "A27",
+              "t": "s",
+              "raw": "89",
+              "kind": "Text",
+              "value": "DATEDIF"
+            },
+            {
+              "ref": "B27",
+              "t": "s",
+              "raw": "92",
+              "kind": "Text",
+              "value": "=DATEDIF(Schedule!B2,Schedule!D7,\u0022m\u0022)"
+            },
+            {
+              "ref": "C27",
+              "raw": "2",
+              "kind": "Number",
+              "value": "2",
+              "excel": "DATEDIF(Schedule!B2,Schedule!D7,\u0022m\u0022)",
+              "formula": "DATEDIF([Schedule.B2];[Schedule.D7];\u0022m\u0022)"
+            },
+            {
+              "ref": "D27",
+              "t": "s",
+              "raw": "93",
+              "kind": "Text",
+              "value": "Whole months from the kick-off to the launch"
+            },
+            {
+              "ref": "A28",
+              "t": "s",
+              "raw": "89",
+              "kind": "Text",
+              "value": "DATEDIF"
+            },
+            {
+              "ref": "B28",
+              "t": "s",
+              "raw": "94",
+              "kind": "Text",
+              "value": "=DATEDIF(Schedule!B2,Schedule!D7,\u0022md\u0022)"
+            },
+            {
+              "ref": "C28",
+              "raw": "9",
+              "kind": "Number",
+              "value": "9",
+              "excel": "DATEDIF(Schedule!B2,Schedule!D7,\u0022md\u0022)",
+              "formula": "DATEDIF([Schedule.B2];[Schedule.D7];\u0022md\u0022)"
+            },
+            {
+              "ref": "D28",
+              "t": "s",
+              "raw": "95",
+              "kind": "Text",
+              "value": "\u2026and the days left over"
+            },
+            {
+              "ref": "A29",
+              "t": "s",
+              "raw": "96",
+              "kind": "Text",
+              "value": "YEARFRAC"
+            },
+            {
+              "ref": "B29",
+              "t": "s",
+              "raw": "97",
+              "kind": "Text",
+              "value": "=YEARFRAC(Schedule!B2,Schedule!D7)"
+            },
+            {
+              "ref": "C29",
+              "raw": "0.191666666666667",
+              "kind": "Number",
+              "value": "0.191666666666667",
+              "excel": "YEARFRAC(Schedule!B2,Schedule!D7)",
+              "formula": "YEARFRAC([Schedule.B2];[Schedule.D7])"
+            },
+            {
+              "ref": "D29",
+              "t": "s",
+              "raw": "98",
+              "kind": "Text",
+              "value": "The project as a share of a year, 30/360"
+            },
+            {
+              "ref": "A30",
+              "t": "s",
+              "raw": "96",
+              "kind": "Text",
+              "value": "YEARFRAC"
+            },
+            {
+              "ref": "B30",
+              "t": "s",
+              "raw": "99",
+              "kind": "Text",
+              "value": "=YEARFRAC(Schedule!B2,Schedule!D7,1)"
+            },
+            {
+              "ref": "C30",
+              "raw": "0.191780821917808",
+              "kind": "Number",
+              "value": "0.191780821917808",
+              "excel": "YEARFRAC(Schedule!B2,Schedule!D7,1)",
+              "formula": "YEARFRAC([Schedule.B2];[Schedule.D7];1)"
+            },
+            {
+              "ref": "D30",
+              "t": "s",
+              "raw": "100",
+              "kind": "Text",
+              "value": "The same in actual days over the year\u0027s actual length"
+            },
+            {
+              "ref": "A31",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.WORKDAY.INTL"
+            },
+            {
+              "ref": "B31",
+              "t": "s",
+              "raw": "102",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.WORKDAY.INTL(Schedule!B2,10,7,Holidays!A2:A4)"
+            },
+            {
+              "ref": "C31",
+              "raw": "46280",
+              "style": 1,
+              "kind": "Date",
+              "value": "46280",
+              "excel": "COM.MICROSOFT.WORKDAY.INTL(Schedule!B2,10,7,Holidays!A2:A4)",
+              "formula": "COM.MICROSOFT.WORKDAY.INTL([Schedule.B2];10;7;[Holidays.A2:.A4])"
+            },
+            {
+              "ref": "D31",
+              "t": "s",
+              "raw": "103",
+              "kind": "Text",
+              "value": "Excel\u0027s WORKDAY.INTL: ten working days on, for a team off on Fridays and Saturdays"
+            },
+            {
+              "ref": "A32",
+              "t": "s",
+              "raw": "101",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.WORKDAY.INTL"
+            },
+            {
+              "ref": "B32",
+              "t": "s",
+              "raw": "104",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.WORKDAY.INTL(Schedule!B4,5,\u00220000001\u0022)"
+            },
+            {
+              "ref": "C32",
+              "raw": "46284",
+              "style": 1,
+              "kind": "Date",
+              "value": "46284",
+              "excel": "COM.MICROSOFT.WORKDAY.INTL(Schedule!B4,5,\u00220000001\u0022)",
+              "formula": "COM.MICROSOFT.WORKDAY.INTL([Schedule.B4];5;\u00220000001\u0022)"
+            },
+            {
+              "ref": "D32",
+              "t": "s",
+              "raw": "105",
+              "kind": "Text",
+              "value": "Five working days after the design starts, in a six-day week"
+            },
+            {
+              "ref": "A33",
+              "t": "s",
+              "raw": "106",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NETWORKDAYS.INTL"
+            },
+            {
+              "ref": "B33",
+              "t": "s",
+              "raw": "107",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NETWORKDAYS.INTL(Schedule!B2,Schedule!D7,11,Holidays!A2:A4)"
+            },
+            {
+              "ref": "C33",
+              "raw": "60",
+              "kind": "Number",
+              "value": "60",
+              "excel": "COM.MICROSOFT.NETWORKDAYS.INTL(Schedule!B2,Schedule!D7,11,Holidays!A2:A4)",
+              "formula": "COM.MICROSOFT.NETWORKDAYS.INTL([Schedule.B2];[Schedule.D7];11;[Holidays.A2:.A4])"
+            },
+            {
+              "ref": "D33",
+              "t": "s",
+              "raw": "108",
+              "kind": "Text",
+              "value": "Excel\u0027s NETWORKDAYS.INTL: working days in the project when only Sunday is off"
             }
           ]
         }
@@ -5815,8 +6136,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5161,
-      "sha256": "8bf907dd0b28cd90d6fe4200a2f82fad0b180ce7ced01b536d4a8ed0fa9bf8dd"
+      "bytes": 5953,
+      "sha256": "8e690e7fb3efd7a8846f743a51dd32dc3d21e7658b2d9c950cdaa8f1709e1137"
     },
     {
       "file": "functions/financial.xlsx",
@@ -6003,6 +6324,13 @@
               "value": "Cash flow"
             },
             {
+              "ref": "C1",
+              "t": "s",
+              "raw": "13",
+              "kind": "Text",
+              "value": "Paid on"
+            },
+            {
               "ref": "A2",
               "raw": "0",
               "kind": "Number",
@@ -6013,6 +6341,13 @@
               "raw": "-120000",
               "kind": "Number",
               "value": "-120000"
+            },
+            {
+              "ref": "C2",
+              "raw": "46037",
+              "style": 1,
+              "kind": "Date",
+              "value": "46037"
             },
             {
               "ref": "A3",
@@ -6027,6 +6362,13 @@
               "value": "28000"
             },
             {
+              "ref": "C3",
+              "raw": "46237",
+              "style": 1,
+              "kind": "Date",
+              "value": "46237"
+            },
+            {
               "ref": "A4",
               "raw": "2",
               "kind": "Number",
@@ -6037,6 +6379,13 @@
               "raw": "35000",
               "kind": "Number",
               "value": "35000"
+            },
+            {
+              "ref": "C4",
+              "raw": "46444",
+              "style": 1,
+              "kind": "Date",
+              "value": "46444"
             },
             {
               "ref": "A5",
@@ -6077,7 +6426,7 @@
             {
               "ref": "A8",
               "t": "s",
-              "raw": "13",
+              "raw": "14",
               "kind": "Text",
               "value": "Discount rate"
             },
@@ -6096,42 +6445,42 @@
             {
               "ref": "A1",
               "t": "s",
-              "raw": "14",
+              "raw": "15",
               "kind": "Text",
               "value": "Function"
             },
             {
               "ref": "B1",
               "t": "s",
-              "raw": "15",
+              "raw": "16",
               "kind": "Text",
               "value": "Formula"
             },
             {
               "ref": "C1",
               "t": "s",
-              "raw": "16",
+              "raw": "17",
               "kind": "Text",
               "value": "Result"
             },
             {
               "ref": "D1",
               "t": "s",
-              "raw": "17",
+              "raw": "18",
               "kind": "Text",
               "value": "What it shows"
             },
             {
               "ref": "A2",
               "t": "s",
-              "raw": "18",
+              "raw": "19",
               "kind": "Text",
               "value": "PMT"
             },
             {
               "ref": "B2",
               "t": "s",
-              "raw": "19",
+              "raw": "20",
               "kind": "Text",
               "value": "=PMT(Loan!B4/12,Loan!B5*12,-(Loan!B2-Loan!B3))"
             },
@@ -6146,21 +6495,21 @@
             {
               "ref": "D2",
               "t": "s",
-              "raw": "20",
+              "raw": "21",
               "kind": "Text",
               "value": "The monthly mortgage payment"
             },
             {
               "ref": "A3",
               "t": "s",
-              "raw": "21",
+              "raw": "22",
               "kind": "Text",
               "value": "IPMT"
             },
             {
               "ref": "B3",
               "t": "s",
-              "raw": "22",
+              "raw": "23",
               "kind": "Text",
               "value": "=IPMT(Loan!B4/12,1,Loan!B5*12,-(Loan!B2-Loan!B3))"
             },
@@ -6175,21 +6524,21 @@
             {
               "ref": "D3",
               "t": "s",
-              "raw": "23",
+              "raw": "24",
               "kind": "Text",
               "value": "Interest in the first payment"
             },
             {
               "ref": "A4",
               "t": "s",
-              "raw": "24",
+              "raw": "25",
               "kind": "Text",
               "value": "PPMT"
             },
             {
               "ref": "B4",
               "t": "s",
-              "raw": "25",
+              "raw": "26",
               "kind": "Text",
               "value": "=PPMT(Loan!B4/12,1,Loan!B5*12,-(Loan!B2-Loan!B3))"
             },
@@ -6204,21 +6553,21 @@
             {
               "ref": "D4",
               "t": "s",
-              "raw": "26",
+              "raw": "27",
               "kind": "Text",
               "value": "Principal in the first payment"
             },
             {
               "ref": "A5",
               "t": "s",
-              "raw": "24",
+              "raw": "25",
               "kind": "Text",
               "value": "PPMT"
             },
             {
               "ref": "B5",
               "t": "s",
-              "raw": "27",
+              "raw": "28",
               "kind": "Text",
               "value": "=PPMT(Loan!B4/12,300,Loan!B5*12,-(Loan!B2-Loan!B3))"
             },
@@ -6233,21 +6582,21 @@
             {
               "ref": "D5",
               "t": "s",
-              "raw": "28",
+              "raw": "29",
               "kind": "Text",
               "value": "\u2026and in the last one"
             },
             {
               "ref": "A6",
               "t": "s",
-              "raw": "29",
+              "raw": "30",
               "kind": "Text",
               "value": "NPER"
             },
             {
               "ref": "B6",
               "t": "s",
-              "raw": "30",
+              "raw": "31",
               "kind": "Text",
               "value": "=NPER(Loan!B4/12,-2000,Loan!B2-Loan!B3)"
             },
@@ -6262,21 +6611,21 @@
             {
               "ref": "D6",
               "t": "s",
-              "raw": "31",
+              "raw": "32",
               "kind": "Text",
               "value": "Months to repay, paying 2000 a month"
             },
             {
               "ref": "A7",
               "t": "s",
-              "raw": "32",
+              "raw": "33",
               "kind": "Text",
               "value": "FV"
             },
             {
               "ref": "B7",
               "t": "s",
-              "raw": "33",
+              "raw": "34",
               "kind": "Text",
               "value": "=FV(Loan!B7/12,10*12,-Loan!B6)"
             },
@@ -6291,21 +6640,21 @@
             {
               "ref": "D7",
               "t": "s",
-              "raw": "34",
+              "raw": "35",
               "kind": "Text",
               "value": "Savings after ten years of monthly deposits"
             },
             {
               "ref": "A8",
               "t": "s",
-              "raw": "35",
+              "raw": "36",
               "kind": "Text",
               "value": "PV"
             },
             {
               "ref": "B8",
               "t": "s",
-              "raw": "36",
+              "raw": "37",
               "kind": "Text",
               "value": "=PV(0.04/12,20*12,-1500)"
             },
@@ -6320,21 +6669,21 @@
             {
               "ref": "D8",
               "t": "s",
-              "raw": "37",
+              "raw": "38",
               "kind": "Text",
               "value": "What 1500 a month for twenty years is worth today"
             },
             {
               "ref": "A9",
               "t": "s",
-              "raw": "38",
+              "raw": "39",
               "kind": "Text",
               "value": "RATE"
             },
             {
               "ref": "B9",
               "t": "s",
-              "raw": "39",
+              "raw": "40",
               "kind": "Text",
               "value": "=RATE(48,-450,18000)*12"
             },
@@ -6349,21 +6698,21 @@
             {
               "ref": "D9",
               "t": "s",
-              "raw": "40",
+              "raw": "41",
               "kind": "Text",
               "value": "The annual rate of a car loan: 48 payments of 450 for 18000"
             },
             {
               "ref": "A10",
               "t": "s",
-              "raw": "41",
+              "raw": "42",
               "kind": "Text",
               "value": "NPV"
             },
             {
               "ref": "B10",
               "t": "s",
-              "raw": "42",
+              "raw": "43",
               "kind": "Text",
               "value": "=NPV(Project!B8,Project!B3:B7)\u002BProject!B2"
             },
@@ -6378,21 +6727,21 @@
             {
               "ref": "D10",
               "t": "s",
-              "raw": "43",
+              "raw": "44",
               "kind": "Text",
               "value": "The investment\u0027s net present value"
             },
             {
               "ref": "A11",
               "t": "s",
-              "raw": "44",
+              "raw": "45",
               "kind": "Text",
               "value": "IRR"
             },
             {
               "ref": "B11",
               "t": "s",
-              "raw": "45",
+              "raw": "46",
               "kind": "Text",
               "value": "=IRR(Project!B2:B7)"
             },
@@ -6407,21 +6756,21 @@
             {
               "ref": "D11",
               "t": "s",
-              "raw": "46",
+              "raw": "47",
               "kind": "Text",
               "value": "Its internal rate of return"
             },
             {
               "ref": "A12",
               "t": "s",
-              "raw": "47",
+              "raw": "48",
               "kind": "Text",
               "value": "SLN"
             },
             {
               "ref": "B12",
               "t": "s",
-              "raw": "48",
+              "raw": "49",
               "kind": "Text",
               "value": "=SLN(Van!B2,Van!B3,Van!B4)"
             },
@@ -6436,21 +6785,21 @@
             {
               "ref": "D12",
               "t": "s",
-              "raw": "49",
+              "raw": "50",
               "kind": "Text",
               "value": "The van\u0027s yearly depreciation, straight-line"
             },
             {
               "ref": "A13",
               "t": "s",
-              "raw": "50",
+              "raw": "51",
               "kind": "Text",
               "value": "SYD"
             },
             {
               "ref": "B13",
               "t": "s",
-              "raw": "51",
+              "raw": "52",
               "kind": "Text",
               "value": "=SYD(Van!B2,Van!B3,Van!B4,1)"
             },
@@ -6465,21 +6814,21 @@
             {
               "ref": "D13",
               "t": "s",
-              "raw": "52",
+              "raw": "53",
               "kind": "Text",
               "value": "First year, sum-of-years\u0027-digits"
             },
             {
               "ref": "A14",
               "t": "s",
-              "raw": "53",
+              "raw": "54",
               "kind": "Text",
               "value": "DDB"
             },
             {
               "ref": "B14",
               "t": "s",
-              "raw": "54",
+              "raw": "55",
               "kind": "Text",
               "value": "=DDB(Van!B2,Van!B3,Van!B4,1)"
             },
@@ -6494,21 +6843,21 @@
             {
               "ref": "D14",
               "t": "s",
-              "raw": "55",
+              "raw": "56",
               "kind": "Text",
               "value": "First year, double-declining balance"
             },
             {
               "ref": "A15",
               "t": "s",
-              "raw": "53",
+              "raw": "54",
               "kind": "Text",
               "value": "DDB"
             },
             {
               "ref": "B15",
               "t": "s",
-              "raw": "56",
+              "raw": "57",
               "kind": "Text",
               "value": "=DDB(Van!B2,Van!B3,Van!B4,2)"
             },
@@ -6523,9 +6872,125 @@
             {
               "ref": "D15",
               "t": "s",
-              "raw": "57",
+              "raw": "58",
               "kind": "Text",
               "value": "Second year, double-declining balance"
+            },
+            {
+              "ref": "A16",
+              "t": "s",
+              "raw": "59",
+              "kind": "Text",
+              "value": "DB"
+            },
+            {
+              "ref": "B16",
+              "t": "s",
+              "raw": "60",
+              "kind": "Text",
+              "value": "=DB(Van!B2,Van!B3,Van!B4,1)"
+            },
+            {
+              "ref": "C16",
+              "raw": "10241",
+              "kind": "Number",
+              "value": "10241",
+              "excel": "DB(Van!B2,Van!B3,Van!B4,1)",
+              "formula": "DB([Van.B2];[Van.B3];[Van.B4];1)"
+            },
+            {
+              "ref": "D16",
+              "t": "s",
+              "raw": "61",
+              "kind": "Text",
+              "value": "The van\u0027s first year of fixed-declining depreciation"
+            },
+            {
+              "ref": "A17",
+              "t": "s",
+              "raw": "59",
+              "kind": "Text",
+              "value": "DB"
+            },
+            {
+              "ref": "B17",
+              "t": "s",
+              "raw": "62",
+              "kind": "Text",
+              "value": "=DB(Van!B2,Van!B3,Van!B4,1,7)"
+            },
+            {
+              "ref": "C17",
+              "raw": "5973.91666666667",
+              "kind": "Number",
+              "value": "5973.91666666667",
+              "excel": "DB(Van!B2,Van!B3,Van!B4,1,7)",
+              "formula": "DB([Van.B2];[Van.B3];[Van.B4];1;7)"
+            },
+            {
+              "ref": "D17",
+              "t": "s",
+              "raw": "63",
+              "kind": "Text",
+              "value": "The same when it was bought in June: seven months in the first year"
+            },
+            {
+              "ref": "A18",
+              "t": "s",
+              "raw": "64",
+              "kind": "Text",
+              "value": "XNPV"
+            },
+            {
+              "ref": "B18",
+              "t": "s",
+              "raw": "65",
+              "kind": "Text",
+              "value": "=XNPV(Project!B8,Project!B2:B4,Project!C2:C4)"
+            },
+            {
+              "ref": "C18",
+              "raw": "-61034.5404004473",
+              "kind": "Number",
+              "value": "-61034.5404004473",
+              "excel": "XNPV(Project!B8,Project!B2:B4,Project!C2:C4)",
+              "formula": "XNPV([Project.B8];[Project.B2:.B4];[Project.C2:.C4])"
+            },
+            {
+              "ref": "D18",
+              "t": "s",
+              "raw": "66",
+              "kind": "Text",
+              "value": "The first three flows, on the dates they came in"
+            },
+            {
+              "ref": "A19",
+              "t": "s",
+              "raw": "67",
+              "kind": "Text",
+              "value": "XIRR"
+            },
+            {
+              "ref": "B19",
+              "t": "s",
+              "raw": "68",
+              "kind": "Text",
+              "value": "=XIRR(Project!B2:B4,Project!C2:C4)"
+            },
+            {
+              "ref": "C19",
+              "raw": "-0.514753694807821",
+              "kind": "Number",
+              "value": "-0.514753694807821",
+              "excel": "XIRR(Project!B2:B4,Project!C2:C4)",
+              "formula": "XIRR([Project.B2:.B4];[Project.C2:.C4])"
+            },
+            {
+              "ref": "D19",
+              "t": "s",
+              "raw": "69",
+              "kind": "Text",
+              "value": "The rate those three dated flows earn"
             }
           ]
         }
@@ -6537,8 +7002,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4713,
-      "sha256": "dfe61c4131f2d2a459353fd2a86dfac8b60ad599591ff766df2885c4f696c5a5"
+      "bytes": 5033,
+      "sha256": "eb07f9a2027cf28b38745a8b812bbc6e8b641c68a2c2677a4639013a0f88ea69"
     },
     {
       "file": "functions/information.xlsx",
@@ -7981,6 +8446,122 @@
               "raw": "118",
               "kind": "Text",
               "value": "An unstocked SKU: #N/A is error 7"
+            },
+            {
+              "ref": "A33",
+              "t": "s",
+              "raw": "119",
+              "kind": "Text",
+              "value": "SHEET"
+            },
+            {
+              "ref": "B33",
+              "t": "s",
+              "raw": "120",
+              "kind": "Text",
+              "value": "=SHEET()"
+            },
+            {
+              "ref": "C33",
+              "raw": "2",
+              "kind": "Number",
+              "value": "2",
+              "excel": "SHEET()",
+              "formula": "SHEET()"
+            },
+            {
+              "ref": "D33",
+              "t": "s",
+              "raw": "121",
+              "kind": "Text",
+              "value": "The stock sheet is the first"
+            },
+            {
+              "ref": "A34",
+              "t": "s",
+              "raw": "122",
+              "kind": "Text",
+              "value": "SHEETS"
+            },
+            {
+              "ref": "B34",
+              "t": "s",
+              "raw": "123",
+              "kind": "Text",
+              "value": "=SHEETS()"
+            },
+            {
+              "ref": "C34",
+              "raw": "2",
+              "kind": "Number",
+              "value": "2",
+              "excel": "SHEETS()",
+              "formula": "SHEETS()"
+            },
+            {
+              "ref": "D34",
+              "t": "s",
+              "raw": "124",
+              "kind": "Text",
+              "value": "The document has one sheet"
+            },
+            {
+              "ref": "A35",
+              "t": "s",
+              "raw": "125",
+              "kind": "Text",
+              "value": "NUMBERVALUE"
+            },
+            {
+              "ref": "B35",
+              "t": "s",
+              "raw": "126",
+              "kind": "Text",
+              "value": "=NUMBERVALUE(\u00221.234,50\u0022,\u0022,\u0022,\u0022.\u0022)"
+            },
+            {
+              "ref": "C35",
+              "raw": "1234.5",
+              "kind": "Number",
+              "value": "1234.5",
+              "excel": "NUMBERVALUE(\u00221.234,50\u0022,\u0022,\u0022,\u0022.\u0022)",
+              "formula": "NUMBERVALUE(\u00221.234,50\u0022;\u0022,\u0022;\u0022.\u0022)"
+            },
+            {
+              "ref": "D35",
+              "t": "s",
+              "raw": "127",
+              "kind": "Text",
+              "value": "A German-style amount read as a number"
+            },
+            {
+              "ref": "A36",
+              "t": "s",
+              "raw": "125",
+              "kind": "Text",
+              "value": "NUMBERVALUE"
+            },
+            {
+              "ref": "B36",
+              "t": "s",
+              "raw": "128",
+              "kind": "Text",
+              "value": "=NUMBERVALUE(\u002212,5 %\u0022,\u0022,\u0022)"
+            },
+            {
+              "ref": "C36",
+              "raw": "0.125",
+              "kind": "Number",
+              "value": "0.125",
+              "excel": "NUMBERVALUE(\u002212,5 %\u0022,\u0022,\u0022)",
+              "formula": "NUMBERVALUE(\u002212,5 %\u0022;\u0022,\u0022)"
+            },
+            {
+              "ref": "D36",
+              "t": "s",
+              "raw": "129",
+              "kind": "Text",
+              "value": "\u2026and a percentage written the same way"
             }
           ]
         }
@@ -7992,8 +8573,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5231,
-      "sha256": "027d61831aec87e3ee393c82050158594f9f13cbf7bd21e9d997d424d1356f06"
+      "bytes": 5483,
+      "sha256": "d731270b06ef1cf04c9370ebd8f3c65c1de8be763cccc76248afc3212a0c9fdf"
     },
     {
       "file": "functions/logical.xlsx",
@@ -12285,6 +12866,482 @@
               "raw": "174",
               "kind": "Text",
               "value": "Pairs of plants from six seedlings"
+            },
+            {
+              "ref": "A40",
+              "t": "s",
+              "raw": "175",
+              "kind": "Text",
+              "value": "ROMAN"
+            },
+            {
+              "ref": "B40",
+              "t": "s",
+              "raw": "176",
+              "kind": "Text",
+              "value": "=ROMAN(YEAR(Ledger!A2))"
+            },
+            {
+              "ref": "C40",
+              "t": "str",
+              "raw": "MMXXVI",
+              "kind": "Text",
+              "value": "MMXXVI",
+              "excel": "ROMAN(YEAR(Ledger!A2))",
+              "formula": "ROMAN(YEAR([Ledger.A2]))"
+            },
+            {
+              "ref": "D40",
+              "t": "s",
+              "raw": "177",
+              "kind": "Text",
+              "value": "The budget\u0027s year in Roman numerals"
+            },
+            {
+              "ref": "A41",
+              "t": "s",
+              "raw": "175",
+              "kind": "Text",
+              "value": "ROMAN"
+            },
+            {
+              "ref": "B41",
+              "t": "s",
+              "raw": "178",
+              "kind": "Text",
+              "value": "=ROMAN(1999,4)"
+            },
+            {
+              "ref": "C41",
+              "t": "str",
+              "raw": "MIM",
+              "kind": "Text",
+              "value": "MIM",
+              "excel": "ROMAN(1999,4)",
+              "formula": "ROMAN(1999;4)"
+            },
+            {
+              "ref": "D41",
+              "t": "s",
+              "raw": "179",
+              "kind": "Text",
+              "value": "1999, in the fewest numerals"
+            },
+            {
+              "ref": "A42",
+              "t": "s",
+              "raw": "180",
+              "kind": "Text",
+              "value": "BASE"
+            },
+            {
+              "ref": "B42",
+              "t": "s",
+              "raw": "181",
+              "kind": "Text",
+              "value": "=BASE(255,16)"
+            },
+            {
+              "ref": "C42",
+              "t": "str",
+              "raw": "FF",
+              "kind": "Text",
+              "value": "FF",
+              "excel": "BASE(255,16)",
+              "formula": "BASE(255;16)"
+            },
+            {
+              "ref": "D42",
+              "t": "s",
+              "raw": "182",
+              "kind": "Text",
+              "value": "255 in hexadecimal"
+            },
+            {
+              "ref": "A43",
+              "t": "s",
+              "raw": "183",
+              "kind": "Text",
+              "value": "DECIMAL"
+            },
+            {
+              "ref": "B43",
+              "t": "s",
+              "raw": "184",
+              "kind": "Text",
+              "value": "=DECIMAL(\u0022FF\u0022,16)"
+            },
+            {
+              "ref": "C43",
+              "raw": "255",
+              "kind": "Number",
+              "value": "255",
+              "excel": "DECIMAL(\u0022FF\u0022,16)",
+              "formula": "DECIMAL(\u0022FF\u0022;16)"
+            },
+            {
+              "ref": "D43",
+              "t": "s",
+              "raw": "185",
+              "kind": "Text",
+              "value": "\u2026and back"
+            },
+            {
+              "ref": "A44",
+              "t": "s",
+              "raw": "186",
+              "kind": "Text",
+              "value": "DEC2HEX"
+            },
+            {
+              "ref": "B44",
+              "t": "s",
+              "raw": "187",
+              "kind": "Text",
+              "value": "=DEC2HEX(255,4)"
+            },
+            {
+              "ref": "C44",
+              "t": "str",
+              "raw": "00FF",
+              "kind": "Text",
+              "value": "00FF",
+              "excel": "DEC2HEX(255,4)",
+              "formula": "DEC2HEX(255;4)"
+            },
+            {
+              "ref": "D44",
+              "t": "s",
+              "raw": "188",
+              "kind": "Text",
+              "value": "A colour channel as four hex digits"
+            },
+            {
+              "ref": "A45",
+              "t": "s",
+              "raw": "189",
+              "kind": "Text",
+              "value": "HEX2DEC"
+            },
+            {
+              "ref": "B45",
+              "t": "s",
+              "raw": "190",
+              "kind": "Text",
+              "value": "=HEX2DEC(\u0022FFFFFFFFFF\u0022)"
+            },
+            {
+              "ref": "C45",
+              "raw": "-1",
+              "kind": "Number",
+              "value": "-1",
+              "excel": "HEX2DEC(\u0022FFFFFFFFFF\u0022)",
+              "formula": "HEX2DEC(\u0022FFFFFFFFFF\u0022)"
+            },
+            {
+              "ref": "D45",
+              "t": "s",
+              "raw": "191",
+              "kind": "Text",
+              "value": "Ten F digits are -1 in two\u0027s complement"
+            },
+            {
+              "ref": "A46",
+              "t": "s",
+              "raw": "192",
+              "kind": "Text",
+              "value": "DEC2BIN"
+            },
+            {
+              "ref": "B46",
+              "t": "s",
+              "raw": "193",
+              "kind": "Text",
+              "value": "=DEC2BIN(9,8)"
+            },
+            {
+              "ref": "C46",
+              "t": "str",
+              "raw": "00001001",
+              "kind": "Text",
+              "value": "00001001",
+              "excel": "DEC2BIN(9,8)",
+              "formula": "DEC2BIN(9;8)"
+            },
+            {
+              "ref": "D46",
+              "t": "s",
+              "raw": "194",
+              "kind": "Text",
+              "value": "Nine as eight bits"
+            },
+            {
+              "ref": "A47",
+              "t": "s",
+              "raw": "195",
+              "kind": "Text",
+              "value": "BIN2DEC"
+            },
+            {
+              "ref": "B47",
+              "t": "s",
+              "raw": "196",
+              "kind": "Text",
+              "value": "=BIN2DEC(\u00221111111111\u0022)"
+            },
+            {
+              "ref": "C47",
+              "raw": "-1",
+              "kind": "Number",
+              "value": "-1",
+              "excel": "BIN2DEC(\u00221111111111\u0022)",
+              "formula": "BIN2DEC(\u00221111111111\u0022)"
+            },
+            {
+              "ref": "D47",
+              "t": "s",
+              "raw": "197",
+              "kind": "Text",
+              "value": "Ten ones are -1"
+            },
+            {
+              "ref": "A48",
+              "t": "s",
+              "raw": "198",
+              "kind": "Text",
+              "value": "DEC2OCT"
+            },
+            {
+              "ref": "B48",
+              "t": "s",
+              "raw": "199",
+              "kind": "Text",
+              "value": "=DEC2OCT(64)"
+            },
+            {
+              "ref": "C48",
+              "t": "str",
+              "raw": "100",
+              "kind": "Text",
+              "value": "100",
+              "excel": "DEC2OCT(64)",
+              "formula": "DEC2OCT(64)"
+            },
+            {
+              "ref": "D48",
+              "t": "s",
+              "raw": "200",
+              "kind": "Text",
+              "value": "64 in octal"
+            },
+            {
+              "ref": "A49",
+              "t": "s",
+              "raw": "201",
+              "kind": "Text",
+              "value": "OCT2DEC"
+            },
+            {
+              "ref": "B49",
+              "t": "s",
+              "raw": "202",
+              "kind": "Text",
+              "value": "=OCT2DEC(\u0022755\u0022)"
+            },
+            {
+              "ref": "C49",
+              "raw": "493",
+              "kind": "Number",
+              "value": "493",
+              "excel": "OCT2DEC(\u0022755\u0022)",
+              "formula": "OCT2DEC(\u0022755\u0022)"
+            },
+            {
+              "ref": "D49",
+              "t": "s",
+              "raw": "203",
+              "kind": "Text",
+              "value": "A file mode as a number"
+            },
+            {
+              "ref": "A50",
+              "t": "s",
+              "raw": "204",
+              "kind": "Text",
+              "value": "HEX2BIN"
+            },
+            {
+              "ref": "B50",
+              "t": "s",
+              "raw": "205",
+              "kind": "Text",
+              "value": "=HEX2BIN(\u0022F\u0022,8)"
+            },
+            {
+              "ref": "C50",
+              "t": "str",
+              "raw": "00001111",
+              "kind": "Text",
+              "value": "00001111",
+              "excel": "HEX2BIN(\u0022F\u0022,8)",
+              "formula": "HEX2BIN(\u0022F\u0022;8)"
+            },
+            {
+              "ref": "D50",
+              "t": "s",
+              "raw": "206",
+              "kind": "Text",
+              "value": "F as eight bits"
+            },
+            {
+              "ref": "A51",
+              "t": "s",
+              "raw": "207",
+              "kind": "Text",
+              "value": "HEX2OCT"
+            },
+            {
+              "ref": "B51",
+              "t": "s",
+              "raw": "208",
+              "kind": "Text",
+              "value": "=HEX2OCT(\u0022FF\u0022)"
+            },
+            {
+              "ref": "C51",
+              "t": "str",
+              "raw": "377",
+              "kind": "Text",
+              "value": "377",
+              "excel": "HEX2OCT(\u0022FF\u0022)",
+              "formula": "HEX2OCT(\u0022FF\u0022)"
+            },
+            {
+              "ref": "D51",
+              "t": "s",
+              "raw": "209",
+              "kind": "Text",
+              "value": "FF in octal"
+            },
+            {
+              "ref": "A52",
+              "t": "s",
+              "raw": "210",
+              "kind": "Text",
+              "value": "BIN2HEX"
+            },
+            {
+              "ref": "B52",
+              "t": "s",
+              "raw": "211",
+              "kind": "Text",
+              "value": "=BIN2HEX(\u00221111\u0022,4)"
+            },
+            {
+              "ref": "C52",
+              "t": "str",
+              "raw": "000F",
+              "kind": "Text",
+              "value": "000F",
+              "excel": "BIN2HEX(\u00221111\u0022,4)",
+              "formula": "BIN2HEX(\u00221111\u0022;4)"
+            },
+            {
+              "ref": "D52",
+              "t": "s",
+              "raw": "212",
+              "kind": "Text",
+              "value": "Four ones as four hex digits"
+            },
+            {
+              "ref": "A53",
+              "t": "s",
+              "raw": "213",
+              "kind": "Text",
+              "value": "BIN2OCT"
+            },
+            {
+              "ref": "B53",
+              "t": "s",
+              "raw": "214",
+              "kind": "Text",
+              "value": "=BIN2OCT(\u0022111\u0022)"
+            },
+            {
+              "ref": "C53",
+              "t": "str",
+              "raw": "7",
+              "kind": "Text",
+              "value": "7",
+              "excel": "BIN2OCT(\u0022111\u0022)",
+              "formula": "BIN2OCT(\u0022111\u0022)"
+            },
+            {
+              "ref": "D53",
+              "t": "s",
+              "raw": "215",
+              "kind": "Text",
+              "value": "Three ones in octal"
+            },
+            {
+              "ref": "A54",
+              "t": "s",
+              "raw": "216",
+              "kind": "Text",
+              "value": "OCT2HEX"
+            },
+            {
+              "ref": "B54",
+              "t": "s",
+              "raw": "217",
+              "kind": "Text",
+              "value": "=OCT2HEX(\u0022377\u0022)"
+            },
+            {
+              "ref": "C54",
+              "t": "str",
+              "raw": "FF",
+              "kind": "Text",
+              "value": "FF",
+              "excel": "OCT2HEX(\u0022377\u0022)",
+              "formula": "OCT2HEX(\u0022377\u0022)"
+            },
+            {
+              "ref": "D54",
+              "t": "s",
+              "raw": "218",
+              "kind": "Text",
+              "value": "377 octal in hex"
+            },
+            {
+              "ref": "A55",
+              "t": "s",
+              "raw": "219",
+              "kind": "Text",
+              "value": "OCT2BIN"
+            },
+            {
+              "ref": "B55",
+              "t": "s",
+              "raw": "220",
+              "kind": "Text",
+              "value": "=OCT2BIN(\u00227\u0022,4)"
+            },
+            {
+              "ref": "C55",
+              "t": "str",
+              "raw": "0111",
+              "kind": "Text",
+              "value": "0111",
+              "excel": "OCT2BIN(\u00227\u0022,4)",
+              "formula": "OCT2BIN(\u00227\u0022;4)"
+            },
+            {
+              "ref": "D55",
+              "t": "s",
+              "raw": "221",
+              "kind": "Text",
+              "value": "Seven as four bits"
             }
           ]
         }
@@ -12296,8 +13353,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 7974,
-      "sha256": "c877a7f0337ee22d498fccf818686f9f753187ea2e78a69ef0a46fc5196a1a82"
+      "bytes": 8882,
+      "sha256": "69f70601fbcbc2caf539543504025c914b038106a986bc8b2047f9b9514d86c4"
     },
     {
       "file": "functions/rounding.xlsx",
@@ -15455,6 +16512,153 @@
               "raw": "195",
               "kind": "Text",
               "value": "Excel\u0027s NORM.S.INV: the z-score of a 95% interval\u0027s edge"
+            },
+            {
+              "ref": "A62",
+              "t": "s",
+              "raw": "196",
+              "kind": "Text",
+              "value": "AVERAGEA"
+            },
+            {
+              "ref": "B62",
+              "t": "s",
+              "raw": "197",
+              "kind": "Text",
+              "value": "=AVERAGEA(Marks!D2:D11)"
+            },
+            {
+              "ref": "C62",
+              "raw": "70.2222222222222",
+              "kind": "Number",
+              "value": "70.2222222222222",
+              "excel": "AVERAGEA(Marks!D2:D11)",
+              "formula": "AVERAGEA([Marks.D2:.D11])"
+            },
+            {
+              "ref": "D62",
+              "t": "s",
+              "raw": "198",
+              "kind": "Text",
+              "value": "Mean English mark with the note counted as 0, the blank still skipped"
+            },
+            {
+              "ref": "A63",
+              "t": "s",
+              "raw": "199",
+              "kind": "Text",
+              "value": "MAXA"
+            },
+            {
+              "ref": "B63",
+              "t": "s",
+              "raw": "200",
+              "kind": "Text",
+              "value": "=MAXA(Marks!D2:D11)"
+            },
+            {
+              "ref": "C63",
+              "raw": "92",
+              "kind": "Number",
+              "value": "92",
+              "excel": "MAXA(Marks!D2:D11)",
+              "formula": "MAXA([Marks.D2:.D11])"
+            },
+            {
+              "ref": "D63",
+              "t": "s",
+              "raw": "201",
+              "kind": "Text",
+              "value": "The best English mark, the note counted as 0"
+            },
+            {
+              "ref": "A64",
+              "t": "s",
+              "raw": "202",
+              "kind": "Text",
+              "value": "MINA"
+            },
+            {
+              "ref": "B64",
+              "t": "s",
+              "raw": "203",
+              "kind": "Text",
+              "value": "=MINA(Marks!D2:D11)"
+            },
+            {
+              "ref": "C64",
+              "raw": "0",
+              "kind": "Number",
+              "value": "0",
+              "excel": "MINA(Marks!D2:D11)",
+              "formula": "MINA([Marks.D2:.D11])"
+            },
+            {
+              "ref": "D64",
+              "t": "s",
+              "raw": "204",
+              "kind": "Text",
+              "value": "The lowest, which is the note"
+            },
+            {
+              "ref": "A65",
+              "t": "s",
+              "raw": "205",
+              "kind": "Text",
+              "value": "RAND"
+            },
+            {
+              "ref": "B65",
+              "t": "s",
+              "raw": "206",
+              "kind": "Text",
+              "value": "=AND(RAND()\u003E=0,RAND()\u003C1)"
+            },
+            {
+              "ref": "C65",
+              "t": "b",
+              "raw": "1",
+              "kind": "Bool",
+              "value": "true",
+              "excel": "AND(RAND()\u003E=0,RAND()\u003C1)",
+              "formula": "AND(RAND()\u003E=0;RAND()\u003C1)"
+            },
+            {
+              "ref": "D65",
+              "t": "s",
+              "raw": "207",
+              "kind": "Text",
+              "value": "RAND is a fresh number from 0 up to 1 each time"
+            },
+            {
+              "ref": "A66",
+              "t": "s",
+              "raw": "208",
+              "kind": "Text",
+              "value": "RANDBETWEEN"
+            },
+            {
+              "ref": "B66",
+              "t": "s",
+              "raw": "209",
+              "kind": "Text",
+              "value": "=RANDBETWEEN(1,6)\u003C=6"
+            },
+            {
+              "ref": "C66",
+              "t": "b",
+              "raw": "1",
+              "kind": "Bool",
+              "value": "true",
+              "excel": "RANDBETWEEN(1,6)\u003C=6",
+              "formula": "RANDBETWEEN(1;6)\u003C=6"
+            },
+            {
+              "ref": "D66",
+              "t": "s",
+              "raw": "210",
+              "kind": "Text",
+              "value": "A dice throw for each student"
             }
           ]
         }
@@ -15466,8 +16670,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 7190,
-      "sha256": "a7729a6592da1689c6f6c4490923df74de3e01288bb0b29c7337fb959a12ac79"
+      "bytes": 7523,
+      "sha256": "67c030203df83382e7714edda638ee3acd7bb306b5a6a584baea5b9f2533237d"
     },
     {
       "file": "functions/text.xlsx",
@@ -16806,6 +18010,36 @@
               "raw": "132",
               "kind": "Text",
               "value": "A year as text, with no thousands separator"
+            },
+            {
+              "ref": "A36",
+              "t": "s",
+              "raw": "133",
+              "kind": "Text",
+              "value": "CLEAN"
+            },
+            {
+              "ref": "B36",
+              "t": "s",
+              "raw": "134",
+              "kind": "Text",
+              "value": "=CLEAN(\u0022ESP\u0022\u0026CHAR(10)\u0026\u0022-BER\u0022)"
+            },
+            {
+              "ref": "C36",
+              "t": "str",
+              "raw": "ESP-BER",
+              "kind": "Text",
+              "value": "ESP-BER",
+              "excel": "CLEAN(\u0022ESP\u0022\u0026CHAR(10)\u0026\u0022-BER\u0022)",
+              "formula": "CLEAN(\u0022ESP\u0022\u0026CHAR(10)\u0026\u0022-BER\u0022)"
+            },
+            {
+              "ref": "D36",
+              "t": "s",
+              "raw": "135",
+              "kind": "Text",
+              "value": "A code with a line break pasted into it, cleaned"
             }
           ]
         }
@@ -16817,8 +18051,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 5894,
-      "sha256": "91b10f3a939cc3571be06b66166a4c9fe5103903adc4bd9b656a87daf94bd07a"
+      "bytes": 5988,
+      "sha256": "6af7ccc3a1bf7ef63438a8a0ecbf92ceb7beef4a8bbcabd2fe8f258ff4719629"
     },
     {
       "file": "geometry/columns.xlsx",

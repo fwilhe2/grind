@@ -170,6 +170,18 @@ impl<'a> Engine<'a> {
     }
 
     /// The document's locale, for the functions that spell a number.
+    pub(crate) fn sheet_count(&self) -> usize {
+        self.doc.sheets.len()
+    }
+
+    /// The index of the sheet named `name`, matched as a reference matches it.
+    pub(crate) fn sheet_named(&self, name: &str) -> Option<usize> {
+        self.doc
+            .sheets
+            .iter()
+            .position(|s| s.name.eq_ignore_ascii_case(name))
+    }
+
     pub(crate) fn locale(&self) -> Option<&grind_core::locale::Locale> {
         self.doc.locale.as_ref()
     }

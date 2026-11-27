@@ -2025,3 +2025,428 @@ fn excels_2010_names_answer_as_the_functions_they_rename() {
         assert_eq!(error(formula), want, "{formula}");
     }
 }
+
+#[test]
+fn date_differences_count_as_the_conventions_say() {
+    for (formula, want) in [
+        ("=DAYS(DATE(2026;12;25);DATE(2026;1;1))", 358.0),
+        ("=DAYS(DATE(2026;1;1);DATE(2026;12;25))", -358.0),
+        ("=DAYS([.D1];[.D2])", 1.0),
+        ("=DAYS(\"2026-12-25\";\"2026-01-01\")", 358.0),
+        ("=DAYS(1.9;0.2)", 1.7),
+        ("=DAYS360(DATE(2026;1;31);DATE(2026;3;31))", 60.0),
+        ("=DAYS360(DATE(2026;1;31);DATE(2026;3;31);1)", 60.0),
+        ("=DAYS360(DATE(2026;2;28);DATE(2026;3;31))", 30.0),
+        ("=DAYS360(DATE(2026;2;28);DATE(2026;3;31);1)", 32.0),
+        ("=DAYS360(DATE(2024;2;29);DATE(2025;2;28))", 358.0),
+        ("=DAYS360(DATE(2026;3;31);DATE(2026;1;31))", -60.0),
+        ("=DAYS360(DATE(2026;1;15);DATE(2026;3;31))", 76.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"y\")", 6.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"m\")", 80.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"d\")", 2448.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"ym\")", 8.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"yd\")", 257.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"md\")", 12.0),
+        ("=DATEDIF(DATE(2020;3;31);DATE(2026;2;28);\"md\")", 28.0),
+        ("=DATEDIF(DATE(2020;3;31);DATE(2026;2;28);\"m\")", 70.0),
+        ("=DATEDIF(DATE(2020;3;31);DATE(2026;2;28);\"yd\")", 334.0),
+        ("=DATEDIF(DATE(2020;1;31);DATE(2020;3;1);\"md\")", -1.0),
+        ("=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"Y\")", 6.0),
+        ("=DATEDIF(DATE(2024;2;29);DATE(2025;2;28);\"y\")", 0.0),
+        ("=DATEDIF(DATE(2024;2;29);DATE(2025;3;1);\"yd\")", 0.0),
+        ("=DATEDIF(DATE(2023;3;1);DATE(2024;2;29);\"yd\")", 365.0),
+        ("=DATEDIF(1.9;3.1;\"d\")", 2.0),
+        ("=YEARFRAC(DATE(2026;1;1);DATE(2026;7;1))", 0.5),
+        ("=YEARFRAC(DATE(2026;7;1);DATE(2026;1;1))", 0.5),
+        ("=YEARFRAC(DATE(2026;1;1);DATE(2026;7;1);4)", 0.5),
+        ("=YEARFRAC(DATE(2026;1;1);DATE(2026;1;1);1)", 0.0),
+    ] {
+        close(formula, want);
+    }
+    for (formula, want) in [
+        (
+            "=YEARFRAC(DATE(2026;1;1);DATE(2026;7;1);1)",
+            0.495_890_410_958_904,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;1;1);DATE(2026;7;1);2)",
+            0.502_777_777_777_778,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;1;31);DATE(2026;2;28);0)",
+            2.077_777_777_777_78,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;1;31);DATE(2026;2;28);1)",
+            2.077_554_744_525_55,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;2;29);DATE(2024;12;31);1)",
+            0.836_065_573_770_492,
+        ),
+        (
+            "=YEARFRAC(DATE(2023;2;1);DATE(2024;3;1);1)",
+            1.077_975_376_196_99,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;1;1);DATE(2024;12;31);1)",
+            0.997_267_759_562_842,
+        ),
+        (
+            "=YEARFRAC(DATE(2023;6;1);DATE(2025;6;1);1)",
+            2.000_912_408_759_12,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;2;28);DATE(2026;3;31);0)",
+            0.086_111_111_111_111_1,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;2;29);DATE(2024;3;31);0)",
+            0.086_111_111_111_111_1,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;1;31);DATE(2026;3;31);0)",
+            0.166_666_666_666_667,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;1;31);DATE(2026;2;28);0)",
+            0.077_777_777_777_777_8,
+        ),
+        (
+            "=YEARFRAC(DATE(2024;1;31);DATE(2024;2;29);0)",
+            0.080_555_555_555_555_6,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;2;28);DATE(2026;3;31);4)",
+            0.088_888_888_888_888_9,
+        ),
+    ] {
+        // The oracle writes fifteen significant digits.
+        let got = number(formula);
+        assert!((got - want).abs() < 1e-13, "{formula}: {got}, not {want}");
+    }
+    for (formula, want) in [
+        ("=DAYS([.A1];1)", FormulaError::Value),
+        (
+            "=DATEDIF(DATE(2026;11;27);DATE(2020;3;15);\"y\")",
+            FormulaError::Num,
+        ),
+        (
+            "=DATEDIF(DATE(2020;3;15);DATE(2026;11;27);\"x\")",
+            FormulaError::Num,
+        ),
+        (
+            "=YEARFRAC(DATE(2026;1;1);DATE(2026;7;1);5)",
+            FormulaError::Num,
+        ),
+    ] {
+        assert_eq!(error(formula), want, "{formula}");
+    }
+}
+
+#[test]
+fn excels_working_weeks_are_a_code_or_seven_flags_from_monday() {
+    // 2026-11-27 is a Friday; D1:D2 are Christmas Eve and Day.
+    let null = Document::default().null_date;
+    let date = |y, m, d| crate::formula::date::serial(y, m, d, null);
+    for (formula, want) in [
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5)",
+            date(2026, 12, 4),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;7)",
+            date(2026, 12, 3),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;11)",
+            date(2026, 12, 3),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;\"0000011\")",
+            date(2026, 12, 4),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);-5;\"1000001\")",
+            date(2026, 11, 20),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;12;23);3;1;[.D1:.D2])",
+            date(2026, 12, 30),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;28);0)",
+            date(2026, 11, 28),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);2.9)",
+            date(2026, 12, 1),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;2)",
+            date(2026, 12, 4),
+        ),
+        (
+            "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;17)",
+            date(2026, 12, 3),
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;11;1);DATE(2026;11;30))",
+            21.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;11;1);DATE(2026;11;30);7)",
+            22.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;11;1);DATE(2026;11;30);\"0000110\")",
+            22.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;11;30);DATE(2026;11;1);1)",
+            -21.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;1);DATE(2026;12;31);1;[.D1:.D2])",
+            21.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;1);DATE(2026;12;31);17)",
+            27.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;1);DATE(2026;12;31);12)",
+            27.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;1);DATE(2026;12;31);\"1111111\")",
+            0.0,
+        ),
+        (
+            "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;5);DATE(2026;12;5))",
+            0.0,
+        ),
+    ] {
+        close(formula, want);
+    }
+    for formula in [
+        "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;\"1111111\")",
+        "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;99)",
+        "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;\"000001\")",
+        "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;\"0000012\")",
+        "=COM.MICROSOFT.WORKDAY.INTL(DATE(2026;11;27);5;0)",
+        "=COM.MICROSOFT.NETWORKDAYS.INTL(DATE(2026;12;1);DATE(2026;12;31);18)",
+    ] {
+        assert_eq!(error(formula), FormulaError::Value, "{formula}");
+    }
+}
+
+#[test]
+fn text_and_the_a_statistics_read_as_their_sections_say() {
+    for (formula, want) in [
+        ("=NUMBERVALUE(\"1.234,5\";\",\";\".\")", 1234.5),
+        ("=NUMBERVALUE(\"1 234,5 %\";\",\";\" \")", 12.345),
+        ("=NUMBERVALUE(\"12%%\")", 0.0012),
+        ("=NUMBERVALUE(\"1e3\")", 1000.0),
+        // §6.13.28's step 3 removes whitespace; the oracle refuses it.
+        ("=NUMBERVALUE(\" 3.5 \")", 3.5),
+        ("=AVERAGEA([.B1:.C7])", 9.642_857_142_857_14),
+        ("=AVERAGEA([.A1:.A7])", 0.0),
+        ("=AVERAGEA(TRUE();2)", 1.5),
+        ("=AVERAGEA(\"3\";1)", 0.5),
+        ("=AVERAGEA([.D1:.D7])", 46380.5),
+        ("=MAXA([.B1:.B7])", 40.0),
+        ("=MAXA([.A1:.A7])", 0.0),
+        ("=MINA([.B1:.B7])", 0.0),
+        ("=MAXA([.E1:.E7])", 1.0),
+        ("=MINA([.E1:.E7];-1)", -1.0),
+        ("=SHEET()", 1.0),
+        ("=SHEET([.A1])", 1.0),
+        ("=SHEET(\"sheet1\")", 1.0),
+        ("=SHEETS()", 1.0),
+        ("=SHEETS([.A1:.B2])", 1.0),
+    ] {
+        close(formula, want);
+    }
+    close("=AVERAGEA([.B1:.B7])", 19.285_714_285_714_3);
+    assert_eq!(
+        text("=CLEAN(\"a\"&CHAR(9)&\"b\"&CHAR(10)&\"c\"&CHAR(127)&UNICHAR(160)&\"d\")"),
+        "abc\u{a0}d"
+    );
+    assert_eq!(number("=LEN(CLEAN(UNICHAR(129)&\"x\"))"), 1.0);
+    assert_eq!(text("=CLEAN(5)"), "5");
+    for (formula, want) in [
+        ("=NUMBERVALUE(\"\")", FormulaError::Value),
+        ("=NUMBERVALUE(\"1,234.5\")", FormulaError::Value),
+        ("=NUMBERVALUE(\"1.234.5\")", FormulaError::Value),
+        ("=NUMBERVALUE(\"abc\")", FormulaError::Value),
+        ("=NUMBERVALUE(\"1,5\";\",\";\",\")", FormulaError::Value),
+        ("=NUMBERVALUE(\"1.5\";\",,\")", FormulaError::Value),
+        ("=SHEET(\"Nope\")", FormulaError::NA),
+    ] {
+        assert_eq!(error(formula), want, "{formula}");
+    }
+}
+
+#[test]
+fn numbers_convert_to_numerals_and_bases() {
+    for (formula, want) in [
+        ("=ROMAN(1999)", "MCMXCIX"),
+        ("=ROMAN(1999;1)", "MLMVLIV"),
+        ("=ROMAN(1999;2)", "MXMIX"),
+        ("=ROMAN(1999;3)", "MVMIV"),
+        ("=ROMAN(1999;4)", "MIM"),
+        ("=ROMAN(499;1)", "LDVLIV"),
+        ("=ROMAN(499;2)", "XDIX"),
+        ("=ROMAN(499;3)", "VDIV"),
+        ("=ROMAN(499;4)", "ID"),
+        ("=ROMAN(95;2)", "VC"),
+        ("=ROMAN(0)", ""),
+        ("=ROMAN(3999)", "MMMCMXCIX"),
+        ("=ROMAN(12.7)", "XII"),
+        ("=ROMAN(1999;TRUE())", "MCMXCIX"),
+        ("=ROMAN(1999;FALSE())", "MIM"),
+        ("=BASE(255;16)", "FF"),
+        ("=BASE(255;2;12)", "000011111111"),
+        ("=BASE(255;36)", "73"),
+        ("=BASE(0;2)", "0"),
+        ("=BASE(12.9;10)", "12"),
+        ("=DEC2HEX(255)", "FF"),
+        ("=DEC2HEX(255;4)", "00FF"),
+        ("=DEC2HEX(-1)", "FFFFFFFFFF"),
+        ("=DEC2HEX(-1;4)", "FFFFFFFFFF"),
+        ("=DEC2HEX(12.9)", "C"),
+        ("=DEC2BIN(9)", "1001"),
+        ("=DEC2BIN(9;8)", "00001001"),
+        ("=DEC2BIN(-1)", "1111111111"),
+        ("=DEC2BIN(-512)", "1000000000"),
+        ("=DEC2OCT(64)", "100"),
+        ("=DEC2OCT(-1)", "7777777777"),
+        ("=HEX2BIN(\"F\";8)", "00001111"),
+        ("=HEX2BIN(\"FFFFFFFFFF\")", "1111111111"),
+        ("=BIN2HEX(\"1111111111\")", "FFFFFFFFFF"),
+        ("=BIN2HEX(\"1111\";4)", "000F"),
+        ("=HEX2OCT(\"FF\")", "377"),
+        ("=OCT2HEX(\"377\")", "FF"),
+        ("=BIN2OCT(\"111\")", "7"),
+        ("=OCT2BIN(\"7\";4)", "0111"),
+        ("=OCT2BIN(TRUE())", "1"),
+    ] {
+        assert_eq!(text(formula), want, "{formula}");
+    }
+    for (formula, want) in [
+        ("=DECIMAL(\"ff\";16)", 255.0),
+        ("=DECIMAL(\"zz\";36)", 1295.0),
+        ("=DECIMAL(\"0x1F\";16)", 31.0),
+        ("=DECIMAL(\"1Fh\";16)", 31.0),
+        ("=DECIMAL(\"101b\";2)", 5.0),
+        ("=HEX2DEC(\"FF\")", 255.0),
+        ("=HEX2DEC(\"ff\")", 255.0),
+        ("=HEX2DEC(\"FFFFFFFFFF\")", -1.0),
+        ("=HEX2DEC(\"8000000000\")", -549_755_813_888.0),
+        ("=HEX2DEC(10)", 16.0),
+        ("=BIN2DEC(\"1111111111\")", -1.0),
+        ("=BIN2DEC(101)", 5.0),
+        ("=OCT2DEC(\"7777777777\")", -1.0),
+        ("=OCT2DEC(\"17\")", 15.0),
+    ] {
+        close(formula, want);
+    }
+    for formula in [
+        "=ROMAN(4000)",
+        "=ROMAN(-1)",
+        "=ROMAN(1999;5)",
+        "=BASE(-1;2)",
+        "=BASE(255;37)",
+        "=BASE(255;1)",
+        "=DECIMAL(\"12\";2)",
+        "=DEC2HEX(549755813888)",
+        "=DEC2HEX(255;1)",
+        "=HEX2DEC(\"FFFFFFFFFFF\")",
+        "=HEX2DEC(\"G\")",
+        // §6.19.12 wants a digit; the oracle reads nothing as 0.
+        "=HEX2DEC(\"\")",
+        "=DEC2BIN(512)",
+        "=DEC2BIN(-513)",
+        "=BIN2DEC(\"12\")",
+        "=HEX2BIN(\"200\")",
+        "=BIN2DEC(-1)",
+        "=OCT2BIN(-1;0)",
+    ] {
+        assert_eq!(error(formula), FormulaError::Num, "{formula}");
+    }
+}
+
+#[test]
+fn depreciation_and_dated_cash_flows() {
+    for (formula, want) in [
+        ("=DB(10000;1000;5;1)", 3690.0),
+        ("=DB(10000;1000;5;1;7)", 2152.5),
+        ("=DB(10000;1000;5;2;7)", 2895.7275),
+        ("=DB(10000;1000;5;3)", 1_469.214_09),
+        ("=DB(10000;1000;5;6)", 0.0),
+        ("=DB(10000;0;5;1)", 10000.0),
+    ] {
+        close(formula, want);
+    }
+    for (formula, want) in [
+        ("=DB(10000;1000;5;6;7)", 191.277_499_509_851),
+        ("=DB(10000;1000;5;5;7)", 727.521_392_747_453),
+    ] {
+        let got = number(formula);
+        assert!((got - want).abs() < 1e-9, "{formula}: {got}, not {want}");
+    }
+    for formula in [
+        "=DB(10000;1000;5;0)",
+        "=DB(10000;1000;5;1;13)",
+        "=DB(10000;1000;0;1)",
+        "=DB(-1;1000;5;1)",
+        "=DB(10;1;3;0.5)",
+        "=RANDBETWEEN(5;1)",
+    ] {
+        assert_eq!(error(formula), FormulaError::Num, "{formula}");
+    }
+    // Four flows on four dates, as the oracle measured them.
+    let mut sheet = Sheet::new("Sheet1");
+    for (row, (amount, date)) in [
+        (-1000.0, 46023.0),
+        (300.0, 46204.0),
+        (400.0, 46388.0),
+        (500.0, 46569.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sheet.set(Pos::new(row as u32, 0), CellValue::Number(amount));
+        sheet.set(Pos::new(row as u32, 1), CellValue::Number(date));
+    }
+    sheet.set(Pos::new(4, 1), CellValue::Number(46000.0));
+    let document = Document {
+        sheets: vec![sheet],
+        ..Default::default()
+    };
+    let eval = |formula| Engine::new(&document).eval(formula, Address::new(0, Pos::new(20, 0)));
+    let near = |formula, want: f64| match eval(formula) {
+        Value::Number(got) => assert!((got - want).abs() < 1e-9, "{formula}: {got}, not {want}"),
+        other => panic!("{formula} evaluated to {other:?}"),
+    };
+    near("=XNPV(0.1;[.A1:.A4];[.B1:.B4])", 83.349_072_384_493_1);
+    near("=XIRR([.A1:.A4];[.B1:.B4])", 0.186_364_166_626_714);
+    near("=XIRR([.A1:.A4];[.B1:.B4];0.5)", 0.186_364_166_626_714);
+    for (formula, want) in [
+        ("=XIRR([.A2:.A3];[.B2:.B3])", FormulaError::Num),
+        ("=XNPV(-1;[.A1:.A2];[.B1:.B2])", FormulaError::Num),
+        // A date before the first: §6.12.52's constraint, where the oracle discounts forward.
+        ("=XNPV(0.1;[.A1:.A2];[.B4:.B5])", FormulaError::Num),
+        ("=XNPV(0.1;[.A1:.A3];[.B1:.B2])", FormulaError::Num),
+    ] {
+        assert_eq!(eval(formula), Value::Error(want), "{formula}");
+    }
+    for _ in 0..50 {
+        let r = number("=RAND()");
+        assert!((0.0..1.0).contains(&r), "{r}");
+        let n = number("=RANDBETWEEN(1.2;2.2)");
+        assert!(n == 1.0 || n == 2.0, "{n}");
+        assert_eq!(number("=RANDBETWEEN(3;3)"), 3.0);
+    }
+}

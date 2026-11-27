@@ -124,6 +124,7 @@ pub fn category(info: &FuncInfo) -> &'static str {
         Some("16") => "Math & Trigonometry",
         Some("17") => "Rounding",
         Some("18") => "Statistical",
+        Some("19") => "Number Conversion",
         Some("20") => "Text",
         _ => "Other",
     }
@@ -186,6 +187,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18.3",
     },
     FuncInfo {
+        name: "AVERAGEA",
+        signature: "AVERAGEA( { Any N } + )",
+        brief: "Average values, including values of type Text and Logical.",
+        section: "6.18.4",
+    },
+    FuncInfo {
         name: "AVERAGEIF",
         signature: "AVERAGEIF( Reference R ; Criterion C [ ; Reference A ] )",
         brief: "Average the values of cells in a range that meet a criteria.",
@@ -196,6 +203,30 @@ static CATALOG: &[FuncInfo] = &[
         signature: "AVERAGEIFS( Reference A ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
         brief: "Average the values of cells that meet multiple criteria in multiple ranges.",
         section: "6.18.6",
+    },
+    FuncInfo {
+        name: "BASE",
+        signature: "BASE( Integer X ; Integer Radix [ ; Integer MinimumLength ] )",
+        brief: "Converts a number into a text representation with the given base.",
+        section: "6.19.3",
+    },
+    FuncInfo {
+        name: "BIN2DEC",
+        signature: "BIN2DEC( TextOrNumber X )",
+        brief: "Converts a binary (base 2) number (up to 10 digits) to its decimal equivalent",
+        section: "6.19.4",
+    },
+    FuncInfo {
+        name: "BIN2HEX",
+        signature: "BIN2HEX( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a binary (base 2) number (10 th bit is sign) to its hexadecimal equivalent",
+        section: "6.19.5",
+    },
+    FuncInfo {
+        name: "BIN2OCT",
+        signature: "BIN2OCT( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a binary (base 2) number (10 th bit is sign) to its octal (base 8) equivalent",
+        section: "6.19.6",
     },
     FuncInfo {
         name: "CEILING",
@@ -214,6 +245,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "CHOOSE( Integer Index ; { Any Value } + )",
         brief: "Uses an index to return a value from a list of values.",
         section: "6.14.3",
+    },
+    FuncInfo {
+        name: "CLEAN",
+        signature: "CLEAN( Text T )",
+        brief: "Remove all non-printable characters from the string and return the result.",
+        section: "6.20.4",
     },
     FuncInfo {
         name: "CODE",
@@ -316,6 +353,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COM.MICROSOFT.MODE.SNGL( { ForceArray NumberSequence N } + )",
         brief: "Excel's MODE.SNGL: MODE by its new name.",
         section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.NETWORKDAYS.INTL",
+        signature: "COM.MICROSOFT.NETWORKDAYS.INTL( DateParam StartDate ; DateParam EndDate [ ; Scalar Weekend = 1 [ ; DateSequence Holidays ] ] )",
+        brief: "Excel's NETWORKDAYS.INTL: the working days between two dates, with Weekend a code from 1 to 7 or 11 to 17, or seven 0s and 1s from Monday.",
+        section: "6.10",
     },
     FuncInfo {
         name: "COM.MICROSOFT.NORM.DIST",
@@ -426,6 +469,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.WORKDAY.INTL",
+        signature: "COM.MICROSOFT.WORKDAY.INTL( DateParam StartDate ; Integer Days [ ; Scalar Weekend = 1 [ ; DateSequence Holidays ] ] )",
+        brief: "Excel's WORKDAY.INTL: the date Days working days on from StartDate, with NETWORKDAYS.INTL's Weekend.",
+        section: "6.10",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.XLOOKUP",
         signature: "COM.MICROSOFT.XLOOKUP( Any Key ; Reference|Array LookupArray ; Reference|Array ReturnArray [ ; Any IfNotFound [ ; Integer MatchMode = 0 [ ; Integer SearchMode = 1 ] ] ] )",
         brief: "Excel's XLOOKUP: the cell of ReturnArray beside Key's place in LookupArray.",
@@ -498,6 +547,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.10.2",
     },
     FuncInfo {
+        name: "DATEDIF",
+        signature: "DATEDIF( DateParam StartDate ; DateParam EndDate ; Text Format )",
+        brief: "Returns the difference in years, months, or days of two date numbers.",
+        section: "6.10.3",
+    },
+    FuncInfo {
         name: "DAVERAGE",
         signature: "DAVERAGE( Database D ; Field F ; Criteria C )",
         brief: "Finds the average of values in a given field from the records (rows) in a database that match a search criteria.",
@@ -508,6 +563,24 @@ static CATALOG: &[FuncInfo] = &[
         signature: "DAY( DateParam D )",
         brief: "Returns the day from a date.",
         section: "6.10.5",
+    },
+    FuncInfo {
+        name: "DAYS",
+        signature: "DAYS( DateParam EndDate ; DateParam StartDate )",
+        brief: "Returns the number of days between two dates",
+        section: "6.10.6",
+    },
+    FuncInfo {
+        name: "DAYS360",
+        signature: "DAYS360( DateParam StartDate ; DateParam EndDate [ ; Logical Method = FALSE ] )",
+        brief: "Returns the number of days between two dates using the 360-day year",
+        section: "6.10.7",
+    },
+    FuncInfo {
+        name: "DB",
+        signature: "DB( Number Cost ; Number Salvage ; Integer LifeTime ; Number Period [ ; Number Month = 12 ] )",
+        brief: "Compute the depreciation allowance of an asset.",
+        section: "6.12.13",
     },
     FuncInfo {
         name: "DCOUNT",
@@ -526,6 +599,30 @@ static CATALOG: &[FuncInfo] = &[
         signature: "DDB( Number Cost ; Number Salvage ; Number LifeTime ; Number Period [ ; Number DeclinationFactor = 2 ] )",
         brief: "Compute the amount of depreciation at a given period of time.",
         section: "6.12.14",
+    },
+    FuncInfo {
+        name: "DEC2BIN",
+        signature: "DEC2BIN( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a decimal number to base 2 (whose 10 th bit is sign)",
+        section: "6.19.7",
+    },
+    FuncInfo {
+        name: "DEC2HEX",
+        signature: "DEC2HEX( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a decimal number to base 16 (whose 40 th bit is sign)",
+        section: "6.19.8",
+    },
+    FuncInfo {
+        name: "DEC2OCT",
+        signature: "DEC2OCT( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a decimal number to base 8 (whose 30 th bit is sign)",
+        section: "6.19.9",
+    },
+    FuncInfo {
+        name: "DECIMAL",
+        signature: "DECIMAL( Text X ; Integer Radix )",
+        brief: "Converts text representing a number in a given base into a base 10 number.",
+        section: "6.19.10",
     },
     FuncInfo {
         name: "DEGREES",
@@ -689,6 +786,24 @@ static CATALOG: &[FuncInfo] = &[
         signature: "HARMEAN( { NumberSequenceList N } + )",
         brief: "returns the harmonic mean of a sequence",
         section: "6.18.36",
+    },
+    FuncInfo {
+        name: "HEX2BIN",
+        signature: "HEX2BIN( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a hexadecimal number (40 th bit is sign) to base 2 (whose 10 th bit is sign)",
+        section: "6.19.11",
+    },
+    FuncInfo {
+        name: "HEX2DEC",
+        signature: "HEX2DEC( TextOrNumber X )",
+        brief: "Converts a hexadecimal number (40 th bit is sign) to decimal",
+        section: "6.19.12",
+    },
+    FuncInfo {
+        name: "HEX2OCT",
+        signature: "HEX2OCT( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts a hexadecimal number (40 th bit is sign) to base 8 (whose 30 th bit is sign)",
+        section: "6.19.13",
     },
     FuncInfo {
         name: "HLOOKUP",
@@ -914,6 +1029,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18.45",
     },
     FuncInfo {
+        name: "MAXA",
+        signature: "MAXA( { Any N } + )",
+        brief: "Return the maximum from a set of values, including values of type Text and Logical.",
+        section: "6.18.46",
+    },
+    FuncInfo {
         name: "MEDIAN",
         signature: "MEDIAN( { NumberSequenceList X } + )",
         brief: "Returns the median (middle) value in the list.",
@@ -930,6 +1051,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "MIN( { NumberSequenceList N } + )",
         brief: "Return the minimum from a set of numbers.",
         section: "6.18.48",
+    },
+    FuncInfo {
+        name: "MINA",
+        signature: "MINA( { Any N } + )",
+        brief: "Return the minimum from a set of values, including values of type Text and Logical.",
+        section: "6.18.49",
     },
     FuncInfo {
         name: "MINUTE",
@@ -1014,6 +1141,30 @@ static CATALOG: &[FuncInfo] = &[
         signature: "NPV( Number Rate ; { NumberSequenceList Values } + )",
         brief: "Compute the net present value (NPV) for a series of periodic cash flows.",
         section: "6.12.30",
+    },
+    FuncInfo {
+        name: "NUMBERVALUE",
+        signature: "NUMBERVALUE( Text X [ ; Text DecimalSeparator [ ; Text GroupSeparator ] ] )",
+        brief: "Convert text to number, in a locale-independent way.",
+        section: "6.13.28",
+    },
+    FuncInfo {
+        name: "OCT2BIN",
+        signature: "OCT2BIN( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts an octal number (30 th bit is sign) to base 2 (whose 10 th bit is sign)",
+        section: "6.19.14",
+    },
+    FuncInfo {
+        name: "OCT2DEC",
+        signature: "OCT2DEC( TextOrNumber X )",
+        brief: "Converts an octal number (30 th bit is sign) to decimal",
+        section: "6.19.15",
+    },
+    FuncInfo {
+        name: "OCT2HEX",
+        signature: "OCT2HEX( TextOrNumber X [ ; Number Digits ] )",
+        brief: "Converts an octal number (30 th bit is sign) to hexadecimal (whose 40 th bit is sign)",
+        section: "6.19.16",
     },
     FuncInfo {
         name: "ODD",
@@ -1118,6 +1269,18 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.16.49",
     },
     FuncInfo {
+        name: "RAND",
+        signature: "RAND()",
+        brief: "Return a random number between 0 (inclusive) and 1 (exclusive).",
+        section: "6.16.50",
+    },
+    FuncInfo {
+        name: "RANDBETWEEN",
+        signature: "RANDBETWEEN( Integer A ; Integer B )",
+        brief: "Return a random integer number between A and B .",
+        section: "6.16.51",
+    },
+    FuncInfo {
         name: "RANK",
         signature: "RANK( Number Value ; NumberSequenceList Data [ ; Number Order = 0 ] )",
         brief: "Returns the rank of a number in a list of numbers.",
@@ -1147,6 +1310,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "RIGHT( Text T [ ; Integer Length ] )",
         brief: "Return a selected number of text characters from the right.",
         section: "6.20.19",
+    },
+    FuncInfo {
+        name: "ROMAN",
+        signature: "ROMAN( Integer N [ ; Integer Format = 0 ] )",
+        brief: "Convert to Roman numerals",
+        section: "6.19.17",
     },
     FuncInfo {
         name: "ROUND",
@@ -1195,6 +1364,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SECOND( TimeParam T )",
         brief: "Extracts the second (the integer 0 through 59) from a time. This function presumes that leap seconds never exist.",
         section: "6.10.17",
+    },
+    FuncInfo {
+        name: "SHEET",
+        signature: "SHEET( [ Text|Reference R ] )",
+        brief: "Returns the sheet number of the reference or the string representing a sheet name.",
+        section: "6.13.31",
+    },
+    FuncInfo {
+        name: "SHEETS",
+        signature: "SHEETS( [ Reference R ] )",
+        brief: "Returns the number of sheets in a reference or current document.",
+        section: "6.13.32",
     },
     FuncInfo {
         name: "SIGN",
@@ -1408,9 +1589,27 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.10.23",
     },
     FuncInfo {
+        name: "XIRR",
+        signature: "XIRR( NumberSequence Values ; DateSequence Dates [ ; Number Guess = 0.1 ] )",
+        brief: "Compute the internal rate of return for a non-periodic series of cash flows.",
+        section: "6.12.51",
+    },
+    FuncInfo {
+        name: "XNPV",
+        signature: "XNPV( Number Rate ; Reference | Array Values ; Reference | Array Dates )",
+        brief: "Compute the net present value of a series of cash flows.",
+        section: "6.12.52",
+    },
+    FuncInfo {
         name: "YEAR",
         signature: "YEAR( DateParam D )",
         brief: "Extracts the year from a date given in the current locale of the evaluator .",
         section: "6.10.24",
+    },
+    FuncInfo {
+        name: "YEARFRAC",
+        signature: "YEARFRAC( DateParam StartDate ; DateParam EndDate [ ; Basis B = 0 ] )",
+        brief: "Extracts the number of years (including fractional part) between two dates",
+        section: "6.10.25",
     },
 ];

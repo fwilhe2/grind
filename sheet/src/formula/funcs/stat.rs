@@ -18,6 +18,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "AVERAGEIFS" => super::criterion::several(args, super::criterion::Mode::Average),
         "MAX" => extreme(args, true),
         "MIN" => extreme(args, false),
+        "AVERAGEA" => all_values(args).and_then(|n| mean(&n)),
+        "MAXA" => all_values(args).and_then(|n| extreme_of(&n, true)),
+        "MINA" => all_values(args).and_then(|n| extreme_of(&n, false)),
         "COM.MICROSOFT.MAXIFS" => super::criterion::several(args, super::criterion::Mode::Max),
         "COM.MICROSOFT.MINIFS" => super::criterion::several(args, super::criterion::Mode::Min),
         // §6.18.82/§6.18.84: the sample forms divide by n-1, the population forms by n; Excel's
@@ -88,6 +91,23 @@ pub(super) fn mean(numbers: &[f64]) -> Answer {
     Ok(Value::number(
         numbers.iter().sum::<f64>() / numbers.len() as f64,
     ))
+}
+
+/// The `A` functions' sequence (§6.18.4, §6.18.46, §6.18.49): text as 0, a logical as 1 or 0, an
+/// empty cell left out, an error the answer.
+fn all_values(args: &mut Args) -> Result<Vec<f64>, FormulaError> {
+    args.arity(1..)?;
+    let mut out = Vec::new();
+    for value in args.values() {
+        match value {
+            Value::Number(n) => out.push(n),
+            Value::Bool(b) => out.push(if b { 1.0 } else { 0.0 }),
+            Value::Text(_) => out.push(0.0),
+            Value::Empty => {}
+            Value::Error(e) => return Err(e),
+        }
+    }
+    Ok(out)
 }
 
 /// §6.18.45 `MAX` and §6.18.48 `MIN`, which return 0 when handed no numbers at all — the

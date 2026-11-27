@@ -50,6 +50,22 @@ A household's September budget, a garden plan and an order of supplies for it. (
 | `ATAN2` | `=DEGREES(ATAN2(Garden.B16;Garden.B17))` | 36.869897645844 | Bearing of the shed above due east — ATAN2 takes x first |
 | `SUMSQ` | `=SUMSQ(3;4)` | 25 | The squares of three and four, added |
 | `COMBIN` | `=COMBIN(6;2)` | 15 | Pairs of plants from six seedlings |
+| `ROMAN` | `=ROMAN(YEAR(Ledger.A2))` | MMXXVI | The budget's year in Roman numerals |
+| `ROMAN` | `=ROMAN(1999;4)` | MIM | 1999, in the fewest numerals |
+| `BASE` | `=BASE(255;16)` | FF | 255 in hexadecimal |
+| `DECIMAL` | `=DECIMAL("FF";16)` | 255 | …and back |
+| `DEC2HEX` | `=DEC2HEX(255;4)` | 00FF | A colour channel as four hex digits |
+| `HEX2DEC` | `=HEX2DEC("FFFFFFFFFF")` | -1 | Ten F digits are -1 in two's complement |
+| `DEC2BIN` | `=DEC2BIN(9;8)` | 00001001 | Nine as eight bits |
+| `BIN2DEC` | `=BIN2DEC("1111111111")` | -1 | Ten ones are -1 |
+| `DEC2OCT` | `=DEC2OCT(64)` | 100 | 64 in octal |
+| `OCT2DEC` | `=OCT2DEC("755")` | 493 | A file mode as a number |
+| `HEX2BIN` | `=HEX2BIN("F";8)` | 00001111 | F as eight bits |
+| `HEX2OCT` | `=HEX2OCT("FF")` | 377 | FF in octal |
+| `BIN2HEX` | `=BIN2HEX("1111";4)` | 000F | Four ones as four hex digits |
+| `BIN2OCT` | `=BIN2OCT("111")` | 7 | Three ones in octal |
+| `OCT2HEX` | `=OCT2HEX("377")` | FF | 377 octal in hex |
+| `OCT2BIN` | `=OCT2BIN("7";4)` | 0111 | Seven as four bits |
 
 ## Rounding — `rounding.fods`
 
@@ -151,6 +167,11 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `COM.MICROSOFT.NORM.DIST` | `=COM.MICROSOFT.NORM.DIST(60;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11);TRUE())` | 0.181931036095991 | Excel's NORM.DIST: the share of a normal class below 60 in maths |
 | `COM.MICROSOFT.NORM.INV` | `=COM.MICROSOFT.NORM.INV(0.25;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11))` | 63.6778868494635 | Excel's NORM.INV: the mark the bottom quarter stays below |
 | `COM.MICROSOFT.NORM.S.INV` | `=COM.MICROSOFT.NORM.S.INV(0.975)` | 1.95996398454005 | Excel's NORM.S.INV: the z-score of a 95% interval's edge |
+| `AVERAGEA` | `=AVERAGEA(Marks.D2:D11)` | 70.2222222222222 | Mean English mark with the note counted as 0, the blank still skipped |
+| `MAXA` | `=MAXA(Marks.D2:D11)` | 92 | The best English mark, the note counted as 0 |
+| `MINA` | `=MINA(Marks.D2:D11)` | 0 | The lowest, which is the note |
+| `RAND` | `=AND(RAND()>=0;RAND()<1)` | TRUE | RAND is a fresh number from 0 up to 1 each time |
+| `RANDBETWEEN` | `=RANDBETWEEN(1;6)<=6` | TRUE | A dice throw for each student |
 
 ## Logical — `logical.fods`
 
@@ -212,6 +233,10 @@ A stock-take in a hardware store: one count is missing, one was written down as 
 | `FORMULA` | `=FORMULA(Stock.I2)` | =C2/H2 | …and this is how |
 | `ERROR.TYPE` | `=ERROR.TYPE(Stock.I7)` | 2 | Cable ties have no weekly use: a division by zero is error 2 |
 | `ERROR.TYPE` | `=ERROR.TYPE(MATCH("D-400";Stock.A2:A8;0))` | 7 | An unstocked SKU: #N/A is error 7 |
+| `SHEET` | `=SHEET()` | 2 | The stock sheet is the first |
+| `SHEETS` | `=SHEETS()` | 2 | The document has one sheet |
+| `NUMBERVALUE` | `=NUMBERVALUE("1.234,50";",";".")` | 1234.5 | A German-style amount read as a number |
+| `NUMBERVALUE` | `=NUMBERVALUE("12,5 %";",")` | 0.125 | …and a percentage written the same way |
 
 ## Text — `text.fods`
 
@@ -253,6 +278,7 @@ A customer list as it arrives from a web form: stray spaces, mixed case, phone n
 | `TEXT` | `=TEXT(Customers.H5*1.5;"#,##0.00")` | 3,027.00 | A number spelled with separators and two decimals |
 | `FIXED` | `="Order total: "&FIXED(1234.5;2)` | Order total: 1,234.50 | An amount spelled with its separators inside a sentence |
 | `FIXED` | `=FIXED(Customers.H2;0;TRUE())` | 2019 | A year as text, with no thousands separator |
+| `CLEAN` | `=CLEAN("ESP"&CHAR(10)&"-BER")` | ESP-BER | A code with a line break pasted into it, cleaned |
 
 ## Date and time — `datetime.fods`
 
@@ -281,6 +307,17 @@ A website project's schedule, the public holidays it has to plan around, and one
 | `HOUR` | `=HOUR(Timesheet.B2)` | 8 | The hour of the clock-in time |
 | `TODAY` | `=YEAR(TODAY())>=2026` | TRUE | TODAY is the date the sheet is recalculated |
 | `NOW` | `=INT(NOW())=TODAY()` | TRUE | NOW is today plus the time of day |
+| `DAYS` | `=DAYS(Schedule.D7;Schedule.B2)` | 70 | Calendar days from the kick-off to the launch |
+| `DAYS360` | `=DAYS360(Schedule.B2;Schedule.D7)` | 69 | The same span in a bank's 360-day year |
+| `DAYS360` | `=DAYS360(DATE(2026;1;31);DATE(2026;3;31);TRUE())` | 60 | The European method: both month ends are the 30th |
+| `DATEDIF` | `=DATEDIF(DATE(1990;5;17);Schedule.B2;"y")` | 36 | How old someone born on 1990-05-17 is at the kick-off |
+| `DATEDIF` | `=DATEDIF(Schedule.B2;Schedule.D7;"m")` | 2 | Whole months from the kick-off to the launch |
+| `DATEDIF` | `=DATEDIF(Schedule.B2;Schedule.D7;"md")` | 9 | …and the days left over |
+| `YEARFRAC` | `=YEARFRAC(Schedule.B2;Schedule.D7)` | 0.191666666666667 | The project as a share of a year, 30/360 |
+| `YEARFRAC` | `=YEARFRAC(Schedule.B2;Schedule.D7;1)` | 0.191780821917808 | The same in actual days over the year's actual length |
+| `COM.MICROSOFT.WORKDAY.INTL` | `=COM.MICROSOFT.WORKDAY.INTL(Schedule.B2;10;7;Holidays.A2:A4)` | 2026-09-15 | Excel's WORKDAY.INTL: ten working days on, for a team off on Fridays and Saturdays |
+| `COM.MICROSOFT.WORKDAY.INTL` | `=COM.MICROSOFT.WORKDAY.INTL(Schedule.B4;5;"0000001")` | 2026-09-19 | Five working days after the design starts, in a six-day week |
+| `COM.MICROSOFT.NETWORKDAYS.INTL` | `=COM.MICROSOFT.NETWORKDAYS.INTL(Schedule.B2;Schedule.D7;11;Holidays.A2:A4)` | 60 | Excel's NETWORKDAYS.INTL: working days in the project when only Sunday is off |
 
 ## Lookup — `lookup.fods`
 
@@ -352,3 +389,7 @@ A mortgage, a savings plan, a delivery van being depreciated and an investment's
 | `SYD` | `=SYD(Van.B2;Van.B3;Van.B4;1)` | $9,285.71 | First year, sum-of-years'-digits |
 | `DDB` | `=DDB(Van.B2;Van.B3;Van.B4;1)` | $12,833.33 | First year, double-declining balance |
 | `DDB` | `=DDB(Van.B2;Van.B3;Van.B4;2)` | $8,555.56 | Second year, double-declining balance |
+| `DB` | `=DB(Van.B2;Van.B3;Van.B4;1)` | $10,241.00 | The van's first year of fixed-declining depreciation |
+| `DB` | `=DB(Van.B2;Van.B3;Van.B4;1;7)` | $5,973.92 | The same when it was bought in June: seven months in the first year |
+| `XNPV` | `=XNPV(Project.B8;Project.B2:B4;Project.C2:C4)` | -61034.5404004473 | The first three flows, on the dates they came in |
+| `XIRR` | `=XIRR(Project.B2:B4;Project.C2:C4)` | -0.514753694807821 | The rate those three dated flows earn |

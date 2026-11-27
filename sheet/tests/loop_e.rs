@@ -45,13 +45,13 @@ use grind_sheet::{CellValue, Pos};
 /// LibreOffice" in `doc/differential-fuzz.md` for the pin, `scripts/soffice-tests.sh` to run
 /// against it locally, and the upgrade procedure that keeps an image bump and a `FLOOR`
 /// change in the same commit.
-const FLOOR: usize = 1151;
+const FLOOR: usize = 1327;
 
 const DEFAULT_SEED: u64 = 0x5EED;
 const DEFAULT_PER_FUNCTION: usize = 6;
 
 /// Not a function of the document, so no two evaluators agree by construction.
-const VOLATILE: [&str; 2] = ["NOW", "TODAY"];
+const VOLATILE: [&str; 4] = ["NOW", "TODAY", "RAND", "RANDBETWEEN"];
 
 /// First generated formula, 0-based. Rows 0..8 are the data block; the gap is so a mistake
 /// in the emitter shows up as a hole rather than as a silently shifted reference.

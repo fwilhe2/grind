@@ -25,6 +25,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "COLUMN" => where_am_i(args, false),
         "N" => n(args),
         "VALUE" => value_of(args),
+        "NUMBERVALUE" => number_value(args),
+        "SHEET" => sheet(args),
+        "SHEETS" => sheets(args),
         "ISBLANK" => is(args, |v| matches!(v, Value::Empty)),
         "ISNUMBER" => is(args, |v| matches!(v, Value::Number(_))),
         "ISTEXT" => is(args, |v| matches!(v, Value::Text(_))),
@@ -137,6 +140,87 @@ fn n(args: &mut Args) -> Answer {
 fn value_of(args: &mut Args) -> Answer {
     args.arity(1..=1)?;
     Ok(Value::number(args.number(0)?))
+}
+
+/// §6.13.28 `NUMBERVALUE( X [ ; DecimalSeparator [ ; GroupSeparator ] ] )`, by its five steps: the
+/// group separators before the decimal one dropped, the decimal one made a `.`, whitespace removed,
+/// a leading `.` given its zero, and each trailing `%` a division by 100. The separators default
+/// to the document's decimal one and none. Where the oracle refuses `" 3.5 "`, the spec's step 3
+/// removes the spaces.
+fn number_value(args: &mut Args) -> Answer {
+    args.arity(1..=3)?;
+    let text = args.text(0)?;
+    let decimal = if args.len() > 1 && !args.omitted(1) {
+        args.text(1)?
+    } else {
+        grind_core::locale::separators(args.locale()).0.to_string()
+    };
+    let group = if args.len() > 2 && !args.omitted(2) {
+        args.text(2)?
+    } else {
+        String::new()
+    };
+    let mut decimal_chars = decimal.chars();
+    let (Some(decimal), None) = (decimal_chars.next(), decimal_chars.next()) else {
+        return Err(FormulaError::Value);
+    };
+    if group.contains(decimal) {
+        return Err(FormulaError::Value);
+    }
+    let (whole, fraction) = match text.find(decimal) {
+        Some(i) => (&text[..i], Some(&text[i + decimal.len_utf8()..])),
+        None => (text.as_str(), None),
+    };
+    let mut plain: String = whole.chars().filter(|c| !group.contains(*c)).collect();
+    if let Some(fraction) = fraction {
+        plain.push('.');
+        plain.push_str(fraction);
+    }
+    let mut plain: String = plain.chars().filter(|c| !c.is_whitespace()).collect();
+    if plain.starts_with('.') {
+        plain.insert(0, '0');
+    }
+    let mut scale = 1.0;
+    while let Some(rest) = plain.strip_suffix('%') {
+        scale /= 100.0;
+        plain = rest.to_owned();
+    }
+    // xsd:float: a sign, digits with an optional point, an optional exponent — no `inf` or `nan`
+    // spelled the way Rust reads them.
+    let float = !plain.is_empty()
+        && plain
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '.' | '+' | '-' | 'e' | 'E'));
+    match plain.parse::<f64>() {
+        Ok(n) if float && n.is_finite() => Ok(Value::number(n * scale)),
+        _ => Err(FormulaError::Value),
+    }
+}
+
+/// §6.13.31 `SHEET( [ Text|Reference R ] )`: the 1-based number of the formula's sheet, the
+/// sheet a reference starts on, or the sheet a text names — `#N/A` when none has that name, as
+/// Excel answers.
+fn sheet(args: &mut Args) -> Answer {
+    args.arity(0..=1)?;
+    if args.is_empty() || args.omitted(0) {
+        return Ok(Value::number(args.at.sheet as f64 + 1.0));
+    }
+    if let Some(area) = args.area(0) {
+        return Ok(Value::number(area.sheet as f64 + 1.0));
+    }
+    let name = args.text(0)?;
+    let index = args.sheet_named(&name).ok_or(FormulaError::NA)?;
+    Ok(Value::number(index as f64 + 1.0))
+}
+
+/// §6.13.32 `SHEETS( [ Reference R ] )`: the sheets a reference spans, or the document's.
+fn sheets(args: &mut Args) -> Answer {
+    args.arity(0..=1)?;
+    if args.is_empty() || args.omitted(0) {
+        return Ok(Value::number(args.sheet_count() as f64));
+    }
+    args.area(0).ok_or(FormulaError::Value)?;
+    Ok(Value::Number(1.0))
 }
 
 /// §6.13.17 `ISEVEN` and §6.13.23 `ISODD`: `X` truncated, then its remainder by two. A logical is a

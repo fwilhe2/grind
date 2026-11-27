@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <office:document xmlns:grddl="http://www.w3.org/2003/g/data-view#" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xforms="http://www.w3.org/2002/xforms" xmlns:dom="http://www.w3.org/2001/xml-events" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0" xmlns:math="http://www.w3.org/1998/Math/MathML" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:field="urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0" xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:ooo="http://openoffice.org/2004/office" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" xmlns:ooow="http://openoffice.org/2004/writer" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:drawooo="http://openoffice.org/2010/draw" xmlns:oooc="http://openoffice.org/2004/calc" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:tableooo="http://openoffice.org/2009/table" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0" xmlns:rpt="http://openoffice.org/2005/report" xmlns:css3t="http://www.w3.org/TR/css3-text/" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:formx="urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
- <office:meta><meta:generator>LibreOffice/26.8.2.2$Linux_X86_64 LibreOffice_project/680$Build-2</meta:generator><meta:document-statistic meta:table-count="4" meta:cell-count="98" meta:object-count="0"/></office:meta>
+ <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="4" meta:cell-count="118" meta:object-count="0"/></office:meta>
  <office:settings>
   <config:config-item-set config:name="ooo:view-settings">
    <config:config-item config:name="VisibleAreaTop" config:type="int">0</config:config-item>
@@ -213,6 +213,13 @@
    <number:number number:decimal-places="2" number:min-decimal-places="2" number:min-integer-digits="1"/>
    <number:text>%</number:text>
   </number:percentage-style>
+  <number:date-style style:name="N49">
+   <number:year number:style="long"/>
+   <number:text>-</number:text>
+   <number:month number:style="long"/>
+   <number:text>-</number:text>
+   <number:day number:style="long"/>
+  </number:date-style>
   <number:currency-style style:name="N104P0" style:volatile="true">
    <number:currency-symbol number:language="en" number:country="US">$</number:currency-symbol>
    <number:number number:decimal-places="2" number:min-decimal-places="2" number:min-integer-digits="1" number:grouping="true"/>
@@ -227,11 +234,13 @@
   <style:style style:name="heading" style:family="table-cell" style:parent-style-name="Default">
    <style:text-properties fo:font-weight="bold"/>
   </style:style>
-  <style:style style:name="ce2" style:family="table-cell" style:parent-style-name="Default">
+  <style:style style:name="date" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N49"/>
+  <style:style style:name="ce3" style:family="table-cell" style:parent-style-name="Default">
    <style:text-properties fo:font-weight="bold"/>
   </style:style>
-  <style:style style:name="ce3" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N104"/>
-  <style:style style:name="ce4" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N11"/>
+  <style:style style:name="ce4" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N49"/>
+  <style:style style:name="ce5" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N104"/>
+  <style:style style:name="ce6" style:family="table-cell" style:parent-style-name="Default" style:data-style-name="N11"/>
   <style:page-layout style:name="pm1">
    <style:page-layout-properties style:writing-mode="lr-tb"/>
    <style:header-style>
@@ -274,7 +283,7 @@
      <text:p><text:sheet-name>???</text:sheet-name><text:s/>(<text:title>???</text:title>)</text:p>
     </style:region-left>
     <style:region-right>
-     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-09">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
+     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-27">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
     </style:region-right>
    </style:header>
    <style:header-left style:display="false"/>
@@ -292,10 +301,10 @@
    <table:table table:name="Loan" table:style-name="ta1">
     <table:table-column table:style-name="wide" table:number-columns-repeated="2" table:default-cell-style-name="Default"/>
     <table:table-row table:style-name="ro1">
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Item</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Value</text:p>
      </table:table-cell>
     </table:table-row>
@@ -351,10 +360,10 @@
    <table:table table:name="Van" table:style-name="ta1">
     <table:table-column table:style-name="wide" table:number-columns-repeated="2" table:default-cell-style-name="Default"/>
     <table:table-row table:style-name="ro1">
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Item</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Value</text:p>
      </table:table-cell>
     </table:table-row>
@@ -384,13 +393,16 @@
     </table:table-row>
    </table:table>
    <table:table table:name="Project" table:style-name="ta1">
-    <table:table-column table:style-name="wide" table:number-columns-repeated="2" table:default-cell-style-name="Default"/>
+    <table:table-column table:style-name="wide" table:number-columns-repeated="3" table:default-cell-style-name="Default"/>
     <table:table-row table:style-name="ro1">
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Year</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Cash flow</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
+      <text:p>Paid on</text:p>
      </table:table-cell>
     </table:table-row>
     <table:table-row table:style-name="ro1">
@@ -400,6 +412,9 @@
      <table:table-cell office:value-type="float" office:value="-120000" calcext:value-type="float">
       <text:p>-120000</text:p>
      </table:table-cell>
+     <table:table-cell table:style-name="ce4" office:value-type="date" office:date-value="2026-01-15" calcext:value-type="date">
+      <text:p>2026-01-15</text:p>
+     </table:table-cell>
     </table:table-row>
     <table:table-row table:style-name="ro1">
      <table:table-cell office:value-type="float" office:value="1" calcext:value-type="float">
@@ -407,6 +422,9 @@
      </table:table-cell>
      <table:table-cell office:value-type="float" office:value="28000" calcext:value-type="float">
       <text:p>28000</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="ce4" office:value-type="date" office:date-value="2026-08-03" calcext:value-type="date">
+      <text:p>2026-08-03</text:p>
      </table:table-cell>
     </table:table-row>
     <table:table-row table:style-name="ro1">
@@ -416,6 +434,9 @@
      <table:table-cell office:value-type="float" office:value="35000" calcext:value-type="float">
       <text:p>35000</text:p>
      </table:table-cell>
+     <table:table-cell table:style-name="ce4" office:value-type="date" office:date-value="2027-02-26" calcext:value-type="date">
+      <text:p>2027-02-26</text:p>
+     </table:table-cell>
     </table:table-row>
     <table:table-row table:style-name="ro1">
      <table:table-cell office:value-type="float" office:value="3" calcext:value-type="float">
@@ -424,6 +445,7 @@
      <table:table-cell office:value-type="float" office:value="41000" calcext:value-type="float">
       <text:p>41000</text:p>
      </table:table-cell>
+     <table:table-cell/>
     </table:table-row>
     <table:table-row table:style-name="ro1">
      <table:table-cell office:value-type="float" office:value="4" calcext:value-type="float">
@@ -432,6 +454,7 @@
      <table:table-cell office:value-type="float" office:value="38000" calcext:value-type="float">
       <text:p>38000</text:p>
      </table:table-cell>
+     <table:table-cell/>
     </table:table-row>
     <table:table-row table:style-name="ro1">
      <table:table-cell office:value-type="float" office:value="5" calcext:value-type="float">
@@ -440,6 +463,7 @@
      <table:table-cell office:value-type="float" office:value="30000" calcext:value-type="float">
       <text:p>30000</text:p>
      </table:table-cell>
+     <table:table-cell/>
     </table:table-row>
     <table:table-row table:style-name="ro1">
      <table:table-cell office:value-type="string" calcext:value-type="string">
@@ -448,24 +472,25 @@
      <table:table-cell office:value-type="float" office:value="0.08" calcext:value-type="float">
       <text:p>0.08</text:p>
      </table:table-cell>
+     <table:table-cell/>
     </table:table-row>
    </table:table>
    <table:table table:name="Samples" table:style-name="ta1">
     <table:table-column table:style-name="co3" table:default-cell-style-name="Default"/>
     <table:table-column table:style-name="co4" table:default-cell-style-name="Default"/>
-    <table:table-column table:style-name="co5" table:default-cell-style-name="ce3"/>
+    <table:table-column table:style-name="co5" table:default-cell-style-name="ce5"/>
     <table:table-column table:style-name="co4" table:default-cell-style-name="Default"/>
     <table:table-row table:style-name="ro1">
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Function</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Formula</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>Result</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce2" office:value-type="string" calcext:value-type="string">
+     <table:table-cell table:style-name="ce3" office:value-type="string" calcext:value-type="string">
       <text:p>What it shows</text:p>
      </table:table-cell>
     </table:table-row>
@@ -602,7 +627,7 @@
      <table:table-cell office:value-type="string" calcext:value-type="string">
       <text:p>=IRR(Project.B2:B7)</text:p>
      </table:table-cell>
-     <table:table-cell table:style-name="ce4" table:formula="of:=IRR([Project.B2:.B7])" office:value-type="percentage" office:value="0.130642769289272" calcext:value-type="percentage">
+     <table:table-cell table:style-name="ce6" table:formula="of:=IRR([Project.B2:.B7])" office:value-type="percentage" office:value="0.130642769289272" calcext:value-type="percentage">
       <text:p>13.06%</text:p>
      </table:table-cell>
      <table:table-cell office:value-type="string" calcext:value-type="string">
@@ -663,6 +688,62 @@
      </table:table-cell>
      <table:table-cell office:value-type="string" calcext:value-type="string">
       <text:p>Second year, double-declining balance</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DB</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DB(Van.B2;Van.B3;Van.B4;1)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DB([Van.B2];[Van.B3];[Van.B4];1)" office:value-type="currency" office:currency="USD" office:value="10241" calcext:value-type="currency">
+      <text:p>$10,241.00</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The van&apos;s first year of fixed-declining depreciation</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DB</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DB(Van.B2;Van.B3;Van.B4;1;7)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DB([Van.B2];[Van.B3];[Van.B4];1;7)" office:value-type="currency" office:currency="USD" office:value="5973.91666666667" calcext:value-type="currency">
+      <text:p>$5,973.92</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The same when it was bought in June: seven months in the first year</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>XNPV</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=XNPV(Project.B8;Project.B2:B4;Project.C2:C4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="Default" table:formula="of:=XNPV([Project.B8];[Project.B2:.B4];[Project.C2:.C4])" office:value-type="float" office:value="-61034.5404004473" calcext:value-type="float">
+      <text:p>-61034.5404004473</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The first three flows, on the dates they came in</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>XIRR</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=XIRR(Project.B2:B4;Project.C2:C4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:style-name="Default" table:formula="of:=XIRR([Project.B2:.B4];[Project.C2:.C4])" office:value-type="float" office:value="-0.514753694807821" calcext:value-type="float">
+      <text:p>-0.514753694807821</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The rate those three dated flows earn</text:p>
      </table:table-cell>
     </table:table-row>
    </table:table>

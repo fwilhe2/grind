@@ -370,6 +370,74 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   `#NUM!`, a zero one in `STANDARDIZE` `#DIV/0!`, as the oracle answers. Measured against
   LibreOffice 26.8. Decided 2026-11-27.
 
+- `DAYS` — §6.10.6
+- `DAYS360` — §6.10.7
+- `DATEDIF` — §6.10.3
+- `YEARFRAC` — §6.10.25
+
+  **Evidence:** the date arithmetic an age, a tenure or an interest period is worked out with;
+  `DATEDIF` alone is in 328 of LibreOffice's test formulas, and the import corpus calls it and
+  `DAYS360`. `DAYS360` and `YEARFRAC` follow the spec's procedures (§6.10.7, §4.11.7) to the
+  letter, and every measured case agrees with the oracle; `DATEDIF`'s Table 5 names only units,
+  so its `"md"` and `"yd"` are the oracle's — counted from the start's day in the month before
+  the end, which can be negative, and from the start's month and day in the last year not after
+  the end. Measured against LibreOffice 26.8. Decided 2026-11-27.
+
+- `NUMBERVALUE` — §6.13.28
+- `CLEAN` — §6.20.4
+- `AVERAGEA` — §6.18.4
+- `MAXA` — §6.18.46
+- `MINA` — §6.18.49
+- `SHEET` — §6.13.31
+- `SHEETS` — §6.13.32
+
+  **Evidence:** the import corpus calls `AVERAGEA` in four workbooks and `CLEAN` beside `TRIM` in
+  imported data; `NUMBERVALUE` is how a sheet reads a number written in another country's style.
+  Each is its section's rules: `NUMBERVALUE` by its five steps (whitespace removed, where the oracle
+  refuses `" 3.5 "`), `CLEAN` removing control characters (its unassigned code points need a table
+  this build does not carry), the `A` functions counting text as 0. `SHEET` of a name no sheet has
+  is `#N/A`, as Excel answers. Decided 2026-11-27.
+
+- `DB` — §6.12.13
+- `XNPV` — §6.12.52
+- `XIRR` — §6.12.51
+
+  **Evidence:** the depreciation beside `SLN`, `SYD` and `DDB`, and the dated forms of `NPV` and
+  `IRR` an investment's flows are written with. The spec's formulas; a date before the first is
+  `#NUM!` by XNPV's constraint, where the oracle discounts it forward. Decided 2026-11-27.
+
+- `RAND` — §6.16.50
+- `RANDBETWEEN` — §6.16.51
+
+  **Evidence:** `RANDBETWEEN` is the most-called missing function in the import corpus (84
+  workbooks, most of them one library's templates), and both are what a teaching sheet or a
+  quick simulation reaches for. Not functions of the document, so recalculating changes them, as
+  `NOW` does; `RANDBETWEEN`'s bounds convert as any Integer does, where the oracle rounds both up.
+  Decided 2026-11-27.
+
+- `ROMAN` — §6.19.17
+- `BASE` — §6.19.3
+- `DECIMAL` — §6.19.10
+- `BIN2DEC` — §6.19.4
+- `OCT2DEC` — §6.19.15
+- `HEX2DEC` — §6.19.12
+- `DEC2BIN` — §6.19.7
+- `DEC2OCT` — §6.19.9
+- `DEC2HEX` — §6.19.8
+- `BIN2OCT` — §6.19.6
+- `BIN2HEX` — §6.19.5
+- `OCT2BIN` — §6.19.14
+- `OCT2HEX` — §6.19.16
+- `HEX2BIN` — §6.19.11
+- `HEX2OCT` — §6.19.13
+
+  **Evidence:** §6.19 whole: LibreOffice's test documents call `DEC2HEX` in 151 formulas and
+  `HEX2DEC` in 86, and the import corpus `HEX2DEC` and `BASE`. Each is a small conversion with no
+  machinery behind it. `ROMAN`'s five levels are read as each level letting one more numeral below
+  the classic one be subtracted, the largest value written first; that reading agrees with the
+  oracle at every N from 1 to 3999 at every level. The binary, octal and hexadecimal family is ten
+  digits of two's complement, as §6.19 says. Decided 2026-11-27.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
@@ -461,6 +529,15 @@ same name.
   the data with `#NUM!` (the oracle's Err:504), and the `.PRECISE` and `.MATH` roundings step to
   a multiple of the significance's magnitude, `.MATH`'s Mode reversing the step for a negative
   number. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-27.
+
+- `COM.MICROSOFT.NETWORKDAYS.INTL` — §6.10
+- `COM.MICROSOFT.WORKDAY.INTL` — §6.10
+
+  **Evidence:** a working week that is not Monday to Friday, which `NETWORKDAYS` and `WORKDAY`
+  spell as seven flags and Excel as a code or seven characters; `grind-xlsx` imports each under
+  this name, as the oracle does. The same walk as `NETWORKDAYS` and `WORKDAY`, with Excel's
+  `Weekend`: 1 to 7 a pair of days, 11 to 17 one day, or seven `0`s and `1`s from Monday; anything
+  else is `#VALUE!`. Measured against LibreOffice 26.8. Decided 2026-11-27.
 
 ---
 

@@ -37,6 +37,8 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "ODD" => unary(args, |n| step_away(n, 2.0, 1.0)),
 
         "PI" => nullary(args, std::f64::consts::PI),
+        "RAND" => nullary(args, random()),
+        "RANDBETWEEN" => random_between(args),
         "ATAN2" => atan2(args),
         "POWER" => power(args),
         "MOD" => modulo(args),
@@ -98,6 +100,30 @@ fn sequence(args: &mut Args, f: impl Fn(&[f64]) -> f64) -> Answer {
 fn unary(args: &mut Args, f: impl Fn(f64) -> f64) -> Answer {
     args.arity(1..=1)?;
     Ok(Value::number(f(args.number(0)?)))
+}
+
+/// §6.16.50: a number from 0 up to but not including 1. `std`'s hasher is keyed afresh from the
+/// operating system's randomness for every thread and stepped on for every hasher, which is
+/// unpredictable enough for a spreadsheet's dice.
+fn random() -> f64 {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    hasher.write_u64(0);
+    (hasher.finish() >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// §6.16.51 `RANDBETWEEN( A ; B )`: a whole number from `A` to `B`, both included and both
+/// converted as §6.3.6 converts an Integer. `A > B` is `#NUM!`.
+fn random_between(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let (a, b) = (args.integer(0)?, args.integer(1)?);
+    if a > b {
+        return Err(FormulaError::Num);
+    }
+    let span = (b - a + 1) as f64;
+    Ok(Value::number(
+        a as f64 + (random() * span).floor().min(span - 1.0),
+    ))
 }
 
 fn nullary(args: &Args, value: f64) -> Answer {

@@ -45,6 +45,12 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "ISOWEEKNUM" => isoweeknum(args),
         "NETWORKDAYS" => networkdays(args),
         "WORKDAY" => workday(args),
+        "COM.MICROSOFT.NETWORKDAYS.INTL" => networkdays_intl(args),
+        "COM.MICROSOFT.WORKDAY.INTL" => workday_intl(args),
+        "DAYS" => days(args),
+        "DAYS360" => days360(args),
+        "DATEDIF" => datedif(args),
+        "YEARFRAC" => yearfrac(args),
         _ => return None,
     })
 }
@@ -267,17 +273,75 @@ impl Calendar {
     }
 }
 
+/// Excel's `Weekend` parameter of `NETWORKDAYS.INTL` and `WORKDAY.INTL`, as [`weekend`]'s flags:
+/// 1 to 7 a pair of days (1 Saturday and Sunday, 2 Sunday and Monday, … 7 Friday and Saturday),
+/// 11 to 17 one day (11 Sunday, 12 Monday, … 17 Saturday), or seven `0`/`1` characters from
+/// Monday, `1` meaning off. Left out, Saturday and Sunday; anything else is `#VALUE!`.
+fn excel_weekend(args: &mut Args, i: usize) -> Result<[bool; 7], FormulaError> {
+    let mut off = [false; 7];
+    if i >= args.len() || args.omitted(i) {
+        return Ok([true, false, false, false, false, false, true]);
+    }
+    match args.value(i) {
+        Value::Text(flags) => {
+            let flags: Vec<char> = flags.chars().collect();
+            if flags.len() != 7 || flags.iter().any(|c| !matches!(c, '0' | '1')) {
+                return Err(FormulaError::Value);
+            }
+            for (monday_based, c) in flags.iter().enumerate() {
+                off[(monday_based + 1) % 7] = *c == '1';
+            }
+        }
+        Value::Error(e) => return Err(e),
+        other => match other.to_number()?.trunc() as i64 {
+            // Sunday is 0: pair n starts on Saturday (6) and steps a day on per code.
+            code @ 1..=7 => {
+                let first = (code + 5).rem_euclid(7) as usize;
+                off[first] = true;
+                off[(first + 1) % 7] = true;
+            }
+            code @ 11..=17 => off[(code - 11) as usize] = true,
+            _ => return Err(FormulaError::Value),
+        },
+    }
+    Ok(off)
+}
+
+/// Excel's `NETWORKDAYS.INTL( Start ; End [ ; Weekend [ ; Holidays ] ] )`: [`networkdays`] with
+/// [`excel_weekend`]'s days off, before the holidays rather than after them.
+fn networkdays_intl(args: &mut Args) -> Answer {
+    args.arity(2..=4)?;
+    let off = excel_weekend(args, 2)?;
+    let holidays = holidays(args, 3)?;
+    count_workdays(args, off, holidays)
+}
+
+/// Excel's `WORKDAY.INTL( Start ; Days [ ; Weekend [ ; Holidays ] ] )`: [`workday`] with
+/// [`excel_weekend`]'s days off.
+fn workday_intl(args: &mut Args) -> Answer {
+    args.arity(2..=4)?;
+    let off = excel_weekend(args, 2)?;
+    let holidays = holidays(args, 3)?;
+    walk_workdays(args, off, holidays)
+}
+
 /// §6.10.15 `NETWORKDAYS( Date1 ; Date2 [ ; [ Holidays ] [ ; Workdays ] ] )`: the working
 /// days from one date to the other, both counted, negative when the second is earlier.
 fn networkdays(args: &mut Args) -> Answer {
     args.arity(2..=4)?;
+    let holidays = holidays(args, 2)?;
+    let off = weekend(args, 3)?;
+    count_workdays(args, off, holidays)
+}
+
+fn count_workdays(args: &mut Args, off: [bool; 7], holidays: BTreeSet<i64>) -> Answer {
     let (a, b) = (
         args.serial(0)?.floor() as i64,
         args.serial(1)?.floor() as i64,
     );
     let calendar = Calendar {
-        holidays: holidays(args, 2)?,
-        off: weekend(args, 3)?,
+        holidays,
+        off,
         null_date: args.null_date(),
     };
     Ok(Value::number(if a <= b {
@@ -293,11 +357,17 @@ fn networkdays(args: &mut Args) -> Answer {
 /// the holidays it passed.
 fn workday(args: &mut Args) -> Answer {
     args.arity(2..=4)?;
+    let holidays = holidays(args, 2)?;
+    let off = weekend(args, 3)?;
+    walk_workdays(args, off, holidays)
+}
+
+fn walk_workdays(args: &mut Args, off: [bool; 7], holidays: BTreeSet<i64>) -> Answer {
     let start = args.serial(0)?.floor() as i64;
     let offset = args.number(1)?.trunc() as i64;
     let calendar = Calendar {
-        holidays: holidays(args, 2)?,
-        off: weekend(args, 3)?,
+        holidays,
+        off,
         null_date: args.null_date(),
     };
     if offset == 0 {
@@ -335,6 +405,172 @@ fn workday(args: &mut Args) -> Answer {
         }
     }
     Ok(Value::number(day as f64))
+}
+
+/// §6.10.6 `DAYS( EndDate ; StartDate )`: `EndDate − StartDate`, times of day kept.
+fn days(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    Ok(Value::number(args.serial(0)? - args.serial(1)?))
+}
+
+/// A truncated serial's year, month and day.
+fn civil(serial: f64, null_date: i64) -> (i64, i64, i64) {
+    date::ymd(serial.floor(), null_date)
+}
+
+fn is_leap(year: i64) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+}
+
+fn last_of_february(year: i64, month: i64, day: i64) -> bool {
+    month == 2 && day == if is_leap(year) { 29 } else { 28 }
+}
+
+/// Days counted as 360 a year, 30 a month.
+fn thirty(start: (i64, i64, i64), end: (i64, i64, i64)) -> i64 {
+    (end.0 * 360 + end.1 * 30 + end.2) - (start.0 * 360 + start.1 * 30 + start.2)
+}
+
+/// §6.10.7 `DAYS360( StartDate ; EndDate [ ; Method = FALSE ] )`: the US (NASD) method, whose
+/// dates are never swapped, or with `Method` the European one.
+fn days360(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let null_date = args.null_date();
+    let (start, end) = (args.serial(0)?, args.serial(1)?);
+    let european = args.len() > 2 && !args.omitted(2) && args.logical(2)?;
+    let (mut a, mut b) = (civil(start, null_date), civil(end, null_date));
+    if european {
+        let sign = if start.floor() > end.floor() { -1 } else { 1 };
+        if sign < 0 {
+            std::mem::swap(&mut a, &mut b);
+        }
+        a.2 = a.2.min(30);
+        b.2 = b.2.min(30);
+        return Ok(Value::number((sign * thirty(a, b)) as f64));
+    }
+    if a.2 == 31 || last_of_february(a.0, a.1, a.2) {
+        a.2 = 30;
+    }
+    if b.2 == 31 && a.2 == 30 {
+        b.2 = 30;
+    }
+    Ok(Value::number(thirty(a, b) as f64))
+}
+
+/// §6.10.3 `DATEDIF( StartDate ; EndDate ; Format )`: whole years, months or days between two
+/// dates, the `Format` read in any case. Measured against the oracle where Table 5 says only a
+/// unit: `"md"` counts from `StartDate`'s day in the month before `EndDate`'s, which can be
+/// negative (`2020-01-31` to `2020-03-01` is -1), and `"yd"` from `StartDate`'s month and day in
+/// the last year that is not after `EndDate`. An `EndDate` before `StartDate`, or a `Format`
+/// that is none of the six, is `#NUM!`.
+fn datedif(args: &mut Args) -> Answer {
+    args.arity(3..=3)?;
+    let null_date = args.null_date();
+    let (start, end) = (args.serial(0)?.floor(), args.serial(1)?.floor());
+    let format = args.text(2)?.to_ascii_lowercase();
+    if start > end {
+        return Err(FormulaError::Num);
+    }
+    let (a, b) = (civil(start, null_date), civil(end, null_date));
+    let months = (b.0 - a.0) * 12 + (b.1 - a.1) - i64::from(b.2 < a.2);
+    let answer = match format.as_str() {
+        "y" => (months / 12) as f64,
+        "m" => months as f64,
+        "d" => end - start,
+        "ym" => (months % 12) as f64,
+        "md" if b.2 >= a.2 => (b.2 - a.2) as f64,
+        "md" => end - date::serial(b.0, b.1 - 1, a.2, null_date),
+        "yd" => {
+            let mut from = date::serial(b.0, a.1, a.2, null_date);
+            if from > end {
+                from = date::serial(b.0 - 1, a.1, a.2, null_date);
+            }
+            end - from
+        }
+        _ => return Err(FormulaError::Num),
+    };
+    Ok(Value::number(answer))
+}
+
+/// §6.10.25 `YEARFRAC( StartDate ; EndDate [ ; Basis = 0 ] )`: the days between the dates over
+/// the days in a year, both by §4.11.7's procedures for the basis; the dates may come in either
+/// order. A basis outside 0 to 4 is `#NUM!`.
+fn yearfrac(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let null_date = args.null_date();
+    let (mut start, mut end) = (args.serial(0)?.floor(), args.serial(1)?.floor());
+    let basis = if args.len() > 2 && !args.omitted(2) {
+        args.integer(2)?
+    } else {
+        0
+    };
+    if !(0..=4).contains(&basis) {
+        return Err(FormulaError::Num);
+    }
+    if start == end {
+        return Ok(Value::Number(0.0));
+    }
+    if start > end {
+        std::mem::swap(&mut start, &mut end);
+    }
+    let (mut a, mut b) = (civil(start, null_date), civil(end, null_date));
+    let days = match basis {
+        // Procedure A, the US 30/360 count.
+        0 => {
+            if a.2 == 31 {
+                a.2 -= 1;
+            }
+            if a.2 == 30 && b.2 == 31 {
+                b.2 -= 1;
+            }
+            let february = last_of_february(a.0, a.1, a.2);
+            if february && last_of_february(b.0, b.1, b.2) {
+                b.2 = 30;
+            }
+            if february {
+                a.2 = 30;
+            }
+            thirty(a, b) as f64
+        }
+        // Procedure C, the European 30/360 count.
+        4 => {
+            a.2 = a.2.min(30);
+            b.2 = b.2.min(30);
+            thirty(a, b) as f64
+        }
+        // Procedure B: actual days.
+        _ => end - start,
+    };
+    let year = match basis {
+        1 => actual_year(a, b),
+        3 => 365.0,
+        _ => 360.0,
+    };
+    Ok(Value::number(days / year))
+}
+
+/// §4.11.7.7 Procedure E: the days in a year for basis 1, between two ordered dates.
+fn actual_year(a: (i64, i64, i64), b: (i64, i64, i64)) -> f64 {
+    let different = a.0 != b.0;
+    // More than a year apart: a later year, or past the same month and day.
+    let spans = different && (b.0 != a.0 + 1 || (b.1, b.2) > (a.1, a.2));
+    if spans {
+        let years = a.0..=b.0;
+        let count = years.clone().count() as f64;
+        return years
+            .map(|y| if is_leap(y) { 366.0 } else { 365.0 })
+            .sum::<f64>()
+            / count;
+    }
+    if different && is_leap(a.0) {
+        return 366.0;
+    }
+    // A February 29 from the first date to the second, the second included.
+    let leap_day = (a.0..=b.0).filter(|y| is_leap(*y)).any(|y| {
+        let feb29 = (y, 2, 29);
+        a <= feb29 && feb29 <= b
+    });
+    if leap_day { 366.0 } else { 365.0 }
 }
 
 #[cfg(test)]

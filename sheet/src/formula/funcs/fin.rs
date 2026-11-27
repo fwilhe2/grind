@@ -37,6 +37,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "RATE" => rate(args),
         "NPV" => npv(args),
         "IRR" => irr(args),
+        "XNPV" => xnpv(args),
+        "XIRR" => xirr(args),
+        "DB" => db(args),
         "SLN" => sln(args),
         "SYD" => syd(args),
         "DDB" => ddb(args),
@@ -253,6 +256,114 @@ fn irr(args: &mut Args) -> Answer {
             .map(|(i, v)| v / (1.0 + r).powi(i as i32))
             .sum()
     })?))
+}
+
+/// The cash flows and their dates of `XNPV` and `XIRR`, from arguments `values` and `values + 1`:
+/// as many of each, every one a number (`#VALUE!` otherwise), and no date before the first
+/// (`#NUM!`, the spec's constraint, where the oracle discounts it forward).
+fn flows(args: &mut Args, values: usize) -> Result<Vec<(f64, f64)>, FormulaError> {
+    let numbers = |matrix: crate::formula::array::Matrix| -> Result<Vec<f64>, FormulaError> {
+        matrix
+            .values()
+            .iter()
+            .map(|v| match v {
+                Value::Number(n) => Ok(*n),
+                Value::Error(e) => Err(*e),
+                _ => Err(FormulaError::Value),
+            })
+            .collect()
+    };
+    let amounts = numbers(args.array(values))?;
+    let dates = numbers(args.array(values + 1))?;
+    if amounts.len() != dates.len() || amounts.is_empty() {
+        return Err(FormulaError::Num);
+    }
+    if dates.iter().any(|d| d.floor() < dates[0].floor()) {
+        return Err(FormulaError::Num);
+    }
+    let first = dates[0].floor();
+    Ok(amounts
+        .into_iter()
+        .zip(dates.into_iter().map(|d| (d.floor() - first) / 365.0))
+        .collect())
+}
+
+fn discounted(rate: f64, flows: &[(f64, f64)]) -> f64 {
+    flows
+        .iter()
+        .map(|(value, years)| value / (1.0 + rate).powf(*years))
+        .sum()
+}
+
+/// §6.12.52 `XNPV( Rate ; Values ; Dates )`: each flow discounted by the years since the first
+/// date, 365 days to a year. A `Rate` of −100% or less is `#NUM!`.
+fn xnpv(args: &mut Args) -> Answer {
+    args.arity(3..=3)?;
+    let rate = args.number(0)?;
+    let flows = flows(args, 1)?;
+    if rate <= -1.0 {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(discounted(rate, &flows)))
+}
+
+/// §6.12.51 `XIRR( Values ; Dates [ ; Guess = 0.1 ] )`: the rate at which [`xnpv`] is zero. Flows
+/// that are all of one sign have none, and are `#NUM!`.
+fn xirr(args: &mut Args) -> Answer {
+    args.arity(2..=3)?;
+    let flows = flows(args, 0)?;
+    let guess = if args.len() > 2 && !args.omitted(2) {
+        args.number(2)?
+    } else {
+        0.1
+    };
+    if !(flows.iter().any(|f| f.0 > 0.0) && flows.iter().any(|f| f.0 < 0.0)) {
+        return Err(FormulaError::Num);
+    }
+    let scale: f64 = flows.iter().map(|f| f.0.abs()).sum();
+    Ok(Value::number(solve(guess, scale, |r| {
+        discounted(r, &flows)
+    })?))
+}
+
+/// §6.12.13 `DB( Cost ; Salvage ; LifeTime ; Period [ ; Month = 12 ] )`: fixed-declining balance at
+/// a rate rounded to three decimals, the first year shortened to `Month` months and the year after
+/// `LifeTime` carrying the rest. Outside §6.12.13's constraints is `#NUM!`.
+fn db(args: &mut Args) -> Answer {
+    args.arity(4..=5)?;
+    let cost = args.number(0)?;
+    let salvage = args.number(1)?;
+    let life = args.integer(2)?;
+    let period = args.number(3)?;
+    let month = if args.len() > 4 && !args.omitted(4) {
+        args.number(4)?
+    } else {
+        12.0
+    };
+    if cost <= 0.0 || salvage < 0.0 || life <= 0 || period <= 0.0 || !(month > 0.0 && month < 13.0)
+    {
+        return Err(FormulaError::Num);
+    }
+    let period = period.trunc() as i64;
+    if period < 1 {
+        return Err(FormulaError::Num);
+    }
+    if period as f64 > life as f64 + 1.0 - (month / 12.0).trunc() {
+        return Ok(Value::Number(0.0));
+    }
+    let rate = ((1.0 - (salvage / cost).powf(1.0 / life as f64)) * 1000.0).round() / 1000.0;
+    let mut value = cost * (1.0 - month / 12.0 * rate);
+    let mut allowance = cost - value;
+    for p in 2..=period {
+        let next = if p > life {
+            value * (1.0 - (1.0 - month / 12.0) * rate)
+        } else {
+            value * (1.0 - rate)
+        };
+        allowance = value - next;
+        value = next;
+    }
+    Ok(Value::number(allowance))
 }
 
 /// A rate at which `f` is zero, sought from `guess` and then anywhere in the domain. `scale` is

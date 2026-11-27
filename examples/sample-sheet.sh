@@ -182,7 +182,9 @@ run set "$book" L24 'Rent ranks, ties shared'
 run set "$book" M24 '=COM.MICROSOFT.RANK.AVG([.C2];[.C2:.C7])'           # Excel's RANK.AVG
 run set "$book" L25 'Rent, up to a step of 50'
 run set "$book" M25 '=COM.MICROSOFT.CEILING.MATH([.C2];50)'              # Excel's CEILING.MATH
-sheet view "$book" L1:M25
+run set "$book" L26 'Months of the year so far'
+run set "$book" M26 '=DATEDIF(DATE(2026;1;1);DATE(2026;9;30);"m")'      # whole months between dates
+sheet view "$book" L1:M26
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <office:document xmlns:grddl="http://www.w3.org/2003/g/data-view#" xmlns:xhtml="http://www.w3.org/1999/xhtml" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xforms="http://www.w3.org/2002/xforms" xmlns:dom="http://www.w3.org/2001/xml-events" xmlns:script="urn:oasis:names:tc:opendocument:xmlns:script:1.0" xmlns:form="urn:oasis:names:tc:opendocument:xmlns:form:1.0" xmlns:math="http://www.w3.org/1998/Math/MathML" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:field="urn:openoffice:names:experimental:ooo-ms-interop:xmlns:field:1.0" xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:ooo="http://openoffice.org/2004/office" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:config="urn:oasis:names:tc:opendocument:xmlns:config:1.0" xmlns:ooow="http://openoffice.org/2004/writer" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:drawooo="http://openoffice.org/2010/draw" xmlns:oooc="http://openoffice.org/2004/calc" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:calcext="urn:org:documentfoundation:names:experimental:calc:xmlns:calcext:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:tableooo="http://openoffice.org/2009/table" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:dr3d="urn:oasis:names:tc:opendocument:xmlns:dr3d:1.0" xmlns:rpt="http://openoffice.org/2005/report" xmlns:css3t="http://www.w3.org/TR/css3-text/" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:formx="urn:openoffice:names:experimental:ooxml-odf-interop:xmlns:form:1.0" xmlns:chart="urn:oasis:names:tc:opendocument:xmlns:chart:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0" xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
- <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="5" meta:cell-count="336" meta:object-count="0"/></office:meta>
+ <office:meta><meta:generator>LibreOffice/26.8.3.1$Linux_X86_64 LibreOffice_project/680$Build-1</meta:generator><meta:document-statistic meta:table-count="5" meta:cell-count="400" meta:object-count="0"/></office:meta>
  <office:settings>
   <config:config-item-set config:name="ooo:view-settings">
    <config:config-item config:name="VisibleAreaTop" config:type="int">0</config:config-item>
@@ -273,7 +273,7 @@
      <text:p><text:sheet-name>???</text:sheet-name><text:s/>(<text:title>???</text:title>)</text:p>
     </style:region-left>
     <style:region-right>
-     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-22">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
+     <text:p><text:date style:data-style-name="N2" text:date-value="2026-11-27">00/00/0000</text:date>, <text:time>00:00:00</text:time></text:p>
     </style:region-right>
    </style:header>
    <style:header-left style:display="false"/>
@@ -1484,6 +1484,230 @@
      </table:table-cell>
      <table:table-cell office:value-type="string" calcext:value-type="string">
       <text:p>Pairs of plants from six seedlings</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>ROMAN</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=ROMAN(YEAR(Ledger.A2))</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=ROMAN(YEAR([Ledger.A2]))" office:value-type="string" office:string-value="MMXXVI" calcext:value-type="string">
+      <text:p>MMXXVI</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>The budget&apos;s year in Roman numerals</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>ROMAN</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=ROMAN(1999;4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=ROMAN(1999;4)" office:value-type="string" office:string-value="MIM" calcext:value-type="string">
+      <text:p>MIM</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>1999, in the fewest numerals</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>BASE</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=BASE(255;16)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=BASE(255;16)" office:value-type="string" office:string-value="FF" calcext:value-type="string">
+      <text:p>FF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>255 in hexadecimal</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DECIMAL</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DECIMAL(&quot;FF&quot;;16)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DECIMAL(&quot;FF&quot;;16)" office:value-type="float" office:value="255" calcext:value-type="float">
+      <text:p>255</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>…and back</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DEC2HEX</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DEC2HEX(255;4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DEC2HEX(255;4)" office:value-type="string" office:string-value="00FF" calcext:value-type="string">
+      <text:p>00FF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>A colour channel as four hex digits</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>HEX2DEC</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=HEX2DEC(&quot;FFFFFFFFFF&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=HEX2DEC(&quot;FFFFFFFFFF&quot;)" office:value-type="float" office:value="-1" calcext:value-type="float">
+      <text:p>-1</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Ten F digits are -1 in two&apos;s complement</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DEC2BIN</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DEC2BIN(9;8)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DEC2BIN(9;8)" office:value-type="string" office:string-value="00001001" calcext:value-type="string">
+      <text:p>00001001</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Nine as eight bits</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>BIN2DEC</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=BIN2DEC(&quot;1111111111&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=BIN2DEC(&quot;1111111111&quot;)" office:value-type="float" office:value="-1" calcext:value-type="float">
+      <text:p>-1</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Ten ones are -1</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>DEC2OCT</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=DEC2OCT(64)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=DEC2OCT(64)" office:value-type="string" office:string-value="100" calcext:value-type="string">
+      <text:p>100</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>64 in octal</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>OCT2DEC</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=OCT2DEC(&quot;755&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=OCT2DEC(&quot;755&quot;)" office:value-type="float" office:value="493" calcext:value-type="float">
+      <text:p>493</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>A file mode as a number</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>HEX2BIN</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=HEX2BIN(&quot;F&quot;;8)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=HEX2BIN(&quot;F&quot;;8)" office:value-type="string" office:string-value="00001111" calcext:value-type="string">
+      <text:p>00001111</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>F as eight bits</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>HEX2OCT</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=HEX2OCT(&quot;FF&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=HEX2OCT(&quot;FF&quot;)" office:value-type="string" office:string-value="377" calcext:value-type="string">
+      <text:p>377</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>FF in octal</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>BIN2HEX</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=BIN2HEX(&quot;1111&quot;;4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=BIN2HEX(&quot;1111&quot;;4)" office:value-type="string" office:string-value="000F" calcext:value-type="string">
+      <text:p>000F</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Four ones as four hex digits</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>BIN2OCT</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=BIN2OCT(&quot;111&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=BIN2OCT(&quot;111&quot;)" office:value-type="string" office:string-value="7" calcext:value-type="string">
+      <text:p>7</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Three ones in octal</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>OCT2HEX</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=OCT2HEX(&quot;377&quot;)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=OCT2HEX(&quot;377&quot;)" office:value-type="string" office:string-value="FF" calcext:value-type="string">
+      <text:p>FF</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>377 octal in hex</text:p>
+     </table:table-cell>
+    </table:table-row>
+    <table:table-row table:style-name="ro1">
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>OCT2BIN</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>=OCT2BIN(&quot;7&quot;;4)</text:p>
+     </table:table-cell>
+     <table:table-cell table:formula="of:=OCT2BIN(&quot;7&quot;;4)" office:value-type="string" office:string-value="0111" calcext:value-type="string">
+      <text:p>0111</text:p>
+     </table:table-cell>
+     <table:table-cell office:value-type="string" calcext:value-type="string">
+      <text:p>Seven as four bits</text:p>
      </table:table-cell>
     </table:table-row>
    </table:table>

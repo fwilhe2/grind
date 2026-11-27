@@ -232,6 +232,11 @@ sample to 1266, and the floor to **1151**. Again no new class: `MODE.SNGL`, `RAN
 percentile pair over the boolean column, and `NORM.INV` and `NORM.S.INV` answering `#NUM!` where
 the oracle says `#VALUE!` — the decision `LEGACY.NORMSINV` already records.
 
+The same day the date differences, the number conversions and the rest of that batch took it to
+1452, and the floor to **1327**; `RAND` and `RANDBETWEEN` join `NOW` and `TODAY` as volatile.
+No new class: an empty cell read as 0 by the conversions where §6.19 wants a digit, and errors
+reported in another order.
+
 The classic band that moved in on 2026-10-12 (`doc/small-group.md`'s second half) changed what
 a seed generates, since the catalog is what the generator walks, and added **no new class**:
 the same seed against LibreOffice 26.8 is 917 of 1000. What its 26 functions disagree about is

@@ -19,6 +19,9 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "UPPER" => map(args, str::to_uppercase),
         "PROPER" => map(args, proper),
         "TRIM" => map(args, trim),
+        // §6.20.4: control characters (Unicode's Cc) go. Its Cn, unassigned code points, needs a
+        // table `std` does not carry, and stays.
+        "CLEAN" => map(args, |s| s.chars().filter(|c| !c.is_control()).collect()),
         "LEFT" => end(args, true),
         "RIGHT" => end(args, false),
         "MID" => mid(args),

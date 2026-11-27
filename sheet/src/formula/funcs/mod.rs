@@ -20,6 +20,7 @@ use super::parse::Expr;
 use super::value::{FormulaError, Value};
 
 mod catalog;
+mod convert;
 mod criterion;
 mod datetime;
 mod db;
@@ -49,6 +50,7 @@ pub fn call(engine: &mut Engine, name: &str, args: &[Expr], at: Address) -> Valu
         datetime::call,
         db::call,
         fin::call,
+        convert::call,
     ] {
         if let Some(answer) = category(&name, &mut args) {
             return answer.unwrap_or_else(Value::Error);
@@ -114,9 +116,15 @@ pub fn beyond_small_group() -> &'static [&'static str] {
 const BEYOND: &[&str] = &[
     "ADDRESS",
     "AVEDEV",
+    "AVERAGEA",
     "AVERAGEIFS",
+    "BASE",
+    "BIN2DEC",
+    "BIN2HEX",
+    "BIN2OCT",
     "CEILING",
     "CHAR",
+    "CLEAN",
     "CODE",
     "COLUMN",
     "COM.MICROSOFT.CEILING",
@@ -133,6 +141,7 @@ const BEYOND: &[&str] = &[
     "COM.MICROSOFT.MAXIFS",
     "COM.MICROSOFT.MINIFS",
     "COM.MICROSOFT.MODE.SNGL",
+    "COM.MICROSOFT.NETWORKDAYS.INTL",
     "COM.MICROSOFT.NORM.DIST",
     "COM.MICROSOFT.NORM.INV",
     "COM.MICROSOFT.NORM.S.DIST",
@@ -151,12 +160,21 @@ const BEYOND: &[&str] = &[
     "COM.MICROSOFT.TEXTJOIN",
     "COM.MICROSOFT.VAR.P",
     "COM.MICROSOFT.VAR.S",
+    "COM.MICROSOFT.WORKDAY.INTL",
     "COM.MICROSOFT.XLOOKUP",
     "COM.MICROSOFT.XMATCH",
     "COMBIN",
     "CONCATENATE",
     "CORREL",
     "COUNTIFS",
+    "DATEDIF",
+    "DAYS",
+    "DAYS360",
+    "DB",
+    "DEC2BIN",
+    "DEC2HEX",
+    "DEC2OCT",
+    "DECIMAL",
     "DEVSQ",
     "EDATE",
     "EOMONTH",
@@ -167,6 +185,9 @@ const BEYOND: &[&str] = &[
     "FORMULA",
     "GEOMEAN",
     "HARMEAN",
+    "HEX2BIN",
+    "HEX2DEC",
+    "HEX2OCT",
     "HYPERLINK",
     "IFERROR",
     "IFNA",
@@ -182,12 +203,18 @@ const BEYOND: &[&str] = &[
     "LEGACY.NORMSDIST",
     "LEGACY.NORMSINV",
     "LOOKUP",
+    "MAXA",
     "MEDIAN",
+    "MINA",
     "MODE",
     "MROUND",
     "NETWORKDAYS",
     "NORMDIST",
     "NORMINV",
+    "NUMBERVALUE",
+    "OCT2BIN",
+    "OCT2DEC",
+    "OCT2HEX",
     "OFFSET",
     "PEARSON",
     "PERCENTILE",
@@ -196,12 +223,17 @@ const BEYOND: &[&str] = &[
     "PPMT",
     "QUARTILE",
     "QUOTIENT",
+    "RAND",
+    "RANDBETWEEN",
     "RANK",
+    "ROMAN",
     "ROUNDDOWN",
     "ROUNDUP",
     "ROW",
     "RSQ",
     "SEARCH",
+    "SHEET",
+    "SHEETS",
     "SIGN",
     "SLOPE",
     "SMALL",
@@ -215,6 +247,9 @@ const BEYOND: &[&str] = &[
     "UNICODE",
     "WEEKNUM",
     "WORKDAY",
+    "XIRR",
+    "XNPV",
+    "YEARFRAC",
 ];
 
 const NAMES: &[&str] = &[
@@ -276,6 +311,8 @@ const NAMES: &[&str] = &[
     "COM.MICROSOFT.FLOOR.PRECISE",
     "COM.MICROSOFT.CEILING.MATH",
     "COM.MICROSOFT.FLOOR.MATH",
+    "RAND",
+    "RANDBETWEEN",
     // information (§6.13)
     "COLUMN",
     "COLUMNS",
@@ -303,6 +340,9 @@ const NAMES: &[&str] = &[
     "ROW",
     "ROWS",
     "VALUE",
+    "NUMBERVALUE",
+    "SHEET",
+    "SHEETS",
     // statistical (§6.18)
     "AVERAGE",
     "AVERAGEIF",
@@ -358,6 +398,9 @@ const NAMES: &[&str] = &[
     "COM.MICROSOFT.NORM.DIST",
     "COM.MICROSOFT.NORM.INV",
     "COM.MICROSOFT.NORM.S.INV",
+    "AVERAGEA",
+    "MAXA",
+    "MINA",
     // text (§6.20)
     "EXACT",
     "FIND",
@@ -383,6 +426,7 @@ const NAMES: &[&str] = &[
     "TEXT",
     "COM.MICROSOFT.CONCAT",
     "COM.MICROSOFT.TEXTJOIN",
+    "CLEAN",
     // external access (§6.11)
     "HYPERLINK",
     // date and time (§6.10)
@@ -402,6 +446,12 @@ const NAMES: &[&str] = &[
     "NETWORKDAYS",
     "WEEKNUM",
     "WORKDAY",
+    "COM.MICROSOFT.NETWORKDAYS.INTL",
+    "COM.MICROSOFT.WORKDAY.INTL",
+    "DAYS",
+    "DAYS360",
+    "DATEDIF",
+    "YEARFRAC",
     "YEAR",
     // lookup (§6.14)
     "CHOOSE",
@@ -441,6 +491,25 @@ const NAMES: &[&str] = &[
     "SYD",
     "IPMT",
     "PPMT",
+    "XNPV",
+    "XIRR",
+    "DB",
+    // number representation (§6.19)
+    "ROMAN",
+    "BASE",
+    "DECIMAL",
+    "BIN2DEC",
+    "OCT2DEC",
+    "HEX2DEC",
+    "DEC2BIN",
+    "DEC2OCT",
+    "DEC2HEX",
+    "BIN2OCT",
+    "BIN2HEX",
+    "OCT2BIN",
+    "OCT2HEX",
+    "HEX2BIN",
+    "HEX2OCT",
 ];
 
 /// A call's arguments, plus the engine needed to evaluate them.
@@ -507,6 +576,18 @@ impl Args<'_, '_> {
     #[must_use]
     pub fn formula_at(&self, at: Address) -> Option<&str> {
         self.engine.formula_at(at)
+    }
+
+    /// How many sheets the document has.
+    #[must_use]
+    pub fn sheet_count(&self) -> usize {
+        self.engine.sheet_count()
+    }
+
+    /// The index of the sheet named `name`.
+    #[must_use]
+    pub fn sheet_named(&self, name: &str) -> Option<usize> {
+        self.engine.sheet_named(name)
     }
 
     /// The document's locale — how `FIXED` spells a number.
