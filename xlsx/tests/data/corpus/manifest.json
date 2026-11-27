@@ -1,7 +1,7 @@
 {
   "generator": "ooxmlgen 0.2.0",
   "schema": "https://github.com/fwilhe2/ooxmlgen \u2014 corpus manifest v1",
-  "generated": "2026-11-22T22:29:58Z",
+  "generated": "2026-11-27T21:14:36Z",
   "fixtures": [
     {
       "file": "document/autofilter.xlsx",
@@ -13073,6 +13073,238 @@
               "raw": "60",
               "kind": "Text",
               "value": "Excel\u0027s FLOOR on a credit goes away from zero: -13"
+            },
+            {
+              "ref": "A21",
+              "t": "s",
+              "raw": "61",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.CEILING.PRECISE"
+            },
+            {
+              "ref": "B21",
+              "t": "s",
+              "raw": "62",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.CEILING.PRECISE(Times!B4,15)"
+            },
+            {
+              "ref": "C21",
+              "raw": "30",
+              "kind": "Number",
+              "value": "30",
+              "excel": "COM.MICROSOFT.CEILING.PRECISE(Times!B4,15)",
+              "formula": "COM.MICROSOFT.CEILING.PRECISE([Times.B4];15)"
+            },
+            {
+              "ref": "D21",
+              "t": "s",
+              "raw": "63",
+              "kind": "Text",
+              "value": "Excel\u0027s CEILING.PRECISE: the review, billed in started quarter hours"
+            },
+            {
+              "ref": "A22",
+              "t": "s",
+              "raw": "61",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.CEILING.PRECISE"
+            },
+            {
+              "ref": "B22",
+              "t": "s",
+              "raw": "64",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.CEILING.PRECISE(Invoice!B9,-1)"
+            },
+            {
+              "ref": "C22",
+              "raw": "-12",
+              "kind": "Number",
+              "value": "-12",
+              "excel": "COM.MICROSOFT.CEILING.PRECISE(Invoice!B9,-1)",
+              "formula": "COM.MICROSOFT.CEILING.PRECISE([Invoice.B9];-1)"
+            },
+            {
+              "ref": "D22",
+              "t": "s",
+              "raw": "65",
+              "kind": "Text",
+              "value": "A negative step counts as its size: the credit goes up to -12"
+            },
+            {
+              "ref": "A23",
+              "t": "s",
+              "raw": "66",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.ISO.CEILING"
+            },
+            {
+              "ref": "B23",
+              "t": "s",
+              "raw": "67",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.ISO.CEILING(Invoice!C5*1.07,10)"
+            },
+            {
+              "ref": "C23",
+              "raw": "260",
+              "kind": "Number",
+              "value": "260",
+              "excel": "COM.MICROSOFT.ISO.CEILING(Invoice!C5*1.07,10)",
+              "formula": "COM.MICROSOFT.ISO.CEILING([Invoice.C5]*1.07;10)"
+            },
+            {
+              "ref": "D23",
+              "t": "s",
+              "raw": "68",
+              "kind": "Text",
+              "value": "Excel\u0027s ISO.CEILING: next year\u0027s room hire, up to a step of ten"
+            },
+            {
+              "ref": "A24",
+              "t": "s",
+              "raw": "69",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.FLOOR.PRECISE"
+            },
+            {
+              "ref": "B24",
+              "t": "s",
+              "raw": "70",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.FLOOR.PRECISE(Invoice!B9)"
+            },
+            {
+              "ref": "C24",
+              "raw": "-13",
+              "kind": "Number",
+              "value": "-13",
+              "excel": "COM.MICROSOFT.FLOOR.PRECISE(Invoice!B9)",
+              "formula": "COM.MICROSOFT.FLOOR.PRECISE([Invoice.B9])"
+            },
+            {
+              "ref": "D24",
+              "t": "s",
+              "raw": "71",
+              "kind": "Text",
+              "value": "Excel\u0027s FLOOR.PRECISE: the credit down to -13"
+            },
+            {
+              "ref": "A25",
+              "t": "s",
+              "raw": "72",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.CEILING.MATH"
+            },
+            {
+              "ref": "B25",
+              "t": "s",
+              "raw": "73",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.CEILING.MATH(Invoice!B9,5,1)"
+            },
+            {
+              "ref": "C25",
+              "raw": "-15",
+              "kind": "Number",
+              "value": "-15",
+              "excel": "COM.MICROSOFT.CEILING.MATH(Invoice!B9,5,1)",
+              "formula": "COM.MICROSOFT.CEILING.MATH([Invoice.B9];5;1)"
+            },
+            {
+              "ref": "D25",
+              "t": "s",
+              "raw": "74",
+              "kind": "Text",
+              "value": "Excel\u0027s CEILING.MATH with a Mode: the credit away from zero, to -15"
+            },
+            {
+              "ref": "A26",
+              "t": "s",
+              "raw": "72",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.CEILING.MATH"
+            },
+            {
+              "ref": "B26",
+              "t": "s",
+              "raw": "75",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.CEILING.MATH(Times!B7/Times!B6)"
+            },
+            {
+              "ref": "C26",
+              "raw": "7",
+              "kind": "Number",
+              "value": "7",
+              "excel": "COM.MICROSOFT.CEILING.MATH(Times!B7/Times!B6)",
+              "formula": "COM.MICROSOFT.CEILING.MATH([Times.B7]/[Times.B6])"
+            },
+            {
+              "ref": "D26",
+              "t": "s",
+              "raw": "76",
+              "kind": "Text",
+              "value": "Pallets needed for every box"
+            },
+            {
+              "ref": "A27",
+              "t": "s",
+              "raw": "77",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.FLOOR.MATH"
+            },
+            {
+              "ref": "B27",
+              "t": "s",
+              "raw": "78",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.FLOOR.MATH(Invoice!B9,5,1)"
+            },
+            {
+              "ref": "C27",
+              "raw": "-10",
+              "kind": "Number",
+              "value": "-10",
+              "excel": "COM.MICROSOFT.FLOOR.MATH(Invoice!B9,5,1)",
+              "formula": "COM.MICROSOFT.FLOOR.MATH([Invoice.B9];5;1)"
+            },
+            {
+              "ref": "D27",
+              "t": "s",
+              "raw": "79",
+              "kind": "Text",
+              "value": "Excel\u0027s FLOOR.MATH with a Mode: the credit towards zero, to -10"
+            },
+            {
+              "ref": "A28",
+              "t": "s",
+              "raw": "77",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.FLOOR.MATH"
+            },
+            {
+              "ref": "B28",
+              "t": "s",
+              "raw": "80",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.FLOOR.MATH(Times!B5,30)"
+            },
+            {
+              "ref": "C28",
+              "raw": "180",
+              "kind": "Number",
+              "value": "180",
+              "excel": "COM.MICROSOFT.FLOOR.MATH(Times!B5,30)",
+              "formula": "COM.MICROSOFT.FLOOR.MATH([Times.B5];30)"
+            },
+            {
+              "ref": "D28",
+              "t": "s",
+              "raw": "58",
+              "kind": "Text",
+              "value": "The site visit in whole half hours"
             }
           ]
         }
@@ -13084,8 +13316,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 4505,
-      "sha256": "ab65f37d9332eac009f12e7f0e6fd56b5f4c6d6889eb6d86c30ab7321ac2deea"
+      "bytes": 4964,
+      "sha256": "cf736e0d94289ecc18ad111da176826524c3c61f70a5caeac86f7d129266103d"
     },
     {
       "file": "functions/statistical.xlsx",
@@ -14730,6 +14962,499 @@
               "raw": "144",
               "kind": "Text",
               "value": "Gold, silver and bronze among ten students"
+            },
+            {
+              "ref": "A45",
+              "t": "s",
+              "raw": "145",
+              "kind": "Text",
+              "value": "NORMDIST"
+            },
+            {
+              "ref": "B45",
+              "t": "s",
+              "raw": "146",
+              "kind": "Text",
+              "value": "=NORMDIST(85,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))"
+            },
+            {
+              "ref": "C45",
+              "raw": "0.751569005661576",
+              "kind": "Number",
+              "value": "0.751569005661576",
+              "excel": "NORMDIST(85,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))",
+              "formula": "NORMDIST(85;AVERAGE([Marks.C2:.C11]);STDEV([Marks.C2:.C11]))"
+            },
+            {
+              "ref": "D45",
+              "t": "s",
+              "raw": "147",
+              "kind": "Text",
+              "value": "The share of a normal class below 85 in maths"
+            },
+            {
+              "ref": "A46",
+              "t": "s",
+              "raw": "148",
+              "kind": "Text",
+              "value": "NORMINV"
+            },
+            {
+              "ref": "B46",
+              "t": "s",
+              "raw": "149",
+              "kind": "Text",
+              "value": "=NORMINV(0.75,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))"
+            },
+            {
+              "ref": "C46",
+              "raw": "84.9221131505365",
+              "kind": "Number",
+              "value": "84.9221131505365",
+              "excel": "NORMINV(0.75,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))",
+              "formula": "NORMINV(0.75;AVERAGE([Marks.C2:.C11]);STDEV([Marks.C2:.C11]))"
+            },
+            {
+              "ref": "D46",
+              "t": "s",
+              "raw": "150",
+              "kind": "Text",
+              "value": "The maths mark three quarters of a normal class stay below"
+            },
+            {
+              "ref": "A47",
+              "t": "s",
+              "raw": "151",
+              "kind": "Text",
+              "value": "LEGACY.NORMSDIST"
+            },
+            {
+              "ref": "B47",
+              "t": "s",
+              "raw": "152",
+              "kind": "Text",
+              "value": "=LEGACY.NORMSDIST(1)"
+            },
+            {
+              "ref": "C47",
+              "raw": "0.841344746068543",
+              "kind": "Number",
+              "value": "0.841344746068543",
+              "excel": "LEGACY.NORMSDIST(1)",
+              "formula": "LEGACY.NORMSDIST(1)"
+            },
+            {
+              "ref": "D47",
+              "t": "s",
+              "raw": "153",
+              "kind": "Text",
+              "value": "The share of a normal class within one deviation above the middle"
+            },
+            {
+              "ref": "A48",
+              "t": "s",
+              "raw": "154",
+              "kind": "Text",
+              "value": "STANDARDIZE"
+            },
+            {
+              "ref": "B48",
+              "t": "s",
+              "raw": "155",
+              "kind": "Text",
+              "value": "=STANDARDIZE(Marks!C4,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))"
+            },
+            {
+              "ref": "C48",
+              "raw": "1.06042730562569",
+              "kind": "Number",
+              "value": "1.06042730562569",
+              "excel": "STANDARDIZE(Marks!C4,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))",
+              "formula": "STANDARDIZE([Marks.C4];AVERAGE([Marks.C2:.C11]);STDEV([Marks.C2:.C11]))"
+            },
+            {
+              "ref": "D48",
+              "t": "s",
+              "raw": "156",
+              "kind": "Text",
+              "value": "Chloe\u0027s maths mark as a z-score"
+            },
+            {
+              "ref": "A49",
+              "t": "s",
+              "raw": "157",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.RANK.EQ"
+            },
+            {
+              "ref": "B49",
+              "t": "s",
+              "raw": "158",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.RANK.EQ(Marks!E6,Marks!E2:E11)"
+            },
+            {
+              "ref": "C49",
+              "raw": "4",
+              "kind": "Number",
+              "value": "4",
+              "excel": "COM.MICROSOFT.RANK.EQ(Marks!E6,Marks!E2:E11)",
+              "formula": "COM.MICROSOFT.RANK.EQ([Marks.E6];[Marks.E2:.E11])"
+            },
+            {
+              "ref": "D49",
+              "t": "s",
+              "raw": "159",
+              "kind": "Text",
+              "value": "Excel\u0027s RANK.EQ: Ella\u0027s place in science"
+            },
+            {
+              "ref": "A50",
+              "t": "s",
+              "raw": "160",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.RANK.AVG"
+            },
+            {
+              "ref": "B50",
+              "t": "s",
+              "raw": "161",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.RANK.AVG(72,Marks!C2:C11,1)"
+            },
+            {
+              "ref": "C50",
+              "raw": "5",
+              "kind": "Number",
+              "value": "5",
+              "excel": "COM.MICROSOFT.RANK.AVG(72,Marks!C2:C11,1)",
+              "formula": "COM.MICROSOFT.RANK.AVG(72;[Marks.C2:.C11];1)"
+            },
+            {
+              "ref": "D50",
+              "t": "s",
+              "raw": "162",
+              "kind": "Text",
+              "value": "Excel\u0027s RANK.AVG: where a 72 in maths ranks from the bottom"
+            },
+            {
+              "ref": "A51",
+              "t": "s",
+              "raw": "163",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.PERCENTILE.INC"
+            },
+            {
+              "ref": "B51",
+              "t": "s",
+              "raw": "164",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.PERCENTILE.INC(Marks!C2:C11,0.9)"
+            },
+            {
+              "ref": "C51",
+              "raw": "91.4",
+              "kind": "Number",
+              "value": "91.4",
+              "excel": "COM.MICROSOFT.PERCENTILE.INC(Marks!C2:C11,0.9)",
+              "formula": "COM.MICROSOFT.PERCENTILE.INC([Marks.C2:.C11];0.9)"
+            },
+            {
+              "ref": "D51",
+              "t": "s",
+              "raw": "165",
+              "kind": "Text",
+              "value": "Excel\u0027s PERCENTILE.INC: PERCENTILE by its new name"
+            },
+            {
+              "ref": "A52",
+              "t": "s",
+              "raw": "166",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.PERCENTILE.EXC"
+            },
+            {
+              "ref": "B52",
+              "t": "s",
+              "raw": "167",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.PERCENTILE.EXC(Marks!C2:C11,0.9)"
+            },
+            {
+              "ref": "C52",
+              "raw": "94.6",
+              "kind": "Number",
+              "value": "94.6",
+              "excel": "COM.MICROSOFT.PERCENTILE.EXC(Marks!C2:C11,0.9)",
+              "formula": "COM.MICROSOFT.PERCENTILE.EXC([Marks.C2:.C11];0.9)"
+            },
+            {
+              "ref": "D52",
+              "t": "s",
+              "raw": "168",
+              "kind": "Text",
+              "value": "Excel\u0027s PERCENTILE.EXC: the top tenth\u0027s mark, interpolated without the ends"
+            },
+            {
+              "ref": "A53",
+              "t": "s",
+              "raw": "169",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.QUARTILE.INC"
+            },
+            {
+              "ref": "B53",
+              "t": "s",
+              "raw": "170",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.QUARTILE.INC(Marks!E2:E11,3)"
+            },
+            {
+              "ref": "C53",
+              "raw": "89",
+              "kind": "Number",
+              "value": "89",
+              "excel": "COM.MICROSOFT.QUARTILE.INC(Marks!E2:E11,3)",
+              "formula": "COM.MICROSOFT.QUARTILE.INC([Marks.E2:.E11];3)"
+            },
+            {
+              "ref": "D53",
+              "t": "s",
+              "raw": "171",
+              "kind": "Text",
+              "value": "Excel\u0027s QUARTILE.INC: the science mark three quarters stayed below"
+            },
+            {
+              "ref": "A54",
+              "t": "s",
+              "raw": "172",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.QUARTILE.EXC"
+            },
+            {
+              "ref": "B54",
+              "t": "s",
+              "raw": "173",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.QUARTILE.EXC(Marks!E2:E11,3)"
+            },
+            {
+              "ref": "C54",
+              "raw": "91",
+              "kind": "Number",
+              "value": "91",
+              "excel": "COM.MICROSOFT.QUARTILE.EXC(Marks!E2:E11,3)",
+              "formula": "COM.MICROSOFT.QUARTILE.EXC([Marks.E2:.E11];3)"
+            },
+            {
+              "ref": "D54",
+              "t": "s",
+              "raw": "174",
+              "kind": "Text",
+              "value": "Excel\u0027s QUARTILE.EXC: the same, the exclusive way"
+            },
+            {
+              "ref": "A55",
+              "t": "s",
+              "raw": "175",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.MODE.SNGL"
+            },
+            {
+              "ref": "B55",
+              "t": "s",
+              "raw": "176",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.MODE.SNGL(70,72,70,88,72,70)"
+            },
+            {
+              "ref": "C55",
+              "raw": "70",
+              "kind": "Number",
+              "value": "70",
+              "excel": "COM.MICROSOFT.MODE.SNGL(70,72,70,88,72,70)",
+              "formula": "COM.MICROSOFT.MODE.SNGL(70;72;70;88;72;70)"
+            },
+            {
+              "ref": "D55",
+              "t": "s",
+              "raw": "177",
+              "kind": "Text",
+              "value": "Excel\u0027s MODE.SNGL: MODE by its new name"
+            },
+            {
+              "ref": "A56",
+              "t": "s",
+              "raw": "178",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.PERCENTRANK.INC"
+            },
+            {
+              "ref": "B56",
+              "t": "s",
+              "raw": "179",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.PERCENTRANK.INC(Marks!C2:C11,Marks!C6)"
+            },
+            {
+              "ref": "C56",
+              "raw": "0.667",
+              "kind": "Number",
+              "value": "0.667",
+              "excel": "COM.MICROSOFT.PERCENTRANK.INC(Marks!C2:C11,Marks!C6)",
+              "formula": "COM.MICROSOFT.PERCENTRANK.INC([Marks.C2:.C11];[Marks.C6])"
+            },
+            {
+              "ref": "D56",
+              "t": "s",
+              "raw": "180",
+              "kind": "Text",
+              "value": "Excel\u0027s PERCENTRANK.INC: Ella\u0027s maths mark as a share of the class below her"
+            },
+            {
+              "ref": "A57",
+              "t": "s",
+              "raw": "181",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.PERCENTRANK.EXC"
+            },
+            {
+              "ref": "B57",
+              "t": "s",
+              "raw": "182",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.PERCENTRANK.EXC(Marks!C2:C11,Marks!C6)"
+            },
+            {
+              "ref": "C57",
+              "raw": "0.636",
+              "kind": "Number",
+              "value": "0.636",
+              "excel": "COM.MICROSOFT.PERCENTRANK.EXC(Marks!C2:C11,Marks!C6)",
+              "formula": "COM.MICROSOFT.PERCENTRANK.EXC([Marks.C2:.C11];[Marks.C6])"
+            },
+            {
+              "ref": "D57",
+              "t": "s",
+              "raw": "183",
+              "kind": "Text",
+              "value": "Excel\u0027s PERCENTRANK.EXC: the same, never quite 0 or 1"
+            },
+            {
+              "ref": "A58",
+              "t": "s",
+              "raw": "184",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.FORECAST.LINEAR"
+            },
+            {
+              "ref": "B58",
+              "t": "s",
+              "raw": "185",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.FORECAST.LINEAR(75,Marks!E2:E11,Marks!C2:C11)"
+            },
+            {
+              "ref": "C58",
+              "raw": "78.4549975359527",
+              "kind": "Number",
+              "value": "78.4549975359527",
+              "excel": "COM.MICROSOFT.FORECAST.LINEAR(75,Marks!E2:E11,Marks!C2:C11)",
+              "formula": "COM.MICROSOFT.FORECAST.LINEAR(75;[Marks.E2:.E11];[Marks.C2:.C11])"
+            },
+            {
+              "ref": "D58",
+              "t": "s",
+              "raw": "186",
+              "kind": "Text",
+              "value": "Excel\u0027s FORECAST.LINEAR: the science mark a 75 in maths suggests"
+            },
+            {
+              "ref": "A59",
+              "t": "s",
+              "raw": "187",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NORM.DIST"
+            },
+            {
+              "ref": "B59",
+              "t": "s",
+              "raw": "188",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NORM.DIST(60,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11),TRUE)"
+            },
+            {
+              "ref": "C59",
+              "raw": "0.181931036095991",
+              "kind": "Number",
+              "value": "0.181931036095991",
+              "excel": "COM.MICROSOFT.NORM.DIST(60,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11),TRUE)",
+              "formula": "COM.MICROSOFT.NORM.DIST(60;AVERAGE([Marks.C2:.C11]);STDEV([Marks.C2:.C11]);TRUE())"
+            },
+            {
+              "ref": "D59",
+              "t": "s",
+              "raw": "189",
+              "kind": "Text",
+              "value": "Excel\u0027s NORM.DIST: the share of a normal class below 60 in maths"
+            },
+            {
+              "ref": "A60",
+              "t": "s",
+              "raw": "190",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NORM.INV"
+            },
+            {
+              "ref": "B60",
+              "t": "s",
+              "raw": "191",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NORM.INV(0.25,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))"
+            },
+            {
+              "ref": "C60",
+              "raw": "63.6778868494635",
+              "kind": "Number",
+              "value": "63.6778868494635",
+              "excel": "COM.MICROSOFT.NORM.INV(0.25,AVERAGE(Marks!C2:C11),STDEV(Marks!C2:C11))",
+              "formula": "COM.MICROSOFT.NORM.INV(0.25;AVERAGE([Marks.C2:.C11]);STDEV([Marks.C2:.C11]))"
+            },
+            {
+              "ref": "D60",
+              "t": "s",
+              "raw": "192",
+              "kind": "Text",
+              "value": "Excel\u0027s NORM.INV: the mark the bottom quarter stays below"
+            },
+            {
+              "ref": "A61",
+              "t": "s",
+              "raw": "193",
+              "kind": "Text",
+              "value": "COM.MICROSOFT.NORM.S.INV"
+            },
+            {
+              "ref": "B61",
+              "t": "s",
+              "raw": "194",
+              "kind": "Text",
+              "value": "=COM.MICROSOFT.NORM.S.INV(0.975)"
+            },
+            {
+              "ref": "C61",
+              "raw": "1.95996398454005",
+              "kind": "Number",
+              "value": "1.95996398454005",
+              "excel": "COM.MICROSOFT.NORM.S.INV(0.975)",
+              "formula": "COM.MICROSOFT.NORM.S.INV(0.975)"
+            },
+            {
+              "ref": "D61",
+              "t": "s",
+              "raw": "195",
+              "kind": "Text",
+              "value": "Excel\u0027s NORM.S.INV: the z-score of a 95% interval\u0027s edge"
             }
           ]
         }
@@ -14741,8 +15466,8 @@
         "Generated from odsgen\u0027s function samples. The cached values are LibreOffice\u0027s answers to the same formulas in OpenFormula, not Excel\u0027s: the Open XML SDK does not calculate. \u0060formula\u0060 is the OpenFormula the sample was written in.",
         "Samples whose formula Excel cannot spell \u2014 OpenFormula\u0027s own CEILING and FLOOR, whose Mode parameter Excel\u0027s namesakes lack \u2014 are left out."
       ],
-      "bytes": 6077,
-      "sha256": "0d74ef19a849117f0b5751f2f9909d4004171ef0b6c35efabdfa022ce02f40f8"
+      "bytes": 7190,
+      "sha256": "a7729a6592da1689c6f6c4490923df74de3e01288bb0b29c7337fb959a12ac79"
     },
     {
       "file": "functions/text.xlsx",

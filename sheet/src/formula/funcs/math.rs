@@ -57,6 +57,12 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "FLOOR" => multiple(args, f64::floor),
         "COM.MICROSOFT.CEILING" => excel_multiple(args, f64::ceil, None),
         "COM.MICROSOFT.FLOOR" => excel_multiple(args, f64::floor, Some(FormulaError::DivZero)),
+        "COM.MICROSOFT.CEILING.PRECISE" | "COM.MICROSOFT.ISO.CEILING" => {
+            precise_multiple(args, f64::ceil, 2)
+        }
+        "COM.MICROSOFT.FLOOR.PRECISE" => precise_multiple(args, f64::floor, 2),
+        "COM.MICROSOFT.CEILING.MATH" => math_multiple(args, f64::ceil, f64::floor),
+        "COM.MICROSOFT.FLOOR.MATH" => math_multiple(args, f64::floor, f64::ceil),
         "QUOTIENT" => quotient(args),
         "SIGN" => unary(args, |n| if n == 0.0 { 0.0 } else { n.signum() }),
         "COMBIN" => choose(args, true),
@@ -360,6 +366,34 @@ fn excel_multiple(args: &mut Args, step: fn(f64) -> f64, by_zero: Option<Formula
     Ok(Value::number(shown(
         step(shown(n / significance)) * significance,
     )))
+}
+
+/// Excel's `CEILING.PRECISE`, `ISO.CEILING` and `FLOOR.PRECISE`: `N` stepped on the number line to
+/// a multiple of `|Significance|` (1 when left out); a zero `Significance` gives zero.
+fn precise_multiple(args: &mut Args, step: fn(f64) -> f64, most: usize) -> Answer {
+    args.arity(1..=most)?;
+    let n = args.number(0)?;
+    let significance = if args.omitted(1) {
+        1.0
+    } else {
+        args.number(1)?.abs()
+    };
+    if n == 0.0 || significance == 0.0 {
+        return Ok(Value::Number(0.0));
+    }
+    Ok(Value::number(shown(
+        step(shown(n / significance)) * significance,
+    )))
+}
+
+/// Excel's `CEILING.MATH` and `FLOOR.MATH( N [ ; Significance [ ; Mode ] ] )`: as
+/// [`precise_multiple`], except that a non-zero `Mode` steps a negative `N` the other way —
+/// away from zero for `CEILING.MATH`, towards it for `FLOOR.MATH`.
+fn math_multiple(args: &mut Args, step: fn(f64) -> f64, other: fn(f64) -> f64) -> Answer {
+    args.arity(1..=3)?;
+    let n = args.number(0)?;
+    let reversed = n < 0.0 && !args.omitted(2) && args.number(2)? != 0.0;
+    precise_multiple(args, if reversed { other } else { step }, 3)
 }
 
 /// §6.16.48 `QUOTIENT(A; B)`: the integer portion of `A/B`, towards zero.

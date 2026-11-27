@@ -1554,6 +1554,8 @@ fn the_sample_script_still_builds_its_document() {
         "{}",
         actual("M23")
     );
+    assert_eq!(actual("M24"), "1", "rent is the largest actual");
+    assert_eq!(actual("M25"), "1850", "1825.50 up to a step of 50");
     let charts = ok(&["chart-list", &book]);
     assert!(
         charts.lines().any(|line| line.contains("\tArea\t")),

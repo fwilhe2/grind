@@ -29,11 +29,15 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "LARGE" => nth(args, true),
         "SMALL" => nth(args, false),
         "MEDIAN" => median(args),
-        "RANK" => rank(args),
-        "PERCENTILE" => percentile(args),
-        "QUARTILE" => quartile(args),
-        "MODE" => mode(args),
-        "PERCENTRANK" => percent_rank(args),
+        "RANK" | "COM.MICROSOFT.RANK.EQ" => rank(args, false),
+        "COM.MICROSOFT.RANK.AVG" => rank(args, true),
+        "PERCENTILE" | "COM.MICROSOFT.PERCENTILE.INC" => percentile(args),
+        "COM.MICROSOFT.PERCENTILE.EXC" => percentile_exc(args),
+        "QUARTILE" | "COM.MICROSOFT.QUARTILE.INC" => quartile(args),
+        "COM.MICROSOFT.QUARTILE.EXC" => quartile_exc(args),
+        "MODE" | "COM.MICROSOFT.MODE.SNGL" => mode(args),
+        "PERCENTRANK" | "COM.MICROSOFT.PERCENTRANK.INC" => percent_rank(args, false),
+        "COM.MICROSOFT.PERCENTRANK.EXC" => percent_rank(args, true),
         "SUMSQ" => fold_numbers(args, |n| Ok(n.iter().map(|x| x * x).sum())),
         "DEVSQ" => fold_numbers(args, |n| Ok(deviations(n).map(|d| d * d).sum())),
         "AVEDEV" => fold_numbers(args, |n| {
@@ -58,8 +62,13 @@ pub fn call(name: &str, args: &mut Args) -> Option<Answer> {
         "RSQ" => paired(args, 0, |p| p.correlation().map(|r| r * r)),
         "SLOPE" => paired(args, 0, Pairs::slope),
         "INTERCEPT" => paired(args, 0, Pairs::intercept),
-        "FORECAST" => forecast(args),
-        "LEGACY.NORMSINV" => super::dist::normsinv(args),
+        "FORECAST" | "COM.MICROSOFT.FORECAST.LINEAR" => forecast(args),
+        "LEGACY.NORMSINV" | "COM.MICROSOFT.NORM.S.INV" => super::dist::normsinv(args),
+        "LEGACY.NORMSDIST" => super::dist::normsdist(args),
+        "NORMDIST" => super::dist::normdist(args, false),
+        "COM.MICROSOFT.NORM.DIST" => super::dist::normdist(args, true),
+        "NORMINV" | "COM.MICROSOFT.NORM.INV" => super::dist::norminv(args),
+        "STANDARDIZE" => super::dist::standardize(args),
         "COM.MICROSOFT.NORM.S.DIST" => super::dist::norm_s_dist(args),
         "COM.MICROSOFT.GAMMA.DIST" => super::dist::gamma_dist(args),
         _ => return None,
@@ -170,7 +179,8 @@ fn median(args: &mut Args) -> Answer {
 /// §6.18.65 `RANK( Value ; Data [ ; Order = 0 ] )`: one plus how many numbers come before `Value`
 /// (larger by default, smaller for a non-zero `Order`), so equal values share a rank. A value not
 /// in `Data` is `#N/A`, compared exactly; a `Data` with no numbers is `#VALUE!` — both measured.
-fn rank(args: &mut Args) -> Answer {
+/// With `average`, Excel's `RANK.AVG`: ties share the mean of the ranks they span.
+fn rank(args: &mut Args, average: bool) -> Answer {
     args.arity(2..=3)?;
     let value = args.number(0)?;
     let data = args.numbers_range(1..2)?;
@@ -185,7 +195,14 @@ fn rank(args: &mut Args) -> Answer {
         .iter()
         .filter(|&&x| if ascending { x < value } else { x > value })
         .count();
-    Ok(Value::number(ahead as f64 + 1.0))
+    let tied = if average {
+        data.iter().filter(|&&x| x == value).count()
+    } else {
+        1
+    };
+    Ok(Value::number(
+        ahead as f64 + f64::midpoint(tied as f64, 1.0),
+    ))
 }
 
 /// A whole number sequence in, one number out.
@@ -232,6 +249,36 @@ fn percentile(args: &mut Args) -> Answer {
     Ok(Value::number(interpolate(&data, x)))
 }
 
+/// Excel's `PERCENTILE.EXC( Data ; X )`: the interpolation at rank `X·(n + 1)`, which must fall
+/// within the data — `#NUM!` outside it, and for `X` of 0 or 1.
+fn percentile_exc(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let data = sorted_data(args)?;
+    exclusive(&data, args.number(1)?)
+}
+
+fn exclusive(data: &[f64], x: f64) -> Answer {
+    let r = super::math::shown(x * (data.len() + 1) as f64);
+    if !(x > 0.0 && x < 1.0) || r < 1.0 || r > data.len() as f64 {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(interpolate(
+        data,
+        (r - 1.0) / (data.len() - 1).max(1) as f64,
+    )))
+}
+
+/// Excel's `QUARTILE.EXC( Data ; Quart )`: [`percentile_exc`] at a quarter step, 1 to 3.
+fn quartile_exc(args: &mut Args) -> Answer {
+    args.arity(2..=2)?;
+    let data = sorted_data(args)?;
+    let quart = args.integer(1)?;
+    if !(1..=3).contains(&quart) {
+        return Err(FormulaError::Num);
+    }
+    exclusive(&data, quart as f64 / 4.0)
+}
+
 /// §6.18.64 `QUARTILE( Data ; Quart )`: the percentile at a quarter step, `Quart` truncated.
 fn quartile(args: &mut Args) -> Answer {
     args.arity(2..=2)?;
@@ -260,9 +307,10 @@ fn mode(args: &mut Args) -> Answer {
 }
 
 /// §6.18.58 `PERCENTRANK( Data ; X ; Significance )`: X's rank in the sorted data, interpolated
-/// between neighbours, over `n − 1`, rounded to `Significance` decimals (the oracle rounds; 3 by
-/// default). An X outside the data is `#VALUE!`, as the oracle answers.
-fn percent_rank(args: &mut Args) -> Answer {
+/// between neighbours, over `n − 1`, rounded to `Significance` significant digits (3 by default),
+/// as the oracle rounds. An X outside the data is `#VALUE!`, as the oracle answers. `exclusive`
+/// is Excel's `PERCENTRANK.EXC`: one more than the rank, over `n + 1`.
+fn percent_rank(args: &mut Args, exclusive: bool) -> Answer {
     args.arity(2..=3)?;
     let data = sorted_data(args)?;
     let x = args.number(1)?;
@@ -288,10 +336,21 @@ fn percent_rank(args: &mut Args) -> Answer {
         let (y, z) = (data[below - 1], data[below]);
         (below - 1) as f64 + (x - y) / (z - y)
     };
-    let scale = 10f64.powi(digits.min(15) as i32);
-    Ok(Value::number(
-        (rank / (data.len() - 1) as f64 * scale).round() / scale,
-    ))
+    let share = if exclusive {
+        (rank + 1.0) / (data.len() + 1) as f64
+    } else {
+        rank / (data.len() - 1) as f64
+    };
+    Ok(Value::number(significant(share, digits.min(15) as i32)))
+}
+
+/// `v` rounded to `digits` significant digits.
+fn significant(v: f64, digits: i32) -> f64 {
+    if v == 0.0 {
+        return 0.0;
+    }
+    let scale = 10f64.powi(digits - 1 - v.abs().log10().floor() as i32);
+    (v * scale).round() / scale
 }
 
 /// Pairs of numbers at the same place in two arrays of one shape — §6.18's paired statistics

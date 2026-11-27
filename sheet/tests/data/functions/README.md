@@ -76,6 +76,14 @@ A consultant's invoice, a day's timesheet and a shipment. (Part 4 §6.17)
 | `COM.MICROSOFT.CEILING` | `=COM.MICROSOFT.CEILING(Invoice.B9;1)` | -12 | Excel's CEILING on a credit goes towards zero: -12 |
 | `COM.MICROSOFT.FLOOR` | `=COM.MICROSOFT.FLOOR(Times.B5;30)` | 180 | The site visit in whole half hours |
 | `COM.MICROSOFT.FLOOR` | `=COM.MICROSOFT.FLOOR(Invoice.B9;1)` | -13 | Excel's FLOOR on a credit goes away from zero: -13 |
+| `COM.MICROSOFT.CEILING.PRECISE` | `=COM.MICROSOFT.CEILING.PRECISE(Times.B4;15)` | 30 | Excel's CEILING.PRECISE: the review, billed in started quarter hours |
+| `COM.MICROSOFT.CEILING.PRECISE` | `=COM.MICROSOFT.CEILING.PRECISE(Invoice.B9;-1)` | -12 | A negative step counts as its size: the credit goes up to -12 |
+| `COM.MICROSOFT.ISO.CEILING` | `=COM.MICROSOFT.ISO.CEILING(Invoice.C5*1.07;10)` | 260 | Excel's ISO.CEILING: next year's room hire, up to a step of ten |
+| `COM.MICROSOFT.FLOOR.PRECISE` | `=COM.MICROSOFT.FLOOR.PRECISE(Invoice.B9)` | -13 | Excel's FLOOR.PRECISE: the credit down to -13 |
+| `COM.MICROSOFT.CEILING.MATH` | `=COM.MICROSOFT.CEILING.MATH(Invoice.B9;5;1)` | -15 | Excel's CEILING.MATH with a Mode: the credit away from zero, to -15 |
+| `COM.MICROSOFT.CEILING.MATH` | `=COM.MICROSOFT.CEILING.MATH(Times.B7/Times.B6)` | 7 | Pallets needed for every box |
+| `COM.MICROSOFT.FLOOR.MATH` | `=COM.MICROSOFT.FLOOR.MATH(Invoice.B9;5;1)` | -10 | Excel's FLOOR.MATH with a Mode: the credit towards zero, to -10 |
+| `COM.MICROSOFT.FLOOR.MATH` | `=COM.MICROSOFT.FLOOR.MATH(Times.B5;30)` | 180 | The site visit in whole half hours |
 
 ## Statistical — `statistical.fods`
 
@@ -126,6 +134,23 @@ End-of-term marks for two classes. One English mark is missing and one was recor
 | `GEOMEAN` | `=GEOMEAN(Marks.E2:E11)` | 76.4429070653117 | The science marks' geometric mean |
 | `HARMEAN` | `=HARMEAN(Marks.E2:E11)` | 74.9935751717485 | …and their harmonic mean |
 | `PERMUT` | `=PERMUT(10;3)` | 720 | Gold, silver and bronze among ten students |
+| `NORMDIST` | `=NORMDIST(85;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11);1)` | 0.751569005661576 | The share of a normal class below 85 in maths |
+| `NORMINV` | `=NORMINV(0.75;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11))` | 84.9221131505365 | The maths mark three quarters of a normal class stay below |
+| `LEGACY.NORMSDIST` | `=LEGACY.NORMSDIST(1)` | 0.841344746068543 | The share of a normal class within one deviation above the middle |
+| `STANDARDIZE` | `=STANDARDIZE(Marks.C4;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11))` | 1.06042730562569 | Chloe's maths mark as a z-score |
+| `COM.MICROSOFT.RANK.EQ` | `=COM.MICROSOFT.RANK.EQ(Marks.E6;Marks.E2:E11)` | 4 | Excel's RANK.EQ: Ella's place in science |
+| `COM.MICROSOFT.RANK.AVG` | `=COM.MICROSOFT.RANK.AVG(72;Marks.C2:C11;1)` | 5 | Excel's RANK.AVG: where a 72 in maths ranks from the bottom |
+| `COM.MICROSOFT.PERCENTILE.INC` | `=COM.MICROSOFT.PERCENTILE.INC(Marks.C2:C11;0.9)` | 91.4 | Excel's PERCENTILE.INC: PERCENTILE by its new name |
+| `COM.MICROSOFT.PERCENTILE.EXC` | `=COM.MICROSOFT.PERCENTILE.EXC(Marks.C2:C11;0.9)` | 94.6 | Excel's PERCENTILE.EXC: the top tenth's mark, interpolated without the ends |
+| `COM.MICROSOFT.QUARTILE.INC` | `=COM.MICROSOFT.QUARTILE.INC(Marks.E2:E11;3)` | 89 | Excel's QUARTILE.INC: the science mark three quarters stayed below |
+| `COM.MICROSOFT.QUARTILE.EXC` | `=COM.MICROSOFT.QUARTILE.EXC(Marks.E2:E11;3)` | 91 | Excel's QUARTILE.EXC: the same, the exclusive way |
+| `COM.MICROSOFT.MODE.SNGL` | `=COM.MICROSOFT.MODE.SNGL(70;72;70;88;72;70)` | 70 | Excel's MODE.SNGL: MODE by its new name |
+| `COM.MICROSOFT.PERCENTRANK.INC` | `=COM.MICROSOFT.PERCENTRANK.INC(Marks.C2:C11;Marks.C6)` | 0.667 | Excel's PERCENTRANK.INC: Ella's maths mark as a share of the class below her |
+| `COM.MICROSOFT.PERCENTRANK.EXC` | `=COM.MICROSOFT.PERCENTRANK.EXC(Marks.C2:C11;Marks.C6)` | 0.636 | Excel's PERCENTRANK.EXC: the same, never quite 0 or 1 |
+| `COM.MICROSOFT.FORECAST.LINEAR` | `=COM.MICROSOFT.FORECAST.LINEAR(75;Marks.E2:E11;Marks.C2:C11)` | 78.4549975359527 | Excel's FORECAST.LINEAR: the science mark a 75 in maths suggests |
+| `COM.MICROSOFT.NORM.DIST` | `=COM.MICROSOFT.NORM.DIST(60;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11);TRUE())` | 0.181931036095991 | Excel's NORM.DIST: the share of a normal class below 60 in maths |
+| `COM.MICROSOFT.NORM.INV` | `=COM.MICROSOFT.NORM.INV(0.25;AVERAGE(Marks.C2:C11);STDEV(Marks.C2:C11))` | 63.6778868494635 | Excel's NORM.INV: the mark the bottom quarter stays below |
+| `COM.MICROSOFT.NORM.S.INV` | `=COM.MICROSOFT.NORM.S.INV(0.975)` | 1.95996398454005 | Excel's NORM.S.INV: the z-score of a 95% interval's edge |
 
 ## Logical — `logical.fods`
 

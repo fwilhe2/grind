@@ -22,8 +22,17 @@ lands, and the release workflow publishes the section as it stands.
   (`ansible-galaxy collection install 'git+https://github.com/fwilhe2/grind.git#/packaging/ansible,main'`).
 - A GitHub Action puts the `grind` command on the path of a workflow, on Linux, macOS and
   Windows, x64 and Arm, the latest release or a pinned one: `uses: fwilhe2/grind@main`.
+- More of Excel's functions recalculate instead of showing `#NAME?`: `RANK.EQ`, `RANK.AVG`,
+  `PERCENTILE.INC`, `PERCENTILE.EXC`, `QUARTILE.INC`, `QUARTILE.EXC`, `MODE.SNGL`,
+  `PERCENTRANK.INC`, `PERCENTRANK.EXC`, `FORECAST.LINEAR`, `NORM.DIST`, `NORM.INV`, `NORM.S.INV`,
+  `CEILING.PRECISE`, `ISO.CEILING`, `FLOOR.PRECISE`, `CEILING.MATH` and `FLOOR.MATH`; and the
+  normal distribution in ODF's own names, `NORMDIST`, `NORMINV`, `LEGACY.NORMSDIST` and
+  `STANDARDIZE`.
 
 ### Fixes
+
+- `PERCENTRANK` rounds to significant digits, as LibreOffice does: a small rank such as 0.00333
+  no longer comes out as 0.003.
 
 ## 0.2.0 — 2026-11-26
 

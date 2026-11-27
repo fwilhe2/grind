@@ -240,6 +240,18 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.17",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.CEILING.MATH",
+        signature: "COM.MICROSOFT.CEILING.MATH( Number N [ ; Number Significance = 1 [ ; Number Mode = 0 ] ] )",
+        brief: "Excel's CEILING.MATH: CEILING.PRECISE, or away from zero for a negative N when Mode is not 0.",
+        section: "6.17",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.CEILING.PRECISE",
+        signature: "COM.MICROSOFT.CEILING.PRECISE( Number N [ ; Number Significance = 1 ] )",
+        brief: "Excel's CEILING.PRECISE: rounds N up to a multiple of the magnitude of Significance.",
+        section: "6.17",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.CONCAT",
         signature: "COM.MICROSOFT.CONCAT( { Any T } + )",
         brief: "Excel's CONCAT: the text of every argument, ranges cell by cell, joined.",
@@ -250,6 +262,24 @@ static CATALOG: &[FuncInfo] = &[
         signature: "COM.MICROSOFT.FLOOR( Number N ; Number Significance )",
         brief: "Excel's FLOOR: rounds N down to a multiple of Significance on the number line.",
         section: "6.17",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.FLOOR.MATH",
+        signature: "COM.MICROSOFT.FLOOR.MATH( Number N [ ; Number Significance = 1 [ ; Number Mode = 0 ] ] )",
+        brief: "Excel's FLOOR.MATH: FLOOR.PRECISE, or towards zero for a negative N when Mode is not 0.",
+        section: "6.17",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.FLOOR.PRECISE",
+        signature: "COM.MICROSOFT.FLOOR.PRECISE( Number N [ ; Number Significance = 1 ] )",
+        brief: "Excel's FLOOR.PRECISE: rounds N down to a multiple of the magnitude of Significance.",
+        section: "6.17",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.FORECAST.LINEAR",
+        signature: "COM.MICROSOFT.FORECAST.LINEAR( Number Value ; ForceArray Array Data_Y ; ForceArray Array Data_X )",
+        brief: "Excel's FORECAST.LINEAR: FORECAST by its new name.",
+        section: "6.18",
     },
     FuncInfo {
         name: "COM.MICROSOFT.GAMMA.DIST",
@@ -264,6 +294,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.15",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.ISO.CEILING",
+        signature: "COM.MICROSOFT.ISO.CEILING( Number N [ ; Number Significance = 1 ] )",
+        brief: "Excel's ISO.CEILING: CEILING.PRECISE by its other name.",
+        section: "6.17",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.MAXIFS",
         signature: "COM.MICROSOFT.MAXIFS( Reference M ; Reference R1 ; Criterion C1 [ ; Reference R2 ; Criterion C2 ]... )",
         brief: "Excel's MAXIFS: the largest number in M where every range meets its criterion, 0 if none does.",
@@ -276,9 +312,81 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.18",
     },
     FuncInfo {
+        name: "COM.MICROSOFT.MODE.SNGL",
+        signature: "COM.MICROSOFT.MODE.SNGL( { ForceArray NumberSequence N } + )",
+        brief: "Excel's MODE.SNGL: MODE by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.NORM.DIST",
+        signature: "COM.MICROSOFT.NORM.DIST( Number X ; Number Mean ; Number StandardDeviation ; Logical Cumulative )",
+        brief: "Excel's NORM.DIST: NORMDIST with Cumulative required.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.NORM.INV",
+        signature: "COM.MICROSOFT.NORM.INV( Number P ; Number Mean ; Number StandardDeviation )",
+        brief: "Excel's NORM.INV: NORMINV by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
         name: "COM.MICROSOFT.NORM.S.DIST",
         signature: "COM.MICROSOFT.NORM.S.DIST( Number Z ; Logical Cumulative )",
         brief: "Excel's NORM.S.DIST: the standard normal distribution's density at Z, or its cumulative distribution when Cumulative is TRUE.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.NORM.S.INV",
+        signature: "COM.MICROSOFT.NORM.S.INV( Number P )",
+        brief: "Excel's NORM.S.INV: LEGACY.NORMSINV by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.PERCENTILE.EXC",
+        signature: "COM.MICROSOFT.PERCENTILE.EXC( NumberSequenceList Data ; Number X )",
+        brief: "Excel's PERCENTILE.EXC: the X-th percentile, interpolated at rank X·(n+1), 0 < X < 1.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.PERCENTILE.INC",
+        signature: "COM.MICROSOFT.PERCENTILE.INC( NumberSequenceList Data ; Number X )",
+        brief: "Excel's PERCENTILE.INC: PERCENTILE by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.PERCENTRANK.EXC",
+        signature: "COM.MICROSOFT.PERCENTRANK.EXC( NumberSequenceList Data ; Number X [ ; Integer Significance = 3 ] )",
+        brief: "Excel's PERCENTRANK.EXC: X's rank in the data, from above 0 to below 1.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.PERCENTRANK.INC",
+        signature: "COM.MICROSOFT.PERCENTRANK.INC( NumberSequenceList Data ; Number X [ ; Integer Significance = 3 ] )",
+        brief: "Excel's PERCENTRANK.INC: PERCENTRANK by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.QUARTILE.EXC",
+        signature: "COM.MICROSOFT.QUARTILE.EXC( NumberSequence Data ; Integer Quart )",
+        brief: "Excel's QUARTILE.EXC: the quartile by PERCENTILE.EXC, Quart from 1 to 3.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.QUARTILE.INC",
+        signature: "COM.MICROSOFT.QUARTILE.INC( NumberSequence Data ; Integer Quart )",
+        brief: "Excel's QUARTILE.INC: QUARTILE by its new name.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.RANK.AVG",
+        signature: "COM.MICROSOFT.RANK.AVG( Number Value ; NumberSequenceList Data [ ; Number Order = 0 ] )",
+        brief: "Excel's RANK.AVG: the rank of Value, ties sharing the mean of the ranks they span.",
+        section: "6.18",
+    },
+    FuncInfo {
+        name: "COM.MICROSOFT.RANK.EQ",
+        signature: "COM.MICROSOFT.RANK.EQ( Number Value ; NumberSequenceList Data [ ; Number Order = 0 ] )",
+        brief: "Excel's RANK.EQ: RANK by its new name.",
         section: "6.18",
     },
     FuncInfo {
@@ -746,6 +854,12 @@ static CATALOG: &[FuncInfo] = &[
         section: "6.20.12",
     },
     FuncInfo {
+        name: "LEGACY.NORMSDIST",
+        signature: "LEGACY.NORMSDIST( Number X )",
+        brief: "returns the value of the cumulative distribution function for the standard normal distribution.",
+        section: "6.18.54",
+    },
+    FuncInfo {
         name: "LEGACY.NORMSINV",
         signature: "LEGACY.NORMSINV( Number P )",
         brief: "returns the inverse of LEGACY.NORMSDIST(X).",
@@ -864,6 +978,18 @@ static CATALOG: &[FuncInfo] = &[
         signature: "NETWORKDAYS( DateParam Date1 ; DateParam Date2 [ ; [ DateSequence Holidays ] [ ; LogicalSequence Workdays ] ] )",
         brief: "Returns the whole number of work days between two dates.",
         section: "6.10.15",
+    },
+    FuncInfo {
+        name: "NORMDIST",
+        signature: "NORMDIST( Number X ; Number Mean ; Number StandardDeviation [ ; Logical Cumulative = TRUE() ] )",
+        brief: "returns the value of the probability density function or the cumulative distribution function for the normal distribution with the mean and standard deviation given.",
+        section: "6.18.52",
+    },
+    FuncInfo {
+        name: "NORMINV",
+        signature: "NORMINV( Number P ; Number Mean ; Number StandardDeviation )",
+        brief: "returns the inverse of NORMDIST(x; Mean ; StandardDeviation ,TRUE()).",
+        section: "6.18.53",
     },
     FuncInfo {
         name: "NOT",
@@ -1106,6 +1232,12 @@ static CATALOG: &[FuncInfo] = &[
         signature: "SQRT( Number N )",
         brief: "Return the square root of a number.",
         section: "6.16.58",
+    },
+    FuncInfo {
+        name: "STANDARDIZE",
+        signature: "STANDARDIZE( Number Value ; Number Mean ; Number Sigma )",
+        brief: "Calculates a normalized value of a random variable.",
+        section: "6.18.71",
     },
     FuncInfo {
         name: "STDEV",

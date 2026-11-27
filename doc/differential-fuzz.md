@@ -227,6 +227,11 @@ class either: their disagreements are the logical-in-a-range class above (the do
 `CONCAT`, `TEXTJOIN`, the paired statistics over the boolean column) and two decisions written
 in `doc/ods-format.md` §4.1 (`ISEVEN` of an empty cell, a `CHAR` above 127).
 
+On 2026-11-27 Excel 2010's renamed statistics and roundings and the normal distribution took the
+sample to 1266, and the floor to **1151**. Again no new class: `MODE.SNGL`, `RANK.AVG` and the
+percentile pair over the boolean column, and `NORM.INV` and `NORM.S.INV` answering `#NUM!` where
+the oracle says `#VALUE!` — the decision `LEGACY.NORMSINV` already records.
+
 The classic band that moved in on 2026-10-12 (`doc/small-group.md`'s second half) changed what
 a seed generates, since the catalog is what the generator walks, and added **no new class**:
 the same seed against LibreOffice 26.8 is 917 of 1000. What its 26 functions disagree about is

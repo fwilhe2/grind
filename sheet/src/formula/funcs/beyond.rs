@@ -1872,3 +1872,156 @@ fn percentiles_modes_regression_and_means() {
         assert_eq!(error(formula), want, "{formula}");
     }
 }
+
+#[test]
+fn excels_2010_names_answer_as_the_functions_they_rename() {
+    for (formula, want) in [
+        ("=COM.MICROSOFT.RANK.EQ(30;[.B1:.B7])", 2.0),
+        ("=COM.MICROSOFT.RANK.EQ(30;[.B1:.B7];1)", 4.0),
+        ("=COM.MICROSOFT.RANK.AVG(30;[.B1:.B7])", 2.5),
+        ("=COM.MICROSOFT.RANK.AVG(30;[.B1:.B7];1)", 4.5),
+        ("=COM.MICROSOFT.RANK.AVG(5;[.B1:.B7])", 6.0),
+        ("=COM.MICROSOFT.PERCENTILE.INC([.B1:.B7];0.9)", 35.0),
+        ("=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];0.25)", 8.75),
+        ("=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];0.5)", 25.0),
+        ("=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];1/7)", 5.0),
+        ("=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];6/7)", 40.0),
+        ("=COM.MICROSOFT.QUARTILE.INC([.B1:.B7];1)", 12.5),
+        ("=COM.MICROSOFT.QUARTILE.EXC([.B1:.B7];1)", 8.75),
+        ("=COM.MICROSOFT.QUARTILE.EXC([.B1:.B7];3)", 32.5),
+        ("=COM.MICROSOFT.QUARTILE.EXC([.B1:.B7];2.7)", 25.0),
+        ("=COM.MICROSOFT.MODE.SNGL([.B1:.B7])", 30.0),
+        ("=COM.MICROSOFT.PERCENTRANK.INC([.B1:.B4];36)", 0.867),
+        ("=COM.MICROSOFT.PERCENTRANK.INC([.B1:.B4];36;1)", 0.9),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B4];20)", 0.4),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B4];36)", 0.72),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B7];30)", 0.571),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B7];5)", 0.143),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1];10)", 1.0),
+        // Significance counts significant digits, not decimal places, as the oracle rounds.
+        ("=PERCENTRANK([.B1:.B4];10.1)", 0.003_33),
+        ("=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B4];10.5;2)", 0.21),
+        ("=COM.MICROSOFT.CEILING.PRECISE(4.3)", 5.0),
+        ("=COM.MICROSOFT.CEILING.PRECISE(-4.3)", -4.0),
+        ("=COM.MICROSOFT.CEILING.PRECISE(4.3;-2)", 6.0),
+        ("=COM.MICROSOFT.CEILING.PRECISE(-4.3;2)", -4.0),
+        ("=COM.MICROSOFT.CEILING.PRECISE(4.3;0)", 0.0),
+        ("=COM.MICROSOFT.CEILING.PRECISE(0.1+0.2;0.1)", 0.3),
+        ("=COM.MICROSOFT.CEILING.PRECISE(4.3;)", 5.0),
+        ("=COM.MICROSOFT.ISO.CEILING(-4.3;2)", -4.0),
+        ("=COM.MICROSOFT.ISO.CEILING(4.3;-2)", 6.0),
+        ("=COM.MICROSOFT.FLOOR.PRECISE(4.7)", 4.0),
+        ("=COM.MICROSOFT.FLOOR.PRECISE(-4.3)", -5.0),
+        ("=COM.MICROSOFT.FLOOR.PRECISE(-4.3;-2)", -6.0),
+        ("=COM.MICROSOFT.FLOOR.PRECISE(4.3;0)", 0.0),
+        ("=COM.MICROSOFT.CEILING.MATH(4.3)", 5.0),
+        ("=COM.MICROSOFT.CEILING.MATH(-4.3)", -4.0),
+        ("=COM.MICROSOFT.CEILING.MATH(-4.3;2)", -4.0),
+        ("=COM.MICROSOFT.CEILING.MATH(-4.3;2;1)", -6.0),
+        ("=COM.MICROSOFT.CEILING.MATH(4.3;2;1)", 6.0),
+        ("=COM.MICROSOFT.CEILING.MATH(4.3;-2)", 6.0),
+        ("=COM.MICROSOFT.CEILING.MATH(-4.3;-2;1)", -6.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(4.7)", 4.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(-4.3)", -5.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(-4.3;2)", -6.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(-4.3;2;1)", -4.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(4.7;-2)", 4.0),
+        ("=COM.MICROSOFT.FLOOR.MATH(0.3;0.1)", 0.3),
+        ("=STANDARDIZE(85;70;12)", 1.25),
+    ] {
+        close(formula, want);
+    }
+    close(
+        "=COM.MICROSOFT.FORECAST.LINEAR(5;[.B1:.B4];[.B4:.B7])",
+        34.358_974_358_974_4,
+    );
+    close("=NORMDIST(1;0;1;1)", 0.841_344_746_068_543);
+    close("=NORMDIST(1;0;1;0)", 0.241_970_724_519_143);
+    close("=NORMDIST(85;70;12)", 0.894_350_226_333_145);
+    close("=NORMDIST(-40;0;1;1)", 0.0);
+    close(
+        "=COM.MICROSOFT.NORM.DIST(85;70;12;1)",
+        0.894_350_226_333_145,
+    );
+    close(
+        "=COM.MICROSOFT.NORM.DIST(85;70;12;0)",
+        0.015_220_757_115_751_8,
+    );
+    close("=NORMINV(0.9;70;12)", 85.378_618_786_535_2);
+    close("=COM.MICROSOFT.NORM.INV(0.025;0;1)", -1.959_963_984_540_05);
+    close("=COM.MICROSOFT.NORM.S.INV(0.9)", 1.281_551_565_544_6);
+    close("=LEGACY.NORMSDIST(-1.5)", 0.066_807_201_268_858);
+    for (formula, want) in [
+        ("=COM.MICROSOFT.RANK.EQ(31;[.B1:.B7])", FormulaError::NA),
+        ("=COM.MICROSOFT.RANK.AVG(31;[.B1:.B7])", FormulaError::NA),
+        ("=COM.MICROSOFT.RANK.AVG(30;[.A1:.A7])", FormulaError::Value),
+        (
+            "=COM.MICROSOFT.PERCENTILE.INC([.B1:.B4];1.5)",
+            FormulaError::Num,
+        ),
+        // The oracle's Err:504 and Err:502: a rank outside the data, and an X of 0 or 1.
+        (
+            "=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];0.9)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];0.1)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];0)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTILE.EXC([.B1:.B7];1)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTILE.EXC([.A1:.A7];0.5)",
+            FormulaError::Value,
+        ),
+        (
+            "=COM.MICROSOFT.QUARTILE.INC([.B1:.B7];5)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.QUARTILE.EXC([.B1:.B7];0)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.QUARTILE.EXC([.B1:.B7];4)",
+            FormulaError::Num,
+        ),
+        (
+            "=COM.MICROSOFT.QUARTILE.EXC([.B1:.B2];1)",
+            FormulaError::Num,
+        ),
+        ("=COM.MICROSOFT.MODE.SNGL(1;2;3)", FormulaError::Value),
+        (
+            "=COM.MICROSOFT.PERCENTRANK.INC([.B1:.B4];5)",
+            FormulaError::Value,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B4];5)",
+            FormulaError::Value,
+        ),
+        (
+            "=COM.MICROSOFT.PERCENTRANK.EXC([.B1:.B4];36;0)",
+            FormulaError::Num,
+        ),
+        ("=NORMDIST(1;0;0;1)", FormulaError::Num),
+        ("=NORMDIST(1;0;-1;1)", FormulaError::Num),
+        ("=COM.MICROSOFT.NORM.DIST(85;70;0;0)", FormulaError::Num),
+        // Excel's Cumulative is required (the oracle's Err:511).
+        ("=COM.MICROSOFT.NORM.DIST(85;70;12)", FormulaError::Value),
+        ("=NORMINV(0;70;12)", FormulaError::Num),
+        ("=NORMINV(1;70;12)", FormulaError::Num),
+        ("=NORMINV(0.5;70;0)", FormulaError::Num),
+        ("=COM.MICROSOFT.NORM.S.INV(0)", FormulaError::Num),
+        ("=COM.MICROSOFT.NORM.S.INV(1.5)", FormulaError::Num),
+        ("=STANDARDIZE(85;70;0)", FormulaError::DivZero),
+        ("=STANDARDIZE(85;70;-1)", FormulaError::Num),
+    ] {
+        assert_eq!(error(formula), want, "{formula}");
+    }
+}

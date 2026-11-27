@@ -178,7 +178,11 @@ run set "$book" L22 'Transport, looked up'
 run set "$book" M22 '=COM.MICROSOFT.XLOOKUP("Transport";[.A2:.A7];[.C2:.C7];"none")'   # Excel's XLOOKUP
 run set "$book" L23 'Every category'
 run set "$book" M23 '=COM.MICROSOFT.TEXTJOIN(", ";TRUE();[.A2:.A7])'      # Excel's TEXTJOIN
-sheet view "$book" L1:M23
+run set "$book" L24 'Rent ranks, ties shared'
+run set "$book" M24 '=COM.MICROSOFT.RANK.AVG([.C2];[.C2:.C7])'           # Excel's RANK.AVG
+run set "$book" L25 'Rent, up to a step of 50'
+run set "$book" M25 '=COM.MICROSOFT.CEILING.MATH([.C2];50)'              # Excel's CEILING.MATH
+sheet view "$book" L1:M25
 
 say "number formats: display only, the value never moves"
 run format "$book" B2:C8 currency --symbol '€' --grouping --decimals 2

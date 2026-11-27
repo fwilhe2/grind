@@ -358,6 +358,18 @@ by that evidence. It recommends nothing on its own; an entry here still needs it
   for the paired statistics are `#N/A`, as Excel answers, where the oracle says Err:502.
   Measured against LibreOffice 26.8. Decided 2026-11-22.
 
+- `NORMDIST` — §6.18.52
+- `NORMINV` — §6.18.53
+- `LEGACY.NORMSDIST` — §6.18.54
+- `STANDARDIZE` — §6.18.71
+
+  **Evidence:** the normal distribution beside its inverse, `LEGACY.NORMSINV`, already here:
+  the share of a class below a mark, the mark a share reaches, and the z-score between them.
+  The import corpus calls them in marks books and quality charts, and Excel's `NORM.DIST` and
+  `NORM.INV` below are these with new names. A standard deviation that is not positive is
+  `#NUM!`, a zero one in `STANDARDIZE` `#DIV/0!`, as the oracle answers. Measured against
+  LibreOffice 26.8. Decided 2026-11-27.
+
 ## Excel's functions, under LibreOffice's names
 
 **Not Part 4 functions.** ODF has no namespace for a function the standard does not define,
@@ -420,6 +432,35 @@ same name.
   `STDEV`/`STDEVP`/`VAR`/`VARP` themselves. One value each: an `XLOOKUP` whose return array is
   wider gives the found row's first cell, where Excel would spill the row. Measured against
   LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-22.
+
+- `COM.MICROSOFT.RANK.EQ` — §6.18
+- `COM.MICROSOFT.RANK.AVG` — §6.18
+- `COM.MICROSOFT.PERCENTILE.INC` — §6.18
+- `COM.MICROSOFT.PERCENTILE.EXC` — §6.18
+- `COM.MICROSOFT.QUARTILE.INC` — §6.18
+- `COM.MICROSOFT.QUARTILE.EXC` — §6.18
+- `COM.MICROSOFT.MODE.SNGL` — §6.18
+- `COM.MICROSOFT.PERCENTRANK.INC` — §6.18
+- `COM.MICROSOFT.PERCENTRANK.EXC` — §6.18
+- `COM.MICROSOFT.FORECAST.LINEAR` — §6.18
+- `COM.MICROSOFT.NORM.DIST` — §6.18
+- `COM.MICROSOFT.NORM.INV` — §6.18
+- `COM.MICROSOFT.NORM.S.INV` — §6.18
+- `COM.MICROSOFT.CEILING.PRECISE` — §6.17
+- `COM.MICROSOFT.ISO.CEILING` — §6.17
+- `COM.MICROSOFT.FLOOR.PRECISE` — §6.17
+- `COM.MICROSOFT.CEILING.MATH` — §6.17
+- `COM.MICROSOFT.FLOOR.MATH` — §6.17
+
+  **Evidence:** Excel 2010's names for functions this build already has, which its function
+  picker offers first and so today's workbooks are written with; `grind-xlsx` imports each
+  under this name, as the oracle does, and each recalculated to `#NAME?`. The import corpus
+  and LibreOffice's own test documents carry the rounding five in three files each. Most are
+  the function above under a new name; the new arithmetic is small: `RANK.AVG` gives ties the
+  mean of their ranks, the `.EXC` forms interpolate at rank `X·(n+1)` and refuse a rank outside
+  the data with `#NUM!` (the oracle's Err:504), and the `.PRECISE` and `.MATH` roundings step to
+  a multiple of the significance's magnitude, `.MATH`'s Mode reversing the step for a negative
+  number. Measured against LibreOffice 26.8 (`doc/ods-format.md` §4.1). Decided 2026-11-27.
 
 ---
 

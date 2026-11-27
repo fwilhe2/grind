@@ -20,6 +20,54 @@ pub(super) fn normsinv(args: &mut Args) -> Answer {
     Ok(Value::number(inverse_normal(p)))
 }
 
+/// §6.18.54 `LEGACY.NORMSDIST(X)`: Φ(X).
+pub(super) fn normsdist(args: &mut Args) -> Answer {
+    args.arity(1..=1)?;
+    Ok(Value::number(normal_cdf(args.number(0)?)))
+}
+
+/// §6.18.52 `NORMDIST( X ; Mean ; StdDev [ ; Cumulative = TRUE ] )`, and Excel's `NORM.DIST`
+/// with `required` — the same with its last parameter required. A `StdDev` that is not positive
+/// is `#NUM!`.
+pub(super) fn normdist(args: &mut Args, required: bool) -> Answer {
+    args.arity(if required { 4..=4 } else { 3..=4 })?;
+    let (x, mean, sd) = (args.number(0)?, args.number(1)?, args.number(2)?);
+    let cumulative = args.omitted(3) || args.logical(3)?;
+    if sd <= 0.0 {
+        return Err(FormulaError::Num);
+    }
+    let z = (x - mean) / sd;
+    Ok(Value::number(if cumulative {
+        normal_cdf(z)
+    } else {
+        (-z * z / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt() / sd
+    }))
+}
+
+/// §6.18.53 `NORMINV( P ; Mean ; StdDev )`, `0 < P < 1` and a positive `StdDev`.
+pub(super) fn norminv(args: &mut Args) -> Answer {
+    args.arity(3..=3)?;
+    let (p, mean, sd) = (args.number(0)?, args.number(1)?, args.number(2)?);
+    if !(p > 0.0 && p < 1.0) || sd <= 0.0 {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number(mean + sd * inverse_normal(p)))
+}
+
+/// §6.18.71 `STANDARDIZE( X ; Mean ; StdDev )`: `(X − Mean) / StdDev`; a zero `StdDev` divides by
+/// zero and a negative one is `#NUM!`, as the oracle answers.
+pub(super) fn standardize(args: &mut Args) -> Answer {
+    args.arity(3..=3)?;
+    let (x, mean, sd) = (args.number(0)?, args.number(1)?, args.number(2)?);
+    if sd == 0.0 {
+        return Err(FormulaError::DivZero);
+    }
+    if sd < 0.0 {
+        return Err(FormulaError::Num);
+    }
+    Ok(Value::number((x - mean) / sd))
+}
+
 /// Excel's `NORM.S.DIST(Z; Cumulative)`: §6.18.52's `NORMDIST(Z; 0; 1; Cumulative)`, with the
 /// last parameter required.
 pub(super) fn norm_s_dist(args: &mut Args) -> Answer {
