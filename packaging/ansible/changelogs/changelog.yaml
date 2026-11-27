@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+ancestor: null
+releases:
+  1.0.0:
+    changes:
+      release_summary: The grind role, which installs grind's released Linux packages.
+    release_date: "2026-11-27"

@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# The apt module takes one .deb at a time, and the metapackage installs only in the same
+# transaction as the packages it depends on. apt-get installs local files together and
+# resolves everything else from the configured repositories. It runs only when something is
+# outdated, so it always changes something.
+- name: Install the grind packages (apt)
+  ansible.builtin.command:
+    argv: "{{ ['apt-get', 'install', '--yes', '--no-install-recommends'] + grind_files }}"
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  changed_when: true

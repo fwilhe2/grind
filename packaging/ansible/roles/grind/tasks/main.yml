@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+- name: Gather the platform facts
+  when: ansible_facts['os_family'] is not defined or ansible_facts['architecture'] is not defined
+  ansible.builtin.setup:
+    gather_subset: [min]
+
+# grind's releases carry .deb and .rpm packages for x86_64 only.
+- name: Check the platform has grind packages
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] in grind_asset_suffix
+      - ansible_facts['architecture'] == 'x86_64'
+    fail_msg: >-
+      grind publishes packages for x86_64 on the Debian, Red Hat and SUSE families;
+      this host is {{ ansible_facts['os_family'] }} on {{ ansible_facts['architecture'] }}.
+    quiet: true
+
+- name: Install grind
+  when: grind_state == 'present'
+  ansible.builtin.include_tasks: install.yml
+
+- name: Remove grind
+  when: grind_state == 'absent'
+  ansible.builtin.package:
+    name: "{{ grind_packages }}"
+    state: absent

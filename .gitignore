@@ -25,3 +25,6 @@
 # What scripts/screenshots.sh writes by default.
 /screenshots/
 scripts/__pycache__/
+
+# ansible-lint's cache, wherever it is run.
+.ansible/

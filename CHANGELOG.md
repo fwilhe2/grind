@@ -17,6 +17,9 @@ lands, and the release workflow publishes the section as it stands.
 
 - The spreadsheet, the word processor and every Linux package now come for 64-bit Arm too
   (`arm64` `.deb`, `aarch64` `.rpm`).
+- An Ansible role installs the latest released desktop apps and the `grind` command on Debian, Ubuntu, Fedora, RHEL
+  and openSUSE, and upgrades them when a new release comes out
+  (`ansible-galaxy collection install 'git+https://github.com/fwilhe2/grind.git#/packaging/ansible,main'`).
 
 ### Fixes
 

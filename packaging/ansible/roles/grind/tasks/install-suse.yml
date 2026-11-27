@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# The packages are unsigned; the sha256 check on download stands in for the signature.
+- name: Install the grind packages (zypper)
+  community.general.zypper:
+    name: "{{ grind_files }}"
+    state: latest # noqa package-latest
+    disable_gpg_check: true

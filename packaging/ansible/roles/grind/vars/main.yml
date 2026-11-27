@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# Release asset names, per package format, after the package name and version.
+grind_asset_suffix:
+  Debian: '-1_amd64\.deb'
+  RedHat: '-1\.(x86_64|noarch)\.rpm'
+  Suse: '-1\.(x86_64|noarch)\.rpm'
+
+# Prints "installed <name> <version>" for each installed package among the arguments.
+grind_query_command:
+  Debian: [dpkg-query, --show, "--showformat=${db:Status-Status} ${Package} ${Version}\n"]
+  RedHat: [rpm, --query, "--queryformat=installed %{NAME} %{VERSION}-%{RELEASE}\n"]
+  Suse: [rpm, --query, "--queryformat=installed %{NAME} %{VERSION}-%{RELEASE}\n"]

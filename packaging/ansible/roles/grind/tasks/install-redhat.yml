@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+#
+# SPDX-License-Identifier: MIT
+
+---
+# The packages are unsigned; the sha256 check on download stands in for the signature.
+# "latest" so that the files replace an older installed grind.
+- name: Install the grind packages (dnf)
+  ansible.builtin.dnf:
+    name: "{{ grind_files }}"
+    state: latest # noqa package-latest
+    disable_gpg_check: true
