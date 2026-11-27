@@ -76,9 +76,24 @@ fn main() -> ExitCode {
     // assertable too.
     let mut overlays = grind_sheet::view::Overlays::NONE;
     let mut tape = false;
+    // `--tape-from <file>`: the tape opened with the file's lines typed into it.
+    let mut tape_lines: Option<String> = None;
     while let Some(flag) = args.next() {
         match flag.to_str() {
             Some("--tape") => tape = true,
+            Some("--tape-from") => {
+                let file = args.next().unwrap_or_default();
+                match std::fs::read_to_string(&file) {
+                    Ok(lines) => {
+                        tape = true;
+                        tape_lines = Some(lines);
+                    }
+                    Err(error) => {
+                        eprintln!("grind-sheet-gtk: {}: {error}", file.to_string_lossy());
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
             Some("--render-to") => {
                 render_to = Some(PathBuf::from(
                     args.next().unwrap_or_else(|| "grid.png".into()),
@@ -120,22 +135,30 @@ fn main() -> ExitCode {
             ui.grid.set_overlays(overlays);
         }
         ui.window.present();
-        if tape {
-            ui.open_tape();
-        }
-        match given.clone() {
-            Some(given) => {
-                let render_to = render_to.clone();
-                ui.load_then(&given, move |ui| {
-                    if let Some(target) = render_to {
-                        render_once(&ui.window, target);
-                    }
-                });
+        // The tape reads numbers as the document spells them, so it opens once the file is in.
+        let open_tape = {
+            let lines = tape_lines.clone();
+            move |ui: &Rc<Ui>| {
+                if tape {
+                    ui.open_tape();
+                }
+                if let (Some(lines), Some(dialog)) = (&lines, ui.open_tape_dialog()) {
+                    dialog.replay(lines);
+                }
             }
-            None => {
-                if let Some(target) = render_to.clone() {
+        };
+        if let Some(given) = given.clone() {
+            let render_to = render_to.clone();
+            ui.load_then(&given, move |ui| {
+                open_tape(ui);
+                if let Some(target) = render_to {
                     render_once(&ui.window, target);
                 }
+            });
+        } else {
+            open_tape(&ui);
+            if let Some(target) = render_to.clone() {
+                render_once(&ui.window, target);
             }
         }
     });

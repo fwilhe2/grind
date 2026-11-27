@@ -279,6 +279,18 @@ impl TapeDialog {
         self.input.grab_focus();
     }
 
+    /// Lines added as if typed one after another, as `grind calc` replays a file; a line that
+    /// does not read is skipped and said.
+    pub fn replay(self: &Rc<Self>, lines: &str) {
+        for line in lines.lines().map(str::trim).filter(|l| !l.is_empty()) {
+            let pushed = self.tape.borrow_mut().push(line);
+            if let Err(error) = pushed {
+                self.say(&error.to_string());
+            }
+        }
+        self.refresh();
+    }
+
     /// Whether the dialog is showing — while it is, the window's Undo and Redo are the tape's.
     pub fn is_open(&self) -> bool {
         self.open.get()

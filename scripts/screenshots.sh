@@ -232,8 +232,31 @@ EOF
     text delete "$doc" p1
 }
 
+# The same studio quoting the poster series on the scratch calculator: an hourly rate and a
+# printer's unit price in dollars, hours as a plain count, a discount and sales tax as
+# percentages, the deposit, and a font licence bought in euros —
+# each shown as what it is, typed without a currency symbol. Linux only for now: the Windows
+# shell's tape is a modal --render-to does not draw, and the Mac's a window of its own.
+
+build_tape() {
+    cat >"$1" <<'EOF'
+rate = 95 usd
+hours = 42
+design = rate * hours
+printing = 3 * 245.50 usd
+discount = 5%
+tax = 8.25%
+quote = (design + printing) * (1 - discount) * (1 + tax)
+deposit = quote * 30%
+fonts = 79 eur
+EOF
+    # …and the same lines saved as a spreadsheet, each cell formatted as its line was shown.
+    "$GRIND" calc --locale en-US --save "${1%.txt}.fods" --force <"$1" >/dev/null
+}
+
 build_sheet "$work/invoices.fods"
 build_text "$work/brief.fodt"
+build_tape "$work/quote.txt"
 
 # --- the pictures ---------------------------------------------------------------------------
 
@@ -270,6 +293,9 @@ shoot_linux() {
         export ADW_DEBUG_COLOR_SCHEME="prefer-$scheme"
         "$sheet_gtk" "$work/invoices.fods" --render-to "$out/sheet$suffix.png" >/dev/null 2>&1
         "$text_gtk" "$work/brief.fodt" --render-to "$out/text$suffix.png" >/dev/null 2>&1
+        "$sheet_gtk" "$work/invoices.fods" --tape-from "$work/quote.txt" \
+            --render-to "$out/tape$suffix.png" >/dev/null 2>&1
+        "$sheet_gtk" "$work/quote.fods" --render-to "$out/tape-sheet$suffix.png" >/dev/null 2>&1
     done
 }
 
@@ -318,9 +344,11 @@ shoot_macos() {
 }
 
 "shoot_$platform"
-cp "$work/invoices.fods" "$work/brief.fodt" "$out/"
+cp "$work/invoices.fods" "$work/brief.fodt" "$work/quote.txt" "$work/quote.fods" "$out/"
 "$GRIND" --version >"$out/version.txt"
-for picture in sheet sheet-dark text text-dark; do
+pictures=(sheet sheet-dark text text-dark)
+[ "$platform" = linux ] && pictures+=(tape tape-dark tape-sheet tape-sheet-dark)
+for picture in "${pictures[@]}"; do
     [ -s "$out/$picture.png" ] || die "$picture.png was not drawn"
 done
 echo "$out"

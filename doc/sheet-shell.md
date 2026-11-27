@@ -516,7 +516,8 @@ Stated as one sentence, which is the sentence to hold this window to:
   a primary menu and the thing that finally sizes it.
 - **Command palette**: Ctrl+K, the search button, or the menu. Type three letters, Enter.
 - **The tape** (`doc/calc.md`; `tape.rs`): *Scratch Calculator* in the header bar,
-  the palette and the primary menu, or `grind-sheet-gtk --tape`, opens an `adw::Dialog` centred over this
+  the palette and the primary menu, or `grind-sheet-gtk --tape` (`--tape-from lines.txt` with a file's
+  lines typed in, as `grind calc` replays one), opens an `adw::Dialog` centred over this
   window. The window keeps it, so closing it keeps the tape for the next time, and while it is
   open the window's Undo and Redo step the tape. One `adw::EntryRow` per line (its
   handle, its text to edit in place, its value, *Name…* and delete), an entry at the bottom for
