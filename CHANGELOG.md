@@ -19,6 +19,8 @@ lands, and the release workflow publishes the section as it stands.
 
 - A Word document no longer gains an empty line at every section break that starts a new page,
   which could push what follows onto a page of its own.
+- A paragraph set to stay with the next one no longer moves to a page of its own, leaving a
+  blank page, when the next one starts a new page anyway.
 
 ## 0.3.0 — 2026-11-28
 

@@ -284,9 +284,13 @@ pub fn paginate_slots(
                     cut.turn(unit.broken_top());
                 }
                 break_pending = breaks.page_after;
+                // Kept with a next block that opens a page anyway, it stays: moving it would only
+                // leave it alone on a page of its own (`doc/odt-format.md` §5c fact 75).
                 if *keep
                     && !cut.fresh()
+                    && !breaks.page_after
                     && let (Some(last), Some(next)) = (lines.last(), units.get(at + 1))
+                    && !next.opens_page(starts)
                     && next.lead(rules.orphans).max(last.bottom()) - cut.origin
                         > cut.page_height() + EPS
                 {
@@ -569,6 +573,18 @@ impl Unit {
         match self {
             Unit::Block { slot, lines, .. } => lines.first().map_or(slot.top, |line| line.top),
             Unit::Row { top, .. } => *top,
+        }
+    }
+
+    /// Whether it begins a page whatever fits: a break before it, or a page style of its own.
+    fn opens_page(&self, starts: &Starts) -> bool {
+        match self {
+            Unit::Block { slot, breaks, .. } => {
+                breaks.page_before || starts.contains_key(&slot.index)
+            }
+            Unit::Row { slots, .. } => slots
+                .first()
+                .is_some_and(|(slot, _)| starts.contains_key(&slot.index)),
         }
     }
 
@@ -1239,6 +1255,53 @@ mod tests {
             shape(&broken(&app, 5.0, &[(1, loose)])),
             vec![vec![(0, 0..4), (1, 0..1)], vec![(2, 0..3)]]
         );
+    }
+
+    /// `doc/odt-format.md` §5c fact 75: a paragraph kept with the next stays where it is when
+    /// that next one starts a page anyway — by a break before it or after the kept one, or as
+    /// the first of a new page style.
+    #[test]
+    fn keeping_with_a_block_that_starts_a_page_anyway_moves_nothing() {
+        let app = doc(&[para(4), para(1), para(3)]);
+        let kept = |more: Breaks| Breaks {
+            keep_with_next: Some(true),
+            ..more
+        };
+        let together = vec![vec![(0, 0..4), (1, 0..1)], vec![(2, 0..3)]];
+        let before = Breaks {
+            page_before: true,
+            ..Breaks::default()
+        };
+        assert_eq!(
+            shape(&broken(
+                &app,
+                5.0,
+                &[(1, kept(Breaks::default())), (2, before)]
+            )),
+            together
+        );
+        let after = Breaks {
+            page_after: true,
+            ..Breaks::default()
+        };
+        assert_eq!(shape(&broken(&app, 5.0, &[(1, kept(after))])), together);
+
+        let faces = Breaking([(1, kept(Breaks::default()))].into_iter().collect());
+        let slots = [Slot::single(0, 5.0, 0, 0), Slot::single(1, 5.0, 1, 0)];
+        let viewport = app.get_viewport(0..app.block_count());
+        let starts: Starts = [(2, (1, None))].into_iter().collect();
+        let pages = paginate_slots(
+            (&app, &viewport),
+            &[(&faces, 10.0)],
+            &slots,
+            (0, &starts),
+            None,
+            &TIGHT,
+            Rules::default(),
+            &|_, _| None,
+        )
+        .pages;
+        assert_eq!(shape(&pages), together, "a new page style");
     }
 
     /// A face that marks row 0 of every table as its heading.

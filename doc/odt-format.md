@@ -1239,6 +1239,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    12 pt made each 0.796. The model keeps no formatting on a tab or a field kept as its text,
    so either takes the nearest text run's look, the one after it first: the tab opens the span
    the text after it is in, as this one does.
+75. **Keeping with a paragraph that starts a page anyway keeps nothing** — `MEASURED`
+   (2026-11-28, 26.8.3.1). An A4 page of 20 pt lines filled to one line short, then a paragraph
+   with `fo:keep-with-next="always"` on that last line, then one more. With nothing else said,
+   both go to page 2. When the last one has `fo:break-before="page"`, or a
+   `style:master-page-name` of its own, or the kept one has `fo:break-after="page"`, the kept
+   paragraph stays on page 1 and the document has two pages, not three: it would be on a
+   page without its next one either way. The Legislation Act 2003 compilation on
+   legislation.gov.au, three empty kept `Header` paragraphs before a new section's table of
+   contents, is where it showed — a page with nothing on it.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
