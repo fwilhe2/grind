@@ -334,6 +334,11 @@ update: check `../clerk` for callers, and name the change in the commit message.
 - **Clippy's pedantic group is on** (`Cargo.toml`, `[workspace.lints]`). The lints allowed
   under it are the ones the old code is not clean of: that list only shrinks, one lint per
   commit, and new code needs none of it. An `#[allow]` carries a `reason`.
+- **Every `unsafe` carries its justification next to it**: a `// SAFETY:` comment on each block,
+  `unsafe impl` and objc2 `define_class!`, a `# Safety` section on each `unsafe fn`. Only where a
+  platform API demands it: the workspace denies `unsafe_code`, and `ui_win32`, `ui_mac` and one
+  function per GTK shell allow it with a `reason`. A safe shape beats a justified unsafe one — a
+  checked `RefCell` over a raw pointer, an injected lookup over `env::set_var`.
 - **`ponytail:` comments** mark deliberate shortcuts with a known ceiling and upgrade path — a
   tracked ledger; read the reason before "fixing" one.
 - **`TODO:` comments** are something reported or suspected wrong and not yet reproduced: what is

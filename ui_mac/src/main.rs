@@ -17,6 +17,11 @@
 //! `--render-to`'s windowless frame or to `app.rs`'s window. Off a Mac it says what a window would
 //! have done, so the argument handling runs rather than only tests.
 
+#![allow(
+    unsafe_code,
+    reason = "AppKit is reached through objc2, whose calls and class declarations are `unsafe`"
+)]
+
 // Portable, and reached from the AppKit half — which is not compiled off macOS, so on Linux the
 // only callers of much of this are the tests.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code, unused_imports))]

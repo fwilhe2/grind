@@ -281,6 +281,7 @@ pub fn is_dark(palette: &Palette) -> bool {
 /// and `gtk_accessible_announce` calls it anyway, a jump to address zero (measured on GTK 4.18
 /// under Xvfb). With `GTK_A11Y=none` there is no context at all, which the generated binding
 /// asserts against. The raw call is the one spelling that can say "none".
+#[allow(unsafe_code, reason = "the safe binding cannot return no context")]
 pub fn heard(widget: &impl IsA<gtk::Accessible>) -> bool {
     use gtk::glib::translate::{ToGlibPtr, from_glib_full};
     // SAFETY: the call is transfer-full and documented to return NULL when accessibility is off;

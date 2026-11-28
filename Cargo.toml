@@ -44,8 +44,15 @@ repository = "https://github.com/fwilhe2/grind"
 
 # Clippy's pedantic group, for every crate (`[lints] workspace = true`), under CI's warnings as
 # errors (`doc/rust-idioms.md` §5). The group goes first so the lines after it can answer it.
+[workspace.lints.rust]
+# Only where a platform's API demands it: a crate or function that needs `unsafe` allows this
+# with a reason, and every block, impl and fn says why it is sound.
+unsafe_code = "deny"
+
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
 # The tree is not yet clean of these. A line goes in the commit that fixes its lint; none is
 # added.
 cast_possible_truncation = "allow"

@@ -19,6 +19,10 @@
 // A GUI application, not a console one: otherwise launching from Explorer leaves a console window
 // behind the shell. So there is no stderr, and the paths below end in a message box.
 #![cfg_attr(windows, windows_subsystem = "windows")]
+#![allow(
+    unsafe_code,
+    reason = "every Win32 call is `unsafe` in the `windows` crate"
+)]
 
 // Off Windows nothing calls the Windows half, so its functions read as dead and its imports as
 // unused — but the tests are why the crate builds here, so the two lints are silenced for

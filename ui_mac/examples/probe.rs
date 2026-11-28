@@ -29,6 +29,11 @@
 //! cargo run -p grind-mac --example probe -- /tmp/probe
 //! ```
 
+#![allow(
+    unsafe_code,
+    reason = "AppKit is reached through objc2, whose calls and class declarations are `unsafe`"
+)]
+
 #[cfg(target_os = "macos")]
 mod mac {
     use std::path::Path;
@@ -76,6 +81,7 @@ mod mac {
         //
         // Font reports family and full name separately. On macOS 26 the family is sometimes
         // `.AppleSystemUIFont`, which is the system font under its private name.
+        // SAFETY: `font` is a live CTFont; the call copies its name out.
         println!("font-family: {}", unsafe { font.family_name() });
         for (name, text) in SAMPLES {
             let line = line(text, &font);

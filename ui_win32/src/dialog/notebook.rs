@@ -249,6 +249,10 @@ struct Synced {
 }
 
 /// Colour the rich edit's words, then put the selection back to `keep`. Drawn once at the end.
+///
+/// # Safety
+///
+/// `control` is a live rich edit control: the `EM_` messages carry pointers it must read as theirs.
 unsafe fn colour(control: HWND, text: &str, spans: &[TapeSpan], theme: Theme, keep: CHARRANGE) {
     let format = |ink: Rgb| CHARFORMATW {
         cbSize: size_of::<CHARFORMATW>() as u32,
