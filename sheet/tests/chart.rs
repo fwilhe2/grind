@@ -674,6 +674,53 @@ fn a_pie_whose_file_says_nothing_reads_counter_clockwise() {
     assert!(!back.charts(0).unwrap()[0].clockwise);
 }
 
+/// `doc/chart-format.md`, Direction: a chart drawn from the right says so on its category axis,
+/// and keeps saying so through a save in both forms; one that runs left to right says nothing.
+#[test]
+fn a_reversed_chart_survives_a_save_and_a_forward_one_says_nothing() {
+    for form in [Form::Flat, Form::Package] {
+        let app = App::new();
+        filled(&app);
+        add(&app, ChartKind::Bar, &[("B2:B4", None)]);
+        let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+        assert!(
+            !flat.contains("chart:reverse-direction"),
+            "a bar left to right says nothing"
+        );
+
+        let mut spec = grind_sheet::ChartSpec::of(&app.charts(0).unwrap()[0]);
+        spec.reversed = true;
+        app.edit_chart(0, 0, &spec).unwrap();
+        assert!(app.chart_data(0, 0).unwrap().reversed);
+        let flat = String::from_utf8(app.save_bytes(Form::Flat).unwrap()).unwrap();
+        assert_eq!(flat.matches("chart:reverse-direction=\"true\"").count(), 1);
+        assert!(
+            reopened(&app, form).charts(0).unwrap()[0].reversed,
+            "{form:?}"
+        );
+
+        assert!(app.undo());
+        assert!(!app.charts(0).unwrap()[0].reversed, "one undo step");
+    }
+}
+
+/// A pie has no category axis: turned into one, a reversed chart draws no differently and
+/// writes nothing about it, and turned back it is reversed again.
+#[test]
+fn a_pie_keeps_a_reversed_charts_direction_without_drawing_it() {
+    let app = App::new();
+    filled(&app);
+    add(&app, ChartKind::Bar, &[("B2:B4", None)]);
+    let mut spec = grind_sheet::ChartSpec::of(&app.charts(0).unwrap()[0]);
+    spec.reversed = true;
+    spec.kind = ChartKind::Pie;
+    app.edit_chart(0, 0, &spec).unwrap();
+    assert!(!app.chart_data(0, 0).unwrap().reversed);
+    spec.kind = ChartKind::Line;
+    app.edit_chart(0, 0, &spec).unwrap();
+    assert!(app.chart_data(0, 0).unwrap().reversed);
+}
+
 /// The measurement behind `doc/chart-format.md`'s Colour section: LibreOffice ignores a data
 /// point's style under a series that names none, so every series written names one.
 #[test]

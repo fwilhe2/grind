@@ -94,7 +94,9 @@ pub fn lines(chart: &Chart, data: &ChartData, width: usize) -> Vec<String> {
     match data.kind {
         ChartKind::Bar => {
             let room = width.saturating_sub(label_w + 12).max(4);
-            for i in 0..longest(data) {
+            let count = longest(data);
+            // Down the pane in the order the chart runs across: a reversed one, last first.
+            for i in (0..count).map(|i| if data.reversed { count - 1 - i } else { i }) {
                 for (s, (_, values)) in data.series.iter().enumerate() {
                     let Some(v) = values.get(i) else { continue };
                     let label = match s {
@@ -115,20 +117,24 @@ pub fn lines(chart: &Chart, data: &ChartData, width: usize) -> Vec<String> {
                 let low = values.iter().copied().fold(f64::MAX, f64::min);
                 let high = values.iter().copied().fold(f64::MIN, f64::max);
                 out.push(format!("  {}", name(data, s)));
-                out.push(format!(
-                    "    {}   {} … {}",
-                    spark(values),
-                    number(low),
-                    number(high)
-                ));
+                let mut line = spark(values);
+                if data.reversed {
+                    line = line.chars().rev().collect();
+                }
+                out.push(format!("    {}   {} … {}", line, number(low), number(high)));
             }
             if let Some((_, first)) = data.series.first() {
                 let n = first.len();
                 if n > 0 {
+                    let (from, to) = if data.reversed {
+                        (n - 1, 0)
+                    } else {
+                        (0, n - 1)
+                    };
                     out.push(format!(
                         "  {} → {}",
-                        category(data, 0),
-                        category(data, n - 1)
+                        category(data, from),
+                        category(data, to)
                     ));
                 }
             }
@@ -178,6 +184,7 @@ mod tests {
             value_format: None,
             kinds: Vec::new(),
             stacked: false,
+            reversed: false,
         }
     }
 
@@ -196,6 +203,7 @@ mod tests {
             title: None,
             legend: None,
             stacked: false,
+            reversed: false,
         };
         chart.title = title.map(str::to_owned);
         chart.legend = legend;

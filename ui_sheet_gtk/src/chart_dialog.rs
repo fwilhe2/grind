@@ -9,8 +9,8 @@
 //! undo step.
 //!
 //! **What the chart is of is asked in the table's terms**: which block, whether series run down
-//! columns or along rows, whether the first row and column name things —
-//! [`grind_sheet::ChartShape`]'s three answers, which [`App::suggest_chart`] turns into a chart as
+//! columns or along rows, whether the first row and column name things, which end is drawn on
+//! the left — [`grind_sheet::ChartShape`]'s answers, which [`App::suggest_chart`] turns into a chart as
 //! `chart-add --from` does. The ranges themselves are folded away under *Ranges*.
 //!
 //! **The widgets are the state**: every change re-reads them into a [`ChartSpec`], asks for a
@@ -144,6 +144,7 @@ struct Dialog {
     by_rows: adw::ComboRow,
     header_row: adw::SwitchRow,
     label_column: adw::SwitchRow,
+    reversed: adw::SwitchRow,
     ranges: adw::ExpanderRow,
     categories: adw::EntryRow,
     series: RefCell<Vec<adw::EntryRow>>,
@@ -218,6 +219,7 @@ impl Dialog {
         let label_column = adw::SwitchRow::builder()
             .title("First column is labels")
             .build();
+        let reversed = adw::SwitchRow::builder().title("Reverse Order").build();
         let ranges = adw::ExpanderRow::builder()
             .title("Ranges")
             .subtitle("Point a series anywhere")
@@ -234,6 +236,7 @@ impl Dialog {
         for row in [
             range.upcast_ref::<gtk::Widget>(),
             by_rows.upcast_ref(),
+            reversed.upcast_ref(),
             header_row.upcast_ref(),
             label_column.upcast_ref(),
             ranges.upcast_ref(),
@@ -324,6 +327,7 @@ impl Dialog {
             by_rows,
             header_row,
             label_column,
+            reversed,
             ranges,
             categories,
             series: RefCell::new(Vec::new()),
@@ -394,6 +398,8 @@ impl Dialog {
         self.legend.connect_selected_notify(move |_| picked());
         let changed = on(|this| this.refresh());
         self.clockwise.connect_active_notify(move |_| changed());
+        let changed = on(|this| this.refresh());
+        self.reversed.connect_active_notify(move |_| changed());
         for axis in [&self.x, &self.y] {
             let changed = on(|this| this.refresh());
             axis.title.connect_changed(move |_| changed());
@@ -461,6 +467,7 @@ impl Dialog {
             self.range.set_text(&block_text(start, end));
             self.show_shape(guessed.shape);
         }
+        self.reversed.set_active(spec.reversed);
         self.show_kind(spec.kind);
         let local = ChartSpec {
             categories: spec.categories.as_deref().map(|r| plain_range(&name, r)),
@@ -506,6 +513,7 @@ impl Dialog {
             by_rows: self.by_rows.selected() == 1,
             header_row: self.header_row.is_active(),
             label_column: self.label_column.is_active(),
+            reversed: self.reversed.is_active(),
         }
     }
 
@@ -524,6 +532,7 @@ impl Dialog {
             x_axis: self.x.read(),
             y_axis: self.y.read(),
             clockwise: self.clockwise.is_active(),
+            reversed: self.reversed.is_active(),
             title: Some(self.title.text().trim().to_owned()).filter(|t| !t.is_empty()),
             legend: LEGENDS
                 .get(self.legend.selected() as usize)
@@ -543,6 +552,7 @@ impl Dialog {
         self.by_rows.set_selected(u32::from(shape.by_rows));
         self.header_row.set_active(shape.header_row);
         self.label_column.set_active(shape.label_column);
+        self.reversed.set_active(shape.reversed);
     }
 
     fn show_legend(&self, legend: Option<ChartLegend>) {
@@ -652,6 +662,20 @@ impl Dialog {
         let pie = kind == ChartKind::Pie;
         self.clockwise.set_visible(pie);
         self.axes.set_visible(!pie);
+        self.reversed.set_visible(!pie);
+        // Which end of the table lands on the left, in the table's own words.
+        let line = if self.by_rows.selected() == 1 {
+            "column"
+        } else {
+            "row"
+        };
+        let end = if self.reversed.is_active() {
+            "last"
+        } else {
+            "first"
+        };
+        self.reversed
+            .set_subtitle(&format!("The {end} {line} is drawn on the left"));
         for axis in [&self.x, &self.y] {
             axis.expander.set_subtitle(&axis_summary(&axis.read()));
         }

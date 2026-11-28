@@ -2065,6 +2065,10 @@ pub(crate) enum Command {
         /// Which way a pie runs from twelve o'clock (default true)
         #[arg(long, value_name = "BOOL")]
         clockwise: Option<bool>,
+        /// Draw the categories from the right, the last one on the left; with `--from`, true
+        /// when the table lists its dates newest first
+        #[arg(long, value_name = "BOOL")]
+        reversed: Option<bool>,
         /// The chart's own title; with `--from`, a single series' name is the default
         #[arg(long, value_name = "TEXT")]
         title: Option<String>,
@@ -2130,6 +2134,9 @@ pub(crate) enum Command {
         /// Which way a pie runs from twelve o'clock
         #[arg(long, value_name = "BOOL")]
         clockwise: Option<bool>,
+        /// Draw the categories from the right, the last one on the left
+        #[arg(long, value_name = "BOOL")]
+        reversed: Option<bool>,
         /// The chart's own title; pass an empty string to clear it
         #[arg(long, value_name = "TEXT")]
         title: Option<String>,

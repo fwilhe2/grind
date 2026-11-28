@@ -211,6 +211,11 @@ pub struct Chart {
     /// draws them (`doc/chart-format.md`, Area); a pie has nothing to stack.
     #[serde(default)]
     pub stacked: bool,
+    /// The categories run from the right, the value axis on that side — the category axis'
+    /// `chart:reverse-direction` (rng:10064), as LibreOffice draws it (`doc/chart-format.md`,
+    /// Direction); a pie has no category axis.
+    #[serde(default)]
+    pub reversed: bool,
 }
 
 fn clockwise_by_default() -> bool {
@@ -235,6 +240,7 @@ impl Chart {
             title: None,
             legend: None,
             stacked: false,
+            reversed: false,
         }
     }
 
@@ -262,6 +268,8 @@ pub struct Spec {
     pub y_axis: Axis,
     /// A pie's direction, kept whatever the kind so a pie turned into a bar and back keeps it.
     pub clockwise: bool,
+    /// The categories' direction ([`Chart::reversed`]), kept whatever the kind for the same reason.
+    pub reversed: bool,
     /// The chart's own title ([`Chart::title`]).
     pub title: Option<String>,
     /// Its legend ([`Chart::legend`]).
@@ -279,6 +287,7 @@ impl Spec {
             x_axis: Axis::default(),
             y_axis: Axis::default(),
             clockwise: clockwise_by_default(),
+            reversed: false,
             title: None,
             legend: None,
         }
@@ -306,14 +315,15 @@ impl Spec {
             x_axis: chart.x_axis.clone(),
             y_axis: chart.y_axis.clone(),
             clockwise: chart.clockwise,
+            reversed: chart.reversed,
             title: chart.title.clone(),
             legend: chart.legend,
         }
     }
 }
 
-/// How a block of cells is read as a chart — the three questions [`guess`] answers from the
-/// cells, and a person may overrule.
+/// How a block of cells is read as a chart — the questions [`guess`] answers from the cells, and
+/// a person may overrule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Shape {
     /// Each **row** of values is a series, rather than each column.
@@ -322,6 +332,9 @@ pub struct Shape {
     pub header_row: bool,
     /// The block's first column names things — the categories, or the series when `by_rows`.
     pub label_column: bool,
+    /// The categories are drawn from the right ([`Spec::reversed`]): the table lists the latest
+    /// first, and time still runs left to right.
+    pub reversed: bool,
 }
 
 /// What [`guess`] read: the block (one cell grows into its table), the [`Shape`] it read it as,
@@ -344,6 +357,8 @@ pub struct Guess {
 ///   two rows of figures is two series of twelve.
 /// - A line when the categories are dates or times, else a bar. Never a pie: the cells cannot say
 ///   whether parts make a whole.
+/// - Dates or a counting sequence that run downwards, newest first, are drawn from the right, so
+///   the oldest is still on the left.
 ///
 /// `shape`, when given, replaces the answers about the block.
 #[must_use]
@@ -372,6 +387,7 @@ pub fn guess(
         }
     };
     let mut spec = Spec::new(ChartKind::Bar);
+    spec.reversed = shape.reversed;
     // Nothing to chart — the labels took the block, or nothing left is a number: an empty spec,
     // which a dialog can report.
     let figures = (body.row..=end.row).any(|row| {
@@ -513,12 +529,43 @@ fn read_shape(sheet: &crate::Sheet, start: Pos, end: Pos) -> Shape {
         && any_number_in(first_body_row..=end.row, start.col + 1..=end.col);
 
     let body_rows = end.row - first_body_row + 1;
-    let body_cols = end.col - (start.col + u32::from(label_column)) + 1;
+    let first_body_col = start.col + u32::from(label_column);
+    let body_cols = end.col - first_body_col + 1;
+    let by_rows = body_cols > body_rows;
+    let categories: Vec<Pos> = match (by_rows, header_row, label_column) {
+        (false, _, true) => column,
+        (true, true, _) => (first_body_col..=end.col)
+            .map(|col| Pos::new(start.row, col))
+            .collect(),
+        _ => Vec::new(),
+    };
     Shape {
-        by_rows: body_cols > body_rows,
+        by_rows,
         header_row,
         label_column,
+        reversed: newest_first(sheet, &categories),
     }
+}
+
+/// Whether categories run backwards in time: dates, or a counting sequence, each before the last.
+fn newest_first(sheet: &crate::Sheet, cells: &[Pos]) -> bool {
+    let values: Vec<CellValue> = cells.iter().map(|pos| sheet.get(*pos)).collect();
+    let dated = cells
+        .iter()
+        .all(|pos| crate::date_kind(sheet, *pos).is_some());
+    let numbers: Option<Vec<f64>> = values
+        .iter()
+        .map(|value| match value {
+            CellValue::Number(n) => Some(*n),
+            _ => None,
+        })
+        .collect();
+    let Some(numbers) = numbers else {
+        return false;
+    };
+    numbers.len() >= 2
+        && (dated || counts(&values))
+        && numbers.array_windows().all(|[prev, next]| next < prev)
 }
 
 /// Whether a run of cells is a counting sequence — at least three whole numbers with one constant
@@ -792,6 +839,8 @@ pub struct ChartData {
     pub kinds: Vec<ChartKind>,
     /// [`Chart::stacked`], for anything but a pie.
     pub stacked: bool,
+    /// [`Chart::reversed`], for anything but a pie.
+    pub reversed: bool,
 }
 
 impl ChartData {
@@ -835,6 +884,7 @@ impl ChartData {
                 .map(|n| chart.series_kind(n))
                 .collect(),
             stacked: chart.stacked && chart.kind != ChartKind::Pie,
+            reversed: chart.reversed && chart.kind != ChartKind::Pie,
         })
     }
 
@@ -1037,7 +1087,8 @@ mod tests {
             Shape {
                 by_rows: false,
                 header_row: true,
-                label_column: true
+                label_column: true,
+                reversed: false,
             }
         );
         assert_eq!(guessed.spec.kind, ChartKind::Bar);
@@ -1090,6 +1141,16 @@ mod tests {
         assert!(guessed.shape.label_column, "a date column names its rows");
         assert_eq!(guessed.spec.kind, ChartKind::Line);
         assert_eq!(guessed.spec.series.len(), 2);
+        assert!(!guessed.spec.reversed);
+        // A statement's order: the latest day first.
+        for row in 1..=4 {
+            sheet.set(
+                Pos::new(row, 0),
+                CellValue::Number(46010.0 - f64::from(row)),
+            );
+        }
+        let guessed = guess(&sheet, Pos::new(0, 0), Pos::new(4, 2), None, 0);
+        assert!(guessed.spec.reversed, "time still runs left to right");
     }
 
     /// A column that counts labels the rows beside it — a year is not a measurement.
@@ -1115,6 +1176,32 @@ mod tests {
         assert_eq!(guessed.spec.series.len(), 2);
     }
 
+    /// A table that lists the latest year first is drawn from the right, so the years still
+    /// run left to right; one listed oldest first is not.
+    #[test]
+    fn newest_first_is_drawn_from_the_right() {
+        let rows: &[&[&str]] = &[
+            &["Year", "Revenue"],
+            &["2023", "6"],
+            &["2022", "7"],
+            &["2021", "5"],
+        ];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None, 0);
+        assert!(guessed.shape.reversed);
+        assert!(guessed.spec.reversed);
+        let rows: &[&[&str]] = &[
+            &["Year", "Revenue"],
+            &["2021", "5"],
+            &["2022", "7"],
+            &["2023", "6"],
+        ];
+        let guessed = guess(&table(rows), Pos::new(0, 0), Pos::new(3, 1), None, 0);
+        assert!(!guessed.spec.reversed);
+        // Names say nothing about order.
+        let guessed = guess(&table(DOWN), Pos::new(0, 0), Pos::new(4, 2), None, 0);
+        assert!(!guessed.spec.reversed);
+    }
+
     #[test]
     fn a_bare_column_of_figures_is_one_series_with_nothing_naming_it() {
         let rows: &[&[&str]] = &[&["3"], &["1"], &["4"]];
@@ -1130,6 +1217,7 @@ mod tests {
             by_rows: false,
             header_row: true,
             label_column: true,
+            reversed: false,
         };
         let guessed = guess(
             &table(ACROSS),
@@ -1181,6 +1269,7 @@ mod tests {
             value_format: None,
             kinds: Vec::new(),
             stacked: false,
+            reversed: false,
         }
     }
 

@@ -438,6 +438,12 @@ fn chart_differences(label: &str, i: usize, w: &Sheet, g: &Sheet) -> Vec<String>
                 format!("clockwise {}", a.clockwise),
                 format!("clockwise {}", b.clockwise),
             );
+        } else {
+            say(
+                "direction",
+                format!("reversed {}", a.reversed),
+                format!("reversed {}", b.reversed),
+            );
         }
         let frame =
             |c: &grind_sheet::Chart| [c.x.clone(), c.y.clone(), c.width.clone(), c.height.clone()];
@@ -992,7 +998,7 @@ fn filtered() -> (String, Document) {
 }
 
 /// Charts (`doc/chart-format.md`): a bar of two series with one series and one bar coloured by
-/// hand, a line, and a clockwise pie — built through `App`, the only thing that adds a chart,
+/// hand, a line drawn from the right, and a clockwise pie — built through `App`, the only thing that adds a chart,
 /// and read back from its own bytes into the [`Document`] this loop compares.
 fn charts() -> (String, Document) {
     let app = grind_sheet::App::new();
@@ -1038,6 +1044,7 @@ fn charts() -> (String, Document) {
             &grind_sheet::ChartSpec {
                 title: title.map(str::to_owned),
                 legend,
+                reversed: kind == grind_sheet::ChartKind::Line,
                 ..spec(
                     kind,
                     Some("A2:A4"),

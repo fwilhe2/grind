@@ -624,21 +624,27 @@ impl Painter<'_> {
             .map(|value| self.text_w(&self.data.tick_label(&ticks, *value), &style))
             .fold(0.0, f64::max);
 
-        let mut left = INSET;
+        // The value axis stands where the categories start: on the right of a reversed chart.
+        let mut axis_side = INSET;
         if y_axis.label.is_some() {
-            left += LABEL_SPACE;
+            axis_side += LABEL_SPACE;
             if y_axis.tick_labels {
-                left += TICK_GAP;
+                axis_side += TICK_GAP;
             }
         }
         if y_axis.tick_labels {
-            left += widest + TICK_GAP;
+            axis_side += widest + TICK_GAP;
         }
+        let (mut left, right) = if self.data.reversed {
+            (INSET, axis_side)
+        } else {
+            (axis_side, INSET)
+        };
         let mut bottom = INSET;
         if x_axis.label.is_some() {
             bottom += LABEL_SPACE;
         }
-        let band = (frame.w - left - INSET).max(0.0) / category_count(self.data).max(1) as f64;
+        let band = (frame.w - left - right).max(0.0) / category_count(self.data).max(1) as f64;
         let widest_name = self
             .data
             .categories
@@ -648,6 +654,12 @@ impl Painter<'_> {
         let names = category_names(widest_name, band, tick_h, frame.h, TICK_GAP, TICK_CLEARANCE);
         if x_axis.tick_labels {
             bottom += names.depth;
+            // A turned name reaches left of its tick; the leftmost one needs that room in the
+            // frame, which the value axis gives it unless the chart runs from the right.
+            if names.turned {
+                let reach = std::f64::consts::FRAC_1_SQRT_2 * (names.room + tick_h / 2.0);
+                left = left.max(INSET + reach - band / 2.0);
+            }
         }
         // The topmost value label is centred on the plot's top, so half of it sits above.
         let top = INSET
@@ -659,7 +671,7 @@ impl Painter<'_> {
         let plot = Rect::new(
             frame.x + left,
             frame.y + top,
-            (frame.w - left - INSET).max(0.0),
+            (frame.w - left - right).max(0.0),
             (frame.h - top - bottom).max(0.0),
         );
         if plot.w <= 0.0 || plot.h <= 0.0 {
@@ -681,7 +693,11 @@ impl Painter<'_> {
         if y_axis.tick_labels {
             for value in &ticks.values {
                 let label = self.data.tick_label(&ticks, *value);
-                let x = plot.x - TICK_GAP - self.text_w(&label, &style);
+                let x = if self.data.reversed {
+                    plot.right() + TICK_GAP
+                } else {
+                    plot.x - TICK_GAP - self.text_w(&label, &style)
+                };
                 let y = value_y(*value, &ticks, plot) - tick_h / 2.0;
                 self.text(x, y, &label, style.clone(), ink);
             }
@@ -713,7 +729,7 @@ impl Painter<'_> {
             }
         }
         // Each axis title centred in its band: the category axis' under the frame, the value
-        // axis' turned along its left edge, reading upwards.
+        // axis' turned along the edge it stands at, reading upwards.
         if let Some(label) = &x_axis.label {
             let w = self.text_w(label, &style);
             let x = frame.x + (frame.w - w) / 2.0;
@@ -722,7 +738,12 @@ impl Painter<'_> {
         }
         if let Some(label) = &y_axis.label {
             let w = self.text_w(label, &style);
-            let x = frame.x + (LABEL_SPACE - tick_h) / 2.0;
+            let inset = (LABEL_SPACE - tick_h) / 2.0;
+            let x = if self.data.reversed {
+                frame.right() - LABEL_SPACE + inset
+            } else {
+                frame.x + inset
+            };
             let top = frame.y + f64::midpoint(frame.h, w);
             self.turned(x, top, label, style, ink, 90.0);
         }
@@ -770,7 +791,10 @@ impl Painter<'_> {
                     (slot, 0.0, value)
                 };
                 let y = value_y(value, ticks, plot);
-                let x = plot.x + cat as f64 * group + lead + slot as f64 * (w + BAR_GAP);
+                let x = plot.x
+                    + place(self.data, cat, count) as f64 * group
+                    + lead
+                    + slot as f64 * (w + BAR_GAP);
                 let bar = Rect::new(x, y, w, value_y(floor, ticks, plot) - y);
                 self.out.hits.push((
                     Region::Rect(bar),
@@ -795,7 +819,7 @@ impl Painter<'_> {
         if count < 2 {
             return;
         }
-        let step = plot.w / count as f64;
+        let xs = category_x(self.data, plot);
         for s in self.of_kind(ChartKind::Line) {
             let values = &self.data.series[s].1;
             if values.len() < 2 {
@@ -809,10 +833,7 @@ impl Painter<'_> {
                     } else {
                         values[i]
                     };
-                    (
-                        plot.x + (i as f64 + 0.5) * step,
-                        value_y(value, ticks, plot),
-                    )
+                    (xs[i], value_y(value, ticks, plot))
                 })
                 .collect();
             let color = self.mark(s, None);
@@ -1031,6 +1052,11 @@ fn category_x(data: &ChartData, plot: Rect) -> Vec<f64> {
     }
     let step = plot.w / count as f64;
     (0..count)
-        .map(|i| plot.x + (i as f64 + 0.5) * step)
+        .map(|i| plot.x + (place(data, i, count) as f64 + 0.5) * step)
         .collect()
+}
+
+/// Which band, counted from the left, category `i` of `count` is drawn in.
+fn place(data: &ChartData, i: usize, count: usize) -> usize {
+    if data.reversed { count - 1 - i } else { i }
 }

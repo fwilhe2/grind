@@ -177,6 +177,7 @@ mod tests {
             value_format: None,
             kinds: Vec::new(),
             stacked: false,
+            reversed: false,
         }
     }
 
@@ -215,6 +216,7 @@ mod tests {
             value_format: None,
             kinds: Vec::new(),
             stacked: false,
+            reversed: false,
         };
         let mut dressed = chart(ChartKind::Bar);
         dressed.series.push(dressed.series[0].clone());

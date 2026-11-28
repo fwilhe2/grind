@@ -2834,13 +2834,18 @@ fn write_chart(out: &mut String, chart: &crate::chart::Chart, objects: &mut Obje
     // Each axis gets a style carrying `chart:display-label`, always stated: LibreOffice reads an
     // absent one as `false` (`doc/chart-format.md`). A pie's y axis also states
     // `chart:reverse-direction`, since LibreOffice draws a pie that says nothing
-    // counter-clockwise.
+    // counter-clockwise; a category axis states it only when it runs from the right.
     let direction = match chart.kind {
         ChartKind::Pie => format!(" chart:reverse-direction=\"{}\"", chart.clockwise),
         ChartKind::Bar | ChartKind::Line | ChartKind::Area => String::new(),
     };
+    let categories = if chart.reversed && chart.kind != ChartKind::Pie {
+        " chart:reverse-direction=\"true\""
+    } else {
+        ""
+    };
     let axis_styles: [(&str, &Axis, &str); 2] = [
-        ("gchx", &chart.x_axis, ""),
+        ("gchx", &chart.x_axis, categories),
         ("gchy", &chart.y_axis, &direction),
     ];
 

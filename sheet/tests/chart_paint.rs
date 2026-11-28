@@ -75,6 +75,7 @@ fn budget() -> (Chart, ChartData) {
         value_format: None,
         kinds: Vec::new(),
         stacked: false,
+        reversed: false,
     };
     (chart, data)
 }
@@ -364,6 +365,7 @@ fn a_stacked_area_stacks_its_bands_and_leaves_a_line_at_its_own_values() {
         value_format: None,
         kinds: vec![ChartKind::Area, ChartKind::Area, ChartKind::Line],
         stacked: true,
+        reversed: false,
     };
     let picture = chart_paint::picture(
         &chart,
@@ -440,6 +442,7 @@ fn stacked_bars_and_lines_stand_on_the_series_before() {
             value_format: None,
             kinds: Vec::new(),
             stacked: true,
+            reversed: false,
         };
         let picture = chart_paint::picture(
             &chart,
@@ -479,4 +482,40 @@ fn stacked_bars_and_lines_stand_on_the_series_before() {
     assert_eq!(lines.len(), 2);
     let ys: Vec<f64> = lines[1].iter().map(|p| p.1).collect();
     assert!(close(ys[0], y(20.0)) && close(ys[1], y(20.0)), "{ys:?}");
+}
+
+/// `doc/chart-format.md`, Direction: reversed, the first category is the rightmost band, its name
+/// under it and a click there its bar, and the value axis' labels stand on the right.
+#[test]
+fn a_reversed_chart_runs_from_the_right_with_its_axis_there() {
+    let (chart, mut data) = budget();
+    data.reversed = true;
+    let picture = chart_paint::picture(
+        &chart,
+        &data,
+        Rect::new(0.0, 0.0, 600.0, 200.0),
+        &colours(),
+        &Letters,
+    );
+    let (names, plot_x, plot_w) = names_and_plot(&picture);
+    let step = plot_w / 6.0;
+    assert_eq!(names.len(), 6, "{names:?}");
+    for (left, right, text) in &names {
+        let i = data.categories.iter().position(|n| n == text).unwrap();
+        let centre = plot_x + (5 - i) as f64 * step + step / 2.0;
+        assert!(
+            ((left + right) / 2.0 - centre).abs() < 0.01,
+            "{text} is off its band"
+        );
+    }
+    let right_band = plot_x + plot_w - step / 2.0;
+    let baseline = picture.plot.unwrap().bottom() - 1.0;
+    assert!(matches!(
+        picture.target_at(right_band - step / 4.0, baseline, &data),
+        Some(Target::Bar { point: 0, .. })
+    ));
+    let ticks_right = picture.marks.iter().any(
+        |mark| matches!(mark, Mark::Text { x, text, .. } if text == "0" && *x > plot_x + plot_w),
+    );
+    assert!(ticks_right, "the value axis stands on the right");
 }

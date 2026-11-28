@@ -242,10 +242,23 @@ same bytes. The fix has two halves, like `chart:display-label`'s:
   way here and the other way there is the bug this section exists for.
 
 A bar or line chart's own axes may carry the attribute too (LibreOffice writes
-`chart:reverse-direction="false"` on both, `Sales Dashboard.fods`'s `ch4`/`ch5`); on the
-category axis it would run the categories right to left. This build neither reads nor writes
-it there — a named gap, and one no chart this build makes can reach, since it only writes the
-attribute for a pie. The slices' own angles are computed once, in
+`chart:reverse-direction="false"` on both, `Sales Dashboard.fods`'s `ch4`/`ch5`). **On the
+category axis it turns the chart round.** Measured (LibreOffice 26.8.3.1, the PDF of a
+four-month bar chart written twice, the second with `chart:reverse-direction="true"` added to
+the x axis' style and nothing else): the second draws Apr, Mar, Feb, Jan from the left, and its
+value axis, tick labels and all, **stands on the right**, where the categories now start.
+[`grind_sheet::Chart::reversed`] is that attribute on a bar, line or area chart's x axis, and
+the painter draws both halves of it — the bands mirrored, the value axis moved across. The
+writer states it only when it is `true`, so a chart running left to right writes the bytes it
+always did; LibreOffice keeps it through its own save (loop C's `charts` case, whose line chart
+is reversed). The value axis' attribute on a bar or line chart is not modelled.
+
+Its use is a table that lists the latest first, as a bank statement does: charted as it stands,
+time runs right to left. [`grind_sheet::chart::guess`] turns such a chart round — dates or a
+counting sequence that run downwards are drawn from the right — and the GNOME dialog's
+*Reverse Order*, `chart-add`/`chart-edit --reversed` and the word `reversed` say it by hand.
+
+The slices' own angles are computed once, in
 [`grind_sheet::chart::pie_slices`], for the reason [`grind_sheet::axis_ticks`] is: two shells
 sweeping the same pie two ways is two different charts.
 
@@ -365,12 +378,15 @@ Adwaita rows say the rest:
 
 - **Data** asks what the chart is of in the table's own terms — the block, whether the series
   run in columns or rows, and whether the first row and first column are labels — which are
-  `ChartShape`'s three answers, turned into ranges by `App::suggest_chart` (the core's
+  `ChartShape`'s answers, turned into ranges by `App::suggest_chart` (the core's
   `chart::guess`, the same reading `chart-add --from` makes). Opening *Insert Chart* on any cell
   of a table reads the whole table; a table with months across its top charts them along the x
   axis without being told. The ranges themselves — `RANGE=LABEL`, `chart-add --series`'s own
   vocabulary — are folded away under *Ranges*, for anybody who wants a series the table's shape
   does not give. A range that does not parse turns its row red and the preview says why.
+- **Reverse Order**, under *Series in*: which end of the table is drawn on the left, said in the
+  table's words (*The last row is drawn on the left*); on when the table's dates run newest
+  first. Hidden for a pie.
 - **Labels**: the chart's title, its legend (None, Right, Bottom, Top, Left — ODF's
   start/end, in the words of a left-to-right window), and for a pie whether it runs clockwise.
   A title and a legend follow the table until the person picks their own.
