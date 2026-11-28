@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Sheet1">
+    <table:table-column table:number-columns-repeated="2"/>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>serves</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="4"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>want</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="10"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>factor</text:p></table:table-cell><table:table-cell table:formula="of:=want/serves" office:value-type="float" office:value="2.5"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>flour</text:p></table:table-cell><table:table-cell table:formula="of:=250*factor" office:value-type="float" office:value="625"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>butter</text:p></table:table-cell><table:table-cell table:formula="of:=125*factor" office:value-type="float" office:value="312.5"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>sugar</text:p></table:table-cell><table:table-cell table:formula="of:=90*factor" office:value-type="float" office:value="225"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>eggs</text:p></table:table-cell><table:table-cell table:formula="of:=ROUNDUP(2*factor;0)" office:value-type="float" office:value="5"/></table:table-row>
+   </table:table>
+   <table:named-expressions>
+    <table:named-expression table:name="butter" table:expression="[$Sheet1.$B$5]"/>
+    <table:named-expression table:name="eggs" table:expression="[$Sheet1.$B$7]"/>
+    <table:named-expression table:name="factor" table:expression="[$Sheet1.$B$3]"/>
+    <table:named-expression table:name="flour" table:expression="[$Sheet1.$B$4]"/>
+    <table:named-expression table:name="serves" table:expression="[$Sheet1.$B$1]"/>
+    <table:named-expression table:name="sugar" table:expression="[$Sheet1.$B$6]"/>
+    <table:named-expression table:name="want" table:expression="[$Sheet1.$B$2]"/>
+   </table:named-expressions>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

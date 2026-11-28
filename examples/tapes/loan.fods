@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:automatic-styles>
+  <number:percentage-style style:name="N0"><number:number number:decimal-places="1" number:min-decimal-places="1" number:min-integer-digits="1"/><number:text>%</number:text></number:percentage-style>
+  <style:style style:name="ce0" style:family="table-cell" style:data-style-name="N0"/>
+ </office:automatic-styles>
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Sheet1">
+    <table:table-column table:number-columns-repeated="2"/>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>price</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="24900"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>deposit</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="5000"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>principal</text:p></table:table-cell><table:table-cell table:formula="of:=price-deposit" office:value-type="float" office:value="19900"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>rate</text:p></table:table-cell><table:table-cell table:style-name="ce0" office:value-type="float" office:value="0.049"><text:p>4.9%</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>years</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="5"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>payment</text:p></table:table-cell><table:table-cell table:formula="of:=PMT(rate/12;years*12;-principal)" office:value-type="float" office:value="374.62652527933994"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>#7</text:p></table:table-cell><table:table-cell table:formula="of:=payment*years*12-principal" office:value-type="float" office:value="2577.591516760396"/></table:table-row>
+   </table:table>
+   <table:named-expressions>
+    <table:named-expression table:name="deposit" table:expression="[$Sheet1.$B$2]"/>
+    <table:named-expression table:name="payment" table:expression="[$Sheet1.$B$6]"/>
+    <table:named-expression table:name="price" table:expression="[$Sheet1.$B$1]"/>
+    <table:named-expression table:name="principal" table:expression="[$Sheet1.$B$3]"/>
+    <table:named-expression table:name="rate" table:expression="[$Sheet1.$B$4]"/>
+    <table:named-expression table:name="years" table:expression="[$Sheet1.$B$5]"/>
+   </table:named-expressions>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

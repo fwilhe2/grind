@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:of="urn:oasis:names:tc:opendocument:xmlns:of:1.2" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:number="urn:oasis:names:tc:opendocument:xmlns:datastyle:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:version="1.4" office:mimetype="application/vnd.oasis.opendocument.spreadsheet">
+ <office:automatic-styles>
+  <number:currency-style style:name="N0"><number:number number:decimal-places="2" number:min-decimal-places="2" number:min-integer-digits="1" number:grouping="true"/><number:text> </number:text><number:currency-symbol>€</number:currency-symbol></number:currency-style>
+  <number:percentage-style style:name="N1"><number:number number:decimal-places="0" number:min-decimal-places="0" number:min-integer-digits="1"/><number:text>%</number:text></number:percentage-style>
+  <style:style style:name="ce0" style:family="table-cell" style:data-style-name="N0"/>
+  <style:style style:name="ce1" style:family="table-cell" style:data-style-name="N1"/>
+ </office:automatic-styles>
+ <office:body>
+  <office:spreadsheet>
+   <table:table table:name="Sheet1">
+    <table:table-column table:number-columns-repeated="2"/>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>rate</text:p></table:table-cell><table:table-cell table:style-name="ce0" office:value-type="float" office:value="680"><text:p>680.00 €</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>days</text:p></table:table-cell><table:table-cell office:value-type="float" office:value="4.5"/></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>net</text:p></table:table-cell><table:table-cell table:style-name="ce0" table:formula="of:=rate*days" office:value-type="float" office:value="3060"><text:p>3,060.00 €</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>vat</text:p></table:table-cell><table:table-cell table:style-name="ce1" office:value-type="float" office:value="0.19"><text:p>19%</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>tax</text:p></table:table-cell><table:table-cell table:style-name="ce0" table:formula="of:=net*vat" office:value-type="float" office:value="581.4"><text:p>581.40 €</text:p></table:table-cell></table:table-row>
+    <table:table-row><table:table-cell office:value-type="string"><text:p>#6</text:p></table:table-cell><table:table-cell table:style-name="ce0" table:formula="of:=net+tax" office:value-type="float" office:value="3641.4"><text:p>3,641.40 €</text:p></table:table-cell></table:table-row>
+   </table:table>
+   <table:named-expressions>
+    <table:named-expression table:name="days" table:expression="[$Sheet1.$B$2]"/>
+    <table:named-expression table:name="net" table:expression="[$Sheet1.$B$3]"/>
+    <table:named-expression table:name="rate" table:expression="[$Sheet1.$B$1]"/>
+    <table:named-expression table:name="tax" table:expression="[$Sheet1.$B$5]"/>
+    <table:named-expression table:name="vat" table:expression="[$Sheet1.$B$4]"/>
+   </table:named-expressions>
+  </office:spreadsheet>
+ </office:body>
+</office:document>

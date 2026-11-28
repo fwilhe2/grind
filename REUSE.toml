@@ -62,6 +62,12 @@ path = ["examples/loc/history.json", "examples/loc/loc.fods"]
 SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
 SPDX-License-Identifier = "MIT"
 
+# The example tapes, written by `examples/tapes/make.sh`, which would drop a header put in by hand.
+[[annotations]]
+path = "examples/tapes/*.fods"
+SPDX-FileCopyrightText = "2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>"
+SPDX-License-Identifier = "MIT"
+
 # A hand-written projection, as an example (doc/projection-guide.md). KDL *does* have comments,
 # so this one could carry a header — and should not: the first thing the guide says about the
 # format is that a projection declares its kind in its first node, and a licence block above
