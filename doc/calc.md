@@ -155,6 +155,7 @@ It is refused when:
 | a line that is only a number (signed, or a `%`) | its value in B |
 | any other line | its formula in B, with its value cached |
 | `#k` | the name of line *k* if it has one, else `[.Bk]` |
+| `#j:#k` | `[.Bj:.Bk]`, one range, whatever the lines are called |
 | `name = …` | a named range over `$Sheet1.$B$n` |
 | a line's kind | its B cell's number format: the currency in its minor unit, a percentage with the decimals it was typed with (two at most when computed) |
 | the tape's locale | the document's locale |
@@ -230,8 +231,6 @@ Calculator…*, in its modal's frame (`doc/windows-shell.md` §4). **The Mac she
 - **Array formulas and covered cells**, on a sheet: not refused by name.
 - **Opening a saved tape in a window.** The CLI reads one back (§6); no graphical client has
   the command yet.
-- **`#n:#m` is shown as `[.Bn]:[.Bm]`** on a tape, and promoted as `name:[.Bm]` when line n
-  has a name. The value is right, in grind and in LibreOffice; only the spelling is.
 - **Dates and times** on a tape: `2026-11-27` is a subtraction there, as in a formula.
 - **Tests not run here**: `promoted_tapes_are_valid_odf` skips without `jing` on `PATH`.
   `scripts/claude-vm.sh` has it.

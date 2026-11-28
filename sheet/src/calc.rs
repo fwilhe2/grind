@@ -552,6 +552,13 @@ impl Tape {
                 rows = rows.max(row + 1);
             }
         }
+        let labelled: Vec<String> = (0..rows)
+            .map(|row| match sheet.get(Pos::new(row, 0)) {
+                CellValue::Text(label) => label,
+                _ => String::new(),
+            })
+            .collect();
+        let line_named = |name: &str| labelled.iter().position(|l| l.eq_ignore_ascii_case(name));
         let mut tape = Tape::new(doc.locale.clone());
         for row in 0..rows {
             let line = row as usize + 1;
@@ -573,6 +580,7 @@ impl Tape {
                     let formula = formula.strip_prefix("of:=").unwrap_or(formula);
                     let expr = parse(formula)
                         .map_err(|_| not(format!("B{line}'s formula does not read")))?;
+                    let expr = spans(&expr, &line_named);
                     if let Some(cell) = outside_the_tape(&expr) {
                         return Err(not(format!(
                             "B{line} reads {cell}, and a tape reads only its own lines"
@@ -580,7 +588,7 @@ impl Tape {
                     }
                     let mut numbers = Vec::new();
                     literals(&expr, &mut numbers);
-                    (formula.to_owned(), vec![None; numbers.len()])
+                    (expr.to_string(), vec![None; numbers.len()])
                 }
                 (None, CellValue::Number(n)) => match sheet.format(b) {
                     None => (shortest(n), vec![None]),
@@ -661,11 +669,25 @@ impl Tape {
     ) -> std::result::Result<(), String> {
         let promoted = self.promote().map_err(|e| e.to_string())?;
         let again = &promoted.sheets[0];
+        let entries = self.list.entries();
+        // `#1:#3` was promoted as `name:[.B3]` once; read either way, it is the one range now.
+        let formula = |pos: Pos| {
+            sheet.formula(pos).map(|f| {
+                let bare = f.strip_prefix("of:=").unwrap_or(f);
+                parse(bare).map_or_else(
+                    |_| f.to_owned(),
+                    |expr| {
+                        let merged = spans(&expr, &|name| self.list.index_of(name));
+                        format!("of:={}", named_references(&merged, entries))
+                    },
+                )
+            })
+        };
         for row in 0..rows {
             let line = row + 1;
             for (col, letter) in [(0, 'A'), (1, 'B')] {
                 let (pos, cell) = (Pos::new(row, col), format!("{letter}{line}"));
-                if sheet.formula(pos) != again.formula(pos) {
+                if formula(pos).as_deref() != again.formula(pos) {
                     return Err(format!(
                         "{cell}'s formula is not the one its line promotes to"
                     ));
@@ -793,7 +815,12 @@ impl Tape {
         }
         let canonical =
             display::from_display(&format!("={typed}")).map_err(|e| Error::Formula(e.message))?;
-        Ok((name, canonical.trim_start_matches('=').to_owned(), money))
+        let canonical = canonical.trim_start_matches('=');
+        let canonical = parse(canonical).map_or_else(
+            |_| canonical.to_owned(),
+            |expr| spans(&expr, &|name| self.list.index_of(name)).to_string(),
+        );
+        Ok((name, canonical, money))
     }
 
     /// `expression` with every number respelled in OpenFormula's, `#n` as a reference to line n,
@@ -1134,6 +1161,56 @@ fn literals(expr: &Expr, out: &mut Vec<f64>) {
 }
 
 /// A number as typed, perhaps negated or a percentage: what promotion stores as a value.
+/// `expr` with every span between two lines — `[.B1]:[.B3]`, or a line's name at either end — as
+/// the one range it means, `[.B1:.B3]`: shown as `#1:#3`, and promoted as it stands.
+fn spans(expr: &Expr, line_named: &dyn Fn(&str) -> Option<usize>) -> Expr {
+    let go = |e: &Expr| Box::new(spans(e, line_named));
+    let row_of = |e: &Expr| match e {
+        Expr::Ref(r)
+            if r.end.is_none()
+                && r.source.is_none()
+                && r.start.sheet.is_none()
+                && r.start.col.is_some_and(|c| c.index == 1) =>
+        {
+            r.start.row
+        }
+        Expr::Name(name) => line_named(name).map(|i| crate::formula::lex::Axis {
+            index: u32::try_from(i).unwrap_or(u32::MAX),
+            absolute: false,
+        }),
+        _ => None,
+    };
+    match expr {
+        Expr::Binary(Op::Range, a, b) => match (row_of(a), row_of(b)) {
+            (Some(from), Some(to)) => {
+                let end = |row| crate::formula::lex::CellRef {
+                    col: Some(crate::formula::lex::Axis {
+                        index: 1,
+                        absolute: false,
+                    }),
+                    row: Some(row),
+                    ..Default::default()
+                };
+                Expr::Ref(crate::formula::lex::Reference {
+                    source: None,
+                    start: end(from),
+                    end: Some(end(to)),
+                })
+            }
+            _ => Expr::Binary(Op::Range, go(a), go(b)),
+        },
+        Expr::Call { name, args } => Expr::Call {
+            name: name.clone(),
+            args: args.iter().map(|a| spans(a, line_named)).collect(),
+        },
+        Expr::Prefix(op, e) => Expr::Prefix(*op, go(e)),
+        Expr::Postfix(op, e) => Expr::Postfix(*op, go(e)),
+        Expr::Binary(op, a, b) => Expr::Binary(*op, go(a), go(b)),
+        Expr::Paren(e) => Expr::Paren(go(e)),
+        _ => expr.clone(),
+    }
+}
+
 /// The first cell `expr` reads that is not a line of a tape — anything but column B of its own
 /// sheet — as A1.
 fn outside_the_tape(expr: &Expr) -> Option<String> {
@@ -1614,6 +1691,30 @@ mod read_back {
         let values = |t: &Tape| t.lines().into_iter().map(|l| l.value).collect::<Vec<_>>();
         assert_eq!(values(&back), values(&t));
         assert_eq!(back.lines()[1].text, "#1+2");
+    }
+
+    /// `#1:#3` is one range: shown so, and promoted as `[.B1:.B3]` even when line 1 has a name.
+    #[test]
+    fn a_span_of_lines_is_one_range() {
+        let t = tape(None, &["a = 1", "2", "SUM(#1:#2)", "SUM(a:#2)"]);
+        let texts: Vec<String> = t.lines().into_iter().map(|l| l.text).collect();
+        assert_eq!(texts[2..], ["SUM(#1:#2)", "SUM(#1:#2)"]);
+        let doc = t.promote().unwrap();
+        assert_eq!(
+            doc.sheets[0].formula(Pos::new(2, 1)),
+            Some("of:=SUM([.B1:.B2])")
+        );
+    }
+
+    /// A tape saved while a span was promoted as `name:[.B2]` still opens, as the one range.
+    #[test]
+    fn a_span_saved_the_old_way_reads_back_as_the_range() {
+        let t = tape(None, &["a = 1", "2", "SUM(#1:#2)"]);
+        let mut doc = t.promote().unwrap();
+        doc.sheets[0].set_formula(Pos::new(2, 1), "of:=SUM(a:[.B2])".into());
+        let back = Tape::from_sheet(&doc).unwrap();
+        assert_eq!(back.lines()[2].text, "SUM(#1:#2)");
+        assert_eq!(back.lines()[2].value, "3");
     }
 
     #[test]

@@ -55,6 +55,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- A span of tape lines, `SUM(#1:#3)`, is shown as typed rather than as `[.B1]:[.B3]`, and saved
+  as one range even when its first line has a name.
 - Zooming the spreadsheet in the browser (Ctrl+wheel, Ctrl+plus and minus) changes the size the
   cells are drawn at again, not only how many fit.
 - `PERCENTRANK` rounds to significant digits, as LibreOffice does: a small rank such as 0.00333
