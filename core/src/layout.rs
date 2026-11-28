@@ -402,11 +402,20 @@ impl Tabs {
     }
 
     /// The first stop past `x`: one of the paragraph's own, else the next whole interval past
-    /// both `x` and the last of its own. `None` when there is neither.
+    /// both `x` and the last of its own. `None` when there is neither. Left of the paragraph's
+    /// edge — a hanging first line — the edge is a stop too (`doc/odt-format.md` §5c fact 76).
     #[must_use]
     pub fn next(&self, x: f32) -> Option<TabStop> {
         const EPS: f32 = 1e-3;
-        if let Some(stop) = self.stops.iter().find(|stop| stop.position > x + EPS) {
+        let own = self.stops.iter().find(|stop| stop.position > x + EPS);
+        if x < -EPS && own.is_none_or(|stop| stop.position > EPS) {
+            return Some(TabStop {
+                position: 0.0,
+                align: TabAlign::Left,
+                leader: None,
+            });
+        }
+        if let Some(stop) = own {
             return Some(*stop);
         }
         if self.interval <= 0.0 {
@@ -1771,6 +1780,45 @@ mod tests {
             "the first line: 2 in, `a`, the tab to 4"
         );
         assert_eq!(layout.x_at(6), 4.0, "the second: `c` at 0, the tab to 4");
+    }
+
+    /// `doc/odt-format.md` §5c fact 76: on a first line hanging out of its paragraph, the
+    /// paragraph's edge is a stop too, in order with its own — a table of contents' number, its
+    /// tab, and the entry's text lined up with the lines below.
+    #[test]
+    fn a_hanging_first_line_tabs_to_the_paragraphs_edge() {
+        let right = stop(100.0, TabAlign::Right);
+        let with = |stops: Vec<TabStop>| Tabs {
+            stops,
+            interval: 0.0,
+        };
+        let entry = tabbed("15N\tText\t33", 0.0, -10.0, &with(vec![right]));
+        assert_eq!(entry.x_at(4), 0.0, "the text at the edge");
+        assert_eq!(entry.x_at(9), 98.0, "the page number against its stop");
+        let before = tabbed(
+            "N\tText",
+            0.0,
+            -10.0,
+            &with(vec![stop(-5.0, TabAlign::Left), right]),
+        );
+        assert_eq!(
+            before.x_at(2),
+            -5.0,
+            "a stop of its own before the edge comes first"
+        );
+        let after = tabbed(
+            "N\tText",
+            0.0,
+            -10.0,
+            &with(vec![stop(5.0, TabAlign::Left), right]),
+        );
+        assert_eq!(after.x_at(2), 0.0, "the edge comes before a stop past it");
+        let level = tabbed("N\tText", 0.0, 0.0, &with(vec![right]));
+        assert_eq!(
+            level.x_at(2),
+            96.0,
+            "a line that does not hang has no such stop"
+        );
     }
 
     #[test]

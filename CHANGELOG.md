@@ -21,6 +21,8 @@ lands, and the release workflow publishes the section as it stands.
   which could push what follows onto a page of its own.
 - A paragraph set to stay with the next one no longer moves to a page of its own, leaving a
   blank page, when the next one starts a new page anyway.
+- A table of contents from Word lines its entries' text up after the section number again,
+  instead of pushing it to the right with a row of dots.
 
 ## 0.3.0 — 2026-11-28
 

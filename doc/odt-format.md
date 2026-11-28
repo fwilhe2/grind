@@ -1248,6 +1248,15 @@ oracle turned out to be unable to answer the font questions (fact 4).
    page without its next one either way. The Legislation Act 2003 compilation on
    legislation.gov.au, three empty kept `Header` paragraphs before a new section's table of
    contents, is where it showed — a page with nothing on it.
+76. **A hanging first line tabs to the paragraph's edge** — `MEASURED` (2026-11-28, 26.8.3.1,
+   Liberation Serif 10 pt, `fo:margin-left="3cm" fo:text-indent="-1cm"`, so the first line
+   starts at −1 cm and the others at 0, read back with `pdftotext -bbox`). `N<tab>W<tab>33`
+   with one dotted right stop at 12 cm puts `W` at 0 and `33` against 12 cm; with a left stop of
+   its own at −0.5 cm, `W` at −0.5; with one at +1 cm, `W` at 0 still. So left of the edge the
+   edge is a left stop, in order with the paragraph's own. A table of contents in Word's shape
+   is made of this — a section number hanging out, a tab, the entry's text at the edge where
+   its later lines start, and a dotted tab to the page number: the Legislation Act 2003
+   compilation's `toc 5` entries.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on
