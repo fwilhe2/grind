@@ -15,6 +15,11 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- A chart can run the other way round: *Reverse Order* in the chart dialog, `--reversed` on
+  `grind sheet chart-add` and `chart-edit`, or the word `reversed` in *Change Chart*. A table
+  that lists its dates newest first, like a bank statement, is charted oldest to newest from
+  left to right on its own.
+
 ### Fixes
 
 ## 0.3.0 — 2026-11-28

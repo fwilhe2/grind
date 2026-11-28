@@ -156,6 +156,7 @@ pub fn restyle_chart(
             "y-grid" | "no-y-grid" => spec.y_axis.gridlines = !word.starts_with("no-"),
             "clockwise" => spec.clockwise = true,
             "anticlockwise" => spec.clockwise = false,
+            "reversed" | "no-reversed" => spec.reversed = !word.starts_with("no-"),
             "legend=none" => spec.legend = None,
             "legend=top" => spec.legend = Some(crate::ChartLegend::Top),
             "legend=bottom" => spec.legend = Some(crate::ChartLegend::Bottom),
@@ -180,6 +181,7 @@ pub fn restyle_chart(
                     .map_err(|e| e.to_string())?;
                 spec.categories = guessed.spec.categories;
                 spec.series = guessed.spec.series;
+                spec.reversed = guessed.spec.reversed;
             }
             _ if let Some((which @ ("title" | "x-title" | "y-title"), first)) =
                 word.split_once('=') =>
@@ -325,7 +327,7 @@ pub const CHART_HINT: &str =
 /// Every word [`restyle_chart`] takes.
 pub const CHART_WORDS: &str = "bar, line, pie, area, title=…, no-title, x-title=…, y-title=…, \
      legend=top|bottom|start|end|none, x-grid, y-grid, no-x-labels, color1=red|#0074d9|auto, \
-     clockwise, anticlockwise, width=12cm, height=8cm, range=A1:C9";
+     clockwise, anticlockwise, reversed, no-reversed, width=12cm, height=8cm, range=A1:C9";
 
 /// Move the chart at `index` so its top-left corner is at the active cell's, keeping its size, one
 /// undo step (`App::reshape_chart`). `place` is [`insert_chart`]'s. For a window that does not
@@ -614,6 +616,10 @@ mod tests {
         assert!(restyle_chart(&app, 0, 0, "color2=red").is_err());
         assert!(restyle_chart(&app, 0, 0, "color0=red").is_err());
         assert!(restyle_chart(&app, 0, 0, "color1=mauve").is_err());
+        restyle_chart(&app, 0, 0, "reversed").unwrap();
+        assert!(app.charts(0).unwrap()[0].reversed);
+        restyle_chart(&app, 0, 0, "no-reversed").unwrap();
+        assert!(!app.charts(0).unwrap()[0].reversed);
         restyle_chart(&app, 0, 0, "pie anticlockwise color1=#123456").unwrap();
         let pie = app.charts(0).unwrap()[0].clone();
         assert!(!pie.clockwise);

@@ -252,6 +252,12 @@ say "chart: an area chart of budget and actual"
 run chart-add "$book" --type area --categories A2:A7 --series B2:B7=B1 --series C2:C7=C1 \
   --legend bottom --x 27cm --y 30cm --width 12cm --height 8cm
 
+# A table listed newest first is drawn from the right, so time still runs left to right;
+# `--from` does that on its own when the dates run downwards, and `--reversed` says it by hand.
+say "chart: the same bars, drawn from the right"
+run chart-add "$book" --type bar --categories A2:A7 --series B2:B7=B1 --reversed true \
+  --x 40cm --y 30cm --width 10cm --height 8cm
+
 say "hide: a column or row by hand"
 run hide "$book" D
 sheet hide "$book"

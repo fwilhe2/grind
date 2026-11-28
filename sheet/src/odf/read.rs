@@ -162,12 +162,14 @@ struct PendingChart {
     /// separate table because it lives on `style:chart-properties`, not
     /// `style:graphic-properties`.
     display_labels: HashMap<String, bool>,
-    /// Name → `chart:reverse-direction` (rng:10064): a pie's direction (`doc/chart-format.md`,
-    /// Direction).
+    /// Name → `chart:reverse-direction` (rng:10064): a pie's direction, or which way the
+    /// categories run (`doc/chart-format.md`, Direction).
     reverse_directions: HashMap<String, bool>,
     /// What the y axis' own style said about its direction, if anything — `None` being "said
     /// nothing", which for a pie is LibreOffice's counter-clockwise.
     y_reversed: Option<bool>,
+    /// The same of the x axis' style: whether the categories run from the right.
+    x_reversed: bool,
     /// `chart:chart`'s own title and legend (rng:466, rng:475).
     title: Option<String>,
     legend: Option<crate::chart::Legend>,
@@ -199,6 +201,7 @@ impl Default for PendingChart {
             display_labels: HashMap::new(),
             reverse_directions: HashMap::new(),
             y_reversed: None,
+            x_reversed: false,
             title: None,
             legend: None,
             stacking: std::collections::HashSet::new(),
@@ -965,6 +968,7 @@ impl Context<Builder> for Frame {
                         main.display_labels = found.display_labels;
                         main.reverse_directions = found.reverse_directions;
                         main.y_reversed = found.y_reversed;
+                        main.x_reversed = found.x_reversed;
                         main.title = found.title;
                         main.legend = found.legend;
                         main.stacked = found.stacked;
@@ -1008,6 +1012,7 @@ impl Context<Builder> for Frame {
             title: pending.title,
             legend: pending.legend,
             stacked: pending.stacked,
+            reversed: pending.x_reversed && kind != crate::chart::ChartKind::Pie,
         };
         if let Some(range) = pending.in_cell
             && let Some(table) = b
@@ -1229,12 +1234,14 @@ impl Context<Builder> for ChartPlotArea {
                 {
                     dim.axis(pending).tick_labels = display;
                 }
-                if let AxisDim::Y = dim
-                    && let Some(pending) = &mut b.pending_chart
-                {
-                    pending.y_reversed = attrs
+                if let Some(pending) = &mut b.pending_chart {
+                    let reversed = attrs
                         .get(Ns::Chart, "style-name")
                         .and_then(|name| pending.reverse_directions.get(name).copied());
+                    match dim {
+                        AxisDim::X => pending.x_reversed = reversed == Some(true),
+                        AxisDim::Y => pending.y_reversed = reversed,
+                    }
                 }
                 Some(Box::new(ChartAxis { dim }) as Ctx)
             }

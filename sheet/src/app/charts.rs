@@ -200,6 +200,7 @@ impl App {
         chart.x_axis = spec.x_axis.clone();
         chart.y_axis = spec.y_axis.clone();
         chart.clockwise = spec.clockwise;
+        chart.reversed = spec.reversed;
         chart.title = spec
             .title
             .as_deref()

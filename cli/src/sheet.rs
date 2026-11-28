@@ -1255,6 +1255,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             categories,
             series,
             clockwise,
+            reversed,
             title,
             legend,
             sheet,
@@ -1299,6 +1300,9 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             if let Some(clockwise) = clockwise {
                 spec.clockwise = *clockwise;
             }
+            if let Some(reversed) = reversed {
+                spec.reversed = *reversed;
+            }
             if let Some(title) = title {
                 spec.title = Some(title.clone());
             }
@@ -1333,6 +1337,7 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             categories,
             series,
             clockwise,
+            reversed,
             title,
             legend,
             x_axis_label,
@@ -1364,6 +1369,9 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             }
             if let Some(clockwise) = clockwise {
                 spec.clockwise = *clockwise;
+            }
+            if let Some(reversed) = reversed {
+                spec.reversed = *reversed;
             }
             if let Some(title) = title {
                 // `App::edit_chart` reads an empty title as none.
@@ -1555,8 +1563,8 @@ fn axis(
 
 /// A chart's two axes, for one column of `chart-list` — the title if it has one, then a letter
 /// per thing switched on, so a chart that carries nothing prints `-` rather than a blank.
-/// `chart-list`'s last column: the chart's own title, its legend's position and a pie's
-/// direction — `title:Q1 legend:end`, or `-` for a chart with none of them.
+/// `chart-list`'s last column: the chart's own title, its legend's position and its direction —
+/// `title:Q1 legend:end reversed`, or `-` for a chart with none of them.
 fn dress(chart: &grind_sheet::Chart) -> String {
     let mut parts = Vec::new();
     if let Some(title) = &chart.title {
@@ -1574,6 +1582,9 @@ fn dress(chart: &grind_sheet::Chart) -> String {
             }
             .to_owned(),
         );
+    }
+    if chart.reversed && chart.kind != grind_sheet::ChartKind::Pie {
+        parts.push("reversed".to_owned());
     }
     if parts.is_empty() {
         "-".to_owned()
