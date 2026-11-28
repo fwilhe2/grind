@@ -2,7 +2,7 @@
     "name": "grind",
     "displayName": "grind",
     "description": "The grind language server for .grind projections and .rhai generator scripts: completion with documentation, hover, diagnostics on the right line, and the value every formula computes shown beside it.",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "publisher": "fwilhe2",
     "license": "AGPL-3.0-or-later",
     "repository": {
