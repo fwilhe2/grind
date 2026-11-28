@@ -194,9 +194,9 @@ gives it, rounded, so a LibreOffice row that is a hair over the default stays on
 width in terminal cells and its row grows to its tallest cell. Either way at most eight lines
 (`geom::MAX_LINES`); the rows drawn are those whose lines fit.
 
-**The grid.** No point mode while typing a formula — the offers and the signature band are built
-(`ui_tui/src/sheet/assist.rs`), and arrow keys building a reference into a half-typed formula are
-not, because that is a third editing mode rather than a read-out. No *standalone* filter UI: a
+**The grid.** While a formula is typed, the offers and the signature band show
+(`ui_tui/src/sheet/assist.rs`), the arrows point at a cell where a reference could go, and F4
+cycles a reference's `$` markers (`assist::cycle_absolute`). No *standalone* filter UI: a
 filter in the file folds its rows away, and nothing creates one on its own — `:format-table`
 does create one, as one facet of the composite it applies (`App::format_table`,
 `sheet/src/table_format.rs`), the same way the GTK shell's dialog does. Conditional

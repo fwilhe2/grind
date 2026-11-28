@@ -23,7 +23,7 @@ Spreadsheet:
   V  select the row   Ctrl+V  the column   Ctrl+A  everything the sheet uses
   While typing a formula: Tab accepts a completion, Up/Down pick one, Esc dismisses
   After `=`, an operator or `(` the arrows point at a cell and write its address (point mode);
-  they keep moving it until you type something else
+  they keep moving it until you type something else; F4 cycles its $ markers
   :bold  :italic  :underline  :strike  :wrap  :border  :plain
   :indent  :outdent       — one indent level in or out (> and < in Visual mode)
   :rotate 45|up|down|none — text turned anticlockwise; saved, drawn level here

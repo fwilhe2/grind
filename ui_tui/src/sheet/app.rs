@@ -1219,6 +1219,11 @@ impl App {
             self.refresh_assist();
             return;
         }
+        if code == KeyCode::F(4) {
+            self.cycle_absolute();
+            self.refresh_assist();
+            return;
+        }
         if !matches!(code, KeyCode::Enter) {
             self.point = None;
         }
@@ -1293,6 +1298,35 @@ impl App {
             cell,
         });
         true
+    }
+
+    /// F4: `B2` → `$B$2` → `B$2` → `$B2` → `B2`, on the reference being pointed at or the one
+    /// under the caret.
+    fn cycle_absolute(&mut self) {
+        let Mode::Insert { buf, cursor } = &mut self.mode else {
+            return;
+        };
+        let text: String = buf.iter().collect();
+        let at = self.point.as_ref().map_or(*cursor, |p| p.span.end);
+        let byte = |chars: usize| {
+            text.char_indices()
+                .nth(chars)
+                .map_or(text.len(), |(b, _)| b)
+        };
+        let Some((span, replacement)) =
+            grind_sheet::formula::assist::cycle_absolute(&text, byte(at))
+        else {
+            return;
+        };
+        let start = text[..span.start].chars().count();
+        let end = start + text[span].chars().count();
+        let replacement: Vec<char> = replacement.chars().collect();
+        let placed = start..start + replacement.len();
+        buf.splice(start..end, replacement);
+        *cursor = placed.end;
+        if let Some(point) = self.point.as_mut() {
+            point.span = placed;
+        }
     }
 
     /// Ask [`Assist`] what to offer for the buffer as it now stands — recomputed per keystroke,
@@ -4964,6 +4998,33 @@ mod tests {
                 assert_eq!(*cursor, 6);
             }
             _ => panic!("still editing"),
+        }
+    }
+
+    /// F4 cycles the `$` markers of the reference being pointed at, and of the one the caret is
+    /// at the end of; the pointed reference keeps moving afterwards.
+    #[test]
+    fn f4_cycles_absolute_markers() {
+        let text = |app: &App| match &app.mode {
+            Mode::Insert { buf, .. } => buf.iter().collect::<String>(),
+            _ => panic!("still editing"),
+        };
+        let mut app = app();
+        app.active = Pos::new(0, 0);
+        press(&mut app, KeyCode::Char('c'));
+        press(&mut app, KeyCode::Char('='));
+        press(&mut app, KeyCode::Down);
+        press(&mut app, KeyCode::F(4));
+        assert_eq!(text(&app), "=$A$2");
+        press(&mut app, KeyCode::Down);
+        assert_eq!(text(&app), "=A3", "a moved pointer writes a plain address");
+        press(&mut app, KeyCode::Char('+'));
+        for c in "B1".chars() {
+            press(&mut app, KeyCode::Char(c));
+        }
+        for expected in ["=A3+$B$1", "=A3+B$1", "=A3+$B1", "=A3+B1"] {
+            press(&mut app, KeyCode::F(4));
+            assert_eq!(text(&app), expected);
         }
     }
 
