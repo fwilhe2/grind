@@ -165,6 +165,22 @@ LibreOffice and grind name that error differently. **A tape has no file format o
 promotion is how one is kept, and a text file of lines piped into `grind calc` is how one is
 replayed.
 
+**Reading one back** (`Tape::open_file`, `open_bytes`) is the table above run backwards, and
+since nothing in the file says it was a tape, the test is the reading itself: a spreadsheet is a
+tape exactly when the lines read from it promote to the same cells. One sheet, under any name;
+values and formulas in A and B only, from row 1 with no gap; A a name or `#n`; B a number or a
+formula that reads only column B of its own sheet; a named range for every name and no other, over
+its own B cell; and B's number format the one its line promotes with. The first thing that does
+not hold is refused with its cell, as *not a tape: C1 holds something, and a tape is columns A
+and B*. A number's format gives its kind back — a percentage is typed as one again, a currency
+gets its code. A formula line keeps only its result's format, so which of its numbers carried a
+currency is read as the first that promotes the same: one number, then each in turn, then all
+(`5 EUR * 3`). `#1 + 2 EUR` comes back as `#1 + 2` when `#1` is euros already, since the two
+promote alike. Cached values are not read, the tape computes its own, and widths, fonts and fills
+are dropped: a tape has nowhere to keep them, which is why saving over the file it came from
+asks for `--force`. A tape LibreOffice opened and saved again reads back (measured, the pinned
+oracle, a currency, a percentage and a de-DE tape).
+
 ## 7. Where to reach it
 
 ```sh
@@ -175,6 +191,7 @@ grind calc                                                 # interactive, at a t
 grind calc … --locale de-DE
 grind calc … --extract '#3' 0.19 vat [--nth 2]             # prints the tape afterwards
 grind calc … --save tape.fods [--force]                    # promote
+grind calc --open tape.fods [<line>…]                      # a saved tape, lines added after it
 grind --format json calc …
 grind sheet extract book.fods B1 0.19 --to C1 --name vat [--nth 2]
 ```
@@ -193,7 +210,7 @@ into the control after every call.
 
 The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`,
 `:insert N <line>`, `:del N`, `:extract N <number> <name> [K]`, `:undo`, `:redo`,
-`:save <file> [!]`, `:help` and `:q`. A line that does not read is status 2. A refused save or
+`:save <file> [!]`, `:open <file> [!]`, `:help` and `:q`. A line that does not read is status 2. A refused save or
 extract is status 1. `doc/cli-parity-calc.md` maps every `Tape` method to its spelling.
 
 **The terminal shell** has a tape pane (`:tape`, or `grind-tui --tape`); `doc/tui-shell.md` has
@@ -211,7 +228,10 @@ Calculator…*, in its modal's frame (`doc/windows-shell.md` §4). **The Mac she
 - **A formula filled down a column**, on a sheet: extracting from one copy rewrites only that
   copy. The workbench says to refuse with the count; that check is not here yet.
 - **Array formulas and covered cells**, on a sheet: not refused by name.
-- **Reading a promoted sheet back as a tape.**
+- **Opening a saved tape in a window.** The CLI reads one back (§6); no graphical client has
+  the command yet.
+- **`#n:#m` is shown as `[.Bn]:[.Bm]`** on a tape, and promoted as `name:[.Bm]` when line n
+  has a name. The value is right, in grind and in LibreOffice; only the spelling is.
 - **Dates and times** on a tape: `2026-11-27` is a subtraction there, as in a formula.
 - **Tests not run here**: `promoted_tapes_are_valid_odf` skips without `jing` on `PATH`.
   `scripts/claude-vm.sh` has it.

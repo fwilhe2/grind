@@ -339,6 +339,7 @@ fn main() -> ExitCode {
     if let Top::Calc {
         lines,
         locale,
+        open,
         save,
         force,
         extract,
@@ -348,6 +349,7 @@ fn main() -> ExitCode {
         return calc::run(&calc::Options {
             lines,
             locale: locale.clone(),
+            open: open.as_deref(),
             save: save.as_deref(),
             force: *force,
             extract: extract.as_deref(),

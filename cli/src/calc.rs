@@ -12,12 +12,13 @@ use std::process::ExitCode;
 use grind_sheet::Tape;
 use grind_sheet::locale::Locale;
 
-use crate::failure::{REFUSED, USAGE};
+use crate::failure::{REFUSED, UNREADABLE, USAGE};
 use crate::report::Format;
 
 pub(crate) struct Options<'a> {
     pub lines: &'a [String],
     pub locale: Option<Locale>,
+    pub open: Option<&'a Path>,
     pub save: Option<&'a Path>,
     pub force: bool,
     pub extract: Option<&'a [String]>,
@@ -26,7 +27,16 @@ pub(crate) struct Options<'a> {
 }
 
 pub(crate) fn run(options: &Options) -> ExitCode {
-    let mut tape = Tape::new(options.locale.clone());
+    let mut tape = match options.open {
+        Some(path) => match Tape::open_file(path) {
+            Ok(tape) => tape,
+            Err(e) => {
+                eprintln!("grind calc: {}: {e}", path.display());
+                return ExitCode::from(UNREADABLE);
+            }
+        },
+        None => Tape::new(options.locale.clone()),
+    };
     let stdin = std::io::stdin();
     if options.lines.is_empty() && stdin.is_terminal() {
         return interactive(&mut tape, stdin.lock());
@@ -41,9 +51,10 @@ pub(crate) fn run(options: &Options) -> ExitCode {
     } else {
         options.lines.to_vec()
     };
+    let before = tape.len();
     for (i, line) in lines.iter().enumerate() {
         if let Err(e) = tape.push(line) {
-            eprintln!("grind calc: line {}: {e}", i + 1);
+            eprintln!("grind calc: line {}: {e}", before + i + 1);
             return ExitCode::from(USAGE);
         }
     }
@@ -85,6 +96,7 @@ A line is a formula without its leading =. #3 reads line 3; `vat = 0.19` names a
   :extract N <number> <name> [K] move a number in line N into a named line before it
   :undo  :redo
   :save <file> [!]               write the tape as a spreadsheet; ! overwrites
+  :open <file> [!]               read a tape saved so back; ! drops an unsaved one
   :q                             quit";
 
 fn interactive(tape: &mut Tape, input: impl BufRead) -> ExitCode {
@@ -202,6 +214,28 @@ fn command(tape: &mut Tape, line: &str, saved: &mut bool) -> Step {
                 Err(message) => Step::Refused(message),
             }
         }
+        "open" | "o" => {
+            let (file, force) = match args.strip_suffix('!') {
+                Some(file) => (file.trim(), true),
+                None => (args, false),
+            };
+            if file.is_empty() {
+                return Step::Refused(":open <file>".into());
+            }
+            if !*saved && len > 0 && !force {
+                return Step::Refused(format!(
+                    "the tape is not saved: :save <file>, or :open {file} ! to drop it"
+                ));
+            }
+            match Tape::open_file(Path::new(file)) {
+                Ok(opened) => {
+                    *tape = opened;
+                    *saved = true;
+                    Step::Show(rows(tape))
+                }
+                Err(e) => Step::Refused(format!("{file}: {e}")),
+            }
+        }
         _ => Step::Refused(format!("no command :{verb}; :help lists them")),
     }
 }
@@ -253,4 +287,36 @@ fn json(tape: &Tape) -> String {
         })
         .collect();
     serde_json::json!({ "lines": lines, "cycles": tape.cycles() }).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `:open` at the interactive tape: refused over unsaved lines without `!`, then the saved
+    /// tape replaces them, and a later `:q` needs no save.
+    #[test]
+    fn open_replaces_the_tape_and_guards_unsaved_lines() {
+        let path =
+            std::env::temp_dir().join(format!("grind-calc-open-{}.fods", std::process::id()));
+        let mut saved = Tape::new(None);
+        saved.push("a = 2").unwrap();
+        saved.push("a * 21").unwrap();
+        saved.save(&path).unwrap();
+
+        let mut tape = Tape::new(None);
+        let mut clean = true;
+        assert!(matches!(command(&mut tape, "5", &mut clean), Step::Show(_)));
+        let open = format!(":open {}", path.display());
+        assert!(matches!(
+            command(&mut tape, &open, &mut clean),
+            Step::Refused(_)
+        ));
+        let Step::Show(rows) = command(&mut tape, &format!("{open} !"), &mut clean) else {
+            panic!("not opened");
+        };
+        assert!(rows.contains("a = 2") && rows.contains("42"), "{rows}");
+        assert!(matches!(command(&mut tape, ":q", &mut clean), Step::Quit));
+        let _ = std::fs::remove_file(path);
+    }
 }

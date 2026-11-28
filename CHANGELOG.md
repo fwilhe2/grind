@@ -23,6 +23,10 @@ lands, and the release workflow publishes the section as it stands.
 - The browser version works on a phone: the bars scroll sideways, a finger scrolls the
   spreadsheet and two fingers zoom it, a second tap on a cell edits it, and the text page fits
   the screen and takes the phone's keyboard.
+- `grind calc --open` reads a tape saved with `--save` back into the scratch calculator,
+  even after LibreOffice opened and saved it, and adds the lines given after it; `:open` does
+  the same at the interactive tape. A spreadsheet that is not a saved tape is refused with
+  what makes it not one.
 - A Windows installer, `grind-X.Y.Z-x86_64.msi`: Grind in the Start menu and in *Open with*,
   `grind` and `grind-tui` on your `PATH`, for you alone and without an administrator. The next
   release's installer updates it in place, and *Installed apps* removes all of it.

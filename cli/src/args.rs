@@ -363,13 +363,18 @@ pub(crate) enum Top {
     /// With one line, prints its value; with several, one row per line. With no lines, reads them
     /// from standard input, or, at a terminal, starts an interactive tape (`:help` there lists its
     /// commands). --save writes the tape as a spreadsheet: one row per line, its name or #n in
-    /// column A and its number or formula in column B, every name a named range.
+    /// column A and its number or formula in column B, every name a named range. --open reads
+    /// such a spreadsheet back as the tape to start from; any other is refused, with the reason.
     Calc {
         /// The lines, in order
         lines: Vec<String>,
         /// How numbers are written, e.g. de-DE for 1.234,5
         #[arg(long, value_parser = crate::sheet::locale)]
         locale: Option<grind_sheet::locale::Locale>,
+        /// Start from a tape saved with --save; the lines given are added after it, and its
+        /// numbers are written the way the spreadsheet's own locale writes them
+        #[arg(long, value_name = "FILE", conflicts_with = "locale")]
+        open: Option<PathBuf>,
         /// Write the tape as a spreadsheet: .ods for a package, .grind for its projection, any
         /// other name one flat XML file
         #[arg(long, value_name = "FILE")]

@@ -179,6 +179,15 @@ const CURRENCIES: &[(&str, &str, u8)] = &[
 ];
 
 impl Currency {
+    /// Every currency there is a code for.
+    pub(crate) fn every() -> impl Iterator<Item = Currency> {
+        CURRENCIES.iter().map(|&(code, symbol, decimals)| Currency {
+            code,
+            symbol,
+            decimals,
+        })
+    }
+
     /// The currency an ISO code names, in any case, or one of the four symbols a keyboard may
     /// have: `€`, `$` (US dollars), `£`, `¥` (yen).
     pub(crate) fn named(word: &str) -> Option<Currency> {

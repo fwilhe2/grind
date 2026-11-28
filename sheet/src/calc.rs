@@ -523,6 +523,196 @@ impl Tape {
         Ok(doc)
     }
 
+    /// A promoted tape read back: the spreadsheet [`Tape::promote`] would write, or why `doc` is not
+    /// one. Nothing in a file says it was a tape, so this is the whole test: the lines it reads
+    /// promote to the same cells, names and number formats. Anything else a sheet holds — widths,
+    /// fonts, fills — a tape has nowhere to keep.
+    pub(crate) fn from_sheet(doc: &Document) -> Result<Tape> {
+        let not = |why: String| Error::Formula(format!("not a tape: {why}"));
+        let [sheet] = doc.sheets.as_slice() else {
+            return Err(not(format!(
+                "it has {} sheets, and a tape is one",
+                doc.sheets.len()
+            )));
+        };
+        let held = |pos: Pos| sheet.formula(pos).is_some() || sheet.get(pos) != CellValue::Empty;
+        let mut rows = 0;
+        for row in 0..sheet.used_rows() {
+            for col in 0..sheet.used_cols() {
+                let pos = Pos::new(row, col);
+                if !held(pos) {
+                    continue;
+                }
+                if col > 1 {
+                    return Err(not(format!(
+                        "{} holds something, and a tape is columns A and B",
+                        crate::a1::format(None, pos)
+                    )));
+                }
+                rows = rows.max(row + 1);
+            }
+        }
+        let mut tape = Tape::new(doc.locale.clone());
+        for row in 0..rows {
+            let line = row as usize + 1;
+            let (a, b) = (Pos::new(row, 0), Pos::new(row, 1));
+            let CellValue::Text(label) = sheet.get(a) else {
+                return Err(not(format!(
+                    "A{line} is not a name or #{line}, the label a tape writes"
+                )));
+            };
+            let name = if label == format!("#{line}") {
+                None
+            } else {
+                crate::validate_name(&label)
+                    .map_err(|_| not(format!("A{line}, {label}, is not a name")))?;
+                Some(label)
+            };
+            let (formula, money) = match (sheet.formula(b), sheet.get(b)) {
+                (Some(formula), _) => {
+                    let formula = formula.strip_prefix("of:=").unwrap_or(formula);
+                    let expr = parse(formula)
+                        .map_err(|_| not(format!("B{line}'s formula does not read")))?;
+                    if let Some(cell) = outside_the_tape(&expr) {
+                        return Err(not(format!(
+                            "B{line} reads {cell}, and a tape reads only its own lines"
+                        )));
+                    }
+                    let mut numbers = Vec::new();
+                    literals(&expr, &mut numbers);
+                    (formula.to_owned(), vec![None; numbers.len()])
+                }
+                (None, CellValue::Number(n)) => match sheet.format(b) {
+                    None => (shortest(n), vec![None]),
+                    Some(format) => {
+                        let kind = std::iter::once(Kind::Percent)
+                            .chain(Currency::every().map(Kind::Money))
+                            .find(|kind| kind.format(n, 15).as_ref() == Some(format))
+                            .ok_or_else(|| {
+                                not(format!("B{line}'s number format is not one a tape writes"))
+                            })?;
+                        if let Kind::Money(currency) = kind {
+                            (shortest(n), vec![Some(currency)])
+                        } else {
+                            let hundred: f64 = format!("{:.14e}", n * 100.0).parse().unwrap_or(0.0);
+                            (format!("{}%", shortest(hundred)), vec![None])
+                        }
+                    }
+                },
+                _ => {
+                    return Err(not(format!("B{line} is neither a number nor a formula")));
+                }
+            };
+            let at = tape.len();
+            tape.list
+                .insert(at, name.as_deref(), &formula)
+                .map_err(|e| not(format!("line {line}: {e}")))?;
+            tape.money.push(money);
+        }
+        tape.read_kinds(sheet);
+        tape.same_as(doc, sheet, rows).map_err(not)?;
+        Ok(tape)
+    }
+
+    /// Where a formula line's format is a currency its kind does not come to by itself, some of
+    /// its numbers were typed in that currency. Promotion keeps only the line's format, so the
+    /// first reading that gives it back is taken: one number in it, then each in turn, then all.
+    fn read_kinds(&mut self, sheet: &crate::model::Sheet) {
+        for i in 0..self.len() {
+            let b = Pos::new(u32::try_from(i).unwrap_or(u32::MAX), 1);
+            let count = self.money[i].len();
+            let (Some(_), Some(wanted)) = (sheet.formula(b), sheet.format(b)) else {
+                continue;
+            };
+            if count == 0 || self.shown_format(i).as_ref() == Some(wanted) {
+                continue;
+            }
+            let Some(currency) = Currency::every().find(|c| &c.format() == wanted) else {
+                continue;
+            };
+            let readings = (0..count)
+                .map(|k| {
+                    let mut typed = vec![None; count];
+                    typed[k] = Some(currency);
+                    typed
+                })
+                .chain(std::iter::once(vec![Some(currency); count]));
+            for typed in readings {
+                self.money[i] = typed;
+                if self.shown_format(i).as_ref() == Some(wanted) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /// The format line `i` is promoted in, as the tape now reads it.
+    fn shown_format(&self, i: usize) -> Option<crate::numfmt::Format> {
+        let kind = *self.kinds()[i].as_ref().ok()?;
+        self.format(i, kind, &self.list.values()[i])
+    }
+
+    /// Why promoting this tape would not give `doc` back, or nothing when it would.
+    fn same_as(
+        &self,
+        doc: &Document,
+        sheet: &crate::model::Sheet,
+        rows: u32,
+    ) -> std::result::Result<(), String> {
+        let promoted = self.promote().map_err(|e| e.to_string())?;
+        let again = &promoted.sheets[0];
+        for row in 0..rows {
+            let line = row + 1;
+            for (col, letter) in [(0, 'A'), (1, 'B')] {
+                let (pos, cell) = (Pos::new(row, col), format!("{letter}{line}"));
+                if sheet.formula(pos) != again.formula(pos) {
+                    return Err(format!(
+                        "{cell}'s formula is not the one its line promotes to"
+                    ));
+                }
+                if sheet.formula(pos).is_none() && sheet.get(pos) != again.get(pos) {
+                    return Err(format!("{cell} is not what its line promotes to"));
+                }
+                if sheet.format(pos) != again.format(pos) {
+                    return Err(format!(
+                        "{cell}'s number format is not the one its line has"
+                    ));
+                }
+            }
+        }
+        let named = |names: &std::collections::BTreeMap<String, String>, sheet_name: &str| {
+            names
+                .iter()
+                .map(|(name, target)| (name.clone(), named_row(target, sheet_name)))
+                .collect::<Vec<_>>()
+        };
+        let (have, want) = (
+            named(&doc.names, &sheet.name),
+            named(&promoted.names, &again.name),
+        );
+        if have != want {
+            let stray = have
+                .iter()
+                .find(|entry| !want.contains(entry))
+                .map_or_else(String::new, |(name, _)| format!(": {name}"));
+            return Err(format!(
+                "its named ranges are not the names its lines have{stray}"
+            ));
+        }
+        Ok(())
+    }
+
+    /// A saved tape, from a file in any form a spreadsheet is read from; refused, with the reason,
+    /// when it is not one: the lines read from it must promote to the same cells.
+    pub fn open_file(path: &Path) -> Result<Tape> {
+        Tape::from_sheet(&crate::read_file(path)?)
+    }
+
+    /// [`Tape::open_file`] from bytes.
+    pub fn open_bytes(bytes: &[u8]) -> Result<Tape> {
+        Tape::from_sheet(&crate::read_bytes("tape", bytes)?)
+    }
+
     /// [`Tape::promote`], written: `.ods` a package, `.grind` the projection, anything else flat.
     pub fn save(&self, path: &Path) -> Result<()> {
         let app = App::new();
@@ -944,6 +1134,51 @@ fn literals(expr: &Expr, out: &mut Vec<f64>) {
 }
 
 /// A number as typed, perhaps negated or a percentage: what promotion stores as a value.
+/// The first cell `expr` reads that is not a line of a tape — anything but column B of its own
+/// sheet — as A1.
+fn outside_the_tape(expr: &Expr) -> Option<String> {
+    let here = |r: &crate::formula::lex::CellRef| {
+        r.sheet.is_none() && r.col.is_some_and(|c| c.index == 1) && r.row.is_some()
+    };
+    match expr {
+        Expr::Ref(r) => {
+            let inside = r.source.is_none() && here(&r.start) && r.end.as_ref().is_none_or(here);
+            (!inside).then(|| {
+                let at = |c: &crate::formula::lex::CellRef| {
+                    crate::a1::format(
+                        c.sheet.as_deref(),
+                        Pos::new(c.row.map_or(0, |a| a.index), c.col.map_or(0, |a| a.index)),
+                    )
+                };
+                match &r.end {
+                    Some(end) => format!("{}:{}", at(&r.start), at(end)),
+                    None => at(&r.start),
+                }
+            })
+        }
+        Expr::Call { args, .. } => args.iter().find_map(outside_the_tape),
+        Expr::Prefix(_, e) | Expr::Postfix(_, e) | Expr::Paren(e) => outside_the_tape(e),
+        Expr::Binary(_, a, b) => outside_the_tape(a).or_else(|| outside_the_tape(b)),
+        _ => None,
+    }
+}
+
+/// The row a named range promotion wrote covers, from `[$Sheet.$B$n]`, the sheet's name quoted or
+/// not; `None` for anything else.
+fn named_row(target: &str, sheet: &str) -> Option<u32> {
+    let inner = target.strip_prefix("[$")?.strip_suffix(']')?;
+    let quoted = format!("'{}'", sheet.replace('\'', "''"));
+    let rest = inner
+        .strip_prefix(&quoted)
+        .or_else(|| inner.strip_prefix(sheet))?;
+    rest.strip_prefix(".$B$")?.parse().ok()
+}
+
+/// The shortest spelling of `n` that reads back as `n`.
+fn shortest(n: f64) -> String {
+    format!("{n}")
+}
+
 fn is_input(expr: &Expr) -> bool {
     match expr {
         Expr::Number(_) => true,
@@ -1309,5 +1544,142 @@ mod tests {
         assert_eq!(shown(1).as_deref(), Some("1,200.00\u{a0}€"));
         assert_eq!(shown(2).as_deref(), Some("228.00\u{a0}€"));
         assert_eq!(shown(3), None);
+    }
+}
+
+#[cfg(test)]
+mod read_back {
+    use super::*;
+    use crate::locale::Locale;
+
+    fn tape(locale: Option<&str>, lines: &[&str]) -> Tape {
+        let mut t = Tape::new(locale.and_then(Locale::parse));
+        for l in lines {
+            t.push(l).unwrap();
+        }
+        t
+    }
+
+    fn written(doc: Document, form: Form) -> Document {
+        let app = App::new();
+        app.open_document(doc).unwrap();
+        crate::read_bytes("tape", &app.save_bytes(form).unwrap()).unwrap()
+    }
+
+    fn shown(t: &Tape) -> Vec<(String, String)> {
+        t.lines().into_iter().map(|l| (l.text, l.value)).collect()
+    }
+
+    /// The same document, changed by `change`, read as a tape: the reason it is not one.
+    fn refused(change: impl FnOnce(&mut Document)) -> String {
+        let mut doc = tape(None, &["vat = 0.19", "net = 1200 EUR", "net * (1 + vat)"])
+            .promote()
+            .unwrap();
+        change(&mut doc);
+        Tape::from_sheet(&doc).unwrap_err().to_string()
+    }
+
+    use grind_core::Form;
+
+    #[test]
+    fn every_kind_of_line_reads_back_from_either_form_as_it_was_typed() {
+        let tapes = [
+            tape(
+                None,
+                &["vat = 0.19", "net = 1200", "net * (1 + vat)", "#3 / 12"],
+            ),
+            tape(
+                None,
+                &["rent = 950 EUR", "fees = 12.5%", "rent * (1 + fees)", "-3"],
+            ),
+            tape(None, &["5 EUR * 3", "#1 + 2", "SUM(#1:#2)", "\"done\""]),
+            tape(Some("de-DE"), &["preis = 1,5", "preis * 2", "#2 / 3"]),
+            tape(None, &["1e21", "0.1 + 0.2", "x = 7%", "x * 100"]),
+        ];
+        for t in tapes {
+            for form in [Form::Flat, Form::Package] {
+                let back = Tape::from_sheet(&written(t.promote().unwrap(), form)).unwrap();
+                assert_eq!(shown(&back), shown(&t), "{form:?}");
+                assert_eq!(back.locale, t.locale);
+            }
+        }
+    }
+
+    /// `#1 + 2 EUR` promotes as `#1 + 2` would when `#1` is euros already: the same cells, and
+    /// so the same tape, shown the shorter way.
+    #[test]
+    fn a_currency_the_line_has_anyway_reads_back_unspelled() {
+        let t = tape(None, &["5 EUR", "#1 + 2 EUR"]);
+        let back = Tape::from_sheet(&written(t.promote().unwrap(), Form::Flat)).unwrap();
+        let values = |t: &Tape| t.lines().into_iter().map(|l| l.value).collect::<Vec<_>>();
+        assert_eq!(values(&back), values(&t));
+        assert_eq!(back.lines()[1].text, "#1+2");
+    }
+
+    #[test]
+    fn a_renamed_sheet_is_still_a_tape() {
+        let t = tape(None, &["a = 1", "a + 1"]);
+        let mut doc = t.promote().unwrap();
+        doc.sheets[0].name = "Quote".to_owned();
+        doc.names.insert("a".to_owned(), "[$Quote.$B$1]".to_owned());
+        assert_eq!(shown(&Tape::from_sheet(&doc).unwrap()), shown(&t));
+    }
+
+    /// What a case does to a promoted tape.
+    type Change = Box<dyn FnOnce(&mut Document)>;
+
+    #[test]
+    fn a_sheet_a_tape_would_not_write_says_why_it_is_not_one() {
+        let cases: [(&str, Change); 9] = [
+            (
+                "C2 holds something",
+                Box::new(|d| d.sheets[0].set(Pos::new(1, 2), CellValue::Number(1.0))),
+            ),
+            (
+                "A4 is not a name or #4",
+                Box::new(|d| d.sheets[0].set(Pos::new(4, 1), CellValue::Number(1.0))),
+            ),
+            (
+                "B3 reads A1",
+                Box::new(|d| d.sheets[0].set_formula(Pos::new(2, 1), "of:=[.A1]*2".into())),
+            ),
+            (
+                "B3 reads Other.B1",
+                Box::new(|d| {
+                    d.sheets[0].set_formula(Pos::new(2, 1), "of:=[$Other.B1]*2".into());
+                }),
+            ),
+            (
+                "it has 2 sheets",
+                Box::new(|d| d.sheets.push(crate::model::Sheet::new("Other"))),
+            ),
+            (
+                "B1 is neither a number nor a formula",
+                Box::new(|d| d.sheets[0].set(Pos::new(0, 1), CellValue::Text("x".into()))),
+            ),
+            (
+                "A2, net total, is not a name",
+                Box::new(|d| d.sheets[0].set(Pos::new(1, 0), CellValue::Text("net total".into()))),
+            ),
+            (
+                "its named ranges are not the names its lines have: tax",
+                Box::new(|d| {
+                    d.names.insert("tax".into(), "[$Sheet1.$B$3]".into());
+                }),
+            ),
+            (
+                "B2's number format is not one a tape writes",
+                Box::new(|d| {
+                    let format = Kind::Percent.format(0.5, 15).unwrap();
+                    d.sheets[0].set_format(Pos::new(1, 1), format);
+                    d.sheets[0].set(Pos::new(1, 1), CellValue::Number(0.123_456));
+                }),
+            ),
+        ];
+        for (why, change) in cases {
+            let said = refused(change);
+            assert!(said.starts_with("not a tape: "), "{said}");
+            assert!(said.contains(why), "wanted {why:?}, got {said:?}");
+        }
     }
 }

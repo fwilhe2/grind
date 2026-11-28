@@ -3012,6 +3012,42 @@ fn calc_evaluates_lines_and_saves_them_as_a_spreadsheet() {
     assert!(!circle.exists());
 }
 
+/// `grind calc --open`: a saved tape comes back as its lines, with lines added after it, and a
+/// spreadsheet that is not one is status 3 with the reason.
+#[test]
+fn calc_opens_a_saved_tape_and_refuses_another_spreadsheet() {
+    let dir = Sandbox::new("calc-open");
+    let tape = dir.path("quote.ods");
+    ok_top(&[
+        "calc",
+        "rent = 950 EUR",
+        "fees = 12.5%",
+        "rent * (1 + fees)",
+        "--save",
+        &s(&tape),
+    ]);
+    let rows = ok_top(&["calc", "--open", &s(&tape), "#3 * 12"]);
+    assert!(rows.contains("#1   rent = 950 EUR"), "{rows}");
+    assert!(rows.contains("#2   fees = 12.5%"), "{rows}");
+    assert!(
+        rows.contains("#4   #3*12") && rows.contains("12,825.00"),
+        "{rows}"
+    );
+
+    let book = s(&dir.path("book.fods"));
+    ok(&["new", &book]);
+    ok(&["set", &book, "A1", "label"]);
+    ok(&["set", &book, "B1", "1"]);
+    ok(&["set", &book, "C1", "2"]);
+    let refused = grind(&["calc", "--open", &book]);
+    assert_eq!(refused.status.code(), Some(3));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("not a tape: C1 holds something"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+}
+
 #[test]
 fn extract_moves_a_number_into_a_named_cell() {
     let dir = Sandbox::new("extract");

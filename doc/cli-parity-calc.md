@@ -30,6 +30,8 @@ of `grind_sheet::Tape` appears below once, with the `grind calc` spelling that r
 - `redo` — `:redo` at the interactive tape
 - `promote` — `grind calc … --save <file>`, which writes what it returns
 - `save` — `grind calc … --save <file> [--force]`, or `:save <file> [!]`
+- `open_file` — `grind calc --open <file> [<line>…]`, or `:open <file> [!]`
+- `open_bytes` — `grind calc --open <file>`, which reads the file's bytes the same way
 
 ## Beyond `App`
 
