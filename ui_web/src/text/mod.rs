@@ -28,7 +28,7 @@ use grind_text::{App, BlockKind, BlockView, Caret, Form, loc};
 use wasm_bindgen::prelude::*;
 use web_sys::{
     CompositionEvent, Document, Element, Event, HtmlDialogElement, HtmlElement, HtmlInputElement,
-    HtmlTextAreaElement, KeyboardEvent, MouseEvent,
+    HtmlTextAreaElement, InputEvent, KeyboardEvent, MouseEvent, PointerEvent,
 };
 
 use crate::command::Entry;
@@ -50,6 +50,9 @@ struct Dom {
     pane: HtmlElement,
     /// The text column inside it: its width is the measure every line is broken at.
     flow: HtmlElement,
+    /// What a touch screen's keyboard types into: a phone shows its keyboard only for an
+    /// editable element, and the pane is a `<div>`.
+    typing: HtmlTextAreaElement,
     message: HtmlElement,
     summary: HtmlElement,
 }
@@ -60,6 +63,7 @@ impl Dom {
             document: document.clone(),
             pane: element(document, "page")?,
             flow: element(document, "flow")?,
+            typing: element(document, "typing")?,
             message: element(document, "message")?,
             summary: element(document, "summary")?,
         })
@@ -81,6 +85,8 @@ pub struct Ui {
     editor: RefCell<Editor>,
     /// Whether the pointer is down and dragging out a selection.
     dragging: Cell<bool>,
+    /// Whether the last press was a finger, so the keyboard goes to [`Dom::typing`].
+    touch: Cell<bool>,
     /// Whether the bookmark anchors are drawn — `doc/view-modes.md` §3.6. Presentation
     /// state: it is a reading of the document rather than a change to it.
     names: Cell<bool>,
@@ -113,6 +119,7 @@ impl Ui {
             paged: RefCell::new(None),
             editor: RefCell::default(),
             dragging: Cell::new(false),
+            touch: Cell::new(false),
             names: Cell::new(false),
             images: RefCell::new(HashMap::new()),
             alt_at: Cell::new(None),
@@ -124,8 +131,14 @@ impl Ui {
         Ok(ui)
     }
 
+    /// The pane takes the keyboard, or after a finger's press the field a phone's keyboard
+    /// types into.
     pub fn focus(&self) -> Result<(), JsValue> {
-        self.dom.pane.focus()
+        if self.touch.get() {
+            self.dom.typing.focus()
+        } else {
+            self.dom.pane.focus()
+        }
     }
 
     /// A document arrived: into the core, and the presentation state a new one resets.
@@ -203,7 +216,9 @@ impl Ui {
             0 => UNMEASURED,
             width => f64::from(width),
         };
-        paged.place(PAGE_SCALE, width);
+        // Never wider than the window: a narrow one, a phone's, shows the page whole and smaller.
+        let scale = paged.fitting(PAGE_SCALE, width);
+        paged.place(scale, width);
         let (strip_width, strip_height) = paged.size();
         let flow = &self.dom.flow;
         let style = flow.style();
@@ -216,7 +231,7 @@ impl Ui {
                 height => f64::from(height),
             };
         let ratio = web_sys::window().map_or(1.0, |window| window.device_pixel_ratio());
-        paged.draw(&self.dom.document, flow, (top, bottom), PAGE_SCALE, ratio)?;
+        paged.draw(&self.dom.document, flow, (top, bottom), scale, ratio)?;
 
         for old in ["marks", "reader"] {
             if let Some(old) = self.dom.document.get_element_by_id(old) {
@@ -308,6 +323,12 @@ impl Ui {
             && let Some([x, y, h, _]) = paged.spot(caret)
         {
             mark("caret paged", [x, y, 0.0, h])?.set_id("caret");
+            // The keyboard's field sits on the caret, so an input method's word is shown there.
+            let keys = self.dom.typing.style();
+            let (left, top) = (self.dom.flow.offset_left(), self.dom.flow.offset_top());
+            keys.set_property("left", &format!("{}px", f64::from(left) + x))?;
+            keys.set_property("top", &format!("{}px", f64::from(top) + y))?;
+            keys.set_property("height", &format!("{h}px"))?;
         }
         if let Some(blocks) = paged.blocks(top, bottom) {
             // A picture's way to its alt text: a chip over its corner, quiet once it has some.
@@ -1104,7 +1125,7 @@ impl Ui {
     /// Select the hit that starts at `from`, so typing over it replaces it.
     fn select_hit(&self, from: Caret, needle: &str) {
         self.select(from, find::end_of(from, needle));
-        let _ = self.dom.pane.focus();
+        let _ = self.focus();
     }
 
     /// F3 and Shift+F3: the next or previous occurrence of the remembered word, wrapping at
@@ -1238,7 +1259,7 @@ impl Ui {
             block: index,
             offset: 0,
         });
-        let _ = self.dom.pane.focus();
+        let _ = self.focus();
     }
 
     // --- formatting ---
@@ -1560,6 +1581,7 @@ impl Ui {
     /// Where a click landed: the line carries its address, and the core's layout answers the
     /// offset. `extend` is Shift held, or the pointer still down from a press.
     fn on_click(&self, event: &MouseEvent, extend: bool) -> Result<(), JsValue> {
+        self.focus()?;
         let Some(caret) = self.caret_at(event)? else {
             return Ok(());
         };
@@ -1567,7 +1589,7 @@ impl Ui {
             editor.place(caret, extend);
             Ok(())
         });
-        self.dom.pane.focus()
+        Ok(())
     }
 
     /// The caret a pointer position names, or `None` when it landed on nothing — the gap
@@ -1652,6 +1674,69 @@ fn chip_caret(at: &str) -> Option<Caret> {
     })
 }
 
+/// A touch screen's keyboard, through [`Dom::typing`]. Its keys that have a name arrive as
+/// `keydown` and reach the pane's keymap by bubbling; what it types is mostly only `beforeinput`,
+/// which is answered here in the same keymap's words. A word an input method is composing stays
+/// in the field, on the caret, until `compositionend` types it (the pane's listener) and it is
+/// emptied.
+fn wire_keyboard(ui: &Rc<Ui>) -> Result<(), JsValue> {
+    let typed = ui.clone();
+    listen(&ui.dom.typing, "beforeinput", move |event: InputEvent| {
+        if event.is_composing() {
+            return;
+        }
+        let kind = event.input_type();
+        let (key, primary, shift) = match kind.as_str() {
+            "insertText" | "insertReplacementText" => {
+                event.prevent_default();
+                if let Some(text) = event.data().filter(|text| !text.is_empty()) {
+                    typed.type_text(&text);
+                }
+                return;
+            }
+            "insertParagraph" => ("Enter", false, false),
+            "insertLineBreak" => ("Enter", false, true),
+            "deleteContentBackward" => ("Backspace", false, false),
+            "deleteContentForward" => ("Delete", false, false),
+            "deleteWordBackward" => ("Backspace", true, false),
+            "deleteWordForward" => ("Delete", true, false),
+            _ => return,
+        };
+        event.prevent_default();
+        let chord = Chord {
+            key,
+            primary,
+            shift,
+            composing: false,
+        };
+        if let Some(action) = keymap::action_for(&chord)
+            && let Err(error) = typed.apply(action)
+        {
+            web_sys::console::error_1(&error);
+        }
+    })?;
+    let keys = ui.dom.typing.clone();
+    listen(
+        &ui.dom.typing,
+        "compositionend",
+        move |_: CompositionEvent| {
+            keys.set_value("");
+        },
+    )?;
+    // Whatever got past `beforeinput` without a composition — a browser that cannot cancel it.
+    let leftover = ui.clone();
+    listen(&ui.dom.typing, "input", move |event: InputEvent| {
+        if event.is_composing() {
+            return;
+        }
+        let text = leftover.dom.typing.value();
+        leftover.dom.typing.set_value("");
+        if !text.is_empty() {
+            leftover.type_text(&text);
+        }
+    })
+}
+
 fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
     let keys = ui.clone();
     listen(&ui.dom.pane, "keydown", move |event: KeyboardEvent| {
@@ -1679,6 +1764,12 @@ fn wire(ui: &Rc<Ui>) -> Result<(), JsValue> {
             composed.on_composed(&event.data().unwrap_or_default());
         },
     )?;
+
+    let pressed = ui.clone();
+    listen(&ui.dom.pane, "pointerdown", move |event: PointerEvent| {
+        pressed.touch.set(event.pointer_type() != "mouse");
+    })?;
+    wire_keyboard(ui)?;
 
     // One listener for the whole flow rather than one per line: the lines are rebuilt every
     // frame, and a listener each would be a listener each frame.

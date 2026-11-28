@@ -20,6 +20,9 @@ lands, and the release workflow publishes the section as it stands.
 - An Ansible role installs the latest released desktop apps and the `grind` command on
   Debian, Ubuntu, Fedora, RHEL and openSUSE, and upgrades them when a new release comes out
   (`ansible-galaxy collection install 'git+https://github.com/fwilhe2/grind.git#/packaging/ansible,main'`).
+- The browser version works on a phone: the bars scroll sideways, a finger scrolls the
+  spreadsheet and two fingers zoom it, a second tap on a cell edits it, and the text page fits
+  the screen and takes the phone's keyboard.
 - A Windows installer, `grind-X.Y.Z-x86_64.msi`: Grind in the Start menu and in *Open with*,
   `grind` and `grind-tui` on your `PATH`, for you alone and without an administrator. The next
   release's installer updates it in place, and *Installed apps* removes all of it.

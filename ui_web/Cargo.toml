@@ -77,6 +77,8 @@ features = [
   "HtmlTextAreaElement",
   # A page of the print preview, put onto its canvas.
   "ImageData",
+  # A touch screen's keyboard typing into the text pane.
+  "InputEvent",
   "KeyboardEvent",
   "Location",
   # `prefers-color-scheme`, which a document's own colours are made to read against (`ink.rs`).
@@ -84,6 +86,8 @@ features = [
   "MouseEvent",
   "Navigator",
   "Node",
+  # Which kind of pointer pressed, and fingers scrolling and pinching the grid.
+  "PointerEvent",
   # A write to the server that served the page, and nowhere else (`server.rs`).
   "RequestInit",
   "Response",

@@ -100,6 +100,21 @@ decides it, the same in every shell, and the crate's `xlsx` feature compiles it 
 picker lists `.docx`, `.docm` and `.dotx`, the message line says the report, and the download is
 `letter.fodt` — `grind-open` again, behind the crate's `docx` feature.
 
+**On a phone** the same page works by touch. Below 40rem every bar stays one line and scrolls
+sideways under a finger, *Commands* held in view at the app bar's end, since the palette is
+the way to every command with no keyboard; the shortcut hints and the wordmark go. Where the
+pointer is coarse, buttons and fields are 2.5rem tall and inputs 16px, so the browser does not
+zoom in on focus. **The grid** takes fingers as pointer events (`sheet/touch.rs`): one drags it a
+whole row or column at a time, counted against the tracks' real sizes, and two pinch the same
+zoom Ctrl+wheel sets. Pointer events with capture rather than touch events, because a repaint
+replaces the cell under the finger and a touch stays with the element it began on. A tap is
+the browser's own click; a second tap on the selected cell edits it, as a double-click does.
+**The text page** is never wider than the window (`grind_print::strip::fit_width`, asked of
+the print module), and a finger's tap focuses `#typing`, a transparent textarea kept on the caret,
+because a phone shows its keyboard only for an editable element. Named keys still reach the
+pane's keymap as `keydown`; typed text arrives as `beforeinput` and is answered in the same
+keymap's words; an input method's word stays visible in the field until `compositionend` types it.
+
 ## What it does not do
 
 Deferred by decision, not omission. Everything here is reachable from the CLI (R9).

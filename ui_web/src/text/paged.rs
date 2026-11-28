@@ -85,6 +85,14 @@ impl Paged {
         }
     }
 
+    /// `scale`, or less where the widest page would not fit a view `width` wide.
+    pub fn fitting(&self, scale: f64, width: f64) -> f64 {
+        call(&self.pages, "fitting", &[scale.into(), width.into()])
+            .ok()
+            .and_then(|scale| scale.as_f64())
+            .unwrap_or(scale)
+    }
+
     /// Place the pages at `scale` CSS pixels per point in a view `width` wide.
     pub fn place(&self, scale: f64, width: f64) {
         let _ = call(&self.pages, "place", &[scale.into(), width.into()]);

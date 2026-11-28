@@ -208,6 +208,22 @@ impl PageView {
         self.shown = Shown::new(self.shown.set.clone(), scale, width);
     }
 
+    /// `scale`, or less where the widest page would not fit a view `width` pixels wide.
+    #[must_use]
+    pub fn fitting(&self, scale: f64, width: f64) -> f64 {
+        let widest = self
+            .shown
+            .set
+            .pages
+            .iter()
+            .map(|page| f64::from(page.width))
+            .fold(0.0, f64::max);
+        if widest == 0.0 {
+            return scale;
+        }
+        scale * grind_print::strip::fit_width(widest, width, scale).min(1.0)
+    }
+
     #[must_use]
     pub fn count(&self) -> usize {
         self.shown.set.pages.len()
@@ -319,6 +335,11 @@ impl Pages {
 
     pub fn place(&mut self, scale: f64, width: f64) {
         self.0.place(scale, width);
+    }
+
+    #[must_use]
+    pub fn fitting(&self, scale: f64, width: f64) -> f64 {
+        self.0.fitting(scale, width)
     }
 
     #[must_use]

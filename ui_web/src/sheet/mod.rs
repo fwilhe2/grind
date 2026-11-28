@@ -14,6 +14,7 @@ mod filter_ui;
 mod grab;
 pub mod keymap;
 mod layout;
+mod touch;
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -34,7 +35,7 @@ use grind_sheet::{App, CellValue, ChartKind, Filter, Form, Pos, RecalcMode, a1, 
 use wasm_bindgen::prelude::*;
 use web_sys::{
     Document, Element, Event, HtmlButtonElement, HtmlElement, HtmlInputElement, KeyboardEvent,
-    MouseEvent, WheelEvent,
+    MouseEvent, PointerEvent, WheelEvent,
 };
 
 use crate::command::Entry;
@@ -161,6 +162,11 @@ pub struct Ui {
     editing: Cell<bool>,
     /// Whether the pointer is down and dragging a rectangle out.
     dragging: Cell<bool>,
+    /// Whether the last press was a finger: a tap on the cell already selected edits it.
+    touch: Cell<bool>,
+    /// The fingers on the grid by pointer id, and what they are doing (`touch.rs`).
+    fingers: RefCell<Vec<(i32, (f64, f64))>>,
+    gesture: Cell<Option<touch::Gesture>>,
     /// A column header's right edge being dragged to size the column; the document is written
     /// once, when the button comes up.
     sizing: Cell<Option<Sizing>>,
@@ -219,6 +225,9 @@ impl Ui {
             scroll: Cell::new(Pos::new(0, 0)),
             editing: Cell::new(false),
             dragging: Cell::new(false),
+            touch: Cell::new(false),
+            fingers: RefCell::new(Vec::new()),
+            gesture: Cell::new(None),
             sizing: Cell::new(None),
             assist: RefCell::new(assist::Assist::default()),
             overlays: Cell::new(grind_sheet::view::Overlays::NONE),
@@ -2989,7 +2998,10 @@ impl Ui {
         if self.editing.get() {
             self.commit(None)?;
         }
-        if event.detail() >= 2 {
+        // A finger has no double-click to spare: its second tap on a cell is the same.
+        if event.detail() >= 2 || (self.touch.get() && self.selection.get() == Selection::at(pos)) {
+            // The press's own default would focus the grid, its focusable ancestor, after this.
+            event.prevent_default();
             self.set_selection(Selection::at(pos));
             self.begin(None)?;
         } else {
@@ -3460,7 +3472,110 @@ fn wire_grid(ui: &Rc<Ui>) -> Result<(), JsValue> {
     let wheel = ui.clone();
     listen(&ui.dom.surface, "wheel", move |event: WheelEvent| {
         wheel.on_wheel(&event);
-    })
+    })?;
+    wire_touch(ui)
+}
+
+/// Fingers on the grid: one scrolls it, two zoom it. Pointer events rather than touch events,
+/// because a repaint replaces the cell under the finger and a touch stays with the cell it began
+/// on; a moving finger is captured by the grid instead. A tap moves nothing, so it stays the
+/// browser's mouse events, as a click.
+fn wire_touch(ui: &Rc<Ui>) -> Result<(), JsValue> {
+    let pressed = ui.clone();
+    listen(
+        &ui.dom.surface,
+        "pointerdown",
+        move |event: PointerEvent| {
+            let finger = event.pointer_type() != "mouse";
+            pressed.touch.set(finger);
+            if finger {
+                let mut fingers = pressed.fingers.borrow_mut();
+                fingers.retain(|(id, _)| *id != event.pointer_id());
+                fingers.push((event.pointer_id(), point(&event)));
+                pressed
+                    .gesture
+                    .set(gesture_of(&fingers, pressed.zoom.get()));
+            }
+        },
+    )?;
+    let moved = ui.clone();
+    listen(
+        &ui.dom.surface,
+        "pointermove",
+        move |event: PointerEvent| {
+            let id = event.pointer_id();
+            let points = {
+                let mut fingers = moved.fingers.borrow_mut();
+                let Some(finger) = fingers.iter_mut().find(|(at, _)| *at == id) else {
+                    return;
+                };
+                finger.1 = point(&event);
+                fingers.iter().map(|(_, at)| *at).collect::<Vec<_>>()
+            };
+            let Some(gesture) = moved.gesture.get() else {
+                return;
+            };
+            let _ = moved.dom.surface.set_pointer_capture(id);
+            match (gesture, points.as_slice()) {
+                (touch::Gesture::Pan { .. }, &[at]) => {
+                    let (widths, heights) = (moved.widths(), moved.heights());
+                    let ((rows, cols), now) = touch::pan(
+                        gesture,
+                        at,
+                        moved.scroll.get(),
+                        moved.zoom.get(),
+                        &widths,
+                        &heights,
+                    );
+                    moved.gesture.set(Some(now));
+                    if (rows, cols) != (0, 0) {
+                        moved
+                            .scroll
+                            .set(layout::scrolled_by(moved.scroll.get(), rows, cols));
+                        moved.request_repaint();
+                    }
+                }
+                (touch::Gesture::Pinch { .. }, &[a, b]) => {
+                    if let Some(zoom) = touch::pinch(gesture, distance(a, b)) {
+                        moved.zoom_to(zoom);
+                    }
+                }
+                _ => {}
+            }
+        },
+    )?;
+    for end in ["pointerup", "pointercancel"] {
+        let ended = ui.clone();
+        listen(&ui.dom.surface, end, move |event: PointerEvent| {
+            let mut fingers = ended.fingers.borrow_mut();
+            fingers.retain(|(id, _)| *id != event.pointer_id());
+            ended.gesture.set(gesture_of(&fingers, ended.zoom.get()));
+        })?;
+    }
+    Ok(())
+}
+
+fn point(event: &PointerEvent) -> (f64, f64) {
+    (f64::from(event.client_x()), f64::from(event.client_y()))
+}
+
+fn distance(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (a.0 - b.0).hypot(a.1 - b.1)
+}
+
+/// The gesture the fingers now down begin: none, a pan, or a pinch.
+fn gesture_of(fingers: &[(i32, (f64, f64))], zoom: f64) -> Option<touch::Gesture> {
+    match *fingers {
+        [(_, at)] => Some(touch::Gesture::Pan {
+            at,
+            carry: (0.0, 0.0),
+        }),
+        [(_, a), (_, b)] => Some(touch::Gesture::Pinch {
+            apart: distance(a, b),
+            zoom,
+        }),
+        _ => None,
+    }
 }
 
 /// The cell a pointer event landed on, from the address the cell carries.

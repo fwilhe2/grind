@@ -276,6 +276,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     -->
     <main id="page" class="page" tabindex="0" hidden>
       <article id="flow" class="flow"></article>
+      <!-- A phone shows its keyboard for an editable element only: a finger's press focuses
+           this, on the caret, and what it types goes to the document (text/mod.rs). -->
+      <textarea id="typing" class="typing" rows="1" tabindex="-1" autocapitalize="sentences"
+                autocomplete="off" spellcheck="false" placeholder=" " aria-label="Type into the document"></textarea>
     </main>
 
     <!--

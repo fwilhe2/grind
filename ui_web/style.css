@@ -484,11 +484,38 @@ input[type="text"] {
    two places — and here that would put the caret in the wrong column. */
 
 .page {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
   outline: none;
   background: Canvas;
+}
+
+/* A touch keyboard's field, on the caret: invisible but for the word an input method is still
+   composing. 16px, or a phone zooms the page when it takes the focus. */
+.typing {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12em;
+  min-height: 1em;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1;
+  color: CanvasText;
+  background: transparent;
+  caret-color: transparent;
+  pointer-events: none;
+}
+
+.typing:not(:placeholder-shown) {
+  background: color-mix(in srgb, Highlight 25%, Canvas);
 }
 
 .flow {
@@ -1762,4 +1789,103 @@ input[type="text"] {
 
 .keys td {
   padding: 0.2rem 0;
+}
+
+/* --- a phone ---------------------------------------------------------------
+   A narrow window keeps every bar on one line and lets it scroll sideways under a finger,
+   rather than wrapping it into a second toolbar or pushing its end off the screen; what only
+   a keyboard needs (the shortcut hints) and the wordmark make room. The text page fits the
+   width by itself (text/mod.rs). */
+@media (max-width: 40rem) {
+  .bar {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .bar > *,
+  .tool-group > * {
+    flex: none;
+  }
+
+  .tool-group {
+    flex-wrap: nowrap;
+  }
+
+  .bar > .gap {
+    flex: 1 0 0;
+  }
+
+  .brand,
+  .keyed kbd {
+    display: none;
+  }
+
+  /* Every command, the ones without a button too: held at the end of the bar in view. */
+  #palette-open {
+    position: sticky;
+    right: -0.5rem;
+    padding-inline: 0.6rem;
+    background: var(--head);
+    box-shadow: -0.5rem 0 0.5rem -0.25rem var(--head);
+  }
+
+  .name {
+    max-width: 12ch;
+  }
+
+  .address {
+    width: 4.5rem;
+  }
+
+  #tabs {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tab {
+    white-space: nowrap;
+  }
+
+  .palette {
+    padding-top: 1rem;
+  }
+}
+
+/* A finger is wider than a mouse pointer: every button and field gets a target it can hit. */
+@media (pointer: coarse) {
+  button.icon,
+  .tab-add {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  button.text,
+  .tab,
+  select,
+  input[type="text"] {
+    min-height: 2.5rem;
+  }
+
+  /* 16px, or a phone zooms the whole page in when a field takes the focus. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  #formula {
+    font-size: 16px;
+  }
+
+  /* The grid scrolls and zooms by its own touch handling, cell by cell (sheet/touch.rs). */
+  .surface {
+    touch-action: none;
+  }
+
+  .palette-list li {
+    padding-block: 0.6rem;
+  }
 }
