@@ -73,6 +73,8 @@ pub enum Outcome {
     Cancel,
     /// ⌃U while editing: Enter ↔ Edit.
     ToggleMode,
+    /// F4 while editing: the `$` markers of the reference at the caret, cycled.
+    CycleAbsolute,
     /// Start or move a **pending reference** — Point mode: the pointed cells move by `motion`
     /// (grown, with `extend`) and the reference naming them is written at the caret, in place of
     /// the one written for them last.
@@ -110,6 +112,9 @@ fn arrow(selector: &str) -> Option<(Dir, bool)> {
 /// this name so one table decides everything.
 pub const TOGGLE: &str = "grindToggleEditMode:";
 
+/// The selector F4 becomes, for [`TOGGLE`]'s reason: the standard bindings give it none.
+pub const CYCLE: &str = "grindCycleAbsolute:";
+
 /// The whole state machine while editing. One `match`, and no memory beyond what it is told.
 ///
 /// **Point** is not a fourth mode but a predicate, as in the GNOME window: while typing a formula
@@ -127,6 +132,7 @@ pub fn editing(at: Where, selector: &str) -> Outcome {
     match (selector, at.mode) {
         ("cancelOperation:", _) => Outcome::Cancel,
         (TOGGLE, _) => Outcome::ToggleMode,
+        (CYCLE, _) => Outcome::CycleAbsolute,
         ("insertNewline:", _) | ("moveDown:", Mode::Enter) => Outcome::Commit(Some(Dir::Down)),
         // ⇧Return, in the bindings Excel for Mac reads: up.
         ("insertNewlineIgnoringFieldEditor:", _) | ("moveUp:", Mode::Enter) => {
@@ -204,6 +210,7 @@ mod tests {
             );
             assert_eq!(editing(at(mode), "cancelOperation:"), Outcome::Cancel);
             assert_eq!(editing(at(mode), TOGGLE), Outcome::ToggleMode);
+            assert_eq!(editing(at(mode), CYCLE), Outcome::CycleAbsolute);
         }
     }
 

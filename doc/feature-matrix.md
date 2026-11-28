@@ -162,7 +162,7 @@ than as a cursor on a hidden row.
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ● | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ● | ● | ● |
 | Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● |
-| F4 cycles a reference's `$` markers | — | ● | ● | ● | ● ᶠ⁴ | ○ |
+| F4 cycles a reference's `$` markers | — | ● | ● | ● | ● ᶠ⁴ | ● ᶠ⁴ |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | Every function as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |
@@ -175,7 +175,7 @@ than as a cursor on a hidden row.
 | Spelling off and on, remembered for every spreadsheet | ● ˢᶜ | ● | ● | ● ʷˢ | ● | ● ˢᶜ |
 
 ʷˢ **The browser's spelling** (`ui_web/src/spelling.rs`, `doc/spelling.md`). The same checker and rules, with `grind-spell` linked *without* its bundled word lists (+0.4 MB of module): the page fetches `dictionaries/<tag>.aff` and `.dic` for the one language wanted, the first time a document opens with spelling on. A wavy red line in both panes (the sheet's under a cell's text); the palette lists a correction, *Ignore* and *Add to your dictionary* for the word at the caret, or in the active cell, *Go to the next misspelling* in either pane, and the *Spelling:* rows — Automatic, each language, Off — remembered per kind of document in `localStorage`, as are added words. `smoke.js` drives it against the real dictionaries.
-ᶠ⁴ Over `assist::cycle_absolute`, on the reference being pointed at or the one at the caret. Windows' is built and lint-checked, not yet driven under Wine.
+ᶠ⁴ Over `assist::cycle_absolute`, on the reference being pointed at or the one at the caret. Windows' and the Mac's are built and lint-checked, not yet driven; the Mac's takes F4 alone, as the field editor's `noop:` for it.
 ᵖᵐ Where `ref_eligible` says a reference could go, the four arrows point (one cell, no range extension) and write the address into the edit line; the pointed cell is drawn in magenta; the browser does the same in the formula bar (UTF-16 offsets through `grind_core::utf16`), writing the address without highlighting the cell — compile- and lint-checked only. Win32 does it in the in-cell `EDIT` through `EM_REPLACESEL` (Enter mode starts one; Edit mode keeps the caret) — also checked only by build.
 ᶠⁿ Type two letters of a function's name or plain-English name in the palette: up to five rows follow the verbs, and picking one starts an edit seeded `=NAME(`. A search, not a scrolling list.
 ᶠᵍ *Functions…* in the GNOME palette (a searchable dialog) and `:functions [text]` in the terminal (a list pane): name, plain-English name, brief and category from `funcs::catalog`; picking one starts an edit seeded `=NAME(`.

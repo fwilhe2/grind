@@ -146,6 +146,22 @@ define_class!(
 );
 
 /// Whether the key being handled is ⌃U.
+/// Whether the key behind a `noop:` was F4 alone (`NSF4FunctionKey`).
+fn f4(view: &NSTextView) -> bool {
+    NSApplication::sharedApplication(view.mtm())
+        .currentEvent()
+        .is_some_and(|event| {
+            !event.modifierFlags().intersects(
+                NSEventModifierFlags::Command
+                    | NSEventModifierFlags::Control
+                    | NSEventModifierFlags::Option
+                    | NSEventModifierFlags::Shift,
+            ) && event
+                .charactersIgnoringModifiers()
+                .is_some_and(|keys| keys.to_string() == "\u{f707}")
+        })
+}
+
 fn control_u(view: &NSTextView) -> bool {
     NSApplication::sharedApplication(view.mtm())
         .currentEvent()
@@ -305,10 +321,10 @@ impl Pane {
         // ⌃U is bound to nothing in the standard bindings, so inside the field it arrives as
         // `noop:`; the event behind it says which key it was, and makes it the mode toggle the
         // grid's own ⌃U already is (`state::TOGGLE`).
-        let selector = if selector == "noop:" && control_u(text_view) {
-            state::TOGGLE
-        } else {
-            selector
+        let selector = match selector {
+            "noop:" if control_u(text_view) => state::TOGGLE,
+            "noop:" if f4(text_view) => state::CYCLE,
+            _ => selector,
         };
         let Some((mode, offering, pending, field)) = self.edit.borrow().as_ref().map(|edit| {
             (
@@ -366,7 +382,55 @@ impl Pane {
                 self.point(motion, extend);
                 true
             }
+            Outcome::CycleAbsolute => {
+                self.cycle_absolute();
+                true
+            }
         }
+    }
+
+    /// F4: `B2` → `$B$2` → `B$2` → `$B2` → `B2`, on the reference being pointed at or the one
+    /// under the caret, through the field editor so it is one step of the field's own undo.
+    fn cycle_absolute(&self) {
+        let Some((field, pending)) = self
+            .edit
+            .borrow()
+            .as_ref()
+            .map(|edit| (edit.field.clone(), edit.pending.clone()))
+        else {
+            return;
+        };
+        let Some(editor) = field.currentEditor() else {
+            return;
+        };
+        let text = field.stringValue().to_string();
+        let at = pending.as_ref().map_or_else(
+            || utf16::byte_of(&text, editor.selectedRange().location),
+            |pending| pending.span.end,
+        );
+        let Some((span, replacement)) = grind_sheet::formula::assist::cycle_absolute(&text, at)
+        else {
+            return;
+        };
+        let range = NSRange::new(
+            utf16::units_before(&text, span.start),
+            utf16::units_before(&text[span.start..], span.end - span.start),
+        );
+        if let Some(edit) = self.edit.borrow_mut().as_mut() {
+            edit.applying = true;
+        }
+        editor.replaceCharactersInRange_withString(range, &NSString::from_str(&replacement));
+        let placed = span.start..span.start + replacement.len();
+        let now = field.stringValue().to_string();
+        editor.setSelectedRange(NSRange::new(utf16::units_before(&now, placed.end), 0));
+        if let Some(edit) = self.edit.borrow_mut().as_mut() {
+            edit.applying = false;
+            if let Some(pending) = edit.pending.as_mut() {
+                pending.span = placed;
+            }
+        }
+        self.refresh_assist();
+        self.edit_changed();
     }
 
     /// Move — or start — the reference being pointed at. The first arrow points one cell away
