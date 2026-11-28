@@ -137,7 +137,10 @@ fn main() -> std::process::ExitCode {
     // that can never be clicked — one mis-quoted argument timed a job out after twenty minutes of
     // silence. So the headless path reports through [`say`], including the argument errors decided
     // before the flag is parsed, which is why this asks the raw command line.
-    let headless = argv.iter().any(|arg| arg == "--render-to");
+    // `--quiet` is an installer's `--register`, with nobody to click either.
+    let headless = argv
+        .iter()
+        .any(|arg| arg == "--render-to" || arg == "--quiet");
     let say = |text: &str, error: bool| {
         if headless {
             console_line(text);

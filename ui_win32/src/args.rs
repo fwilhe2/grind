@@ -44,7 +44,7 @@ pub enum Command {
 
 /// What `--help` prints, and what the message box shows when there is no console.
 pub const USAGE: &str = "usage: grind-win32 [--sheet|--text] [file] [--render-to <bmp> [--dark]]
-       grind-win32 --register | --unregister
+       grind-win32 --register | --unregister [--quiet]
 
 One window, both document types. Which one opens is read out of the file, not guessed
 from its name; with no file and no flag the window shows the welcome screen, where a
@@ -58,6 +58,7 @@ spreadsheet, a text document or an existing file can be chosen.
                    the window does this itself when it starts, and never changes
                    which program a double-click opens
   --unregister     withdraw that offer, and exit
+  --quiet          with --register or --unregister: show no message, for an installer
   -h, --help       this text
   -V, --version    version and build stamp
 ";
@@ -68,6 +69,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
     let mut path: Option<PathBuf> = None;
     let mut render_to: Option<PathBuf> = None;
     let mut dark = false;
+    let mut quiet = false;
     let mut args = args.into_iter();
 
     while let Some(arg) = args.next() {
@@ -76,6 +78,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
             "-V" | "--version" => return Command::Version,
             "--register" => return Command::Register,
             "--unregister" => return Command::Unregister,
+            "--quiet" => quiet = true,
             "--sheet" => kind = Some(DocumentKind::Spreadsheet),
             "--text" => kind = Some(DocumentKind::Text),
             "--render-to" => match args.next() {
@@ -98,6 +101,11 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Command {
         }
     }
 
+    if quiet {
+        return Command::Error(
+            "--quiet only means something with --register or --unregister".into(),
+        );
+    }
     if dark && render_to.is_none() {
         // Refused rather than ignored: a window follows the user's own theme, and a flag that
         // silently did nothing there would read as this shell failing to honour it.
@@ -158,6 +166,15 @@ mod tests {
     fn registering_is_a_command_of_its_own() {
         assert_eq!(parse_str(&["--register"]), Command::Register);
         assert_eq!(parse_str(&["--unregister"]), Command::Unregister);
+    }
+
+    /// An installer's spelling, either way round; on its own it is refused, as `--dark` is.
+    #[test]
+    fn quiet_goes_with_registering_only() {
+        assert_eq!(parse_str(&["--register", "--quiet"]), Command::Register);
+        assert_eq!(parse_str(&["--quiet", "--unregister"]), Command::Unregister);
+        assert_matches!(parse_str(&["--quiet"]), Command::Error(_));
+        assert_matches!(parse_str(&["--quiet", "book.ods"]), Command::Error(_));
     }
 
     /// `None` for both, and neither is a default waiting to be filled in: no path is the start
