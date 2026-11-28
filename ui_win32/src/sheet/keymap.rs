@@ -45,6 +45,8 @@ pub enum Key {
     F2,
     /// Find the next cell holding the last word searched for; Shift+F3 the previous.
     F3,
+    /// Cycle the `$` markers of the reference being typed — Excel's key.
+    F4,
     /// Go to an address — the name box's key, and Excel's.
     F5,
     /// The next misspelt word — Word's spelling key since the first Windows version, and the
@@ -100,6 +102,7 @@ const VK_DOWN: u32 = 0x28;
 const VK_DELETE: u32 = 0x2e;
 const VK_F2: u32 = 0x71;
 const VK_F3: u32 = 0x72;
+const VK_F4: u32 = 0x73;
 const VK_F5: u32 = 0x74;
 const VK_F7: u32 = 0x76;
 const VK_F8: u32 = 0x77;
@@ -124,6 +127,7 @@ pub fn key_for(vk: u32) -> Key {
         VK_DELETE => Key::Delete,
         VK_F2 => Key::F2,
         VK_F3 => Key::F3,
+        VK_F4 => Key::F4,
         VK_F5 => Key::F5,
         VK_F7 => Key::F7,
         VK_F8 => Key::F8,
@@ -215,6 +219,7 @@ mod tests {
             (VK_DELETE, vk::VK_DELETE, "VK_DELETE"),
             (VK_F2, vk::VK_F2, "VK_F2"),
             (VK_F3, vk::VK_F3, "VK_F3"),
+            (VK_F4, vk::VK_F4, "VK_F4"),
             (VK_F5, vk::VK_F5, "VK_F5"),
             (VK_F7, vk::VK_F7, "VK_F7"),
             (VK_F8, vk::VK_F8, "VK_F8"),

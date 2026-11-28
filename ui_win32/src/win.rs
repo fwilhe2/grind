@@ -2927,6 +2927,10 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
         if arrow && !held.ctrl && !held.shift && !held.alt && point_at(hwnd, mode, key) {
             return true;
         }
+        if key == keymap::Key::F4 && !held.ctrl && !held.shift && !held.alt {
+            cycle_absolute(hwnd);
+            return true;
+        }
         with_sheet(hwnd, |state| state.pointing = None);
     }
     match state::on_key(mode, key, held) {
@@ -3020,6 +3024,41 @@ fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
     let end = span.start + reference.len();
     with_sheet(hwnd, |state| state.pointing = Some((span.start..end, cell)));
     true
+}
+
+/// F4: `B2` → `$B$2` → `B$2` → `$B2` → `B2`, on the reference being pointed at or the one under
+/// the caret, through `EM_REPLACESEL` as [`point_at`] writes one.
+fn cycle_absolute(hwnd: HWND) {
+    let Some((edit, text)) = editor_text(hwnd) else {
+        return;
+    };
+    let pending = with_sheet(hwnd, |state| state.pointing.clone()).flatten();
+    let at = pending
+        .as_ref()
+        .map_or_else(|| editor_caret(edit, &text), |(span, _)| span.end);
+    let Some((span, replacement)) = grind_sheet::formula::assist::cycle_absolute(&text, at) else {
+        return;
+    };
+    let wide = gdi::wide(&replacement);
+    select(
+        edit,
+        state::caret_at(&text, span.start),
+        state::caret_at(&text, span.end),
+    );
+    // SAFETY: nothing is borrowed, and the buffer is a NUL-terminated local that outlives the
+    // call; the message goes to this window's own control and dispatches synchronously.
+    unsafe {
+        SendMessageW(
+            edit,
+            EM_REPLACESEL,
+            Some(WPARAM(1)),
+            Some(LPARAM(wide.as_ptr() as isize)),
+        );
+    }
+    let placed = span.start..span.start + replacement.len();
+    with_sheet(hwnd, |state| {
+        state.pointing = pending.map(|(_, cell)| (placed, cell));
+    });
 }
 
 /// A character, after the keyboard layout and the IME; `true` when it started an edit or was
