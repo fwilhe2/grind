@@ -15,6 +15,10 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- A number format that shows figures in thousands or millions (`#,##0,` in Excel, a display
+  factor in ODF) shows them that way instead of in full, in every window, in `TEXT` and in
+  files saved again.
+
 ### Fixes
 
 - A Word document no longer gains an empty line at every section break that starts a new page,

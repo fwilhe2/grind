@@ -481,6 +481,7 @@ fn part_node(out: &mut Emitter, part: &Part) {
             min_int,
             grouping,
             embedded,
+            display_factor,
         } => {
             out.begin("number");
             if *decimals != 0 {
@@ -494,6 +495,9 @@ fn part_node(out: &mut Emitter, part: &Part) {
             }
             if *grouping {
                 out.prop("grouping", true);
+            }
+            if let Some(factor) = display_factor {
+                out.prop("display-factor", i128::from(*factor));
             }
             // Text among the digits is the number's own children, as in ODF:
             // `number { embedded -4 " " }`.

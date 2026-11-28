@@ -2663,6 +2663,7 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
                 min_int,
                 grouping,
                 embedded,
+                display_factor,
             } => {
                 let _ = write!(
                     out,
@@ -2675,6 +2676,9 @@ fn data_style(format: &Format, i: usize, pool: &Pool) -> String {
                         ""
                     }
                 );
+                if let Some(factor) = display_factor {
+                    let _ = write!(out, " number:display-factor=\"{factor}\"");
+                }
                 if embedded.is_empty() {
                     out.push_str("/>");
                 } else {
@@ -4060,6 +4064,7 @@ mod tests {
             min_int: 1,
             grouping: true,
             embedded: Vec::new(),
+            display_factor: None,
         });
         f.push(Part::Currency(" \u{20ac}".into()));
         f
@@ -4076,6 +4081,7 @@ mod tests {
             min_int: 1,
             grouping: false,
             embedded: Vec::new(),
+            display_factor: None,
         });
         let sheet = doc.sheet_mut(0).unwrap();
         for row in 0..3 {

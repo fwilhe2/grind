@@ -614,7 +614,10 @@ Root elements (all children of `office:styles` or `office:automatic-styles`):
 has `style:name` and is built from an ordered sequence of literal/format pieces:
 
 - `number:number` — `number:decimal-places`, `number:min-decimal-places`,
-  `number:min-integer-digits`, `number:grouping` (thousands separator, boolean).
+  `number:min-integer-digits`, `number:grouping` (thousands separator, boolean),
+  `number:display-factor` (rng:7406, a double the value is divided by before it is shown:
+  `1000` shows 26232074.6 as `26,232` under grouping — read only when a whole number above
+  one, LibreOffice keeping it through loop C's `formats` case).
   **`number:embedded-text`** (rng:7242) — `MEASURED` (2026-10-06, LibreOffice 26.8): text
   set among a `number:number`'s own digits, the way a telephone or ID format reads. Its
   `number:position` counts **whole digits to the text's right**: `0` puts it just before the

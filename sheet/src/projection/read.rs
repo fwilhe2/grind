@@ -348,6 +348,17 @@ fn parts(out: &mut Format, block: &KdlDocument) -> Result<()> {
                 min_int: small(node, "min-int")?,
                 grouping: bool_prop(node, "grouping").unwrap_or(false),
                 embedded: embedded(node)?,
+                display_factor: match node.get("display-factor") {
+                    None => None,
+                    Some(_) => Some(
+                        u32::try_from(prop_integer(node, "display-factor")?)
+                            .ok()
+                            .filter(|f| *f > 1)
+                            .ok_or_else(|| {
+                                at(node, "a display factor is a whole number above one".into())
+                            })?,
+                    ),
+                },
             },
             "currency" => Part::Currency(text_arg(node, 0)?),
             "year" => Part::Year { long: long(node) },

@@ -291,18 +291,6 @@ const DECIDED_OTHERWISE: &[(&str, &str, &str)] = &[
 const UNSPELLABLE: &[(&str, &str, &str)] = &[
     (
         "numfmt/custom-numeric.xlsx",
-        "display:Numeric!B6",
-        "Scaling — `#,##0,` divides the displayed number by a thousand \
-         (`number:display-factor`). The format is refused whole, so the cell shows its plain \
-         value: a number shown a thousand times too large is worse than an unformatted one.",
-    ),
-    (
-        "numfmt/custom-numeric.xlsx",
-        "display:Numeric!B7",
-        "Scaling — `#,##0,,\" M\"`, the same class twice over.",
-    ),
-    (
-        "numfmt/custom-numeric.xlsx",
         "display:Numeric!B10",
         "Scientific — `0.00E+00`. `number:scientific-number` is an element this model has no \
          `Part` for, and dropping the exponent would show 12345.678 as `12345.68`.",

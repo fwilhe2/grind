@@ -385,13 +385,17 @@ From the same conversion of `numfmt/datetime-codes.xlsx`, one cell per spelling.
 
 ### 3.6 What has no `Part` at all — `MEASURED`
 
-The oracle writes `number:fraction`, `number:scientific-number`, `number:display-factor`,
-`number:fill-character`, `number:truncate-on-overflow="false"` and its own
-`loext:blank-width-char`; `grind_sheet::numfmt::Part` has none of these, and inventing one is a
-decision about the core's format model rather than about an import filter.
+The oracle writes `number:fraction`, `number:scientific-number`, `number:fill-character`,
+`number:truncate-on-overflow="false"` and its own `loext:blank-width-char`;
+`grind_sheet::numfmt::Part` has none of these, and inventing one is a decision about the core's
+format model rather than about an import filter. One was taken (2026-11-28): a trailing comma's
+**thousands factor** is `Part::Number`'s `display_factor`, ODF's `number:display-factor` — the
+ONS's labour-market workbooks show every level as `#,##0,` under a heading reading *(000s)*, and
+the oracle shows 26232074.6 as `26,232`. Four commas or more are past what the field holds and
+are still refused.
 `grind_xlsx::numfmt::Unspellable` is the list, and it is split in two by one question — *would
-losing this piece misstate the number?* A fraction, an exponent, an elapsed hour count, a ×1000
-factor and a `General` section beside others all would, so the cell's **whole** format is
+losing this piece misstate the number?* A fraction, an exponent, an elapsed hour count and
+a `General` section beside others all would, so the cell's **whole** format is
 dropped and it shows its plain value; a fill character, a blank-width pad, a `[Color N]` colour (§3.7), the
 one-letter month and meridiem markers and a format's LCID would not, so the format is carried
 without them. Either way the class is counted per cell in the report, and

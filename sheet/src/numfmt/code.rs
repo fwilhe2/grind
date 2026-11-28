@@ -10,8 +10,7 @@
 //! time or neither** ([`classify`]) and **what does a value display** ([`of_code`]).
 //!
 //! **What cannot be spelled is named** ([`Unspellable`]), never approximated. A fraction, a
-//! scientific exponent, an elapsed-time count or a ×1000 factor has no `Part` and refuses the whole
-//! format, since `3.75` shown as `4` misstates it; a lost fill character or colour is named and the
+//! scientific exponent or an elapsed-time count has no `Part` and refuses the whole format, since `3.75` shown as `4` misstates it; a lost fill character or colour is named and the
 //! rest kept. [`Unspellable::refuses`] is that line.
 //!
 //! The shapes are ECMA-376 §18.8.31's, the one written definition of the language; how they meet
@@ -34,8 +33,8 @@ pub enum Unspellable {
     /// `[h]:mm` — hours that accumulate past 24. The core names the attribute that would
     /// carry it (`number:truncate-on-overflow="false"`) and deliberately does not model it.
     Elapsed,
-    /// A trailing `,`, which divides the displayed number by a thousand per comma
-    /// (`number:display-factor`).
+    /// Four trailing `,` or more: a thousand per comma, past what `number:display-factor`'s
+    /// field holds.
     Scaling,
     /// A `General` section beside others: the model has no "as many digits as it takes" part,
     /// and guessing a decimal count would round a value the file shows in full.
@@ -633,8 +632,13 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
             _ => break,
         }
     }
-    // A comma with no placeholder after it divides by a thousand (`number:display-factor`).
-    if trailing_commas > 0 {
+    // A comma with no placeholder after it divides by a thousand (`number:display-factor`),
+    // past what a factor holds refused.
+    let display_factor = match trailing_commas {
+        0 => None,
+        n => 1000_u32.checked_pow(n),
+    };
+    if trailing_commas > 0 && display_factor.is_none() {
         out.lost.insert(Unspellable::Scaling);
     }
     // An exponent or a solidus turns the whole run into a part this model does not have.
@@ -668,6 +672,7 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
             min_int,
             grouping,
             embedded: Vec::new(),
+            display_factor,
         });
         return i;
     };
@@ -686,6 +691,7 @@ fn number(chars: &[char], from: usize, out: &mut Section) -> usize {
         min_int: mi,
         grouping: g,
         embedded,
+        ..
     }) = out.parts.get_mut(at)
     {
         *g |= grouping;
@@ -1064,8 +1070,6 @@ mod tests {
             ("[h]:mm", Unspellable::Elapsed),
             ("[m]", Unspellable::Elapsed),
             ("[s]", Unspellable::Elapsed),
-            ("#,##0,", Unspellable::Scaling),
-            (r#"#,##0,," M""#, Unspellable::Scaling),
         ] {
             let got = of_code(code);
             assert!(got.format.is_none(), "{code} keeps a format");
@@ -1074,6 +1078,21 @@ mod tests {
         }
         // And the kind survives the refusal: an elapsed-time cell is still a time.
         assert_eq!(of_code("[h]:mm").kind, Some(NumberKind::Time));
+    }
+
+    /// A trailing comma divides what is shown by a thousand, one thousand per comma — a table
+    /// of figures in thousands (`number:display-factor`, `doc/xlsx-format.md` §3.6).
+    #[test]
+    fn a_trailing_comma_shows_thousands() {
+        assert_eq!(shows("#,##0,", 26_232_074.646), "26,232");
+        assert_eq!(shows(r#"#,##0,," M""#, 1_234_567_890.0), "1,235 M");
+        assert_eq!(shows("0.0,", 1_250.0), "1.3");
+        assert_eq!(lost("#,##0,"), []);
+        assert_eq!(
+            shows("#,##0", 1_250.0),
+            "1,250",
+            "a comma among digits only groups"
+        );
     }
 
     /// The classes that cost a piece and not the format.

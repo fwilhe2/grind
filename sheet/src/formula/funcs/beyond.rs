@@ -1786,16 +1786,13 @@ fn text_spells_a_value_in_a_format_code() {
         ("=TEXT(\"abc\";\"@\")", "abc"),
         ("=TEXT(\"abc\";\"0.00\")", "abc"),
         ("=TEXT(5;\"@\")", "5"),
+        ("=TEXT(1500;\"0.0,\")", "1.5"),
     ] {
         assert_eq!(text(formula), want, "{formula}");
     }
-    // A fraction, an exponent or a display factor has no part to spell it with: refused, where
-    // the oracle shows 1/2, 1.23E+04 and 1.5.
-    for refused in [
-        "=TEXT(0.5;\"# ?/?\")",
-        "=TEXT(12345;\"0.00E+00\")",
-        "=TEXT(1500;\"0.0,\")",
-    ] {
+    // A fraction or an exponent has no part to spell it with: refused, where the oracle shows 1/2
+    // and 1.23E+04.
+    for refused in ["=TEXT(0.5;\"# ?/?\")", "=TEXT(12345;\"0.00E+00\")"] {
         assert_eq!(error(refused), FormulaError::Value, "{refused}");
     }
     // The document's locale spells the separators.

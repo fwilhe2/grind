@@ -2409,6 +2409,12 @@ impl Context<Builder> for NumberStyle {
                 min_int: digits(attrs, "min-integer-digits", 1),
                 grouping: attrs.get(Ns::Number, "grouping") == Some("true"),
                 embedded: Vec::new(),
+                // A factor that is not a whole number above one is read as none.
+                display_factor: attrs
+                    .get(Ns::Number, "display-factor")
+                    .and_then(|f| f.trim().parse::<f64>().ok())
+                    .filter(|f| f.fract() == 0.0 && *f > 1.0 && *f <= f64::from(u32::MAX))
+                    .map(|f| f as u32),
             },
             "year" => Part::Year { long },
             "month" => Part::Month {

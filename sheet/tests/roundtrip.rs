@@ -664,6 +664,7 @@ fn formats() -> (String, Document) {
             min_int: 1,
             grouping,
             embedded: Vec::new(),
+            display_factor: None,
         });
         f
     };
@@ -674,6 +675,7 @@ fn formats() -> (String, Document) {
         min_int: 1,
         grouping: false,
         embedded: Vec::new(),
+        display_factor: None,
     });
     percent.push(Part::Text("%".into()));
 
@@ -687,6 +689,7 @@ fn formats() -> (String, Document) {
         min_int: 1,
         grouping: true,
         embedded: Vec::new(),
+        display_factor: None,
     });
     plain.push(Part::Text("\u{a0}".into()));
     plain.push(Part::Currency("\u{20ac}".into()));
@@ -721,6 +724,15 @@ fn formats() -> (String, Document) {
     // The same shape of format in another locale: `1.234,50` rather than `1,234.50`, from
     // the same parts. Loop C compares what the cell *displays*, so a lost locale fails here.
     let german = number(2, 2, true).in_locale(Locale::parse("de-DE"));
+    let mut thousands = Format::new(Kind::Number);
+    thousands.push(Part::Number {
+        decimals: 0,
+        min_decimals: 0,
+        min_int: 1,
+        grouping: true,
+        embedded: Vec::new(),
+        display_factor: Some(1000),
+    });
 
     let sheet = doc.sheet_mut(0).unwrap();
     let cells: Vec<(CellValue, Option<NumberKind>, Format)> = vec![
@@ -738,6 +750,8 @@ fn formats() -> (String, Document) {
             date,
         ),
         (CellValue::Number(0.5), Some(NumberKind::Time), clock),
+        // A table in thousands: 26232074.6 shows as 26,232.
+        (CellValue::Number(26_232_074.6), None, thousands),
     ];
     for (row, (value, kind, format)) in cells.into_iter().enumerate() {
         let pos = Pos::new(row as u32, 0);
@@ -813,6 +827,7 @@ fn styles() -> (String, Document) {
                     min_int: 1,
                     grouping: false,
                     embedded: Vec::new(),
+                    display_factor: None,
                 },
                 Part::Text("%".into()),
             ],

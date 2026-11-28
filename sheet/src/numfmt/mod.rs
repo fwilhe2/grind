@@ -66,6 +66,10 @@ pub enum Part {
         /// number's `(###) ###-####` or `#,##0.000" "###` sets it (`doc/ods-format.md` §5.2).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         embedded: Vec<Embedded>,
+        /// `number:display-factor`: what the value is divided by before it is shown — 1000 for a
+        /// table in thousands. Whole factors only; `None` divides by nothing.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        display_factor: Option<u32>,
     },
     /// `number:currency-symbol` — the symbol is the element's content.
     Currency(String),
@@ -423,9 +427,10 @@ impl Format {
                     min_int,
                     grouping,
                     embedded,
+                    display_factor,
                 } => out.push_str(&embed(
                     &digits(
-                        scaled.abs(),
+                        scaled.abs() / f64::from(display_factor.unwrap_or(1)),
                         *decimals,
                         *min_decimals,
                         *min_int,
@@ -664,6 +669,7 @@ pub fn preset(kind: Kind, decimals: u8, grouping: bool, symbol: &str) -> Format 
         min_int: 1,
         grouping,
         embedded: Vec::new(),
+        display_factor: None,
     };
     let date = || {
         vec![
@@ -920,6 +926,7 @@ mod tests {
             min_int: 1,
             grouping,
             embedded: Vec::new(),
+            display_factor: None,
         });
         f
     }
@@ -986,6 +993,7 @@ mod tests {
             min_int: 1,
             grouping: false,
             embedded: Vec::new(),
+            display_factor: None,
         });
         f.push(Part::Text("%".into()));
         assert_eq!(render(&f, 0.075), "7.5%");
@@ -1080,6 +1088,7 @@ mod tests {
             min_int: 1,
             grouping: false,
             embedded: Vec::new(),
+            display_factor: None,
         });
         negative.maps.push(Map {
             op: Op::Ge,
@@ -1100,6 +1109,7 @@ mod tests {
             min_int: 1,
             grouping: false,
             embedded: Vec::new(),
+            display_factor: None,
         });
         assert_eq!(render(&bare, -5.0), "-5");
     }
@@ -1118,6 +1128,7 @@ mod tests {
             min_int: 1,
             grouping: true,
             embedded: Vec::new(),
+            display_factor: None,
         });
         bracketed.push(Part::Text(")".into()));
 
@@ -1243,6 +1254,7 @@ mod tests {
                         text: (*text).to_owned(),
                     })
                     .collect(),
+                display_factor: None,
             });
             f
         };
