@@ -17,6 +17,9 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- A Word document no longer gains an empty line at every section break that starts a new page,
+  which could push what follows onto a page of its own.
+
 ## 0.3.0 — 2026-11-28
 
 ### Changes

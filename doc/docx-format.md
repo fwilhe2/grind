@@ -306,10 +306,16 @@ w:header` (0.4091 in). The oracle adds spacing of its own below the header with
 ### 5.3 The paragraph that closes a section — `MEASURED`
 
 `ooxmlimport/data/unbalanced-columns-compat.docx`: an empty paragraph holding nothing but a
-`w:sectPr`, followed by a `continuous` section, is not a paragraph in the oracle's document. Two
-counter-examples bound the rule: `text-copy.docx` and `tdf103931.docx`, where such a paragraph is
-the *whole* of its section, keep it. This filter drops it only between a section with other
-blocks and one continuing on the same page.
+`w:sectPr`, followed by a `continuous` section, is not a paragraph in the oracle's document. Nor
+is it before a section that starts a new page (2026-11-28, LibreOffice 26.8.3.1): hand-made
+documents of two sections — the second `nextPage` and `continuous`, its page the first's or a
+different one, the closing paragraph styled, kept with the next, with `w:titlePg` either side —
+all come back from `soffice --convert-to fodt` as two paragraphs, and so does the Legislation Act
+2003 compilation on legislation.gov.au, whose three empty kept-with-next paragraphs before such a
+paragraph would otherwise push the table of contents a page on. Two counter-examples bound the
+rule: `text-copy.docx` and `tdf103931.docx`, where such a paragraph is the *whole* of its
+section, keep it. This filter drops it whenever its section has other blocks; loop D″ agrees
+with the oracle on the same documents either way.
 
 ### 5.4 Pages per section, and their marginals — `MEASURED`
 

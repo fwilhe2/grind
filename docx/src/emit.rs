@@ -318,9 +318,8 @@ fn master_name(n: usize) -> String {
 }
 
 /// Mark every block that begins a section starting on a new page — and drop the empty
-/// paragraph that does nothing but close a section continuing on the same page, as the oracle
-/// does (`doc/docx-format.md` §5.3): in Word it is where the section break is drawn, and in a
-/// document with one page layout it is an empty line that was never text.
+/// paragraph that does nothing but close a section, as the oracle does (`doc/docx-format.md`
+/// §5.3): in Word it is where the section break is drawn, an empty line that was never text.
 ///
 /// And the first block of a section whose master page differs from the one before it names its
 /// own (`Para::master_page`), which is how ODF starts a page on a different page style.
@@ -351,16 +350,9 @@ fn section_starts(blocks: &[Block], sections: &[Section], masters: &[String]) ->
                     {
                         new_master = Some(next.clone());
                     }
-                    // Only before a section that continues on the same page: before one that
-                    // starts a new page the oracle keeps the paragraph, on the page it ends.
-                    // And only when it is not the whole of its section, which would leave the
-                    // section with nothing in it — the oracle keeps that one too.
-                    if i < last
-                        && p.inlines.is_empty()
-                        && !pending
-                        && !section_is_empty
-                        && new_master.is_none()
-                    {
+                    // Not when it is the whole of its section, which would leave the section with
+                    // nothing in it: the oracle keeps that one.
+                    if i < last && p.inlines.is_empty() && !section_is_empty {
                         // A page it was itself to start passes on to what follows.
                         pending |= p.page_break_before;
                         continue;

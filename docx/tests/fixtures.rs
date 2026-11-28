@@ -1042,6 +1042,33 @@ fn a_landscape_section_is_a_master_page_of_its_own() {
     assert!(odf.contains(r#"style:master-page-name="Section2""#));
 }
 
+/// The empty paragraph that only closes a section is not a paragraph, whether the next section
+/// continues on the page or starts a new one, and whatever its page looks like
+/// (`doc/docx-format.md` §5.3): the next section's first paragraph starts its page.
+#[test]
+fn the_empty_paragraph_closing_a_section_is_dropped_before_a_new_page() {
+    for second in [
+        r#"<w:pgSz w:w="11906" w:h="16838"/>"#,
+        r#"<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"/>"#,
+    ] {
+        let body = format!(
+            r#"<w:p><w:r><w:t>One</w:t></w:r></w:p>
+            <w:p><w:pPr><w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr></w:pPr></w:p>
+            <w:p><w:r><w:t>Two</w:t></w:r></w:p>
+            <w:sectPr>{second}</w:sectPr>"#
+        );
+        let bytes = docx(&body, &[]);
+        let (doc, _) = import(&bytes);
+        assert_eq!(texts(&doc), ["One", "Two"], "{second}");
+        let (odf, _) = grind_docx::convert(&bytes).unwrap();
+        let odf = String::from_utf8(odf).unwrap();
+        assert!(
+            odf.contains(r#"fo:break-before="page""#) || odf.contains("style:master-page-name"),
+            "Two starts a page: {odf}"
+        );
+    }
+}
+
 /// Even pages' own footer, under `w:evenAndOddHeaders`, is ODF's left-page footer — and without
 /// the setting Word shows no even variant, so none is written and nothing is lost.
 #[test]
