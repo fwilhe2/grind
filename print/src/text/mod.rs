@@ -3979,6 +3979,59 @@ mod tests {
         assert!((padded_x - (x + 0.3 * cm)).abs() < 0.01, "{padded_x}");
     }
 
+    /// `doc/odt-format.md` §5c fact 77: a footer's table is a table — each row's cells side by
+    /// side in their columns, a merged cell across all it spans, the rows one under the other.
+    #[test]
+    fn a_footers_table_sets_its_cells_side_by_side() {
+        let footer = |columns: u32, rows: &str| {
+            let bytes = format!(
+                r#"<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" office:mimetype="application/vnd.oasis.opendocument.text">
+                <office:automatic-styles><style:page-layout style:name="pm"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2cm" fo:margin-bottom="2cm" fo:margin-left="2cm" fo:margin-right="2cm"/></style:page-layout></office:automatic-styles>
+                <office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm"><style:footer><table:table table:name="T"><table:table-column table:number-columns-repeated="{columns}"/>{rows}</table:table></style:footer></style:master-page></office:master-styles>
+                <office:body><office:text><text:p>body</text:p></office:text></office:body></office:document>"#
+            );
+            let app = App::new();
+            app.open_bytes("f.fodt", bytes.as_bytes()).unwrap();
+            let page = typeset(&app, &setter(), &Options::default())
+                .pages
+                .remove(0);
+            texts(&page)
+                .into_iter()
+                .map(|t| (t.2.trim().to_owned(), (t.0, t.1)))
+                .collect::<HashMap<_, _>>()
+        };
+        let cell =
+            |text: &str| format!("<table:table-cell><text:p>{text}</text:p></table:table-cell>");
+        let row = |cells: &[&str]| {
+            format!(
+                "<table:table-row>{}</table:table-row>",
+                cells.iter().map(|c| cell(c)).collect::<String>()
+            )
+        };
+        let at = footer(
+            3,
+            &(row(&["20", "Title", "R1"]) + &row(&["Left", "Mid", "Right"])),
+        );
+        let near = |a: f32, b: f32| (a - b).abs() < 0.5;
+        assert!(near(at["20"].0, 56.7) && near(at["Title"].0, 217.4) && near(at["R1"].0, 378.1));
+        assert!(near(at["Left"].0, 56.7) && near(at["Mid"].0, 217.4));
+        assert!(
+            at["20"].1 == at["Title"].1 && at["Title"].1 == at["R1"].1,
+            "{at:?}"
+        );
+        assert!(at["Left"].1 > at["20"].1 && at["Mid"].1 == at["Left"].1);
+        let spanned = format!(
+            r#"<table:table-row>{}<table:table-cell table:number-columns-spanned="3"><text:p>Title</text:p></table:table-cell><table:covered-table-cell/><table:covered-table-cell/>{}</table:table-row>"#,
+            cell("20"),
+            cell("R1")
+        );
+        let at = footer(5, &spanned);
+        assert!(
+            near(at["Title"].0, 153.1) && near(at["R1"].0, 442.2),
+            "{at:?}"
+        );
+    }
+
     /// A line in a header — a fold mark — is drawn on every page set on its master, in the stroke
     /// its graphic style names and counted from the box that style names (§5c fact 49).
     #[test]

@@ -23,6 +23,8 @@ lands, and the release workflow publishes the section as it stands.
   blank page, when the next one starts a new page anyway.
 - A table of contents from Word lines its entries' text up after the section number again,
   instead of pushing it to the right with a row of dots.
+- A table in a header or footer prints as a table, its cells side by side, rather than one
+  cell under another taking room from every page.
 
 ## 0.3.0 — 2026-11-28
 

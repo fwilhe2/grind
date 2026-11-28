@@ -294,8 +294,8 @@ fn a_headers_section_and_its_other_fields_are_read() {
 }
 
 /// A Word header is often a one-row table — a reference in one cell, a logo in the next — and a
-/// list's items are paragraphs too: their text is the header's, in order, the grid and labels
-/// dropped.
+/// list's items are paragraphs too: their text is the header's, in order, the labels dropped.
+/// A table's paragraphs know their cell and the table its columns, as a body table's do.
 #[test]
 fn a_headers_table_and_list_are_read_as_its_paragraphs() {
     use grind_text::marginal::Part;
@@ -316,6 +316,42 @@ fn a_headers_table_and_list_are_read_as_its_paragraphs() {
             vec![Part::Text("item".into())],
         ]
     );
+    let cells: Vec<_> = header
+        .paragraphs
+        .iter()
+        .map(|p| p.cell.as_ref().map(|c| (c.table.as_str(), c.row, c.column)))
+        .collect();
+    assert_eq!(cells, [Some(("H", 0, 0)), Some(("H", 0, 1)), None]);
+}
+
+/// A footer table's merged cells say how far they reach, and its columns are as wide as their
+/// styles say.
+#[test]
+fn a_footers_merged_cells_and_column_widths_are_read() {
+    let bytes = flat(
+        r#"<office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm"/></style:page-layout>
+<style:style style:name="W" style:family="table-column" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><style:table-column-properties style:column-width="3cm"/></style:style></office:automatic-styles>
+<office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1">
+  <style:footer><table:table xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" table:name="F"><table:table-column table:style-name="W" table:number-columns-repeated="3"/><table:table-row><table:table-cell table:number-columns-spanned="2"><text:p>wide</text:p></table:table-cell><table:covered-table-cell/><table:table-cell><text:p>right</text:p></table:table-cell></table:table-row><table:table-row><table:table-cell><text:p>a</text:p></table:table-cell><table:table-cell><text:p>b</text:p></table:table-cell><table:table-cell><text:p>c</text:p></table:table-cell></table:table-row></table:table></style:footer>
+</style:master-page></office:master-styles>"#,
+    );
+    let doc = read_bytes("x.fodt", &bytes).unwrap();
+    let footer = doc.footer.as_ref().expect("a footer");
+    let cells: Vec<_> = footer
+        .paragraphs
+        .iter()
+        .map(|p| {
+            let c = p.cell.as_ref().expect("in a cell");
+            (c.row, c.column, c.columns_spanned)
+        })
+        .collect();
+    assert_eq!(
+        cells,
+        [(0, 0, 2), (0, 2, 1), (1, 0, 1), (1, 1, 1), (1, 2, 1)]
+    );
+    let look = doc.table_looks.get("F").expect("the table's look");
+    assert_eq!(look.columns, [Some(30.0), Some(30.0), Some(30.0)]);
+    assert_eq!(look.rows, 2);
 }
 
 #[test]

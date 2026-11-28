@@ -73,7 +73,12 @@ impl<'a> Marginal<'a> {
                     .pieces(1, 1)
                     .map(|(_, look)| look.map_or_default(|look| app.shown(look)))
                     .collect();
+                let cell = paragraph
+                    .cell
+                    .as_ref()
+                    .map(|cell| InCell::of(app, cell, width));
                 MarginalParagraph {
+                    cell,
                     paragraph: paragraph.clone(),
                     looks,
                     face,
@@ -98,12 +103,9 @@ impl<'a> Marginal<'a> {
         };
         // Measured with the fields at one digit; a page number does not wrap a header line.
         let content: f64 = out
-            .paragraphs
-            .iter()
-            .map(|paragraph| {
-                let [above, _, below, _] = paragraph.room;
-                above + f64::from(paragraph.tall(&out.wrap(paragraph, (1, 1), &[]).1)) + below
-            })
+            .bands()
+            .into_iter()
+            .map(|band| out.band_height(band, (1, 1), &[]))
             .sum();
         // `fo:min-height` counts the spacing (`doc/odt-format.md` §5c fact 47).
         out.height = content.max(pt(marginal.min_height) - out.spacing);
@@ -176,7 +178,7 @@ impl<'a> Marginal<'a> {
         let [_, right, _, left] = paragraph.room;
         let layout = grind_core::layout::wrap_set(
             &fragments,
-            (self.width - left - right).max(1.0) as f32,
+            (paragraph.across(self.width).1 - left - right).max(1.0) as f32,
             &paragraph.face,
             &grind_core::layout::Setting {
                 tabs: paragraph.tabs.clone(),
@@ -196,12 +198,85 @@ impl<'a> Marginal<'a> {
         (page, pages, chapters): (usize, usize, &[String]),
         boxes: &Boxes,
     ) {
+        let mut y = top;
+        for band in self.bands() {
+            // A row's cells each from the row's top, one under the other within a cell.
+            let mut cells: Vec<(f64, f64)> = Vec::new();
+            for paragraph in &self.paragraphs[band.clone()] {
+                let (x, _) = paragraph.across(self.width);
+                let pad = paragraph.cell.as_ref().map_or(0.0, |cell| cell.pad[0]);
+                let at = stack(&mut cells, x, y + pad);
+                *at += self.draw_paragraph(
+                    ops,
+                    paragraph,
+                    (left, *at),
+                    (page, pages, chapters),
+                    boxes,
+                );
+            }
+            y += self.band_height(band, (page, pages), chapters);
+        }
+    }
+
+    /// The runs of paragraphs set together: a table row's, else each paragraph alone.
+    fn bands(&self) -> Vec<std::ops::Range<usize>> {
+        let mut out: Vec<std::ops::Range<usize>> = Vec::new();
+        for (i, paragraph) in self.paragraphs.iter().enumerate() {
+            let row = paragraph.cell.as_ref().map(|cell| &cell.row);
+            match out.last_mut() {
+                Some(band)
+                    if row.is_some()
+                        && self.paragraphs[band.start].cell.as_ref().map(|c| &c.row) == row =>
+                {
+                    band.end = i + 1;
+                }
+                _ => out.push(i..i + 1),
+            }
+        }
+        out
+    }
+
+    /// How tall a band is: its paragraph's, or its tallest cell's with the cell's padding.
+    fn band_height(
+        &self,
+        band: std::ops::Range<usize>,
+        (page, pages): (usize, usize),
+        chapters: &[String],
+    ) -> f64 {
+        let mut cells: Vec<(f64, f64)> = Vec::new();
+        for paragraph in &self.paragraphs[band] {
+            let [above, _, below, _] = paragraph.room;
+            let tall = above
+                + f64::from(paragraph.tall(&self.wrap(paragraph, (page, pages), chapters).1))
+                + below;
+            let (x, _) = paragraph.across(self.width);
+            let pad = paragraph
+                .cell
+                .as_ref()
+                .map_or(0.0, |cell| cell.pad[0] + cell.pad[2]);
+            *stack(&mut cells, x, pad) += tall;
+        }
+        cells.into_iter().map(|(_, tall)| tall).fold(0.0, f64::max)
+    }
+
+    /// Draw one paragraph with its top margin at `y`, in its cell when it is in one; the height
+    /// it took, its margins included.
+    fn draw_paragraph(
+        &self,
+        ops: &mut Vec<Op>,
+        paragraph: &MarginalParagraph<'_>,
+        (left, top): (f64, f64),
+        (page, pages, chapters): (usize, usize, &[String]),
+        boxes: &Boxes,
+    ) -> f64 {
+        let (x, width) = paragraph.across(self.width);
+        let left = left + x;
         let mut y = top as f32;
-        for paragraph in &self.paragraphs {
+        {
             let [above, right, below, indent] = paragraph.room;
             y += above as f32;
             let (pieces, layout) = self.wrap(paragraph, (page, pages), chapters);
-            let measure = (self.width - indent - right).max(1.0) as f32;
+            let measure = (width - indent - right).max(1.0) as f32;
             let tall = paragraph.tall(&layout);
             if let Some(frame) = &paragraph.frame {
                 let piece = Piece {
@@ -248,8 +323,8 @@ impl<'a> Marginal<'a> {
                     scale,
                     width,
                     (0.0, boxes.paper.0),
-                    (left, self.width),
-                    (left, self.width),
+                    (left - x, self.width),
+                    (left - x, self.width),
                 );
                 let y = picture.down.start(
                     scale,
@@ -349,6 +424,53 @@ impl<'a> Marginal<'a> {
             }
             y += tall + below as f32;
         }
+        f64::from(y) - top
+    }
+}
+
+/// The running height of the cell at `x` in a row, starting at `start` the first time it is met.
+fn stack(cells: &mut Vec<(f64, f64)>, x: f64, start: f64) -> &mut f64 {
+    let at = cells
+        .iter()
+        .position(|(cx, _)| *cx == x)
+        .unwrap_or_else(|| {
+            cells.push((x, start));
+            cells.len() - 1
+        });
+    &mut cells[at].1
+}
+
+/// Where a table cell's paragraphs go across a header or footer, in points from its left edge:
+/// the row they share, the cell's box inside its padding, and the padding.
+pub(super) struct InCell {
+    row: (String, u32),
+    x: f64,
+    width: f64,
+    pad: [f64; 4],
+}
+
+impl InCell {
+    /// Its place in a header `width` wide, by its table's look as a body cell's is.
+    fn of(app: &App, cell: &grind_text::Cell, width: f64) -> Self {
+        let look = app.table_look(&cell.table).unwrap_or_default();
+        let (offset, span) = look
+            .placement
+            .as_ref()
+            .and_then(|placement| placement.span(width))
+            .unwrap_or((0.0, width));
+        let columns: Vec<Option<f64>> = look.columns.iter().map(|w| w.map(pt)).collect();
+        let count = (columns.len() as u32).max(cell.column + cell.columns_spanned);
+        let (x, cell_width) = grind_text::flow::cell_x_with(cell, count, span, &columns);
+        let pad = look
+            .cells
+            .get(&(cell.row, cell.column))
+            .map_or([0.0; 4], |cell| cell.padding.map(pt));
+        InCell {
+            row: (cell.table.clone(), cell.row),
+            x: offset + x + pad[3],
+            width: (cell_width - pad[1] - pad[3]).max(1.0),
+            pad,
+        }
     }
 }
 
@@ -363,6 +485,8 @@ pub(super) struct Boxes {
 /// stops its style gives it.
 pub(super) struct MarginalParagraph<'a> {
     pub(super) paragraph: grind_text::marginal::Paragraph,
+    /// Its table cell's place, when it is in one.
+    pub(super) cell: Option<InCell>,
     pub(super) looks: Vec<grind_text::CharStyle>,
     pub(super) face: RoleFace<'a>,
     pub(super) align: Align,
@@ -376,6 +500,13 @@ pub(super) struct MarginalParagraph<'a> {
 }
 
 impl MarginalParagraph<'_> {
+    /// Its box's left edge and width across a header `width` wide: its cell's, else the whole.
+    fn across(&self, width: f64) -> (f64, f64) {
+        self.cell
+            .as_ref()
+            .map_or((0.0, width), |cell| (cell.x, cell.width))
+    }
+
     /// Its margin below, without the border and padding its box adds there.
     pub(super) fn margin_below(&self) -> f64 {
         let inset = self

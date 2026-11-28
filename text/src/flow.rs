@@ -330,16 +330,11 @@ pub(crate) fn cell_x(cell: &Cell, columns: u32, column: f64) -> (f64, f64) {
     )
 }
 
-/// [`cell_x`] for a table whose columns state widths (`widths`, `None` where a column states
+/// `cell_x` for a table whose columns state widths (`widths`, `None` where a column states
 /// none): unstated columns share what is left, and the stated ones are scaled to fill the table's
 /// width, as Writer does (`doc/odt-format.md` §5c fact 26).
 #[must_use]
-pub(crate) fn cell_x_with(
-    cell: &Cell,
-    columns: u32,
-    column: f64,
-    widths: &[Option<f64>],
-) -> (f64, f64) {
+pub fn cell_x_with(cell: &Cell, columns: u32, column: f64, widths: &[Option<f64>]) -> (f64, f64) {
     let count = columns.max(1) as usize;
     let stated: f64 = widths.iter().take(count).flatten().sum();
     let unstated = (0..count)

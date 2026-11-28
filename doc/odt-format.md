@@ -1257,6 +1257,16 @@ oracle turned out to be unable to answer the font questions (fact 4).
    is made of this — a section number hanging out, a tab, the entry's text at the edge where
    its later lines start, and a dotted tab to the page number: the Legislation Act 2003
    compilation's `toc 5` entries.
+77. **A header's or footer's table is a table** — `MEASURED` (2026-11-28, 26.8.3.1, Liberation
+   Serif 12 pt, A4 with 2 cm margins, a footer of one unstyled table, read back with
+   `pdftotext -bbox`). Three equal columns of two rows put `20 Title R1` at 56.8, 217.4 and
+   378.1 pt and `Left Mid Right` under them at the same x, 13.8 pt lower; five columns with
+   `Title` spanning three of them put it at 153.2 and `R1`, after the covered cells, at 442.2.
+   So the cells go where a body table's do — the columns' stated widths scaled to the table's
+   width, a merged cell across what it spans, the padding inside — and a row is as tall as its
+   tallest cell. The Legislation Act 2003 compilation's footer is such a table, two rows of
+   page number, title and dates; set one cell under another it took twice its height from the
+   body on every page. Not drawn here yet: a header table's borders and fills.
 14. **A line's trailing spaces hang past the margin** — `MEASURED` (2026-10-06, 26.8.1.1).
    Liberation Mono 10 pt (6 pt a cell) on a 63 pt measure: `aaaa bbbbb ccc` breaks after
    `bbbbb`, whose 60 pt fit and whose following space (to 66 pt) does not — the space stays on

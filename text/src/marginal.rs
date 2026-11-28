@@ -8,10 +8,10 @@
 //! and `text:page-count` (rng:8696, rng:8751) as fields filled per page (`doc/odt-format.md` §5c,
 //! fact 9).
 //!
-//! A table's or a list's paragraphs are kept as the header's own, in order, and a master's
-//! first-page variants (`style:header-first`) beside its own, and each piece's character
-//! formatting as a body run's, and its pictures. Not kept: a table's grid, and the left-page
-//! variants (`style:header-left`).
+//! A list's paragraphs are kept as the header's own, in order; a table's know their cell, and the
+//! table's look is the document's as a body table's is. A master's first-page variants
+//! (`style:header-first`) are kept beside its own, and each piece's character formatting as a
+//! body run's, and its pictures.
 
 /// One piece of a header or footer paragraph.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,6 +39,9 @@ pub struct Look {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Paragraph {
     pub style: Option<String>,
+    /// The table cell it is in, when it is in one; the table's look is the document's
+    /// `table_looks` entry by its name.
+    pub cell: Option<crate::model::Cell>,
     pub parts: Vec<Part>,
     /// Each part's look, one per part; a part without one is unformatted.
     pub looks: Vec<Look>,

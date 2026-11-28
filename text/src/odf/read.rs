@@ -107,6 +107,11 @@ pub struct Builder {
     /// The header or footer paragraph being read, and those of it already read.
     marginal: Option<crate::marginal::Paragraph>,
     marginal_done: Vec<crate::marginal::Paragraph>,
+    /// The header or footer table being read — its name, its next row and column — and the cell
+    /// its paragraphs are in; a table inside one of its cells is read as that cell's paragraphs.
+    marginal_table: Option<(String, u32, u32)>,
+    marginal_cell: Option<crate::model::Cell>,
+    marginal_nested: u32,
     /// Each graphic style's stroke — `(width in mm, #rrggbb)` — for the lines a header draws.
     graphic_strokes: HashMap<String, (f64, String)>,
     /// Each graphic style's placement of a frame, and the style it inherits from.
@@ -267,6 +272,9 @@ impl Builder {
             layout_marginals: HashMap::new(),
             marginal: None,
             marginal_done: Vec::new(),
+            marginal_table: None,
+            marginal_cell: None,
+            marginal_nested: 0,
             graphic_strokes: HashMap::new(),
             graphic_places: HashMap::new(),
             marginal_picture: None,
@@ -528,6 +536,9 @@ impl Builder {
     /// Drop every automatic style read so far — after `styles.xml`, whose automatic styles only
     /// that part can name.
     pub(crate) fn forget_automatic_styles(&mut self) {
+        // The only tables read so far are headers' and footers', whose column and cell styles
+        // are about to go.
+        self.settle_table_looks();
         // A header's or footer's paragraphs name `styles.xml`'s automatic styles (`MP1`), which
         // `content.xml` may reuse for something else, so each is kept under a name no file can
         // spell.
@@ -1024,13 +1035,15 @@ impl Context<Builder> for MasterPage {
             master: self.name.clone(),
             place,
             top: true,
+            opened: Opened::Nothing,
         }))
     }
 }
 
-/// A `style:header` or `style:footer`: its paragraphs, as text and page fields. Those in a
-/// table or a list are read in order as its own, the grid and the labels dropped — a Word
-/// header is often a one-row table holding a reference and a logo.
+/// A `style:header` or `style:footer`: its paragraphs, as text and page fields. Those in a list
+/// are read in order as its own, the labels dropped; those in a table know their cell, and the
+/// table its columns and cell styles as a body table does — a Word header is often a table
+/// holding a reference and a logo.
 struct MarginalText {
     master: String,
     place: Place,
@@ -1038,10 +1051,100 @@ struct MarginalText {
     /// inside one; LibreOffice wraps a header in a section when one was put there
     /// (`tdf116848.odt`).
     top: bool,
+    /// What reading this element began, to end with it.
+    opened: Opened,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Opened {
+    Nothing,
+    Table,
+    Nested,
+    Cell,
+}
+
+impl MarginalText {
+    fn inner(&self, opened: Opened) -> Ctx {
+        Box::new(MarginalText {
+            master: self.master.clone(),
+            place: self.place,
+            top: false,
+            opened,
+        })
+    }
+
+    /// A table element: the table's columns, rows and cells as a body table's, its paragraphs
+    /// told their cell. `None` for one that opens nothing to read inside.
+    fn table_part(&self, local: &str, attrs: &Attrs, b: &mut Builder) -> Option<Option<Ctx>> {
+        let nested = b.marginal_nested > 0;
+        match (local, &mut b.marginal_table) {
+            ("table", None) => {
+                let name = attrs.get(Ns::Table, "name").map_or_else(
+                    || format!("{MARGINAL_STYLE}{}", b.table_pending.len()),
+                    str::to_owned,
+                );
+                b.table_pending.entry(name.clone()).or_default().style =
+                    attrs.get(Ns::Table, "style-name").map(str::to_owned);
+                b.marginal_table = Some((name, 0, 0));
+                Some(Some(self.inner(Opened::Table)))
+            }
+            ("table", Some(_)) => {
+                b.marginal_nested += 1;
+                Some(Some(self.inner(Opened::Nested)))
+            }
+            (_, Some(_)) if nested => None,
+            ("table-column", Some((name, ..))) => {
+                let repeated = attrs.count(Ns::Table, "number-columns-repeated", MAX_TABLE_SPAN);
+                let style = attrs.get(Ns::Table, "style-name").map(str::to_owned);
+                let pending = b.table_pending.entry(name.clone()).or_default();
+                for _ in 0..repeated.max(1) {
+                    pending.columns.push(style.clone());
+                }
+                Some(None)
+            }
+            ("table-row", Some((name, row, column))) => {
+                *row += 1;
+                *column = 0;
+                let pending = b.table_pending.entry(name.clone()).or_default();
+                pending.rows = pending.rows.max(*row);
+                None
+            }
+            ("table-cell" | "covered-table-cell", Some((name, row, column))) => {
+                let at = *column;
+                *column += attrs
+                    .count(Ns::Table, "number-columns-repeated", MAX_TABLE_SPAN)
+                    .max(1);
+                if local == "covered-table-cell" {
+                    return Some(None);
+                }
+                let cell = crate::model::Cell {
+                    table: name.clone(),
+                    row: row.saturating_sub(1),
+                    column: at,
+                    columns_spanned: attrs
+                        .count(Ns::Table, "number-columns-spanned", MAX_TABLE_SPAN)
+                        .max(1),
+                    rows_spanned: 1,
+                };
+                if let Some(style) = attrs.get(Ns::Table, "style-name") {
+                    let pending = b.table_pending.entry(name.clone()).or_default();
+                    pending.cells.push(((cell.row, at), style.to_owned()));
+                }
+                b.marginal_cell = Some(cell);
+                Some(Some(self.inner(Opened::Cell)))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl Context<Builder> for MarginalText {
     fn start_child(&mut self, name: &Name, attrs: &Attrs, b: &mut Builder) -> Option<Ctx> {
+        if name.ns == Ns::Table
+            && let Some(read) = self.table_part(&name.local, attrs, b)
+        {
+            return read;
+        }
         if matches!(
             (name.ns, name.local.as_str()),
             (Ns::Text, "section" | "list" | "list-item" | "list-header")
@@ -1055,23 +1158,26 @@ impl Context<Builder> for MarginalText {
                         | "table-cell"
                 )
         ) {
-            return Some(Box::new(MarginalText {
-                master: self.master.clone(),
-                place: self.place,
-                top: false,
-            }));
+            return Some(self.inner(Opened::Nothing));
         }
         if !matches!((name.ns, name.local.as_str()), (Ns::Text, "p" | "h")) {
             return None;
         }
         b.marginal = Some(crate::marginal::Paragraph {
             style: attrs.get(Ns::Text, "style-name").map(str::to_owned),
+            cell: b.marginal_cell.clone(),
             ..Default::default()
         });
         Some(Box::new(MarginalInline::paragraph()))
     }
 
     fn end(&mut self, b: &mut Builder) {
+        match self.opened {
+            Opened::Table => b.marginal_table = None,
+            Opened::Nested => b.marginal_nested -= 1,
+            Opened::Cell => b.marginal_cell = None,
+            Opened::Nothing => {}
+        }
         if !self.top {
             return;
         }
