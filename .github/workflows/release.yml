@@ -10,6 +10,7 @@ name: Release
 #      version main was working towards), commits it with CHANGELOG.md's Unreleased section
 #      cut, tags it, commits the next `-dev` on top, and pushes the tag and main in one
 #      atomic push, so a main that moved meanwhile fails the run before anything is public;
+#      the `-dev` commit carries the tag's line count in examples/loc/;
 #   3. creates the release as a draft, its notes where to download and the section that was cut;
 #   4. builds from the tag: `grind` and `grind-tui` per platform, then everything
 #      artifacts.yml builds — the Linux packages (the GTK shells among them), the Windows
@@ -62,6 +63,10 @@ jobs:
         with:
           ref: main
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: release-version
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-edit
@@ -138,6 +143,9 @@ jobs:
           git commit -am "Release $VERSION"
           git tag -a "v$VERSION" -m "grind $VERSION"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          # The tag's snapshot, counted once it exists so the row carries its name.
+          examples/loc/update.sh "v$VERSION"
 
           IFS=. read -r major minor patch <<< "$VERSION"
           next="$major.$minor.$((patch + 1))-dev"

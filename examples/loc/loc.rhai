@@ -9,10 +9,10 @@
 //   grind test examples/loc/loc.rhai    # and check it agrees with itself
 //
 // Three files and one rule. `history.json` is the data: `update.sh` counts a commit's lines and
-// adds them, once per release. This script is the shape: which sheets, which formulas, which
-// charts. `loc.fods` is what `grind build` makes of the two — committed so that `git diff`
-// and any office suite can show it, and **never edited by hand**, because the next release
-// regenerates it. Adding a snapshot adds one row to each table, and the diff of the `.fods`
+// adds them, once per release, run by the release workflow. This script is the shape: which
+// sheets, which formulas, which charts. `loc.fods` is what `grind build` makes of the two —
+// committed so that `git diff` and any office suite can show it, and **never edited by hand**,
+// because the next release regenerates it. Adding a snapshot adds one row to each table, and the diff of the `.fods`
 // says exactly that.
 //
 //   Growth   the latest figures, one row per snapshot with the crates summed into what they

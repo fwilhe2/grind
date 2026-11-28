@@ -225,7 +225,8 @@ version by hand or in a feature commit.
 A release is **Actions → Release** (`release.yml`, `workflow_dispatch`): `bump` (patch, minor,
 major) and `dry_run`. It refuses unless main's push checks passed, commits the release
 (`CHANGELOG.md`'s `## Unreleased` filed under the version by `scripts/release-notes.py`), tags
-`vX.Y.Z`, commits the next `-dev` with an empty `## Unreleased`, and pushes both atomically.
+`vX.Y.Z`, commits the next `-dev` with an empty `## Unreleased` and the tag's line count in
+`examples/loc/` (`update.sh`), and pushes both atomically.
 Then it builds from the tag and attaches the binaries, `artifacts.yml`'s packages, the Windows
 shell, the Mac installer and the `.vsix`, pushes the images, attests every file, and publishes.
 The first release is main's version without `-dev`. A dry run does all of it on a scratch branch

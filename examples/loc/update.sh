@@ -15,7 +15,8 @@
 # `loc.fods` has to be what *this* checkout builds — a test compares them — so the binary is
 # built from it unless `GRIND` names another. An installed `grind` may be older than the tree.
 #
-# Meant to run once per release, after the tag exists, so the snapshot carries its name.
+# The release workflow runs it once per release, after the tag exists, so the snapshot carries
+# its name, and commits the result with the next `-dev`.
 # Counting re-runs replace the commit's own entry rather than adding a second one, and each
 # commit is read straight out of git (`git grep REV`), so nothing is checked out and the
 # working tree may be dirty. The history is data and the spreadsheet is a build product:
