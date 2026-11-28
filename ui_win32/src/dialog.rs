@@ -19,6 +19,7 @@
 
 #![cfg(windows)]
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, WPARAM};
@@ -359,23 +360,23 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     TrackMouseEvent, VK_END, VK_HOME, VK_LEFT, VK_NEXT, VK_PRIOR, VK_RIGHT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BS_OWNERDRAW, CREATESTRUCTW, CS_DROPSHADOW, CallWindowProcW, CreateWindowExW, DLGC_BUTTON,
-    DLGC_DEFPUSHBUTTON, DLGC_UNDEFPUSHBUTTON, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    EN_CHANGE, EN_KILLFOCUS, EN_SETFOCUS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE,
-    ES_READONLY, GWLP_USERDATA, GWLP_WNDPROC, GetClientRect, GetMessageW, GetPropW,
-    GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, HMENU, HTCLIENT,
-    IDC_ARROW, IDCANCEL, IDNO, IDOK, IDYES, IsDialogMessageW, LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-    LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETITEMRECT, LB_GETSEL, LB_ITEMFROMPOINT,
-    LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_HASSTRINGS, LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT,
-    LBS_NOTIFY, LBS_OWNERDRAWFIXED, LWA_ALPHA, LoadCursorW, MSG, PostQuitMessage, RegisterClassW,
-    RemovePropW, SM_CXVSCROLL, SW_SHOW, SW_SHOWNOACTIVATE, SendMessageW,
-    SetLayeredWindowAttributes, SetPropW, SetWindowLongPtrW, SetWindowTextW, ShowWindow,
-    TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND, WM_CTLCOLOREDIT,
-    WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND, WM_GETDLGCODE, WM_KEYDOWN,
-    WM_LBUTTONDOWN, WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE,
-    WM_NCDESTROY, WM_NCHITTEST, WM_NOTIFY, WM_PAINT, WM_SETFONT, WM_USER, WNDCLASSW, WS_CAPTION,
-    WS_CHILD, WS_CLIPCHILDREN, WS_DISABLED, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_POPUP, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE, WS_VSCROLL,
+    BS_OWNERDRAW, CS_DROPSHADOW, CallWindowProcW, CreateWindowExW, DLGC_BUTTON, DLGC_DEFPUSHBUTTON,
+    DLGC_UNDEFPUSHBUTTON, DefWindowProcW, DestroyWindow, DispatchMessageW, EN_CHANGE, EN_KILLFOCUS,
+    EN_SETFOCUS, ES_AUTOHSCROLL, ES_AUTOVSCROLL, ES_MULTILINE, ES_READONLY, GWLP_WNDPROC,
+    GetClientRect, GetMessageW, GetPropW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+    HMENU, HTCLIENT, IDC_ARROW, IDCANCEL, IDNO, IDOK, IDYES, IsDialogMessageW,
+    LAYERED_WINDOW_ATTRIBUTES_FLAGS, LB_ADDSTRING, LB_GETCOUNT, LB_GETCURSEL, LB_GETITEMRECT,
+    LB_GETSEL, LB_ITEMFROMPOINT, LB_SETCURSEL, LB_SETSEL, LBN_DBLCLK, LBS_HASSTRINGS,
+    LBS_MULTIPLESEL, LBS_NOINTEGRALHEIGHT, LBS_NOTIFY, LBS_OWNERDRAWFIXED, LWA_ALPHA, LoadCursorW,
+    MSG, PostQuitMessage, RegisterClassW, RemovePropW, SM_CXVSCROLL, SW_SHOW, SW_SHOWNOACTIVATE,
+    SendMessageW, SetLayeredWindowAttributes, SetPropW, SetWindowLongPtrW, SetWindowTextW,
+    ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE, WM_COMMAND,
+    WM_CTLCOLOREDIT, WM_CTLCOLORLISTBOX, WM_CTLCOLORSTATIC, WM_DRAWITEM, WM_ERASEBKGND,
+    WM_GETDLGCODE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MEASUREITEM, WM_MOUSEMOVE, WM_NCACTIVATE,
+    WM_NCCALCSIZE, WM_NCCREATE, WM_NCDESTROY, WM_NCHITTEST, WM_NOTIFY, WM_PAINT, WM_SETFONT,
+    WM_USER, WNDCLASSW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN, WS_DISABLED, WS_EX_LAYERED,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_TABSTOP, WS_THICKFRAME, WS_VISIBLE,
+    WS_VSCROLL,
 };
 
 mod notebook;
@@ -879,7 +880,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
     }
     let placed = modal::place(want, edges(owner_rect), work, dpi);
 
-    let state = Box::new(Modal {
+    let state = Modal {
         title: spec.title.to_owned(),
         body: spec.body,
         buttons: spec
@@ -906,13 +907,13 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
         active: Brush::solid(theme.background),
         answer: None,
         finished: false,
-    });
+    };
+    MODALS.with_borrow_mut(|modals| modals.pending = Some(state));
 
     let smoke = Smoke::over(owner);
     let class = gdi::wide(MODAL_CLASS);
     let title = gdi::wide(spec.title);
-    // SAFETY: the class name and title outlive the call; the boxed state is handed to the
-    // window and taken back in `WM_NCDESTROY`.
+    // SAFETY: the class name and title outlive the call.
     let popup = unsafe {
         let instance = GetModuleHandleW(None).ok()?;
         // A caption and a thick frame that are never drawn — `WM_NCCALCSIZE` gives the whole
@@ -930,7 +931,7 @@ fn run<T>(spec: Spec<'_>, read: impl FnOnce(&mut Modal) -> T) -> Option<T> {
             Some(owner),
             None::<HMENU>,
             Some(instance.into()),
-            Some(Box::into_raw(state).cast()),
+            None,
         )
         .ok()?
     };
@@ -1322,16 +1323,28 @@ fn create_children(popup: HWND, natural: &[f64], titled: bool) {
     }
 }
 
+/// The open modals' state: `pending` from [`run`] until `WM_NCCREATE` names its window.
+#[derive(Default)]
+struct Modals {
+    pending: Option<Modal>,
+    open: Vec<(HWND, Modal)>,
+}
+
+thread_local! {
+    static MODALS: RefCell<Modals> = RefCell::default();
+}
+
 /// Run `f` with the modal's state. The same arrangement `win.rs` uses, and the same rule: the
 /// borrow lives for the call and nothing inside it dispatches a message.
-unsafe fn with_modal<T>(hwnd: HWND, f: impl FnOnce(&mut Modal) -> T) -> Option<T> {
-    // SAFETY: the slot holds either null or the pointer stored in `WM_NCCREATE`.
-    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Modal;
-    if raw.is_null() {
-        return None;
-    }
-    // SAFETY: exclusive for the duration of this call.
-    Some(f(unsafe { &mut *raw }))
+fn with_modal<T>(hwnd: HWND, f: impl FnOnce(&mut Modal) -> T) -> Option<T> {
+    MODALS.with(|modals| {
+        let Ok(mut modals) = modals.try_borrow_mut() else {
+            debug_assert!(false, "a message re-entered a modal while it was borrowed");
+            return None;
+        };
+        let (_, modal) = modals.open.iter_mut().find(|(window, _)| *window == hwnd)?;
+        Some(f(modal))
+    })
 }
 
 /// The keys the print preview answers wherever the focus is. `true` when one was taken.
@@ -1343,21 +1356,19 @@ fn turn_page(popup: HWND, key: u16) -> bool {
         k if k == VK_END.0 => ID_NEXT - 100,
         _ => return false,
     };
-    // SAFETY: one borrow, no dispatch; the repaint is queued after it.
-    let turned = unsafe {
-        with_modal(popup, |modal| match &mut modal.body {
-            Body::Pages(pages) => {
-                pages.page = match id {
-                    ID_PREVIOUS => pages.page.saturating_sub(1),
-                    ID_NEXT => (pages.page + 1).min(pages.count - 1),
-                    i if i == ID_PREVIOUS - 100 => 0,
-                    _ => pages.count - 1,
-                };
-                true
-            }
-            _ => false,
-        })
-    } == Some(true);
+    // The repaint is queued after the borrow.
+    let turned = with_modal(popup, |modal| match &mut modal.body {
+        Body::Pages(pages) => {
+            pages.page = match id {
+                ID_PREVIOUS => pages.page.saturating_sub(1),
+                ID_NEXT => (pages.page + 1).min(pages.count - 1),
+                i if i == ID_PREVIOUS - 100 => 0,
+                _ => pages.count - 1,
+            };
+            true
+        }
+        _ => false,
+    }) == Some(true);
     if turned {
         enable_page_buttons(popup);
         // SAFETY: the borrow is released.
@@ -1400,12 +1411,13 @@ fn enable_page_buttons(popup: HWND) {
 extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match message {
         WM_NCCREATE => {
-            // SAFETY: `lparam` is this message's `CREATESTRUCTW`.
-            unsafe {
-                let create = &*(lparam.0 as *const CREATESTRUCTW);
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
-                DefWindowProcW(hwnd, message, wparam, lparam)
-            }
+            MODALS.with_borrow_mut(|modals| {
+                if let Some(modal) = modals.pending.take() {
+                    modals.open.push((hwnd, modal));
+                }
+            });
+            // SAFETY: the default handler with the arguments it was given.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         // The whole window is client: the caption and frame exist only for the compositor. Both
         // forms are answered — the one `CreateWindowExW` sends first (`wparam` false) decides the
@@ -1472,8 +1484,7 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
             answered.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) })
         }
         message if message == DM_GETDEFID => {
-            // SAFETY: one borrow, no dispatch.
-            let id = unsafe { with_modal(hwnd, |modal| modal.default_id()) }.unwrap_or(IDOK.0);
+            let id = with_modal(hwnd, |modal| modal.default_id()).unwrap_or(IDOK.0);
             LRESULT((DC_HASDEFID << 16) | id as isize)
         }
         WM_NOTIFY if notebook::notify(hwnd, lparam) => LRESULT(0),
@@ -1490,16 +1501,15 @@ extern "system" fn modal_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: 
             command(hwnd, IDCANCEL.0, 0);
             LRESULT(0)
         }
+        // Dropped after the slot is released, so a message from within the drop finds no state.
         WM_NCDESTROY => {
-            // SAFETY: the pointer came from `Box::into_raw`; reconstituting it once frees it.
-            unsafe {
-                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Modal;
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                if !raw.is_null() {
-                    drop(Box::from_raw(raw));
-                }
-                DefWindowProcW(hwnd, message, wparam, lparam)
-            }
+            let closed = MODALS.with_borrow_mut(|modals| {
+                let at = modals.open.iter().position(|(window, _)| *window == hwnd)?;
+                Some(modals.open.remove(at))
+            });
+            drop(closed);
+            // SAFETY: the default handler with the arguments it was given.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         // SAFETY: the default handler with the arguments it was given.
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
@@ -2215,6 +2225,7 @@ extern "system" fn button_proc(
         WM_GETDLGCODE => {
             // SAFETY: asking the focus, which does not dispatch.
             let focused = unsafe { GetFocus() } == hwnd;
+            // SAFETY: reads one flag of this window, which does not dispatch.
             let enabled = unsafe { IsWindowEnabled(hwnd) }.as_bool();
             LRESULT(
                 (DLGC_BUTTON

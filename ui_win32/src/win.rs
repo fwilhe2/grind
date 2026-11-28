@@ -7,23 +7,19 @@
 //! **Windows only, and the only file in this crate that holds state.** Everything it decides is
 //! decided somewhere portable — `sheet/geom.rs` where a cell is, `sheet/draw.rs` what it looks
 //! like, `theme.rs` its colour — so this file translates Windows' messages into those answers,
-//! plus the one piece of unsafe machinery the shell needs.
+//! and where the window's state lives.
 //!
-//! ## The `GWLP_USERDATA` arrangement
+//! ## The window's state
 //!
-//! A window procedure is a C callback with an `HWND` and no context, so the state is `Box`ed, its
-//! raw pointer handed to the window in `GWLP_USERDATA` and read back on every message. That is
-//! safe on three facts a future edit can break:
-//!
-//! 1. The pointer is stored in `WM_NCCREATE`, from the caller's `CREATESTRUCTW`, before any
-//!    message that reads it.
-//! 2. It is taken back and dropped in `WM_NCDESTROY`, the *last* message a window gets, and the
-//!    slot zeroed then.
-//! 3. **A message is never dispatched re-entrantly while the borrow is live** (decision 7). Each
-//!    handler takes the `&mut` for one message; `dialog.rs`'s modals run nested message loops, so
-//!    a handler opening one borrows **on each side of the call and never across it** —
-//!    [`sheet_rename`] is the shape: one [`with_sheet`] to read, the prompt, a *fresh*
-//!    [`with_sheet`] to apply, each with the SAFETY comment saying which side it is on.
+//! A window procedure is a C callback with an `HWND` and no context, and the process has one
+//! window, so its [`Pane`] lives in a thread-local [`RefCell`]: put there in `WM_NCCREATE`, taken
+//! out in `WM_NCDESTROY`, the *last* message a window gets, and reached in between only through
+//! [`with_pane`]. **A message is never dispatched re-entrantly while the borrow is live**
+//! (decision 7): each handler borrows for one message, and `dialog.rs`'s modals run nested
+//! message loops, so a handler opening one borrows **on each side of the call and never across
+//! it** — [`sheet_rename`] is the shape: one [`with_sheet`] to read, the prompt, a *fresh*
+//! [`with_sheet`] to apply. The `RefCell` checks the rule rather than trusting it, and a call
+//! Windows answers by sending a message straight back waits for [`after_borrow`].
 //!
 //! ## Editing state
 //!
@@ -54,24 +50,23 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CREATESTRUCTW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu,
-    CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW,
-    EN_CHANGE, EN_KILLFOCUS, ES_AUTOHSCROLL, GWLP_USERDATA, GetCursorPos, GetMessageW, GetParent,
-    GetWindowLongPtrW, GetWindowTextLengthW, GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZEALL,
-    IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED,
-    MF_GRAYED, MF_POPUP, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW,
-    PostQuitMessage, RegisterClassW, SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN,
-    SB_PAGEUP, SB_THUMBPOSITION, SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK,
-    SIF_PAGE, SIF_POS, SIF_RANGE, SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED,
-    SWP_NOACTIVATE, SWP_NOZORDER, SendMessageW, SetCursor, SetWindowLongPtrW, SetWindowPos,
-    SetWindowTextW, ShowWindow, SystemParametersInfoW, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP, WM_CHAR, WM_CLOSE, WM_COMMAND,
-    WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_HSCROLL, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
-    WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-    WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE, WM_VSCROLL, WNDCLASSW,
-    WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
+    AppendMenuW, CS_DBLCLKS, CW_USEDEFAULT, CheckMenuItem, CreateMenu, CreatePopupMenu,
+    CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow, DispatchMessageW, EN_CHANGE,
+    EN_KILLFOCUS, ES_AUTOHSCROLL, GetCursorPos, GetMessageW, GetParent, GetWindowTextLengthW,
+    GetWindowTextW, HMENU, IDC_ARROW, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE,
+    IDC_SIZEWE, LoadCursorW, MF_BYCOMMAND, MF_CHECKED, MF_GRAYED, MF_POPUP, MF_SEPARATOR,
+    MF_STRING, MF_UNCHECKED, MSG, MoveWindow, PostMessageW, PostQuitMessage, RegisterClassW,
+    SB_BOTTOM, SB_HORZ, SB_LINEDOWN, SB_LINEUP, SB_PAGEDOWN, SB_PAGEUP, SB_THUMBPOSITION,
+    SB_THUMBTRACK, SB_TOP, SB_VERT, SCROLLINFO, SCROLLINFO_MASK, SIF_PAGE, SIF_POS, SIF_RANGE,
+    SPI_GETWHEELSCROLLLINES, SW_HIDE, SW_SHOW, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
+    SendMessageW, SetCursor, SetWindowPos, SetWindowTextW, ShowWindow, SystemParametersInfoW,
+    TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenuEx, TranslateMessage, WHEEL_DELTA, WM_APP,
+    WM_CHAR, WM_CLOSE, WM_COMMAND, WM_CONTEXTMENU, WM_CREATE, WM_CTLCOLOREDIT, WM_DESTROY,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_HSCROLL, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INITMENUPOPUP, WM_KEYDOWN, WM_KILLFOCUS,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE,
+    WM_NCDESTROY, WM_PAINT, WM_SETCURSOR, WM_SETFOCUS, WM_SETFONT, WM_SETTINGCHANGE, WM_SIZE,
+    WM_VSCROLL, WNDCLASSW, WS_CHILD, WS_HSCROLL, WS_OVERLAPPEDWINDOW, WS_VSCROLL,
 };
 // Focus and mouse capture are Windows' input API rather than its window-management one, which
 // is where its own metadata puts them.
@@ -164,7 +159,7 @@ const WM_DOC_CHANGED: u32 = WM_APP + 2;
 const RENDER_W: i32 = 1280;
 const RENDER_H: i32 = 800;
 
-/// Everything the window owns, boxed, reached through `GWLP_USERDATA`. **One binary, both document
+/// Everything the window owns, reached through [`with_pane`]. **One binary, both document
 /// types** (decision 1): which pane a window is comes from [`grind_core::kind()`] reading the
 /// file's bytes, and every message below belongs to one pane — [`with_sheet`], [`with_text`] — or
 /// is answered for all here. The arms keep their own path, theme and dirty flag rather than a
@@ -1453,15 +1448,14 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
     // that never opens a file dialog pays for one `CoInitializeEx`.
     let _com = Com::new();
 
-    let state = Box::new(opened(kind, path, theme::current())?);
+    let state = opened(kind, path, theme::current())?;
 
     let class = gdi::wide(CLASS_NAME);
     let title = gdi::wide(&state.title());
 
-    // SAFETY: the class name and title buffers outlive the calls; the boxed state is handed to
-    // the window and taken back in `WM_NCDESTROY`. `CreateWindowExW` failing leaks nothing,
-    // because the box is only released to the window once `WM_NCCREATE` has stored it — and
-    // that message arrives before any failure path.
+    STATE.with_borrow_mut(|slot| slot.pending = Some(state));
+
+    // SAFETY: the class name and title buffers outlive the calls.
     unsafe {
         let instance = GetModuleHandleW(None).map_err(|error| format!("no module: {error}"))?;
         let wc = WNDCLASSW {
@@ -1494,7 +1488,7 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
             None,
             None::<HMENU>,
             Some(instance.into()),
-            Some(Box::into_raw(state).cast()),
+            None,
         )
         .map_err(|error| format!("could not create the window: {error}"))?;
 
@@ -1529,74 +1523,96 @@ pub fn run(kind: Option<DocumentKind>, path: Option<PathBuf>) -> Result<(), Stri
     Ok(())
 }
 
-/// Run `f` with the window's state, if it has any yet.
-///
-/// The single point where the raw pointer becomes a reference. The `&mut` lives only for the
-/// call, which is what makes decision 7's rule checkable by reading one function rather than
-/// every handler: **nothing that runs a nested message loop may be called from inside `f`.**
-unsafe fn with_pane<T>(hwnd: HWND, f: impl FnOnce(&mut Pane) -> T) -> Option<T> {
-    // SAFETY: the caller is a window procedure for `hwnd`, and the slot holds either null or
-    // the pointer stored in `WM_NCCREATE`, which is valid until `WM_NCDESTROY` clears it.
-    let raw = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut Pane;
-    if raw.is_null() {
-        return None;
+/// The window's state: `pending` from [`run`] until `WM_NCCREATE` names its window.
+#[derive(Default)]
+struct Slot {
+    pending: Option<Pane>,
+    window: Option<(HWND, Pane)>,
+}
+
+thread_local! {
+    static STATE: RefCell<Slot> = RefCell::default();
+    static AFTER: RefCell<Vec<Box<dyn FnOnce()>>> = RefCell::default();
+}
+
+/// Run `action` once the current [`with_pane`] has released its borrow: for a call that Windows
+/// answers with a message sent straight back, such as `SetScrollInfo` changing the client area.
+fn after_borrow(action: impl FnOnce() + 'static) {
+    AFTER.with_borrow_mut(|after| after.push(Box::new(action)));
+}
+
+/// Run `f` with `hwnd`'s state, if it has any yet. The borrow lives only for the call: **nothing
+/// that dispatches a message may be called from inside `f`**, and in a debug build doing so
+/// panics rather than answering the nested message with `None`.
+fn with_pane<T>(hwnd: HWND, f: impl FnOnce(&mut Pane) -> T) -> Option<T> {
+    let answer = borrow_pane(hwnd, f);
+    for action in AFTER.take() {
+        action();
     }
-    // SAFETY: exclusive for the duration of this call. See the module comment's point 3.
-    Some(f(unsafe { &mut *raw }))
+    answer
+}
+
+fn borrow_pane<T>(hwnd: HWND, f: impl FnOnce(&mut Pane) -> T) -> Option<T> {
+    STATE.with(|slot| {
+        let Ok(mut slot) = slot.try_borrow_mut() else {
+            debug_assert!(
+                false,
+                "a message re-entered the window while its state was borrowed"
+            );
+            return None;
+        };
+        match &mut slot.window {
+            Some((window, pane)) if *window == hwnd => Some(f(pane)),
+            _ => None,
+        }
+    })
 }
 
 /// The same, for a handler that only means anything to the spreadsheet — `None` when the window
 /// is showing a text document, which is what makes "this verb belongs to the other pane" a
 /// missing answer rather than a wrong one.
-unsafe fn with_sheet<T>(hwnd: HWND, f: impl FnOnce(&mut Sheet) -> T) -> Option<T> {
-    // SAFETY: the caller's, unchanged — see [`with_pane`].
-    unsafe { with_pane(hwnd, |pane| pane.sheet_mut().map(f)) }.flatten()
+fn with_sheet<T>(hwnd: HWND, f: impl FnOnce(&mut Sheet) -> T) -> Option<T> {
+    with_pane(hwnd, |pane| pane.sheet_mut().map(f)).flatten()
 }
 
 /// And for the word processor's.
-unsafe fn with_text<T>(hwnd: HWND, f: impl FnOnce(&mut Text) -> T) -> Option<T> {
-    // SAFETY: the caller's, unchanged — see [`with_pane`].
-    unsafe { with_pane(hwnd, |pane| pane.text_mut().map(f)) }.flatten()
+fn with_text<T>(hwnd: HWND, f: impl FnOnce(&mut Text) -> T) -> Option<T> {
+    with_pane(hwnd, |pane| pane.text_mut().map(f)).flatten()
 }
 
 extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match message {
         WM_NCCREATE => {
-            // SAFETY: `lparam` is the `CREATESTRUCTW` Windows passes for this message, and its
-            // `lpCreateParams` is the pointer `run` handed to `CreateWindowExW`.
-            unsafe {
-                let create = &*(lparam.0 as *const CREATESTRUCTW);
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
-                DefWindowProcW(hwnd, message, wparam, lparam)
-            }
+            STATE.with_borrow_mut(|slot| {
+                slot.window = slot.pending.take().map(|pane| (hwnd, pane));
+            });
+            // SAFETY: the default handler, with the arguments it was given.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_CREATE => {
-            // SAFETY: the state was stored by `WM_NCCREATE`, which always precedes this.
-            unsafe {
-                with_pane(hwnd, |pane| {
-                    let theme = theme::current();
-                    pane.retheme(theme);
-                    theme::apply_window_chrome(hwnd, theme);
-                    // The modals paint themselves in this palette too, and cannot be handed it
-                    // at the call site — `dialog::use_theme` says why — and so does the bar.
-                    dialog::use_theme(theme);
-                    menubar::set_theme(theme);
-                    // Registered here rather than in `opened`: it needs a window to post to, and a
-                    // document read before there is one must not arrive as a change the user made
-                    // — so no "loading" flag is needed.
-                    let window = hwnd.0 as isize;
-                    match pane {
-                        Pane::Sheet(sheet) => {
-                            sheet.app.set_observer(Arc::new(Changed(window, None)));
-                        }
-                        Pane::Text(text) => text
-                            .app
-                            .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
-                        // Nothing to observe: no document, so nothing can change under us.
-                        Pane::Welcome(_) => {}
+            with_pane(hwnd, |pane| {
+                let theme = theme::current();
+                pane.retheme(theme);
+                theme::apply_window_chrome(hwnd, theme);
+                // The modals paint themselves in this palette too, and cannot be handed it
+                // at the call site — `dialog::use_theme` says why — and so does the bar.
+                dialog::use_theme(theme);
+                menubar::set_theme(theme);
+                // Registered here rather than in `opened`: it needs a window to post to, and a
+                // document read before there is one must not arrive as a change the user made
+                // — so no "loading" flag is needed.
+                let window = hwnd.0 as isize;
+                match pane {
+                    Pane::Sheet(sheet) => {
+                        sheet.app.set_observer(Arc::new(Changed(window, None)));
                     }
-                });
-            }
+                    Pane::Text(text) => text
+                        .app
+                        .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
+                    // Nothing to observe: no document, so nothing can change under us.
+                    Pane::Welcome(_) => {}
+                }
+            });
             build_menu(hwnd);
             make_children(hwnd);
             refresh(hwnd);
@@ -1618,15 +1634,18 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             menubar::nc_paint(hwnd);
             result
         }
-        // SAFETY (all three): the default answer, with the message's own arguments.
-        WM_NCHITTEST => menubar::nc_hit(hwnd, lparam)
-            .unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }),
+        WM_NCHITTEST => menubar::nc_hit(hwnd, lparam).unwrap_or_else(|| {
+            // SAFETY: the default answer, with the message's own arguments.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
+        }),
         WM_NCMOUSEMOVE => {
             menubar::nc_mouse_move(hwnd, lparam);
+            // SAFETY: the default answer, with the message's own arguments.
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_NCMOUSELEAVE => {
             menubar::nc_mouse_leave(hwnd);
+            // SAFETY: the default answer, with the message's own arguments.
             unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         WM_NCLBUTTONDOWN if wparam.0 == HTMENU as usize => {
@@ -1712,6 +1731,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             if typed_char(hwnd, wparam.0 as u32) {
                 LRESULT(0)
             } else {
+                // SAFETY: the default answer, with the message's own arguments.
                 unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
             }
         }
@@ -1719,6 +1739,7 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             if key_down(hwnd, wparam.0 as u32) {
                 LRESULT(0)
             } else {
+                // SAFETY: the default answer, with the message's own arguments.
                 unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
             }
         }
@@ -1783,13 +1804,10 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
         // The document changed under us, posted by `Changed`. Every path that edits arrives
         // here, which is what makes the title's `*` impossible to forget.
         WM_DOC_CHANGED => {
-            // SAFETY: one borrow, released before the title is set.
-            let title = unsafe {
-                with_pane(hwnd, |pane| {
-                    pane.set_dirty(true);
-                    pane.title()
-                })
-            };
+            let title = with_pane(hwnd, |pane| {
+                pane.set_dirty(true);
+                pane.title()
+            });
             if let Some(title) = title {
                 let wide = gdi::wide(&title);
                 // SAFETY: the borrow is released; the buffer is a NUL-terminated local.
@@ -1901,20 +1919,12 @@ extern "system" fn wndproc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPA
             unsafe { PostQuitMessage(0) };
             LRESULT(0)
         }
-        // The last message this window receives, so the box is taken back here. The slot is zeroed
-        // first, so a message arriving from within the drop finds no state rather than a dangling
-        // pointer.
+        // The last message this window receives, so the state is dropped here — after the slot is
+        // released, so a message arriving from within the drop finds no state.
         WM_NCDESTROY => {
-            // SAFETY: the pointer was made by `Box::into_raw` in `run` and has not been freed;
-            // reconstituting it exactly once is what frees it.
-            unsafe {
-                let raw = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut Pane;
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                if !raw.is_null() {
-                    drop(Box::from_raw(raw));
-                }
-                DefWindowProcW(hwnd, message, wparam, lparam)
-            }
+            drop(STATE.with_borrow_mut(|slot| slot.window.take()));
+            // SAFETY: the default handler, with the arguments it was given.
+            unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
         }
         // SAFETY: the default handler, with the arguments it was given.
         _ => unsafe { DefWindowProcW(hwnd, message, wparam, lparam) },
@@ -1937,34 +1947,30 @@ fn refresh(hwnd: HWND) {
     let rect = gdi::client_rect(hwnd);
     // SAFETY: `hwnd` is this window's; `GetDpiForWindow` needs nothing else.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-    // SAFETY: no nested loop inside.
-    let after = unsafe {
-        with_sheet(hwnd, |state| {
-            state.reconsider_spelling();
-            state.relayout(
-                f64::from(rect.right - rect.left),
-                f64::from(rect.bottom - rect.top),
-                dpi,
-            );
-            // A window that grew or changed monitor may now show the active cell where it did
-            // not, and — more to the point — may not show it any more.
-            state.reveal();
-            sync_scrollbars(hwnd, state);
-            // At most one child is ever up: the name box and the editor are opened by the same
-            // keys, and each closes the other on its way in.
-            if state.name_box_open {
-                Some((state.name_box, state.geom.name_box_rect()))
-            } else if state.mode.is_editing() {
-                Some((state.editor, state.editor_rect()))
-            } else {
-                None
-            }
-        })
-    };
+    let after = with_sheet(hwnd, |state| {
+        state.reconsider_spelling();
+        state.relayout(
+            f64::from(rect.right - rect.left),
+            f64::from(rect.bottom - rect.top),
+            dpi,
+        );
+        // A window that grew or changed monitor may now show the active cell where it did
+        // not, and — more to the point — may not show it any more.
+        state.reveal();
+        sync_scrollbars(hwnd, state);
+        // At most one child is ever up: the name box and the editor are opened by the same
+        // keys, and each closes the other on its way in.
+        if state.name_box_open {
+            Some((state.name_box, state.geom.name_box_rect()))
+        } else if state.mode.is_editing() {
+            Some((state.editor, state.editor_rect()))
+        } else {
+            None
+        }
+    });
     // The title is the *window's* rather than the pane's, so it is asked for separately — one more
     // borrow, taken and released like every other.
-    // SAFETY: nothing inside dispatches.
-    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    let title = with_pane(hwnd, |pane| pane.title());
     let (Some(child), Some(title)) = (after, title) else {
         return;
     };
@@ -2009,10 +2015,9 @@ fn move_to(child: HWND, rect: Rect, repaint: bool) {
 /// stale accelerator for a command with no item still reaches `do_command`, whose per-pane no-ops
 /// make that safe.
 fn build_menu(hwnd: HWND) {
-    // SAFETY: one borrow, for the kind and the two overlay checkmarks; nothing inside dispatches.
     // The role overlay has no meaning on the text pane (`CellRole` is the grid's alone), so it
     // reads `false` there rather than a second flag nothing ever sets.
-    let (surface, roles_on, names_on, friendly_on, formulas_on, spelling_on, grammar) = unsafe {
+    let (surface, roles_on, names_on, friendly_on, formulas_on, spelling_on, grammar) =
         with_pane(hwnd, |pane| {
             let surface = pane.surface();
             match pane {
@@ -2039,16 +2044,15 @@ fn build_menu(hwnd: HWND) {
                 Pane::Welcome(_) => (surface, false, false, false, false, false, (false, false)),
             }
         })
-    }
-    .unwrap_or((
-        menu::Surface::Welcome,
-        false,
-        false,
-        false,
-        false,
-        false,
-        (false, false),
-    ));
+        .unwrap_or((
+            menu::Surface::Welcome,
+            false,
+            false,
+            false,
+            false,
+            false,
+            (false, false),
+        ));
     // SAFETY: every label buffer outlives the `AppendMenuW` that reads it — Windows copies the
     // string — and the bar belongs to the window from `SetMenu` until it is destroyed with it.
     unsafe {
@@ -2127,23 +2131,20 @@ fn context_on_chart(hwnd: HWND, lparam: LPARAM) -> bool {
             let _ = ScreenToClient(hwnd, &raw mut at);
         }
     }
-    // SAFETY: one borrow; arithmetic.
-    let on = unsafe {
-        with_sheet(hwnd, |state| {
-            if keyboard {
-                return state.chart_now().is_some();
+    let on = with_sheet(hwnd, |state| {
+        if keyboard {
+            return state.chart_now().is_some();
+        }
+        let charts = state.app.charts(state.sheet).unwrap_or_default();
+        let (x, y) = (f64::from(at.x), f64::from(at.y));
+        match crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y) {
+            Some((index, _)) => {
+                state.chart_selected = Some((state.sheet, index));
+                true
             }
-            let charts = state.app.charts(state.sheet).unwrap_or_default();
-            let (x, y) = (f64::from(at.x), f64::from(at.y));
-            match crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y) {
-                Some((index, _)) => {
-                    state.chart_selected = Some((state.sheet, index));
-                    true
-                }
-                None => false,
-            }
-        })
-    } == Some(true);
+            None => false,
+        }
+    }) == Some(true);
     if on {
         // SAFETY: no borrow held.
         unsafe {
@@ -2230,40 +2231,33 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         unsafe {
             let _ = ScreenToClient(hwnd, &raw mut client);
         }
-        // SAFETY: one borrow, released before the popup.
-        let wrong = unsafe {
-            with_text(hwnd, |text| {
-                text.checked?;
-                let caret = if keyboard {
-                    text.editor.caret
-                } else {
-                    text.caret_at(f64::from(client.x), f64::from(client.y))?
-                };
-                text.misspelt_at(caret)
-            })
-        }
+        let wrong = with_text(hwnd, |text| {
+            text.checked?;
+            let caret = if keyboard {
+                text.editor.caret
+            } else {
+                text.caret_at(f64::from(client.x), f64::from(client.y))?
+            };
+            text.misspelt_at(caret)
+        })
         .flatten();
         // Over a picture the menu offers its alt text, with the caret put beside it first so the
         // verb means *this* picture — the way a right click elsewhere moves the selection.
-        // SAFETY: one borrow, released before the popup.
-        let picture = unsafe {
-            with_text(hwnd, |text| {
-                let caret = if keyboard {
-                    text.editor.caret
-                } else {
-                    text.caret_at(f64::from(client.x), f64::from(client.y))?
-                };
-                let viewport = text.app.get_viewport(caret.block..caret.block + 1);
-                let (offset, _) =
-                    grind_text::picture::at(viewport.get(caret.block)?, caret.offset)?;
-                let at = Caret {
-                    block: caret.block,
-                    offset,
-                };
-                text.place(at, false);
-                Some(at)
-            })
-        }
+        let picture = with_text(hwnd, |text| {
+            let caret = if keyboard {
+                text.editor.caret
+            } else {
+                text.caret_at(f64::from(client.x), f64::from(client.y))?
+            };
+            let viewport = text.app.get_viewport(caret.block..caret.block + 1);
+            let (offset, _) = grind_text::picture::at(viewport.get(caret.block)?, caret.offset)?;
+            let at = Caret {
+                block: caret.block,
+                offset,
+            };
+            text.place(at, false);
+            Some(at)
+        })
         .flatten();
         let with_alt: Vec<Command> = match picture {
             Some(_) => std::iter::once(Command::AltText)
@@ -2272,17 +2266,14 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
             None => commands.to_vec(),
         };
         // A grammar finding under the pointer leads, ahead of a misspelling inside it.
-        // SAFETY: one borrow, released before the popup.
-        let finding = unsafe {
-            with_text(hwnd, |text| {
-                let caret = if keyboard {
-                    text.editor.caret
-                } else {
-                    text.caret_at(f64::from(client.x), f64::from(client.y))?
-                };
-                text.grammar_at(caret)
-            })
-        }
+        let finding = with_text(hwnd, |text| {
+            let caret = if keyboard {
+                text.editor.caret
+            } else {
+                text.caret_at(f64::from(client.x), f64::from(client.y))?
+            };
+            text.grammar_at(caret)
+        })
         .flatten();
         if let Some(flag) = finding {
             grammar_popup(hwnd, at, flag, &with_alt);
@@ -2300,26 +2291,23 @@ fn context_menu(hwnd: HWND, lparam: LPARAM) {
         unsafe {
             let _ = ScreenToClient(hwnd, &raw mut client);
         }
-        // SAFETY: one borrow, released before the popup.
-        let wrong = unsafe {
-            with_sheet(hwnd, |state| {
-                state.checked?;
-                let pos = if keyboard {
-                    state.selection.active
-                } else {
-                    match state.geom.hit(f64::from(client.x), f64::from(client.y)) {
-                        crate::sheet::geom::Hit::Cell { row, col } => Pos::new(row, col),
-                        _ => return None,
-                    }
-                };
-                state
-                    .app
-                    .misspellings(Some(state.sheet), Some((pos, pos)))
-                    .ok()?
-                    .into_iter()
-                    .next()
-            })
-        }
+        let wrong = with_sheet(hwnd, |state| {
+            state.checked?;
+            let pos = if keyboard {
+                state.selection.active
+            } else {
+                match state.geom.hit(f64::from(client.x), f64::from(client.y)) {
+                    crate::sheet::geom::Hit::Cell { row, col } => Pos::new(row, col),
+                    _ => return None,
+                }
+            };
+            state
+                .app
+                .misspellings(Some(state.sheet), Some((pos, pos)))
+                .ok()?
+                .into_iter()
+                .next()
+        })
         .flatten();
         if wrong.is_some() {
             sheet_spelling_popup(hwnd, at, wrong, commands);
@@ -2387,8 +2375,7 @@ fn make_children(hwnd: HWND) {
     // The text pane has no child controls — it draws its own caret and holds its own keystrokes —
     // so a window showing one creates none. A window that *becomes* a spreadsheet comes back
     // through here, so this is idempotent.
-    // SAFETY: one borrow, nothing inside dispatches.
-    match unsafe { with_sheet(hwnd, |state| state.editor.is_invalid()) } {
+    match with_sheet(hwnd, |state| state.editor.is_invalid()) {
         Some(true) => {}
         _ => return,
     }
@@ -2439,7 +2426,9 @@ fn make_children(hwnd: HWND) {
 }
 
 /// Tell Windows where the thumbs are and how big. The range is in **tracks, not pixels**: a
-/// `SCROLLINFO` is `i32`, and this sheet is twenty million pixels but a million rows.
+/// `SCROLLINFO` is `i32`, and this sheet is twenty million pixels but a million rows. Set once
+/// the borrow is released ([`after_borrow`]): a bar appearing resizes the client area, which
+/// Windows reports at once.
 fn sync_scrollbars(hwnd: HWND, state: &Sheet) {
     let set = |bar, max: u32, pos: u32, page: i64| {
         let info = SCROLLINFO {
@@ -2454,10 +2443,12 @@ fn sync_scrollbars(hwnd: HWND, state: &Sheet) {
             nPos: i32::try_from(pos).unwrap_or(i32::MAX),
             nTrackPos: 0,
         };
-        // SAFETY: `info` is a live, fully initialised local read for the length of the call.
-        unsafe {
-            SetScrollInfo(hwnd, bar, &raw const info, true);
-        }
+        after_borrow(move || {
+            // SAFETY: `info` is a fully initialised local read for the length of the call.
+            unsafe {
+                SetScrollInfo(hwnd, bar, &raw const info, true);
+            }
+        });
     };
     set(
         SB_VERT,
@@ -2577,51 +2568,48 @@ fn mouse_move(hwnd: HWND, lparam: LPARAM) {
         text_mouse_move(hwnd, x, y);
         return;
     }
-    // SAFETY: no nested loop inside.
-    let moved = unsafe {
-        with_sheet(hwnd, |state| {
-            // A held chart follows the pointer; nothing is written until the button comes up.
-            if let Some(grab) = state.chart_grab.as_mut() {
-                grab.follow(x, y, mods().shift, &state.geom);
-                return true;
-            }
-            // The format strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not
-            // tracked: a pointer leaving the window through the strip is answered by the next move
-            // anywhere. A track being sized follows the pointer, never smaller than a few pixels,
-            // so it cannot be dragged out of reach (hiding is its own verb).
-            if let Some((edge, from, size)) = state.resize {
-                let min = scale(8.0, state.geom.dpi);
-                match edge {
-                    Edge::Col(col) => {
-                        let wide = (size + x - from).max(min);
-                        state.geom.cols = state.geom.cols.with(col, wide);
-                    }
-                    Edge::Row(row) => {
-                        let tall = (size + y - from).max(min);
-                        state.geom.rows = state.geom.rows.with(row, tall);
-                    }
+    let moved = with_sheet(hwnd, |state| {
+        // A held chart follows the pointer; nothing is written until the button comes up.
+        if let Some(grab) = state.chart_grab.as_mut() {
+            grab.follow(x, y, mods().shift, &state.geom);
+            return true;
+        }
+        // The format strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not
+        // tracked: a pointer leaving the window through the strip is answered by the next move
+        // anywhere. A track being sized follows the pointer, never smaller than a few pixels,
+        // so it cannot be dragged out of reach (hiding is its own verb).
+        if let Some((edge, from, size)) = state.resize {
+            let min = scale(8.0, state.geom.dpi);
+            match edge {
+                Edge::Col(col) => {
+                    let wide = (size + x - from).max(min);
+                    state.geom.cols = state.geom.cols.with(col, wide);
                 }
-                return true;
-            }
-            let hover = state.geom.format_hit(x, y);
-            if hover != state.format_hover {
-                state.format_hover = hover;
-                if state.drag.is_none() {
-                    return true;
+                Edge::Row(row) => {
+                    let tall = (size + y - from).max(min);
+                    state.geom.rows = state.geom.rows.with(row, tall);
                 }
             }
+            return true;
+        }
+        let hover = state.geom.format_hit(x, y);
+        if hover != state.format_hover {
+            state.format_hover = hover;
             if state.drag.is_none() {
-                return false;
+                return true;
             }
-            let before = state.selection;
-            state.drag_to(state.geom.hit(x, y));
-            let moved = state.selection != before;
-            if moved {
-                sync_scrollbars(hwnd, state);
-            }
-            moved
-        })
-    };
+        }
+        if state.drag.is_none() {
+            return false;
+        }
+        let before = state.selection;
+        state.drag_to(state.geom.hit(x, y));
+        let moved = state.selection != before;
+        if moved {
+            sync_scrollbars(hwnd, state);
+        }
+        moved
+    });
     if moved == Some(true) {
         // SAFETY: the borrow above has been released.
         unsafe {
@@ -2644,34 +2632,28 @@ fn set_resize_cursor(hwnd: HWND) -> bool {
         }
         let _ = ScreenToClient(hwnd, &raw mut at);
     }
-    // SAFETY: one borrow; arithmetic.
-    let edge = unsafe {
-        with_sheet(hwnd, |state| {
-            state
-                .resize
-                .map(|(edge, ..)| edge)
-                .or_else(|| state.geom.edge_at(f64::from(at.x), f64::from(at.y)))
-        })
-    }
+    let edge = with_sheet(hwnd, |state| {
+        state
+            .resize
+            .map(|(edge, ..)| edge)
+            .or_else(|| state.geom.edge_at(f64::from(at.x), f64::from(at.y)))
+    })
     .flatten();
     let cursor = match edge {
         Some(Edge::Col(_)) => IDC_SIZEWE,
         Some(Edge::Row(_)) => IDC_SIZENS,
         // Over a chart, or holding one: the pointer says what a drag there would do.
         None => {
-            // SAFETY: one borrow; arithmetic.
-            let grip = unsafe {
-                with_sheet(hwnd, |state| {
-                    if let Some(grab) = state.chart_grab {
-                        Some(grab.grip)
-                    } else {
-                        let charts = state.app.charts(state.sheet).unwrap_or_default();
-                        let (x, y) = (f64::from(at.x), f64::from(at.y));
-                        crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y)
-                            .map(|(_, grip)| grip)
-                    }
-                })
-            }
+            let grip = with_sheet(hwnd, |state| {
+                if let Some(grab) = state.chart_grab {
+                    Some(grab.grip)
+                } else {
+                    let charts = state.app.charts(state.sheet).unwrap_or_default();
+                    let (x, y) = (f64::from(at.x), f64::from(at.y));
+                    crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y)
+                        .map(|(_, grip)| grip)
+                }
+            })
             .flatten();
             match grip.map(grind_sheet::chart_frame::Grip::cursor) {
                 Some("move") => IDC_SIZEALL,
@@ -2725,8 +2707,7 @@ fn key_down(hwnd: HWND, vk: u32) -> bool {
     if is_text(hwnd) {
         return text_key(hwnd, vk);
     }
-    // SAFETY: no nested loop inside.
-    let mode = unsafe { with_sheet(hwnd, |state| state.mode) }.unwrap_or_default();
+    let mode = with_sheet(hwnd, |state| state.mode).unwrap_or_default();
     if !mode.is_editing() && chart_key(hwnd, vk) {
         return true;
     }
@@ -2764,8 +2745,7 @@ fn chart_press(state: &mut Sheet, x: f64, y: f64) -> Option<()> {
 /// key lets go of it and means what it always means — `false`.
 fn chart_key(hwnd: HWND, vk: u32) -> bool {
     use grind_sheet::chart_frame::{self, Key};
-    // SAFETY: one borrow, for one index.
-    let Some(index) = (unsafe { with_sheet(hwnd, |state| state.chart_now()) }).flatten() else {
+    let Some(index) = (with_sheet(hwnd, |state| state.chart_now())).flatten() else {
         return false;
     };
     let held = mods();
@@ -2783,8 +2763,7 @@ fn chart_key(hwnd: HWND, vk: u32) -> bool {
         // A modifier on its own is the start of a chord, not a reason to let go.
         _ if matches!(vk, 0x10..=0x12) => return false,
         _ => {
-            // SAFETY: one borrow, one field.
-            unsafe { with_sheet(hwnd, |state| state.chart_selected = None) };
+            with_sheet(hwnd, |state| state.chart_selected = None);
             // SAFETY: no borrow held.
             unsafe {
                 let _ = InvalidateRect(Some(hwnd), None, false);
@@ -2795,29 +2774,24 @@ fn chart_key(hwnd: HWND, vk: u32) -> bool {
     match key {
         Key::Delete => delete_chart(hwnd),
         Key::Deselect => {
-            // SAFETY: one borrow, one field.
-            unsafe { with_sheet(hwnd, |state| state.chart_selected = None) };
+            with_sheet(hwnd, |state| state.chart_selected = None);
             refresh(hwnd);
         }
         nudge @ Key::Nudge(..) => {
-            // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    let charts = state.app.charts(state.sheet).unwrap_or_default();
-                    let Some(Some(frame)) = crate::sheet::chart::frames(&charts, &state.geom)
-                        .get(index)
-                        .copied()
-                    else {
-                        return;
-                    };
-                    let moved = crate::sheet::chart::nudged(frame, nudge, &state.geom);
-                    let [x, y, w, h] = crate::sheet::chart::lengths(moved, &state.geom);
-                    if let Err(error) = state.app.reshape_chart(state.sheet, index, &x, &y, &w, &h)
-                    {
-                        state.say(Some(error.to_string()));
-                    }
-                })
-            };
+            with_sheet(hwnd, |state| {
+                let charts = state.app.charts(state.sheet).unwrap_or_default();
+                let Some(Some(frame)) = crate::sheet::chart::frames(&charts, &state.geom)
+                    .get(index)
+                    .copied()
+                else {
+                    return;
+                };
+                let moved = crate::sheet::chart::nudged(frame, nudge, &state.geom);
+                let [x, y, w, h] = crate::sheet::chart::lengths(moved, &state.geom);
+                if let Err(error) = state.app.reshape_chart(state.sheet, index, &x, &y, &w, &h) {
+                    state.say(Some(error.to_string()));
+                }
+            });
             refresh(hwnd);
         }
     }
@@ -2828,18 +2802,15 @@ fn chart_key(hwnd: HWND, vk: u32) -> bool {
 /// the control must not see it. The name box has two keys and no mode; the editor has
 /// [`state::on_key`]'s whole table.
 fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
-    // SAFETY: one borrow, for two flags and a mode; nothing inside dispatches.
-    let focused = unsafe {
-        with_sheet(hwnd, |state| {
-            if state.name_box_open && child == state.name_box {
-                Some(Focused::NameBox)
-            } else if state.mode.is_editing() && child == state.editor {
-                Some(Focused::Editor(state.mode))
-            } else {
-                None
-            }
-        })
-    };
+    let focused = with_sheet(hwnd, |state| {
+        if state.name_box_open && child == state.name_box {
+            Some(Focused::NameBox)
+        } else if state.mode.is_editing() && child == state.editor {
+            Some(Focused::Editor(state.mode))
+        } else {
+            None
+        }
+    });
     match focused.flatten() {
         Some(Focused::NameBox) => match keymap::key_for(vk) {
             keymap::Key::Return => {
@@ -2861,8 +2832,7 @@ fn child_key(hwnd: HWND, vk: u32, child: HWND) -> bool {
 
 /// A keystroke aimed at the completion list, if one is up. `true` means it was claimed.
 fn assist_key(hwnd: HWND, vk: u32) -> bool {
-    // SAFETY: one borrow, for one bit; nothing inside dispatches.
-    let offering = unsafe { with_sheet(hwnd, |state| state.assist.is_offering()) }.unwrap_or(false);
+    let offering = with_sheet(hwnd, |state| state.assist.is_offering()).unwrap_or(false);
     let Some(reply) = assist::on_key(offering, keymap::key_for(vk), mods()) else {
         return false;
     };
@@ -2871,26 +2841,20 @@ fn assist_key(hwnd: HWND, vk: u32) -> bool {
         // Stepping and dismissing change only what the band says, so neither goes near the
         // document, the editor's text or the geometry — the band is already the height it wants.
         assist::Reply::Step(delta) => {
-            // SAFETY: one borrow, released before the invalidation.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    state.assist.step(delta);
-                    let pieces = assist::band(&state.assist, state.friendly);
-                    state.hint(pieces);
-                });
-            }
+            with_sheet(hwnd, |state| {
+                state.assist.step(delta);
+                let pieces = assist::band(&state.assist, state.friendly);
+                state.hint(pieces);
+            });
             refresh_bands(hwnd);
         }
         assist::Reply::Dismiss => {
-            // SAFETY: one borrow, released before the refresh — which is a full one, since the
-            // band going away moves the grid back up under it.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    state.assist.dismiss();
-                    let pieces = assist::band(&state.assist, state.friendly);
-                    state.hint(pieces);
-                });
-            }
+            // A full refresh, since the band going away moves the grid back up under it.
+            with_sheet(hwnd, |state| {
+                state.assist.dismiss();
+                let pieces = assist::band(&state.assist, state.friendly);
+                state.hint(pieces);
+            });
             refresh(hwnd);
         }
     }
@@ -2904,10 +2868,7 @@ fn accept_offer(hwnd: HWND) {
     let Some((edit, text)) = editor_text(hwnd) else {
         return;
     };
-    // SAFETY: one borrow, for the span and the replacement; nothing inside dispatches.
-    let Some(Some((span, replacement))) =
-        (unsafe { with_sheet(hwnd, |state| state.assist.accept()) })
-    else {
+    let Some(Some((span, replacement))) = with_sheet(hwnd, |state| state.assist.accept()) else {
         return;
     };
     let (from, to) = (
@@ -2934,10 +2895,7 @@ fn accept_offer(hwnd: HWND) {
 
 /// Repaint the strip and the two bands under it, and nothing below them.
 fn refresh_bands(hwnd: HWND) {
-    // SAFETY: one borrow, released before the invalidation.
-    let Some(bottom) =
-        (unsafe { with_sheet(hwnd, |state| state.geom.header_top().round() as i32) })
-    else {
+    let Some(bottom) = with_sheet(hwnd, |state| state.geom.header_top().round() as i32) else {
         return;
     };
     // SAFETY: the rectangle is a live local read for the length of the call.
@@ -2969,8 +2927,7 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
         if arrow && !held.ctrl && !held.shift && !held.alt && point_at(hwnd, mode, key) {
             return true;
         }
-        // SAFETY: one borrow, no dialog.
-        unsafe { with_sheet(hwnd, |state| state.pointing = None) };
+        with_sheet(hwnd, |state| state.pointing = None);
     }
     match state::on_key(mode, key, held) {
         Outcome::Passthrough => false,
@@ -3008,9 +2965,8 @@ fn on_key(hwnd: HWND, mode: state::Mode, vk: u32) -> bool {
             true
         }
         Outcome::ToggleMode => {
-            // SAFETY: no nested loop inside, and nothing on screen changes — F2 changes what the
-            // next arrow means.
-            unsafe { with_sheet(hwnd, |state| state.mode = state.mode.toggled()) };
+            // Nothing on screen changes: F2 changes what the next arrow means.
+            with_sheet(hwnd, |state| state.mode = state.mode.toggled());
             true
         }
     }
@@ -3024,11 +2980,8 @@ fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
         return false;
     };
     let caret = editor_caret(edit, &text);
-    // SAFETY: one borrow, nothing inside dispatches.
-    let Some((pending, active)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            (state.pointing.clone(), state.selection.active)
-        })
+    let Some((pending, active)) = with_sheet(hwnd, |state| {
+        (state.pointing.clone(), state.selection.active)
     }) else {
         return false;
     };
@@ -3065,8 +3018,7 @@ fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
     // `editor_changed` ran inside the message above and a keystroke clears nothing: remember the
     // reference after it, so it is the typed text that ends pointing and not the replacement.
     let end = span.start + reference.len();
-    // SAFETY: one borrow, no dialog.
-    unsafe { with_sheet(hwnd, |state| state.pointing = Some((span.start..end, cell))) };
+    with_sheet(hwnd, |state| state.pointing = Some((span.start..end, cell)));
     true
 }
 
@@ -3076,23 +3028,20 @@ fn point_at(hwnd: HWND, mode: state::Mode, key: keymap::Key) -> bool {
 /// document are different open documents once `adopt` has run.
 fn typed_char(hwnd: HWND, code: u32) -> bool {
     let unit = code as u16;
-    // SAFETY: no nested loop inside.
-    let resolved = unsafe {
-        with_pane(hwnd, |pane| {
-            let pending = pane.surrogate_mut();
-            if surrogate::is_high(unit) {
-                *pending = Some(unit);
-                return None;
-            }
-            match pending.take() {
-                Some(high) => surrogate::combine(high, unit),
-                // Not a low half completing a pair: either a plain code unit, which
-                // `char::from_u32` accepts outright, or a lone low surrogate, which it correctly
-                // refuses — there is no pair to make sense of it as.
-                None => char::from_u32(code),
-            }
-        })
-    }
+    let resolved = with_pane(hwnd, |pane| {
+        let pending = pane.surrogate_mut();
+        if surrogate::is_high(unit) {
+            *pending = Some(unit);
+            return None;
+        }
+        match pending.take() {
+            Some(high) => surrogate::combine(high, unit),
+            // Not a low half completing a pair: either a plain code unit, which
+            // `char::from_u32` accepts outright, or a lone low surrogate, which it correctly
+            // refuses — there is no pair to make sense of it as.
+            None => char::from_u32(code),
+        }
+    })
     .flatten();
     let Some(c) = resolved else { return false };
     if is_text(hwnd) {
@@ -3100,26 +3049,22 @@ fn typed_char(hwnd: HWND, code: u32) -> bool {
     }
     // Space on a checkbox's cell ticks it, rather than starting an edit with a space.
     if c == ' ' {
-        // SAFETY: no nested loop inside.
-        let ticked = unsafe {
-            with_sheet(hwnd, |state| {
-                let at = state.selection.active;
-                let boxed = state.mode == state::Mode::Ready
-                    && state.selection.is_single()
-                    && state
-                        .app
-                        .checkboxes(state.sheet)
-                        .is_ok_and(|b| b.iter().any(|(p, _)| *p == at));
-                boxed && state.app.toggle_checkbox(state.sheet, at).is_ok()
-            })
-        };
+        let ticked = with_sheet(hwnd, |state| {
+            let at = state.selection.active;
+            let boxed = state.mode == state::Mode::Ready
+                && state.selection.is_single()
+                && state
+                    .app
+                    .checkboxes(state.sheet)
+                    .is_ok_and(|b| b.iter().any(|(p, _)| *p == at));
+            boxed && state.app.toggle_checkbox(state.sheet, at).is_ok()
+        });
         if ticked == Some(true) {
             refresh(hwnd);
             return true;
         }
     }
-    // SAFETY: no nested loop inside.
-    let seed = unsafe { with_sheet(hwnd, |state| state::typed(state.mode, c, mods())) };
+    let seed = with_sheet(hwnd, |state| state::typed(state.mode, c, mods()));
     match seed.flatten() {
         Some(seed) => {
             begin_edit(hwnd, seed, false);
@@ -3171,25 +3116,20 @@ fn text_ime_composition(hwnd: HWND, lparam: LPARAM) {
 /// caret, replacing the selection when a composition starts, as the commit would; `None` or
 /// empty text takes it out again.
 fn text_compose(hwnd: HWND, composing: Option<(String, usize)>) {
-    // SAFETY: one borrow. `compose` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            let (composed, cursor) = composing.unwrap_or_default();
-            let cursor = text::pages::chars_in(&composed, cursor);
-            let result = text.editor.mark(&text.app, &composed, cursor..cursor);
-            if let Err(error) = result {
-                text.say(Some(error));
-            }
-        });
-    }
+    with_text(hwnd, |text| {
+        let (composed, cursor) = composing.unwrap_or_default();
+        let cursor = text::pages::chars_in(&composed, cursor);
+        let result = text.editor.mark(&text.app, &composed, cursor..cursor);
+        if let Err(error) = result {
+            text.say(Some(error));
+        }
+    });
     refresh(hwnd);
 }
 
 /// A composition the caret leaves is dropped, in the line and in the IME.
 fn text_cancel_composition(hwnd: HWND) {
-    // SAFETY: one borrow, for one field.
-    let composing =
-        unsafe { with_text(hwnd, |text| text.editor.composing.is_some()) }.unwrap_or(false);
+    let composing = with_text(hwnd, |text| text.editor.composing.is_some()).unwrap_or(false);
     if !composing {
         return;
     }
@@ -3209,9 +3149,7 @@ fn text_cancel_composition(hwnd: HWND) {
 /// needs it: the grid edits in a native `EDIT`, which positions its own IME, while this pane draws
 /// its own caret, and with `CFS_DEFAULT` the windows stay wherever they last were.
 fn position_ime_composition(hwnd: HWND) {
-    // SAFETY: one borrow, released before the IME calls below; nothing here dispatches.
-    let Some((x, y, _, h)) = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten()
-    else {
+    let Some((x, y, _, h)) = with_text(hwnd, |text| text.caret_geometry()).flatten() else {
         return;
     };
     // SAFETY: `ImmGetContext`/`ImmReleaseContext` are paired within this call, on this thread,
@@ -3256,8 +3194,7 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     commit_edit(hwnd, None);
     let (x, y) = point(lparam);
     // The format strip: **pressed here, done on release** — see `format_button_up`.
-    // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
-    let control = unsafe { with_sheet(hwnd, |state| state.geom.format_hit(x, y)) }.flatten();
+    let control = with_sheet(hwnd, |state| state.geom.format_hit(x, y)).flatten();
     if let Some(control) = control {
         // SAFETY: one borrow; assigning fields dispatches nothing. `SetCapture` and `SetFocus`
         // send messages, which is why they come after it.
@@ -3273,8 +3210,7 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
         return;
     }
     // A sheet tab (`sheet::tabs`): the sheet it names comes to the front, and `+` adds one.
-    // SAFETY: one borrow, released before `sheet_add` opens its prompt.
-    let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
+    let tab = with_sheet(hwnd, |state| sheet_tab_at(state, x, y)).flatten();
     match tab {
         Some(crate::sheet::tabs::Target::Sheet(index)) => {
             sheet_show(hwnd, index);
@@ -3294,8 +3230,7 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // A chart floats over the cells, so it answers before any of them (`doc/chart-handling.md`): a
     // press on one selects it and takes hold of it — its body to move it, a handle of the selected
     // one to resize it. A press anywhere else lets go of a selected chart.
-    // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
-    let took = unsafe { with_sheet(hwnd, |state| chart_press(state, x, y)) }.flatten();
+    let took = with_sheet(hwnd, |state| chart_press(state, x, y)).flatten();
     if took.is_some() {
         // SAFETY: no borrow held.
         unsafe {
@@ -3307,19 +3242,16 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     }
     // A header boundary: taken to size the track it ends. The size is previewed in `geom` while the
     // pointer moves and written once on release (`button_up`).
-    // SAFETY: one borrow; arithmetic. `SetCapture` sends messages, so it comes after the borrow.
-    let grabbed = unsafe {
-        with_sheet(hwnd, |state| {
-            let edge = state.geom.edge_at(x, y)?;
-            let (at, size) = match edge {
-                Edge::Col(col) => (x, state.geom.cols.size_of(col)),
-                Edge::Row(row) => (y, state.geom.rows.size_of(row)),
-            };
-            state.resize = Some((edge, at, size));
-            state.drag = None;
-            Some(())
-        })
-    }
+    let grabbed = with_sheet(hwnd, |state| {
+        let edge = state.geom.edge_at(x, y)?;
+        let (at, size) = match edge {
+            Edge::Col(col) => (x, state.geom.cols.size_of(col)),
+            Edge::Row(row) => (y, state.geom.rows.size_of(row)),
+        };
+        state.resize = Some((edge, at, size));
+        state.drag = None;
+        Some(())
+    })
     .flatten();
     if grabbed.is_some() {
         // SAFETY: no borrow held.
@@ -3333,79 +3265,76 @@ fn button_down(hwnd: HWND, lparam: LPARAM) {
     // The two fields on the strip are drawn chrome until they are clicked, at which point the
     // control hiding behind the drawing appears over it. Deciding that needs the geometry, so it is
     // read here and acted on below the borrow.
-    // SAFETY: no nested loop inside.
-    let click = unsafe {
-        with_sheet(hwnd, |state| {
-            let hit = state.geom.hit(x, y);
-            if hit == Hit::Chrome {
-                return Click::Strip(if state.geom.name_box_rect().contains(x, y) {
-                    Strip::NameBox
-                } else if state.geom.formula_rect().contains(x, y) {
-                    Strip::FormulaBar
-                } else {
-                    Strip::Neither
-                });
+    let click = with_sheet(hwnd, |state| {
+        let hit = state.geom.hit(x, y);
+        if hit == Hit::Chrome {
+            return Click::Strip(if state.geom.name_box_rect().contains(x, y) {
+                Strip::NameBox
+            } else if state.geom.formula_rect().contains(x, y) {
+                Strip::FormulaBar
+            } else {
+                Strip::Neither
+            });
+        }
+        // A checkbox's box ticks it — the linked cell's value — and selects its cell.
+        if let Hit::Cell { row, col } = hit
+            && !extend
+            && state
+                .app
+                .checkboxes(state.sheet)
+                .is_ok_and(|b| b.iter().any(|(p, _)| *p == Pos::new(row, col)))
+            && state.geom.checkbox(row, col).contains(x, y)
+        {
+            state.selection = Selection::at(Pos::new(row, col));
+            if let Err(error) = state.app.toggle_checkbox(state.sheet, Pos::new(row, col)) {
+                state.say(Some(error.to_string()));
             }
-            // A checkbox's box ticks it — the linked cell's value — and selects its cell.
-            if let Hit::Cell { row, col } = hit
-                && !extend
-                && state
-                    .app
-                    .checkboxes(state.sheet)
-                    .is_ok_and(|b| b.iter().any(|(p, _)| *p == Pos::new(row, col)))
-                && state.geom.checkbox(row, col).contains(x, y)
-            {
-                state.selection = Selection::at(Pos::new(row, col));
-                if let Err(error) = state.app.toggle_checkbox(state.sheet, Pos::new(row, col)) {
-                    state.say(Some(error.to_string()));
-                }
-                state.drag = None;
-                return Click::Strip(Strip::Neither);
+            state.drag = None;
+            return Click::Strip(Strip::Neither);
+        }
+        // The filter's dropdown button lives inside an ordinary cell of its heading row —
+        // caught here, before the click becomes a selection, the same way the strip's own
+        // two fields are caught above.
+        if let Hit::Cell { row, col } = hit
+            && let Ok(Some(filter)) = state.app.filter(state.sheet)
+            && filter.buttons
+            && row == filter.start.row
+            && (filter.start.col..=filter.end.col).contains(&col)
+            && state
+                .geom
+                .filter_button(row, col)
+                .is_some_and(|b| b.contains(x, y))
+        {
+            return Click::FilterButton(col);
+        }
+        state.selection = match (hit, extend) {
+            // Shift keeps the anchor and moves the active cell, which is the same rule the
+            // keyboard's Shift+arrow follows — one selection model, two ways in.
+            (Hit::Cell { row, col }, true) => Selection {
+                anchor: state.selection.anchor,
+                active: Pos::new(row, col),
+            },
+            (Hit::Cell { row, col }, false) => Selection::at(Pos::new(row, col)),
+            (Hit::ColHeader(col), _) => Selection::whole_col(col),
+            (Hit::RowHeader(row), _) => Selection::whole_row(row),
+            // The corner button selects everything the sheet uses. `Hit::Chrome` is
+            // deliberately not this: the status bar is not a select-all button.
+            (Hit::Corner, _) => {
+                state.act(keymap::Action::SelectAll);
+                state.selection
             }
-            // The filter's dropdown button lives inside an ordinary cell of its heading row —
-            // caught here, before the click becomes a selection, the same way the strip's own
-            // two fields are caught above.
-            if let Hit::Cell { row, col } = hit
-                && let Ok(Some(filter)) = state.app.filter(state.sheet)
-                && filter.buttons
-                && row == filter.start.row
-                && (filter.start.col..=filter.end.col).contains(&col)
-                && state
-                    .geom
-                    .filter_button(row, col)
-                    .is_some_and(|b| b.contains(x, y))
-            {
-                return Click::FilterButton(col);
-            }
-            state.selection = match (hit, extend) {
-                // Shift keeps the anchor and moves the active cell, which is the same rule the
-                // keyboard's Shift+arrow follows — one selection model, two ways in.
-                (Hit::Cell { row, col }, true) => Selection {
-                    anchor: state.selection.anchor,
-                    active: Pos::new(row, col),
-                },
-                (Hit::Cell { row, col }, false) => Selection::at(Pos::new(row, col)),
-                (Hit::ColHeader(col), _) => Selection::whole_col(col),
-                (Hit::RowHeader(row), _) => Selection::whole_row(row),
-                // The corner button selects everything the sheet uses. `Hit::Chrome` is
-                // deliberately not this: the status bar is not a select-all button.
-                (Hit::Corner, _) => {
-                    state.act(keymap::Action::SelectAll);
-                    state.selection
-                }
-                (Hit::Chrome, _) => state.selection,
-            };
-            state.drag = match hit {
-                Hit::Cell { .. } => Some(Drag::Cells),
-                Hit::ColHeader(_) => Some(Drag::Cols),
-                Hit::RowHeader(_) => Some(Drag::Rows),
-                _ => None,
-            };
-            state.reveal();
-            sync_scrollbars(hwnd, state);
-            Click::Strip(Strip::Neither)
-        })
-    };
+            (Hit::Chrome, _) => state.selection,
+        };
+        state.drag = match hit {
+            Hit::Cell { .. } => Some(Drag::Cells),
+            Hit::ColHeader(_) => Some(Drag::Cols),
+            Hit::RowHeader(_) => Some(Drag::Rows),
+            _ => None,
+        };
+        state.reveal();
+        sync_scrollbars(hwnd, state);
+        Click::Strip(Strip::Neither)
+    });
     match click {
         Some(Click::Strip(Strip::NameBox)) => {
             open_name_box(hwnd);
@@ -3452,73 +3381,59 @@ fn double_click(hwnd: HWND, lparam: LPARAM) {
     // clicked twice stepped once, and on the text pane the second press selected a word in the
     // document. Treated as a press, and the release activates it.
     if is_text(hwnd) {
-        // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
-        let on_strip = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y).is_some()) };
+        let on_strip = with_text(hwnd, |text| text.page.strip_hit(x, y).is_some());
         match on_strip {
             Some(true) => text_button_down(hwnd, lparam),
             _ => text_double_click(hwnd, lparam),
         }
         return;
     }
-    // SAFETY: one borrow; the hit test is arithmetic and dispatches nothing.
-    if unsafe { with_sheet(hwnd, |state| state.geom.format_hit(x, y).is_some()) } == Some(true) {
+    if with_sheet(hwnd, |state| state.geom.format_hit(x, y).is_some()) == Some(true) {
         button_down(hwnd, lparam);
         return;
     }
     // A double-click on a chart changes it — Return on a selected one, with the mouse. The first
     // click has selected it, so the verb means this one.
-    // SAFETY: one borrow; arithmetic.
-    let on_chart = unsafe {
-        with_sheet(hwnd, |state| {
-            let charts = state.app.charts(state.sheet).unwrap_or_default();
-            crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y).is_some()
-        })
-    };
+    let on_chart = with_sheet(hwnd, |state| {
+        let charts = state.app.charts(state.sheet).unwrap_or_default();
+        crate::sheet::chart::hit(&charts, &state.geom, state.chart_now(), x, y).is_some()
+    });
     if on_chart == Some(true) {
         restyle_chart(hwnd);
         return;
     }
     // A double-click on a header boundary fits the column to its widest text, or gives the row back
     // to its content.
-    // SAFETY: one borrow; arithmetic.
-    let edge = unsafe { with_sheet(hwnd, |state| state.geom.edge_at(x, y)) }.flatten();
+    let edge = with_sheet(hwnd, |state| state.geom.edge_at(x, y)).flatten();
     match edge {
         Some(Edge::Col(col)) => {
-            // SAFETY: one borrow; the press that began this pair started a resize.
-            unsafe { with_sheet(hwnd, |state| state.resize = None) };
+            with_sheet(hwnd, |state| state.resize = None);
             fit_tracks(hwnd, Fit::Columns(Some(col..col + 1)));
             return;
         }
         Some(Edge::Row(row)) => {
-            // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    state.resize = None;
-                    let _ = state.app.set_row_height(state.sheet, row..row + 1, None);
-                })
-            };
+            with_sheet(hwnd, |state| {
+                state.resize = None;
+                let _ = state.app.set_row_height(state.sheet, row..row + 1, None);
+            });
             refresh(hwnd);
             return;
         }
         None => {}
     }
-    // SAFETY: one borrow, released before the rename prompt's nested loop.
-    let tab = unsafe { with_sheet(hwnd, |state| sheet_tab_at(state, x, y)) }.flatten();
+    let tab = with_sheet(hwnd, |state| sheet_tab_at(state, x, y)).flatten();
     if let Some(crate::sheet::tabs::Target::Sheet(_)) = tab {
         sheet_rename(hwnd);
         return;
     }
-    // SAFETY: no nested loop inside.
-    let on_cell = unsafe {
-        with_sheet(hwnd, |state| match state.geom.hit(x, y) {
-            Hit::Cell { row, col } => {
-                state.selection = Selection::at(Pos::new(row, col));
-                state.drag = None;
-                true
-            }
-            _ => false,
-        })
-    };
+    let on_cell = with_sheet(hwnd, |state| match state.geom.hit(x, y) {
+        Hit::Cell { row, col } => {
+            state.selection = Selection::at(Pos::new(row, col));
+            state.drag = None;
+            true
+        }
+        _ => false,
+    });
     if on_cell == Some(true) {
         begin_edit(hwnd, Seed::Cell, false);
     }
@@ -3532,13 +3447,10 @@ fn button_up(hwnd: HWND) {
     if is_text(hwnd) {
         // A strip control pressed and still under the pointer is activated *now*, after the borrow
         // is released, since some open a modal and no borrow may be held across one (decision 7).
-        // SAFETY: one borrow, and nothing inside it dispatches.
-        let pressed = unsafe {
-            with_text(hwnd, |text| {
-                text.dragging = false;
-                text.pressed.take().filter(|hit| text.hover == Some(*hit))
-            })
-        }
+        let pressed = with_text(hwnd, |text| {
+            text.dragging = false;
+            text.pressed.take().filter(|hit| text.hover == Some(*hit))
+        })
         .flatten();
         // SAFETY: the borrow above is released.
         unsafe {
@@ -3562,21 +3474,18 @@ fn button_up(hwnd: HWND) {
     }
     // A chart let go: a press that barely moved only selected it; any other is one
     // `App::reshape_chart`, one undo step.
-    // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
-    let released = unsafe {
-        with_sheet(hwnd, |state| {
-            let grab = state.chart_grab.take()?;
-            if grab.is_click(state.geom.dpi) {
-                return Some(Ok(()));
-            }
-            let [x, y, w, h] = crate::sheet::chart::lengths(grab.now, &state.geom);
-            Some(
-                state
-                    .app
-                    .reshape_chart(state.sheet, grab.index, &x, &y, &w, &h),
-            )
-        })
-    }
+    let released = with_sheet(hwnd, |state| {
+        let grab = state.chart_grab.take()?;
+        if grab.is_click(state.geom.dpi) {
+            return Some(Ok(()));
+        }
+        let [x, y, w, h] = crate::sheet::chart::lengths(grab.now, &state.geom);
+        Some(
+            state
+                .app
+                .reshape_chart(state.sheet, grab.index, &x, &y, &w, &h),
+        )
+    })
     .flatten();
     if let Some(result) = released {
         // SAFETY: no borrow held.
@@ -3584,44 +3493,40 @@ fn button_up(hwnd: HWND) {
             let _ = ReleaseCapture();
         }
         if let Err(error) = result {
-            // SAFETY: one borrow, no dialog.
-            unsafe { with_sheet(hwnd, |state| state.say(Some(error.to_string()))) };
+            with_sheet(hwnd, |state| state.say(Some(error.to_string())));
         }
         refresh(hwnd);
         return;
     }
     // A track let go: its new size is written once, in the document's own unit, as one undo step.
-    // SAFETY: one borrow; the write notifies and the observer posts rather than sends.
-    let resized = unsafe {
-        with_sheet(hwnd, |state| {
-            let (edge, _, from) = state.resize.take()?;
-            let now = match edge {
-                Edge::Col(col) => state.geom.cols.size_of(col),
-                Edge::Row(row) => state.geom.rows.size_of(row),
-            };
-            // A press and release with no drag is a click on the boundary, not a new size.
-            if (now - from).abs() < 0.5 {
-                return Some(Ok(0));
-            }
-            let to_mm = 1.0 / (mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
-            Some(match edge {
-                Edge::Col(col) => state.app.set_col_width(
-                    state.sheet,
-                    col..col + 1,
-                    Some(grind_sheet::style::mm_length(
-                        state.geom.cols.size_of(col) * to_mm,
-                    )),
-                ),
-                Edge::Row(row) => state.app.set_row_height(
-                    state.sheet,
-                    row..row + 1,
-                    Some(grind_sheet::style::mm_length(
-                        state.geom.rows.size_of(row) * to_mm,
-                    )),
-                ),
-            })
+    let resized = with_sheet(hwnd, |state| {
+        let (edge, _, from) = state.resize.take()?;
+        let now = match edge {
+            Edge::Col(col) => state.geom.cols.size_of(col),
+            Edge::Row(row) => state.geom.rows.size_of(row),
+        };
+        // A press and release with no drag is a click on the boundary, not a new size.
+        if (now - from).abs() < 0.5 {
+            return Some(Ok(0));
+        }
+        let to_mm = 1.0 / (mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
+        Some(match edge {
+            Edge::Col(col) => state.app.set_col_width(
+                state.sheet,
+                col..col + 1,
+                Some(grind_sheet::style::mm_length(
+                    state.geom.cols.size_of(col) * to_mm,
+                )),
+            ),
+            Edge::Row(row) => state.app.set_row_height(
+                state.sheet,
+                row..row + 1,
+                Some(grind_sheet::style::mm_length(
+                    state.geom.rows.size_of(row) * to_mm,
+                )),
+            ),
         })
-    }
+    })
     .flatten();
     if let Some(result) = resized {
         // SAFETY: no borrow held.
@@ -3629,24 +3534,20 @@ fn button_up(hwnd: HWND) {
             let _ = ReleaseCapture();
         }
         if let Err(error) = result {
-            // SAFETY: one borrow, no dialog.
-            unsafe { with_sheet(hwnd, |state| state.say(Some(error.to_string()))) };
+            with_sheet(hwnd, |state| state.say(Some(error.to_string())));
         }
         refresh(hwnd);
         return;
     }
     // A strip control pressed and still under the pointer is activated now, after the borrow, since
     // two open a modal chooser (decision 7).
-    // SAFETY: no nested loop inside.
-    let pressed = unsafe {
-        with_sheet(hwnd, |state| {
-            state.drag = None;
-            state
-                .format_pressed
-                .take()
-                .filter(|control| state.format_hover == Some(*control))
-        })
-    }
+    let pressed = with_sheet(hwnd, |state| {
+        state.drag = None;
+        state
+            .format_pressed
+            .take()
+            .filter(|control| state.format_hover == Some(*control))
+    })
     .flatten();
     // SAFETY: the borrow above is released.
     unsafe {
@@ -3665,17 +3566,14 @@ fn open_name_box(hwnd: HWND) {
     // An edit and an address are two things to type in one window, and only one of them can
     // have the keyboard. Committing rather than cancelling is the same answer a click gets.
     commit_edit(hwnd, None);
-    // SAFETY: one borrow, for the three answers, released before anything is shown.
-    let Some((edit, rect, text)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state.name_box_open = true;
-            state.drag = None;
-            (
-                state.name_box,
-                state.geom.name_box_rect(),
-                status::name_box_text(&state.app, state.sheet, state.selection),
-            )
-        })
+    let Some((edit, rect, text)) = with_sheet(hwnd, |state| {
+        state.name_box_open = true;
+        state.drag = None;
+        (
+            state.name_box,
+            state.geom.name_box_rect(),
+            status::name_box_text(&state.app, state.sheet, state.selection),
+        )
     }) else {
         return;
     };
@@ -3700,14 +3598,11 @@ fn open_name_box(hwnd: HWND) {
 /// hiding the control fires `EN_KILLFOCUS`, which calls back in here. The flag is cleared *first*,
 /// so the second call returns rather than stealing the focus back.
 fn close_name_box(hwnd: HWND, commit: bool) {
-    // SAFETY: no nested loop inside.
-    let Some((edit, was_open)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            (
-                state.name_box,
-                std::mem::replace(&mut state.name_box_open, false),
-            )
-        })
+    let Some((edit, was_open)) = with_sheet(hwnd, |state| {
+        (
+            state.name_box,
+            std::mem::replace(&mut state.name_box_open, false),
+        )
     }) else {
         return;
     };
@@ -3748,13 +3643,11 @@ fn close_name_box(hwnd: HWND, commit: bool) {
 /// `on_bar` forces it onto the formula bar; otherwise [`Sheet::editor_rect`] decides, and picks
 /// the bar anyway for a cell that is scrolled out of sight.
 fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
-    // SAFETY: one borrow, for the text the seed means; released before [`begin_edit_with`] takes
-    // its own, which it must, since it moves a window.
-    let Some(text) = (unsafe {
-        with_sheet(hwnd, |state| match seed {
-            Seed::Char(c) => c.to_string(),
-            Seed::Cell => status::formula_bar_text(&state.app, state.sheet, state.selection),
-        })
+    // Released before [`begin_edit_with`] takes its own borrow, which it must, since it moves a
+    // window.
+    let Some(text) = with_sheet(hwnd, |state| match seed {
+        Seed::Char(c) => c.to_string(),
+        Seed::Cell => status::formula_bar_text(&state.app, state.sheet, state.selection),
     }) else {
         return;
     };
@@ -3764,14 +3657,11 @@ fn begin_edit(hwnd: HWND, seed: Seed, on_bar: bool) {
 /// The same, with the text given rather than derived from a [`Seed`] — the function list's door
 /// in, which starts an edit holding `=SUM(` and belongs to no cell's own content.
 fn begin_edit_with(hwnd: HWND, text: String, mode: state::Mode, on_bar: bool) {
-    // SAFETY: one borrow, for the control and its rectangle.
-    let Some((edit, rect)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state.mode = mode;
-            state.editor_on_bar = on_bar;
-            state.drag = None;
-            (state.editor, state.editor_rect())
-        })
+    let Some((edit, rect)) = with_sheet(hwnd, |state| {
+        state.mode = mode;
+        state.editor_on_bar = on_bar;
+        state.drag = None;
+        (state.editor, state.editor_rect())
     }) else {
         return;
     };
@@ -3806,9 +3696,7 @@ fn begin_edit_with(hwnd: HWND, text: String, mode: state::Mode, on_bar: bool) {
 /// Store what the editor holds and close it, moving the cursor if a key asked to — idempotent for
 /// [`close_name_box`]'s reason, since hiding the control fires `EN_KILLFOCUS`.
 fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
-    // SAFETY: one borrow, for the control and whether there is anything to commit.
-    let Some((edit, open)) =
-        (unsafe { with_sheet(hwnd, |state| (state.editor, state.mode.is_editing())) })
+    let Some((edit, open)) = with_sheet(hwnd, |state| (state.editor, state.mode.is_editing()))
     else {
         return;
     };
@@ -3822,12 +3710,9 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         // the problem, rather than storing `=SUM(B2` as text.
         Err(error) => {
             let caret = state::caret_at(&text, error.at);
-            // SAFETY: one borrow, for the notice and nothing else.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    state.say(Some(notice::bad_formula(&error.message)));
-                });
-            }
+            with_sheet(hwnd, |state| {
+                state.say(Some(notice::bad_formula(&error.message)));
+            });
             // The banner takes its height out of the grid, so the cell the editor is sitting on
             // has just moved down by one banner. `refresh` is what moves the control with it —
             // and the reason that is a *shared* function rather than a `MoveWindow` here.
@@ -3841,16 +3726,13 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         }
     };
     // Closed **first**, so that the `EN_KILLFOCUS` hiding it fires finds nothing left to do.
-    // SAFETY: no nested loop inside.
-    let Some((sheet, pos)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state.editor_on_bar = false;
-            state.mode = state::Mode::Ready;
-            // Whatever the banner was saying, it was about this edit, and so was the band.
-            state.say(None);
-            state.assist_done();
-            (state.sheet, state.selection.active)
-        })
+    let Some((sheet, pos)) = with_sheet(hwnd, |state| {
+        state.editor_on_bar = false;
+        state.mode = state::Mode::Ready;
+        // Whatever the banner was saying, it was about this edit, and so was the band.
+        state.say(None);
+        state.assist_done();
+        (state.sheet, state.selection.active)
     }) else {
         return;
     };
@@ -3859,44 +3741,38 @@ fn commit_edit(hwnd: HWND, dir: Option<Dir>) {
         let _ = ShowWindow(edit, SW_HIDE);
         let _ = SetFocus(Some(hwnd));
     }
-    // SAFETY: a fresh borrow, taken after the window calls rather than across them. `App::enter`
-    // notifies its observer from inside this borrow, which is safe precisely because the
-    // observer *posts* rather than sends — see [`Changed`].
-    unsafe {
-        with_sheet(hwnd, |state| {
-            match state.app.enter(sheet, pos, &store, RecalcMode::Document) {
-                // A recalculation that was skipped is a state the document is now in, and a
-                // state is what the banner is for.
-                Ok(outcome) => {
-                    if let Some(recalc) = outcome.recalc.filter(|recalc| recalc.spoiled > 0) {
-                        state.say(Some(notice::recalc_skipped(recalc.spoiled)));
-                    } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
-                        // `1.5` in a German document was read as one and a half — the core's
-                        // sentence, as `error.to_string()` is below.
-                        state.say(Some(note));
-                    }
+    // `App::enter` notifies its observer from inside this borrow, which works because the observer
+    // *posts* rather than sends — see [`Changed`].
+    with_sheet(hwnd, |state| {
+        match state.app.enter(sheet, pos, &store, RecalcMode::Document) {
+            // A recalculation that was skipped is a state the document is now in, and a
+            // state is what the banner is for.
+            Ok(outcome) => {
+                if let Some(recalc) = outcome.recalc.filter(|recalc| recalc.spoiled > 0) {
+                    state.say(Some(notice::recalc_skipped(recalc.spoiled)));
+                } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
+                    // `1.5` in a German document was read as one and a half — the core's
+                    // sentence, as `error.to_string()` is below.
+                    state.say(Some(note));
                 }
-                Err(error) => state.say(Some(error.to_string())),
             }
-            if let Some(dir) = dir {
-                state.move_by(dir);
-            }
-        });
-    }
+            Err(error) => state.say(Some(error.to_string())),
+        }
+        if let Some(dir) = dir {
+            state.move_by(dir);
+        }
+    });
     refresh(hwnd);
 }
 
 /// Throw the edit away. The document is not touched, which is the whole promise of Escape.
 fn cancel_edit(hwnd: HWND) {
-    // SAFETY: no nested loop inside; the flag is cleared here for [`commit_edit`]'s reason.
-    let Some((edit, was_open)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let was_open = std::mem::replace(&mut state.mode, state::Mode::Ready).is_editing();
-            state.editor_on_bar = false;
-            state.say(None);
-            state.assist_done();
-            (state.editor, was_open)
-        })
+    let Some((edit, was_open)) = with_sheet(hwnd, |state| {
+        let was_open = std::mem::replace(&mut state.mode, state::Mode::Ready).is_editing();
+        state.editor_on_bar = false;
+        state.say(None);
+        state.assist_done();
+        (state.editor, was_open)
     }) else {
         return;
     };
@@ -3920,9 +3796,7 @@ fn editor_changed(hwnd: HWND) {
         return;
     };
     let caret = editor_caret(edit, &text);
-    // SAFETY: one borrow, released before anything is invalidated. `Sheet::assist` reads
-    // `App::names`, which takes the core's read lock and dispatches nothing.
-    let Some(moved) = (unsafe { with_sheet(hwnd, |state| state.assist(&text, caret)) }) else {
+    let Some(moved) = with_sheet(hwnd, |state| state.assist(&text, caret)) else {
         return;
     };
     if moved {
@@ -3934,9 +3808,7 @@ fn editor_changed(hwnd: HWND) {
 
 /// The editor control and what it holds, or `None` when no edit is open.
 fn editor_text(hwnd: HWND) -> Option<(HWND, String)> {
-    // SAFETY: one borrow, for the control and whether it is up; nothing inside dispatches.
-    let (edit, open) =
-        (unsafe { with_sheet(hwnd, |state| (state.editor, state.mode.is_editing())) })?;
+    let (edit, open) = (with_sheet(hwnd, |state| (state.editor, state.mode.is_editing())))?;
     (open && !edit.is_invalid()).then(|| (edit, window_text(edit)))
 }
 
@@ -4177,20 +4049,17 @@ fn do_command(hwnd: HWND, command: Command) {
 /// Undo or redo. The history is the core's — architecture rule 2 — and this is the whole of what
 /// a shell does about it.
 fn history(hwnd: HWND, undo: bool) {
-    // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let did = if undo {
-                state.app.undo()
-            } else {
-                state.app.redo()
-            };
-            if did {
-                // Whatever the banner said was about the document as it was.
-                state.say(None);
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let did = if undo {
+            state.app.undo()
+        } else {
+            state.app.redo()
+        };
+        if did {
+            // Whatever the banner said was about the document as it was.
+            state.say(None);
+        }
+    });
     refresh(hwnd);
 }
 
@@ -4200,22 +4069,17 @@ fn history(hwnd: HWND, undo: bool) {
 /// reproduces the cells, and into Calc or Excel `1234.5` is a number where `1,234.50 €` is a
 /// locale guess.
 fn copy(hwnd: HWND, cut: bool) {
-    // SAFETY: one borrow; `clipboard::set_text` and `clear_range` each run with nothing else
-    // borrowed.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            // A whole row or column is cut to what the sheet uses, or a copy of a column would
-            // be a million lines (`nav::target`).
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            let text =
-                clip::rect_text(&state.app, state.sheet, start, end, App::input_text, "\r\n");
-            clipboard::set_text(hwnd, &text);
-            if cut && let Err(error) = state.app.clear_range(state.sheet, start, end) {
-                state.say(Some(error.to_string()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        // A whole row or column is cut to what the sheet uses, or a copy of a column would
+        // be a million lines (`nav::target`).
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        let text = clip::rect_text(&state.app, state.sheet, start, end, App::input_text, "\r\n");
+        clipboard::set_text(hwnd, &text);
+        if cut && let Err(error) = state.app.clear_range(state.sheet, start, end) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
@@ -4227,55 +4091,49 @@ fn paste(hwnd: HWND) {
         return;
     };
     let rows = clip::parse_rows(&text);
-    // SAFETY: one borrow. `enter_range` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, _) = state.selection.rect();
-            match state
-                .app
-                .enter_range(state.sheet, start, &rows, RecalcMode::Document)
-            {
-                Ok(outcome) => {
-                    if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
-                        state.say(Some(notice::recalc_skipped(recalc.spoiled)));
-                    } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
-                        state.say(Some(note));
-                    }
-                    let last = Pos::new(
-                        start.row + rows.len().saturating_sub(1) as u32,
-                        start.col
-                            + rows
-                                .iter()
-                                .map(Vec::len)
-                                .max()
-                                .unwrap_or(1)
-                                .saturating_sub(1) as u32,
-                    );
-                    state.selection = Selection {
-                        anchor: start,
-                        active: last,
-                    };
-                    state.reveal();
-                    sync_scrollbars(hwnd, state);
+    with_sheet(hwnd, |state| {
+        let (start, _) = state.selection.rect();
+        match state
+            .app
+            .enter_range(state.sheet, start, &rows, RecalcMode::Document)
+        {
+            Ok(outcome) => {
+                if let Some(recalc) = outcome.recalc.filter(|r| r.spoiled > 0) {
+                    state.say(Some(notice::recalc_skipped(recalc.spoiled)));
+                } else if let Some(note) = outcome.note(state.app.locale().as_ref()) {
+                    state.say(Some(note));
                 }
-                Err(error) => state.say(Some(error.to_string())),
+                let last = Pos::new(
+                    start.row + rows.len().saturating_sub(1) as u32,
+                    start.col
+                        + rows
+                            .iter()
+                            .map(Vec::len)
+                            .max()
+                            .unwrap_or(1)
+                            .saturating_sub(1) as u32,
+                );
+                state.selection = Selection {
+                    anchor: start,
+                    active: last,
+                };
+                state.reveal();
+                sync_scrollbars(hwnd, state);
             }
-        });
-    }
+            Err(error) => state.say(Some(error.to_string())),
+        }
+    });
     refresh(hwnd);
 }
 
 /// Empty the selected cells, keeping their formatting — Delete's verb, and the Edit menu's.
 fn clear_cells(hwnd: HWND) {
-    // SAFETY: one borrow; `clear_range` is one `Action::Batch`, so this is one Ctrl+Z.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            if let Err(error) = state.app.clear_range(state.sheet, start, end) {
-                state.say(Some(error.to_string()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        if let Err(error) = state.app.clear_range(state.sheet, start, end) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
@@ -4283,50 +4141,44 @@ fn clear_cells(hwnd: HWND) {
 /// cell, over the lines `grind_sheet::nav::fills` names — so a two-column fill copies column A
 /// into A and column B into B.
 fn fill(hwnd: HWND, down: bool) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let mut cells = 0;
-            for (source, start, end) in grind_sheet::nav::fills(state.selection, down) {
-                match state
-                    .app
-                    .fill(state.sheet, source, start, end, RecalcMode::Document)
-                {
-                    Ok(done) => cells += done.cells as u64,
-                    Err(error) => return state.say(Some(error.to_string())),
-                }
+    with_sheet(hwnd, |state| {
+        let mut cells = 0;
+        for (source, start, end) in grind_sheet::nav::fills(state.selection, down) {
+            match state
+                .app
+                .fill(state.sheet, source, start, end, RecalcMode::Document)
+            {
+                Ok(done) => cells += done.cells as u64,
+                Err(error) => return state.say(Some(error.to_string())),
             }
-            state.say(Some(notice::filled(cells, down)));
-        });
-    }
+        }
+        state.say(Some(notice::filled(cells, down)));
+    });
     refresh(hwnd);
 }
 
 /// Sheet ▸ Merge Cells and Unmerge Cells — `App::merge`/`App::unmerge` over the selection, a whole
 /// row or column cut to the part in use (`nav::target`); what the covered cells held stays.
 fn merge_cells(hwnd: HWND, merge: bool) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            let said = if merge {
-                match state.app.merge(state.sheet, start, end) {
-                    Ok(_) => {
-                        state.selection = Selection::at(start);
-                        None
-                    }
-                    Err(error) => Some(error.to_string()),
+    with_sheet(hwnd, |state| {
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        let said = if merge {
+            match state.app.merge(state.sheet, start, end) {
+                Ok(_) => {
+                    state.selection = Selection::at(start);
+                    None
                 }
-            } else {
-                match state.app.unmerge(state.sheet, start, end) {
-                    Ok(_) => None,
-                    Err(error) => Some(error.to_string()),
-                }
-            };
-            state.say(said);
-        });
-    }
+                Err(error) => Some(error.to_string()),
+            }
+        } else {
+            match state.app.unmerge(state.sheet, start, end) {
+                Ok(_) => None,
+                Err(error) => Some(error.to_string()),
+            }
+        };
+        state.say(said);
+    });
     refresh(hwnd);
 }
 
@@ -4334,30 +4186,27 @@ fn merge_cells(hwnd: HWND, merge: bool) {
 /// the selection, as `kind` or as the kind the cells want; this window says only where a column
 /// and a row sit, in millimetres.
 fn insert_chart(hwnd: HWND, kind: Option<grind_sheet::ChartKind>) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
-            let result = grind_sheet::verbs::insert_chart(
-                &state.app,
-                state.sheet,
-                start,
-                end,
-                kind,
-                |col, row| {
-                    (
-                        state.geom.cols.offset_of(col) * px,
-                        state.geom.rows.offset_of(row) * px,
-                    )
-                },
-            );
-            state.say(Some(match result {
-                Ok(_) => "A chart beside the table. Ctrl+Z takes it back.".to_owned(),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
+        let result = grind_sheet::verbs::insert_chart(
+            &state.app,
+            state.sheet,
+            start,
+            end,
+            kind,
+            |col, row| {
+                (
+                    state.geom.cols.offset_of(col) * px,
+                    state.geom.rows.offset_of(row) * px,
+                )
+            },
+        );
+        state.say(Some(match result {
+            Ok(_) => "A chart beside the table. Ctrl+Z takes it back.".to_owned(),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4365,32 +4214,29 @@ fn insert_chart(hwnd: HWND, kind: Option<grind_sheet::ChartKind>) {
 /// press, opening on the one the cells want; **Insert** is the menu's `insert_chart` as the kind
 /// pressed, Cancel writes nothing. The borrow is released first (decision 7).
 fn preview_chart(hwnd: HWND) {
-    // SAFETY: one borrow, ended before the modal below.
-    let made = unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            let preview = |kind| {
-                grind_sheet::verbs::preview_insert_chart(&state.app, state.sheet, start, end, kind)
-            };
-            let made = preview(None).and_then(|(guessed, _)| {
-                let pictures = grind_sheet::ChartKind::ALL
-                    .into_iter()
-                    .map(|kind| preview(Some(kind)).map(|(chart, data)| (kind, chart, data)))
-                    .collect::<grind_sheet::Result<Vec<_>>>()?;
-                let shown = grind_sheet::ChartKind::ALL
-                    .iter()
-                    .position(|kind| *kind == guessed.kind)
-                    .unwrap_or(0);
-                Ok((pictures, shown))
-            });
-            if let Err(error) = &made {
-                state.say(Some(error.to_string()));
-            }
-            made.ok()
-                .map(|(pictures, shown)| (pictures, shown, state.geom.dpi))
-        })
-        .flatten()
-    };
+    let made = with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        let preview = |kind| {
+            grind_sheet::verbs::preview_insert_chart(&state.app, state.sheet, start, end, kind)
+        };
+        let made = preview(None).and_then(|(guessed, _)| {
+            let pictures = grind_sheet::ChartKind::ALL
+                .into_iter()
+                .map(|kind| preview(Some(kind)).map(|(chart, data)| (kind, chart, data)))
+                .collect::<grind_sheet::Result<Vec<_>>>()?;
+            let shown = grind_sheet::ChartKind::ALL
+                .iter()
+                .position(|kind| *kind == guessed.kind)
+                .unwrap_or(0);
+            Ok((pictures, shown))
+        });
+        if let Err(error) = &made {
+            state.say(Some(error.to_string()));
+        }
+        made.ok()
+            .map(|(pictures, shown)| (pictures, shown, state.geom.dpi))
+    })
+    .flatten();
     if let Some((pictures, shown, dpi)) = made
         && let Some(kind) = crate::dialog::chart_preview(hwnd, pictures, shown, dpi)
     {
@@ -4403,20 +4249,17 @@ fn preview_chart(hwnd: HWND) {
 /// Chart ▸ Change to … Chart for each kind, and the same on a chart's own menu — the selected
 /// chart, else the last, turned into `kind` (`verbs::set_chart_kind`).
 fn set_chart_kind(hwnd: HWND, kind: grind_sheet::ChartKind) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match state.chart_target() {
-                None => "This sheet has no chart.".to_owned(),
-                Some(index) => {
-                    match grind_sheet::verbs::set_chart_kind(&state.app, state.sheet, index, kind) {
-                        Ok(said) => format!("{said} Ctrl+Z takes it back."),
-                        Err(why) => why,
-                    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match state.chart_target() {
+            None => "This sheet has no chart.".to_owned(),
+            Some(index) => {
+                match grind_sheet::verbs::set_chart_kind(&state.app, state.sheet, index, kind) {
+                    Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                    Err(why) => why,
                 }
-            }));
-        });
-    }
+            }
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4431,95 +4274,82 @@ fn restyle_chart(hwnd: HWND) {
     ) else {
         return;
     };
-    // SAFETY: one borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match state.chart_target() {
-                None => "This sheet has no chart.".to_owned(),
-                Some(index) => {
-                    match grind_sheet::verbs::restyle_chart(&state.app, state.sheet, index, &words)
-                    {
-                        Ok(said) => format!("{said} Ctrl+Z takes it back."),
-                        Err(why) => why,
-                    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match state.chart_target() {
+            None => "This sheet has no chart.".to_owned(),
+            Some(index) => {
+                match grind_sheet::verbs::restyle_chart(&state.app, state.sheet, index, &words) {
+                    Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                    Err(why) => why,
                 }
-            }));
-        });
-    }
+            }
+        }));
+    });
     refresh(hwnd);
 }
 
 /// Chart ▸ Move Chart Here — the selected chart, else the last: its corner to the active cell's,
 /// its size kept (`verbs::move_chart`), over the offsets this window draws the grid at.
 fn move_chart(hwnd: HWND) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
-            state.say(Some(match state.chart_target() {
-                None => "This sheet has no chart.".to_owned(),
-                Some(index) => match grind_sheet::verbs::move_chart(
-                    &state.app,
-                    state.sheet,
-                    index,
-                    state.selection.active,
-                    |col, row| {
-                        (
-                            state.geom.cols.offset_of(col) * px,
-                            state.geom.rows.offset_of(row) * px,
-                        )
-                    },
-                ) {
-                    Ok(said) => format!("{said} Ctrl+Z takes it back."),
-                    Err(why) => why,
+    with_sheet(hwnd, |state| {
+        let px = 1.0 / (crate::sheet::geom::mm_to_px(state.geom.dpi)(1.0) * state.geom.zoom);
+        state.say(Some(match state.chart_target() {
+            None => "This sheet has no chart.".to_owned(),
+            Some(index) => match grind_sheet::verbs::move_chart(
+                &state.app,
+                state.sheet,
+                index,
+                state.selection.active,
+                |col, row| {
+                    (
+                        state.geom.cols.offset_of(col) * px,
+                        state.geom.rows.offset_of(row) * px,
+                    )
                 },
-            }));
-        });
-    }
+            ) {
+                Ok(said) => format!("{said} Ctrl+Z takes it back."),
+                Err(why) => why,
+            },
+        }));
+    });
     refresh(hwnd);
 }
 
 /// Chart ▸ Delete Chart — the selected chart (Delete, Backspace, its menu), else the last.
 fn delete_chart(hwnd: HWND) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let target = state.chart_target();
-            state.chart_selected = None;
-            state.say(Some(match target {
-                None => "This sheet has no chart.".to_owned(),
-                Some(index) => match state.app.remove_chart(state.sheet, index) {
-                    Ok(()) => grind_sheet::chart_frame::deleted_sentence("Ctrl+Z"),
-                    Err(error) => error.to_string(),
-                },
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let target = state.chart_target();
+        state.chart_selected = None;
+        state.say(Some(match target {
+            None => "This sheet has no chart.".to_owned(),
+            Some(index) => match state.app.remove_chart(state.sheet, index) {
+                Ok(()) => grind_sheet::chart_frame::deleted_sentence("Ctrl+Z"),
+                Err(error) => error.to_string(),
+            },
+        }));
+    });
     refresh(hwnd);
 }
 
 /// Edit ▸ Fill Across — the cell the selection grew from, into the whole selection, references shifted, as one
 /// `App::fill` and so one undo step.
 fn fill_across(hwnd: HWND) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            state.say(Some(
-                match state.app.fill(
-                    state.sheet,
-                    // The cell the selection grew from, which is the one somebody means.
-                    state.selection.anchor,
-                    start,
-                    end,
-                    RecalcMode::Document,
-                ) {
-                    Ok(done) => notice::filled(done.cells as u64, true),
-                    Err(error) => error.to_string(),
-                },
-            ));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        state.say(Some(
+            match state.app.fill(
+                state.sheet,
+                // The cell the selection grew from, which is the one somebody means.
+                state.selection.anchor,
+                start,
+                end,
+                RecalcMode::Document,
+            ) {
+                Ok(done) => notice::filled(done.cells as u64, true),
+                Err(error) => error.to_string(),
+            },
+        ));
+    });
     refresh(hwnd);
 }
 
@@ -4539,60 +4369,50 @@ fn wrap_text(hwnd: HWND) {
 /// Format ▸ All Borders / No Borders — read the active cell's style, set or clear the hairline on
 /// every edge, write it over the selection: `grind_sheet::format::bordered`, one undo step.
 fn borders(hwnd: HWND, on: bool) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            let style = state
-                .app
-                .style_at(state.sheet, state.selection.active)
-                .ok()
-                .flatten()
-                .unwrap_or_default();
-            if let Err(error) = state.app.set_style(
-                state.sheet,
-                start,
-                end,
-                grind_sheet::format::bordered(&style, on),
-            ) {
-                state.say(Some(error.to_string()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        let style = state
+            .app
+            .style_at(state.sheet, state.selection.active)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if let Err(error) = state.app.set_style(
+            state.sheet,
+            start,
+            end,
+            grind_sheet::format::bordered(&style, on),
+        ) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
 /// Edit ▸ Copy Value — the selection as it is *shown*, on the clipboard as tab-separated text
 /// (`App::value_text`). The bytes of Copy's own rectangle, with the answer instead of the source.
 fn copy_value(hwnd: HWND) {
-    // SAFETY: one borrow; `set_text` runs with nothing else borrowed.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            let text =
-                clip::rect_text(&state.app, state.sheet, start, end, App::value_text, "\r\n");
-            clipboard::set_text(hwnd, &text);
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        let text = clip::rect_text(&state.app, state.sheet, start, end, App::value_text, "\r\n");
+        clipboard::set_text(hwnd, &text);
+    });
 }
 
 /// Edit ▸ Formula to Value — every formula in the selection dropped, each cell keeping the value
 /// it last computed.
 fn formula_to_value(hwnd: HWND) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            state.say(Some(
-                match grind_sheet::verbs::formulas_to_values(&state.app, state.sheet, start, end) {
-                    Ok(n) => notice::formulas_dropped(n),
-                    Err(error) => error.to_string(),
-                },
-            ));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        state.say(Some(
+            match grind_sheet::verbs::formulas_to_values(&state.app, state.sheet, start, end) {
+                Ok(n) => notice::formulas_dropped(n),
+                Err(error) => error.to_string(),
+            },
+        ));
+    });
     refresh(hwnd);
 }
 
@@ -4600,28 +4420,25 @@ fn formula_to_value(hwnd: HWND) {
 /// `set_col_hidden`, one undo step. Showing reaches a hidden run because a selection made with
 /// Shift+arrow across one still spans its indexes.
 fn hide_tracks(hwnd: HWND, rows: bool, hidden: bool) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let result = if rows {
-                state.app.set_row_hidden(
-                    state.sheet,
-                    grind_sheet::verbs::rows(state.selection),
-                    hidden,
-                )
-            } else {
-                state.app.set_col_hidden(
-                    state.sheet,
-                    grind_sheet::verbs::cols(state.selection),
-                    hidden,
-                )
-            };
-            state.say(Some(match result {
-                Ok(count) => notice::tracks_hidden(count, rows, hidden),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let result = if rows {
+            state.app.set_row_hidden(
+                state.sheet,
+                grind_sheet::verbs::rows(state.selection),
+                hidden,
+            )
+        } else {
+            state.app.set_col_hidden(
+                state.sheet,
+                grind_sheet::verbs::cols(state.selection),
+                hidden,
+            )
+        };
+        state.say(Some(match result {
+            Ok(count) => notice::tracks_hidden(count, rows, hidden),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4639,28 +4456,21 @@ fn track_size(hwnd: HWND, rows: bool) {
         return;
     };
     let size = Some(answer.trim().to_owned()).filter(|size| !size.is_empty());
-    // SAFETY: one borrow, taken after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let result = if rows {
-                state.app.set_row_height(
-                    state.sheet,
-                    grind_sheet::verbs::rows(state.selection),
-                    size,
-                )
-            } else {
-                state.app.set_col_width(
-                    state.sheet,
-                    grind_sheet::verbs::cols(state.selection),
-                    size,
-                )
-            };
-            state.say(Some(match result {
-                Ok(count) => notice::track_sized(count, rows),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let result = if rows {
+            state
+                .app
+                .set_row_height(state.sheet, grind_sheet::verbs::rows(state.selection), size)
+        } else {
+            state
+                .app
+                .set_col_width(state.sheet, grind_sheet::verbs::cols(state.selection), size)
+        };
+        state.say(Some(match result {
+            Ok(count) => notice::track_sized(count, rows),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4681,69 +4491,66 @@ enum Fit {
 /// Columns fitted to their widest text and rows given back to their content, as one undo step
 /// (`App::fit`): Sheet ▸ Fit Column Width, Fit Row Height and Fit Content to Cells.
 fn fit_tracks(hwnd: HWND, fit: Fit) {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let sheet = state.sheet;
-            let (start, end) = state.selection.rect();
-            let rows_only = matches!(fit, Fit::Rows);
-            let (cols, rows) = match fit {
-                Fit::Columns(cols) => (
-                    grind_sheet::fit::columns_in_use(
-                        &state.app,
-                        sheet,
-                        cols.unwrap_or(start.col..end.col + 1),
-                    ),
-                    0..0,
+    with_sheet(hwnd, |state| {
+        let sheet = state.sheet;
+        let (start, end) = state.selection.rect();
+        let rows_only = matches!(fit, Fit::Rows);
+        let (cols, rows) = match fit {
+            Fit::Columns(cols) => (
+                grind_sheet::fit::columns_in_use(
+                    &state.app,
+                    sheet,
+                    cols.unwrap_or(start.col..end.col + 1),
                 ),
-                Fit::Rows => (0..0, start.row..end.row + 1),
-                Fit::Sheet => (
-                    grind_sheet::fit::all_columns(&state.app, sheet),
-                    0..u32::MAX,
-                ),
-            };
-            let Some(dib) = gdi::Dib::new(1, 1) else {
-                return;
-            };
-            let dc = dib.dc();
-            let dpi = state.geom.dpi;
-            let px = scale(theme::text::CELL, dpi).round() as i32;
-            let (regular, bold) = (
-                gdi::Font::new(face(), px, false),
-                gdi::Font::new(face(), px, true),
-            );
-            let used = state.app.used_extent(sheet).unwrap_or((0, 0)).0.min(5000);
-            let pad = 2.0 * scale(4.0, dpi) + 6.0;
-            let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
-            let widths = cols
-                .map(|col| {
-                    let widest =
-                        state
-                            .app
-                            .get_viewport(sheet, 0..used, col..col + 1)
-                            .map_or(0.0, |view| {
-                                (0..used)
-                                    .filter_map(|row| {
-                                        let text =
-                                            view.text(row, col).filter(|text| !text.is_empty())?;
-                                        let heavy = view.style(row, col).is_some_and(|style| {
-                                            grind_sheet::format::Toggle::Bold.is_on(style)
-                                        });
-                                        let _font = gdi::Selected::font(
-                                            dc,
-                                            if heavy { &bold } else { &regular },
-                                        );
-                                        Some(f64::from(gdi::text_width(dc, text)))
-                                    })
-                                    .fold(0.0, f64::max)
-                            });
-                    (col, grind_sheet::fit::width(widest, pad, to_mm))
-                })
-                .collect();
-            let changed = state.app.fit(sheet, widths, rows).unwrap_or(0);
-            state.say(Some(notice::track_sized(changed, rows_only)));
-        });
-    }
+                0..0,
+            ),
+            Fit::Rows => (0..0, start.row..end.row + 1),
+            Fit::Sheet => (
+                grind_sheet::fit::all_columns(&state.app, sheet),
+                0..u32::MAX,
+            ),
+        };
+        let Some(dib) = gdi::Dib::new(1, 1) else {
+            return;
+        };
+        let dc = dib.dc();
+        let dpi = state.geom.dpi;
+        let px = scale(theme::text::CELL, dpi).round() as i32;
+        let (regular, bold) = (
+            gdi::Font::new(face(), px, false),
+            gdi::Font::new(face(), px, true),
+        );
+        let used = state.app.used_extent(sheet).unwrap_or((0, 0)).0.min(5000);
+        let pad = 2.0 * scale(4.0, dpi) + 6.0;
+        let to_mm = 1.0 / crate::sheet::geom::mm_to_px(dpi)(1.0);
+        let widths = cols
+            .map(|col| {
+                let widest =
+                    state
+                        .app
+                        .get_viewport(sheet, 0..used, col..col + 1)
+                        .map_or(0.0, |view| {
+                            (0..used)
+                                .filter_map(|row| {
+                                    let text =
+                                        view.text(row, col).filter(|text| !text.is_empty())?;
+                                    let heavy = view.style(row, col).is_some_and(|style| {
+                                        grind_sheet::format::Toggle::Bold.is_on(style)
+                                    });
+                                    let _font = gdi::Selected::font(
+                                        dc,
+                                        if heavy { &bold } else { &regular },
+                                    );
+                                    Some(f64::from(gdi::text_width(dc, text)))
+                                })
+                                .fold(0.0, f64::max)
+                        });
+                (col, grind_sheet::fit::width(widest, pad, to_mm))
+            })
+            .collect();
+        let changed = state.app.fit(sheet, widths, rows).unwrap_or(0);
+        state.say(Some(notice::track_sized(changed, rows_only)));
+    });
     refresh(hwnd);
 }
 
@@ -4758,29 +4565,23 @@ fn find_calculation(hwnd: HWND) {
     ) else {
         return;
     };
-    // SAFETY: one borrow, released before the list — which runs a nested message loop.
-    let Some(found) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state
-                .app
-                .calculations()
-                .into_iter()
-                .filter(|calc| calc.matches(word.trim()))
-                .collect::<Vec<_>>()
-        })
+    let Some(found) = with_sheet(hwnd, |state| {
+        state
+            .app
+            .calculations()
+            .into_iter()
+            .filter(|calc| calc.matches(word.trim()))
+            .collect::<Vec<_>>()
     }) else {
         return;
     };
     if found.is_empty() {
-        // SAFETY: one borrow, no dialog.
-        unsafe {
-            with_sheet(hwnd, |state| {
-                state.say(Some(
-                    "Nothing here is calculated, or nothing matches. A cell starting with = is."
-                        .to_owned(),
-                ));
-            })
-        };
+        with_sheet(hwnd, |state| {
+            state.say(Some(
+                "Nothing here is calculated, or nothing matches. A cell starting with = is."
+                    .to_owned(),
+            ));
+        });
         return refresh(hwnd);
     }
     let rows: Vec<String> = found
@@ -4798,23 +4599,17 @@ fn find_calculation(hwnd: HWND) {
 /// Data ▸ Scratch Calculator… — the tape as a notebook (`dialog::scratch`), kept with the window
 /// between openings, and opened as a spreadsheet when it closes on that button.
 fn scratch_calculator(hwnd: HWND) {
-    // SAFETY: one borrow, released before the modal.
-    let Some(tape) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let locale = state.app.locale();
-            state
-                .tape
-                .take()
-                .unwrap_or_else(|| grind_sheet::Tape::new(locale))
-        })
+    let Some(tape) = with_sheet(hwnd, |state| {
+        let locale = state.app.locale();
+        state
+            .tape
+            .take()
+            .unwrap_or_else(|| grind_sheet::Tape::new(locale))
     }) else {
         return;
     };
     let (tape, open) = dialog::scratch(hwnd, tape);
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_sheet(hwnd, |state| state.tape = Some(tape));
-    }
+    with_sheet(hwnd, |state| state.tape = Some(tape));
     if open {
         open_tape(hwnd);
     }
@@ -4823,12 +4618,9 @@ fn scratch_calculator(hwnd: HWND) {
 /// The tape as a new spreadsheet in this window, the way an import arrives: unsaved, no path, and
 /// Save As offering `tape.fods`. The tape comes along, for the next time.
 fn open_tape(hwnd: HWND) {
-    // SAFETY: one borrow, released before any dialog.
-    let Some(promoted) = (unsafe {
-        with_sheet(hwnd, |state| {
-            state.tape.as_ref().map(grind_sheet::Tape::promote)
-        })
-    })
+    let Some(promoted) = (with_sheet(hwnd, |state| {
+        state.tape.as_ref().map(grind_sheet::Tape::promote)
+    }))
     .flatten() else {
         return;
     };
@@ -4843,10 +4635,7 @@ fn open_tape(hwnd: HWND) {
     if let Err(error) = app.open_document(doc) {
         return dialog::error(hwnd, &error.to_string());
     }
-    // SAFETY: one borrow, no dialog.
-    let Some((theme, tape)) =
-        (unsafe { with_sheet(hwnd, |state| (state.theme, state.tape.take())) })
-    else {
+    let Some((theme, tape)) = with_sheet(hwnd, |state| (state.theme, state.tape.take())) else {
         return;
     };
     let mut sheet = opened_sheet_on(app, None, theme);
@@ -4859,10 +4648,7 @@ fn open_tape(hwnd: HWND) {
 /// Data ▸ Document Locale… — a tag (`de-DE`, `fr`; empty for none) for how this document spells and
 /// reads numbers. `grind_sheet::verbs::locale` reads the tag, `App::set_locale` is one undo step.
 fn document_locale(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some(now) =
-        (unsafe { with_sheet(hwnd, |state| state.app.locale().map_or_default(|l| l.tag())) })
-    else {
+    let Some(now) = with_sheet(hwnd, |state| state.app.locale().map_or_default(|l| l.tag())) else {
         return;
     };
     let Some(typed) = dialog::prompt(
@@ -4873,30 +4659,24 @@ fn document_locale(hwnd: HWND) {
     ) else {
         return;
     };
-    // SAFETY: one borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match grind_sheet::verbs::locale(&typed) {
-                Ok(locale) => match state.app.set_locale(locale) {
-                    Ok(()) => "The document's locale is set. Ctrl+Z takes it back.".to_owned(),
-                    Err(error) => error.to_string(),
-                },
-                Err(_) => format!("“{}” is not a locale — try de-DE.", typed.trim()),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match grind_sheet::verbs::locale(&typed) {
+            Ok(locale) => match state.app.set_locale(locale) {
+                Ok(()) => "The document's locale is set. Ctrl+Z takes it back.".to_owned(),
+                Err(error) => error.to_string(),
+            },
+            Err(_) => format!("“{}” is not a locale — try de-DE.", typed.trim()),
+        }));
+    });
     refresh(hwnd);
 }
 
 /// Data ▸ Define Name… — a name for the selection, sheet-qualified so it means the same place from
 /// every sheet (`grind_sheet::verbs::name_target`). Redefining one is `grind sheet name`'s.
 fn define_name(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some(target) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let sheet = state.app.sheet_name(state.sheet).unwrap_or_default();
-            grind_sheet::verbs::name_target(&sheet, state.selection)
-        })
+    let Some(target) = with_sheet(hwnd, |state| {
+        let sheet = state.app.sheet_name(state.sheet).unwrap_or_default();
+        grind_sheet::verbs::name_target(&sheet, state.selection)
     }) else {
         return;
     };
@@ -4912,17 +4692,14 @@ fn define_name(hwnd: HWND) {
     if name.is_empty() {
         return;
     }
-    // SAFETY: a fresh borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let result = grind_sheet::a1::definition(&state.app, &target)
-                .and_then(|expression| state.app.set_name(&name, &expression));
-            state.say(Some(match result {
-                Ok(()) => notice::name_defined(&name, &target),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let result = grind_sheet::a1::definition(&state.app, &target)
+            .and_then(|expression| state.app.set_name(&name, &expression));
+        state.say(Some(match result {
+            Ok(()) => notice::name_defined(&name, &target),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4942,17 +4719,14 @@ fn rename_name(hwnd: HWND) {
     let Some(to) = ask_name(hwnd, "Rename Name", &format!("Rename “{from}” to:"), &from) else {
         return;
     };
-    // SAFETY: one borrow, after the dialogs.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match state.app.rename_name(&from, &to) {
-                Ok(uses) => format!(
-                    "“{from}” is “{to}” now — {uses} use(s) rewritten. Ctrl+Z takes it back."
-                ),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match state.app.rename_name(&from, &to) {
+            Ok(uses) => {
+                format!("“{from}” is “{to}” now — {uses} use(s) rewritten. Ctrl+Z takes it back.")
+            }
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4962,15 +4736,12 @@ fn inline_name(hwnd: HWND) {
     let Some(name) = ask_name(hwnd, "Inline Name", "Inline which name:", "") else {
         return;
     };
-    // SAFETY: one borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match state.app.inline_name(&name) {
-                Ok(uses) => format!("“{name}” inlined — {uses} use(s) rewritten, the name is gone. Ctrl+Z takes it back."),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match state.app.inline_name(&name) {
+            Ok(uses) => format!("“{name}” inlined — {uses} use(s) rewritten, the name is gone. Ctrl+Z takes it back."),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -4979,16 +4750,13 @@ fn delete_name(hwnd: HWND) {
     let Some(name) = ask_name(hwnd, "Delete Name", "Delete which name:", "") else {
         return;
     };
-    // SAFETY: one borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(if state.app.clear_name(&name) {
-                format!("“{name}” deleted. Ctrl+Z takes it back.")
-            } else {
-                format!("There is no name “{name}”.")
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(if state.app.clear_name(&name) {
+            format!("“{name}” deleted. Ctrl+Z takes it back.")
+        } else {
+            format!("There is no name “{name}”.")
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -5003,18 +4771,15 @@ fn evaluate(hwnd: HWND) {
     ) else {
         return;
     };
-    // SAFETY: one borrow, after the dialog.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let at = state.selection.active;
-            state.say(Some(
-                match grind_sheet::verbs::evaluated(&state.app, state.sheet, at, &typed) {
-                    Ok(value) => notice::evaluated(typed.trim(), &value),
-                    Err(why) => format!("That cannot be worked out: {why}"),
-                },
-            ));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let at = state.selection.active;
+        state.say(Some(
+            match grind_sheet::verbs::evaluated(&state.app, state.sheet, at, &typed) {
+                Ok(value) => notice::evaluated(typed.trim(), &value),
+                Err(why) => format!("That cannot be worked out: {why}"),
+            },
+        ));
+    });
     refresh(hwnd);
 }
 
@@ -5023,8 +4788,7 @@ fn evaluate(hwnd: HWND) {
 /// The document as its projection, opened on the line the selection or caret projects to
 /// (`Projection::line_of`) — read-only, a modal list (`code.rs`) rather than a drawn pane.
 fn show_source(hwnd: HWND) {
-    // SAFETY: one borrow, released before the modal — which runs a nested message loop.
-    let Some(projection) = (unsafe { with_pane(hwnd, project) }).flatten() else {
+    let Some(projection) = (with_pane(hwnd, project)).flatten() else {
         return;
     };
     let rows = code::rows(&projection);
@@ -5045,8 +4809,7 @@ fn show_source(hwnd: HWND) {
 
 /// Check Document — every finding `App::lint` reports, worst first, each row a jump.
 fn check_document(hwnd: HWND) {
-    // SAFETY: one borrow, released before the modal.
-    let Some(report) = (unsafe { with_pane(hwnd, lint) }).flatten() else {
+    let Some(report) = (with_pane(hwnd, lint)).flatten() else {
         return;
     };
     if report.is_empty() {
@@ -5070,16 +4833,13 @@ fn check_document(hwnd: HWND) {
 /// same as the four sheet verbs beside them — and the menu is rebuilt straight after so its
 /// checkmark answers with the state it just changed to rather than the one before.
 fn toggle_overlay(hwnd: HWND, names: bool) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            if names {
-                state.overlays.names = !state.overlays.names;
-            } else {
-                state.overlays.roles = !state.overlays.roles;
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        if names {
+            state.overlays.names = !state.overlays.names;
+        } else {
+            state.overlays.roles = !state.overlays.roles;
+        }
+    });
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -5087,30 +4847,23 @@ fn toggle_overlay(hwnd: HWND, names: bool) {
 /// View ▸ Zoom In / Out / 100% — a factor on every cell (25%–400%), a reading that is never stored:
 /// nothing measured is saved zoomed. Ctrl+wheel does the same.
 fn zoom_by(hwnd: HWND, factor: f64) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    let now = unsafe { with_sheet(hwnd, |state| state.geom.zoom) }.unwrap_or(1.0);
+    let now = with_sheet(hwnd, |state| state.geom.zoom).unwrap_or(1.0);
     zoom_to(hwnd, now * factor);
 }
 
 fn zoom_to(hwnd: HWND, zoom: f64) {
     let zoom = zoom.clamp(0.25, 4.0);
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.geom.zoom = zoom;
-            state.say(Some(format!("Zoom {:.0}%.", zoom * 100.0)));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.geom.zoom = zoom;
+        state.say(Some(format!("Zoom {:.0}%.", zoom * 100.0)));
+    });
     refresh(hwnd);
 }
 
 /// View ▸ Show Formulas — each formula cell draws its formula instead of its result. A reading:
 /// nothing is written, and the menu is rebuilt for the checkmark's sake like the overlays'.
 fn toggle_formulas(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| state.formulas = !state.formulas);
-    }
+    with_sheet(hwnd, |state| state.formulas = !state.formulas);
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -5118,10 +4871,7 @@ fn toggle_formulas(hwnd: HWND) {
 /// Whether the formula bar shows a formula's friendly reading. The menu is rebuilt straight after,
 /// or its check mark would answer with the state before the click.
 fn toggle_friendly(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| state.friendly = !state.friendly);
-    }
+    with_sheet(hwnd, |state| state.friendly = !state.friendly);
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -5131,8 +4881,7 @@ fn toggle_friendly(hwnd: HWND) {
 /// --long`'s columns), so window and CLI agree.
 fn function_list(hwnd: HWND) {
     let rows = assist::function_lines();
-    // SAFETY: one borrow, for one flag; released before the modal, which runs a nested loop.
-    let editing = unsafe { with_sheet(hwnd, |state| state.mode.is_editing()) }.unwrap_or(false);
+    let editing = with_sheet(hwnd, |state| state.mode.is_editing()).unwrap_or(false);
     let Some(at) = dialog::choose(hwnd, "Functions", &rows, 0) else {
         return;
     };
@@ -5164,26 +4913,20 @@ fn function_list(hwnd: HWND) {
 /// The active cell's formula explained — `formula::friendly::explain`, a line a row, read-only:
 /// never parsed back, nothing written (R1).
 fn explain_formula(hwnd: HWND) {
-    // SAFETY: one borrow, released before the modal.
-    let Some((address, text)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            (
-                grind_sheet::a1::format(None, state.selection.active),
-                status::formula_bar_text(&state.app, state.sheet, state.selection),
-            )
-        })
+    let Some((address, text)) = with_sheet(hwnd, |state| {
+        (
+            grind_sheet::a1::format(None, state.selection.active),
+            status::formula_bar_text(&state.app, state.sheet, state.selection),
+        )
     }) else {
         return;
     };
     let Ok(explained) = grind_sheet::formula::friendly::explain(&text) else {
         // Not a formula, or one that will not parse: a sentence in the notice bar, where this
         // window talks about the cell it is on, rather than a modal saying no.
-        // SAFETY: one borrow; nothing inside dispatches.
-        unsafe {
-            with_sheet(hwnd, |state| {
-                state.say(Some(notice::nothing_to_explain(&address)));
-            });
-        }
+        with_sheet(hwnd, |state| {
+            state.say(Some(notice::nothing_to_explain(&address)));
+        });
         refresh(hwnd);
         return;
     };
@@ -5219,20 +4962,14 @@ fn lint(pane: &mut Pane) -> Option<grind_core::lint::Report> {
 /// source on when it opens.
 fn current_address(hwnd: HWND) -> Option<String> {
     if is_text(hwnd) {
-        // SAFETY: one borrow; nothing inside dispatches.
-        return unsafe {
-            with_text(hwnd, |text| {
-                grind_text::loc::format(text.editor.caret.block)
-            })
-        };
+        return with_text(hwnd, |text| {
+            grind_text::loc::format(text.editor.caret.block)
+        });
     }
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let name = state.app.sheet_name(state.sheet).ok();
-            grind_sheet::a1::format(name.as_deref(), state.selection.active)
-        })
-    }
+    with_sheet(hwnd, |state| {
+        let name = state.app.sheet_name(state.sheet).ok();
+        grind_sheet::a1::format(name.as_deref(), state.selection.active)
+    })
 }
 
 /// Jump either pane to an address Show Source or Check Document produced — [`text_go_to`]'s two
@@ -5240,19 +4977,15 @@ fn current_address(hwnd: HWND) -> Option<String> {
 /// sheet**, unlike the name box, since a diagnostic may be about any sheet.
 fn go_to_address(hwnd: HWND, address: &str) {
     if is_text(hwnd) {
-        // SAFETY: a fresh borrow, taken and released within this call — there is no dialog either
-        // side of it here, unlike `text_go_to`'s own prompt.
-        let outcome = unsafe {
-            with_text(hwnd, |text| {
-                grind_text::loc::parse(address)
-                    .map_err(|e| e.to_string())
-                    .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
-                    .map(|caret| {
-                        text.place(caret, false);
-                        text.caret_on = true;
-                    })
-            })
-        };
+        let outcome = with_text(hwnd, |text| {
+            grind_text::loc::parse(address)
+                .map_err(|e| e.to_string())
+                .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
+                .map(|caret| {
+                    text.place(caret, false);
+                    text.caret_on = true;
+                })
+        });
         match outcome {
             Some(Err(message)) => dialog::error(hwnd, &message),
             Some(Ok(())) => refresh(hwnd),
@@ -5260,23 +4993,20 @@ fn go_to_address(hwnd: HWND, address: &str) {
         }
         return;
     }
-    // SAFETY: one borrow.
-    let outcome = unsafe {
-        with_sheet(hwnd, |state| {
-            grind_sheet::a1::parse(address)
-                .map_err(|e| e.to_string())
-                .and_then(|reference| {
-                    grind_sheet::a1::resolve(&state.app, &reference).map_err(|e| e.to_string())
-                })
-                .map(|(found, start, end)| {
-                    state.sheet = found;
-                    state.selection = Selection {
-                        anchor: end,
-                        active: start,
-                    };
-                })
-        })
-    };
+    let outcome = with_sheet(hwnd, |state| {
+        grind_sheet::a1::parse(address)
+            .map_err(|e| e.to_string())
+            .and_then(|reference| {
+                grind_sheet::a1::resolve(&state.app, &reference).map_err(|e| e.to_string())
+            })
+            .map(|(found, start, end)| {
+                state.sheet = found;
+                state.selection = Selection {
+                    anchor: end,
+                    active: start,
+                };
+            })
+    });
     match outcome {
         Some(Err(message)) => dialog::error(hwnd, &message),
         Some(Ok(())) => refresh(hwnd),
@@ -5294,16 +5024,13 @@ fn show_shortcuts(hwnd: HWND) {
 /// F9. The banner reports what happened, including when nothing did — a key that appears to do
 /// nothing is a key people press twice.
 fn recalculate(hwnd: HWND) {
-    // SAFETY: one borrow.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let said = match state.app.recalc() {
-                Ok(recalc) => notice::recalculated(recalc.changed, recalc.spoiled),
-                Err(error) => error.to_string(),
-            };
-            state.say(Some(said));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let said = match state.app.recalc() {
+            Ok(recalc) => notice::recalculated(recalc.changed, recalc.spoiled),
+            Err(error) => error.to_string(),
+        };
+        state.say(Some(said));
+    });
     refresh(hwnd);
 }
 
@@ -5311,27 +5038,24 @@ fn recalculate(hwnd: HWND) {
 /// one this clears it; otherwise the selection becomes the range, its first row the heading.
 /// Drawing the buttons and folding the hidden rows is `sheet/draw.rs`'s and `relayout`'s.
 fn toggle_filter(hwnd: HWND) {
-    // SAFETY: one borrow.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            if state.app.filter(state.sheet).unwrap_or(None).is_some() {
-                if let Err(error) = state.app.set_filter(state.sheet, None) {
+    with_sheet(hwnd, |state| {
+        if state.app.filter(state.sheet).unwrap_or(None).is_some() {
+            if let Err(error) = state.app.set_filter(state.sheet, None) {
+                state.say(Some(error.to_string()));
+            }
+            return;
+        }
+        let (start, end) = state.selection.rect();
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        match Filter::over_selection(start, end, used) {
+            Ok(filter) => {
+                if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
                     state.say(Some(error.to_string()));
                 }
-                return;
             }
-            let (start, end) = state.selection.rect();
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            match Filter::over_selection(start, end, used) {
-                Ok(filter) => {
-                    if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
-                        state.say(Some(error.to_string()));
-                    }
-                }
-                Err(why) => state.say(Some(why.to_owned())),
-            }
-        });
-    }
+            Err(why) => state.say(Some(why.to_owned())),
+        }
+    });
     refresh(hwnd);
 }
 
@@ -5339,45 +5063,42 @@ fn toggle_filter(hwnd: HWND) {
 /// fresh read of the column's cells from the filter's first data row to its last, deduplicated.
 /// Two `with_sheet` calls, since `dialog::choose_multi` runs a nested loop (decision 7).
 fn open_filter_menu(hwnd: HWND, col: u32) {
-    // SAFETY: one borrow, released before the dialog.
-    let Some((field, title, values, checked)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let filter = state.app.filter(state.sheet).ok()??;
-            let field = col - filter.start.col;
-            let first = filter.first_data_row();
-            let viewport = state
-                .app
-                .get_viewport(
-                    state.sheet,
-                    first..filter.end.row.saturating_add(1),
-                    col..col.saturating_add(1),
-                )
-                .ok()?;
-            let mut set = std::collections::BTreeSet::new();
-            for row in first..=filter.end.row {
-                if let Some(text) = viewport.text(row, col) {
-                    set.insert(text.to_owned());
-                }
+    let Some((field, title, values, checked)) = (with_sheet(hwnd, |state| {
+        let filter = state.app.filter(state.sheet).ok()??;
+        let field = col - filter.start.col;
+        let first = filter.first_data_row();
+        let viewport = state
+            .app
+            .get_viewport(
+                state.sheet,
+                first..filter.end.row.saturating_add(1),
+                col..col.saturating_add(1),
+            )
+            .ok()?;
+        let mut set = std::collections::BTreeSet::new();
+        for row in first..=filter.end.row {
+            if let Some(text) = viewport.text(row, col) {
+                set.insert(text.to_owned());
             }
-            let values: Vec<String> = set.into_iter().collect();
-            let checked: Vec<bool> = match filter.keep.get(&field) {
-                Some(keep) => values.iter().map(|v| keep.contains(v)).collect(),
-                None => vec![true; values.len()],
-            };
-            let title = state
-                .app
-                .get_viewport(
-                    state.sheet,
-                    filter.start.row..filter.start.row.saturating_add(1),
-                    col..col.saturating_add(1),
-                )
-                .ok()
-                .and_then(|v| v.text(filter.start.row, col).map(str::to_owned))
-                .filter(|t| !t.is_empty())
-                .unwrap_or_else(|| format!("Column {}", field + 1));
-            Some((field, title, values, checked))
-        })
-    })
+        }
+        let values: Vec<String> = set.into_iter().collect();
+        let checked: Vec<bool> = match filter.keep.get(&field) {
+            Some(keep) => values.iter().map(|v| keep.contains(v)).collect(),
+            None => vec![true; values.len()],
+        };
+        let title = state
+            .app
+            .get_viewport(
+                state.sheet,
+                filter.start.row..filter.start.row.saturating_add(1),
+                col..col.saturating_add(1),
+            )
+            .ok()
+            .and_then(|v| v.text(filter.start.row, col).map(str::to_owned))
+            .filter(|t| !t.is_empty())
+            .unwrap_or_else(|| format!("Column {}", field + 1));
+        Some((field, title, values, checked))
+    }))
     .flatten() else {
         return;
     };
@@ -5387,31 +5108,28 @@ fn open_filter_menu(hwnd: HWND, col: u32) {
     let Some(choice) = dialog::choose_multi(hwnd, &title, &values, &checked) else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let Ok(Some(mut filter)) = state.app.filter(state.sheet) else {
-                return;
-            };
-            match choice {
-                dialog::FilterChoice::Clear => {
-                    filter.keep.remove(&field);
-                }
-                dialog::FilterChoice::Keep(chosen) => {
-                    let keep = values
-                        .iter()
-                        .zip(chosen)
-                        .filter(|(_, kept)| *kept)
-                        .map(|(v, _)| v.clone())
-                        .collect();
-                    filter.keep.insert(field, keep);
-                }
+    with_sheet(hwnd, |state| {
+        let Ok(Some(mut filter)) = state.app.filter(state.sheet) else {
+            return;
+        };
+        match choice {
+            dialog::FilterChoice::Clear => {
+                filter.keep.remove(&field);
             }
-            if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
-                state.say(Some(error.to_string()));
+            dialog::FilterChoice::Keep(chosen) => {
+                let keep = values
+                    .iter()
+                    .zip(chosen)
+                    .filter(|(_, kept)| *kept)
+                    .map(|(v, _)| v.clone())
+                    .collect();
+                filter.keep.insert(field, keep);
             }
-        });
-    }
+        }
+        if let Err(error) = state.app.set_filter(state.sheet, Some(filter)) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
@@ -5420,31 +5138,28 @@ fn open_filter_menu(hwnd: HWND, col: u32) {
 /// table object — so its effects go by Undo (one step) or by hand, as after LibreOffice's
 /// AutoFormat (`sheet/src/table_format.rs`).
 fn format_table(hwnd: HWND, totals: Option<grind_sheet::TotalsFunction>) {
-    // SAFETY: one borrow.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, mut end) = state.selection.rect();
-            // A single cell is a click, not a range — the same rule `sheet.filter` uses.
-            if start == end
-                && let Ok((rows, cols)) = state.app.used_extent(state.sheet)
-            {
-                end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
-            }
-            if end.row <= start.row {
-                return state.say(Some(
-                    "Select the rows to format, including their headings".to_owned(),
-                ));
-            }
-            let options = TableOptions {
-                header: true,
-                totals,
-                name: None,
-            };
-            if let Err(error) = state.app.format_table(state.sheet, start, end, options) {
-                state.say(Some(error.to_string()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let (start, mut end) = state.selection.rect();
+        // A single cell is a click, not a range — the same rule `sheet.filter` uses.
+        if start == end
+            && let Ok((rows, cols)) = state.app.used_extent(state.sheet)
+        {
+            end = Pos::new(rows.saturating_sub(1), cols.saturating_sub(1));
+        }
+        if end.row <= start.row {
+            return state.say(Some(
+                "Select the rows to format, including their headings".to_owned(),
+            ));
+        }
+        let options = TableOptions {
+            header: true,
+            totals,
+            name: None,
+        };
+        if let Err(error) = state.app.format_table(state.sheet, start, end, options) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
@@ -5456,26 +5171,23 @@ fn set_currency(hwnd: HWND, index: usize) {
     let Some((symbol, _)) = grind_sheet::numfmt::CURRENCIES.get(index) else {
         return;
     };
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            let current = state
-                .app
-                .format_at(state.sheet, state.selection.active)
-                .ok()
-                .flatten();
-            let format = currency::format_for(
-                current.as_ref(),
-                symbol,
-                grind_sheet::locale::from_environment(),
-            );
-            if let Err(error) = state.app.set_format(state.sheet, start, end, Some(format)) {
-                state.say(Some(error.to_string()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        let current = state
+            .app
+            .format_at(state.sheet, state.selection.active)
+            .ok()
+            .flatten();
+        let format = currency::format_for(
+            current.as_ref(),
+            symbol,
+            grind_sheet::locale::from_environment(),
+        );
+        if let Err(error) = state.app.set_format(state.sheet, start, end, Some(format)) {
+            state.say(Some(error.to_string()));
+        }
+    });
     refresh(hwnd);
 }
 
@@ -5520,17 +5232,14 @@ fn format_write(
     hwnd: HWND,
     write: impl FnOnce(&mut Sheet, Pos, Pos) -> grind_sheet::Result<usize>,
 ) {
-    // SAFETY: one borrow; the core's writes notify, and the observer posts rather than sends.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-            let (start, end) = grind_sheet::nav::target(state.selection, used);
-            match write(state, start, end) {
-                Ok(_) => state.say(None),
-                Err(error) => state.say(Some(error.to_string())),
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let used = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+        let (start, end) = grind_sheet::nav::target(state.selection, used);
+        match write(state, start, end) {
+            Ok(_) => state.say(None),
+            Err(error) => state.say(Some(error.to_string())),
+        }
+    });
     refresh(hwnd);
 }
 
@@ -5548,8 +5257,7 @@ fn active_style(state: &Sheet) -> grind_sheet::style::CellStyle {
 /// `grind_core::style::PALETTE`, the text pane's own picker and the same palette every shell and
 /// `grind sheet style --color` offer, opening on the active cell's own colour.
 fn format_pick_color(hwnd: HWND, background: bool) {
-    // SAFETY: one borrow, released before the chooser's nested loop.
-    let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
+    let Some(style) = with_sheet(hwnd, |state| active_style(state)) else {
         return;
     };
     let current = if background {
@@ -5579,10 +5287,7 @@ fn format_pick_color(hwnd: HWND, background: bool) {
 /// *Text Rotation…* — one of `format::ROTATIONS`, the active cell's checked first.
 fn format_pick_rotation(hwnd: HWND) {
     use grind_sheet::format::{ROTATIONS, rotated, rotation_chosen};
-    // SAFETY: one borrow, released before the chooser's nested loop.
-    let Some(initial) =
-        (unsafe { with_sheet(hwnd, |state| rotation_chosen(&active_style(state))) })
-    else {
+    let Some(initial) = with_sheet(hwnd, |state| rotation_chosen(&active_style(state))) else {
         return;
     };
     let items: Vec<String> = ROTATIONS
@@ -5599,25 +5304,22 @@ fn format_pick_rotation(hwnd: HWND) {
 }
 
 fn format_pick_number(hwnd: HWND) {
-    // SAFETY: one borrow, released before the chooser's nested loop.
-    let Some((current, items)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let at = state.selection.active;
-            let current = state.app.format_at(state.sheet, at).ok().flatten();
-            let locale = grind_sheet::locale::from_environment();
-            // The live sample: what the cell would show under each row, `App::shown_as` and
-            // nothing written — the line the GNOME popover and the Mac's menu items carry.
-            let items: Vec<String> = format::KINDS
-                .iter()
-                .enumerate()
-                .map(|(index, (label, _))| {
-                    let format = format::format_for_kind(current.as_ref(), index, locale.clone());
-                    let sample = state.app.shown_as(state.sheet, at, format.as_ref()).ok();
-                    format::row_label(label, sample.as_deref())
-                })
-                .collect();
-            (current, items)
-        })
+    let Some((current, items)) = with_sheet(hwnd, |state| {
+        let at = state.selection.active;
+        let current = state.app.format_at(state.sheet, at).ok().flatten();
+        let locale = grind_sheet::locale::from_environment();
+        // The live sample: what the cell would show under each row, `App::shown_as` and
+        // nothing written — the line the GNOME popover and the Mac's menu items carry.
+        let items: Vec<String> = format::KINDS
+            .iter()
+            .enumerate()
+            .map(|(index, (label, _))| {
+                let format = format::format_for_kind(current.as_ref(), index, locale.clone());
+                let sample = state.app.shown_as(state.sheet, at, format.as_ref()).ok();
+                format::row_label(label, sample.as_deref())
+            })
+            .collect();
+        (current, items)
     }) else {
         return;
     };
@@ -5703,17 +5405,14 @@ fn format_step_decimals(hwnd: HWND, step: i8) {
 /// Check the *Change to …* item naming the kind the chart those items act on already is — the
 /// selected chart, else the last — in whichever menu is opening, `check_format`'s arrangement.
 fn check_chart_kind(hwnd: HWND, popup: HMENU) {
-    // SAFETY: one borrow; nothing inside dispatches. `None` off the grid.
-    let Some(kind) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let index = state.chart_target()?;
-            state
-                .app
-                .charts(state.sheet)
-                .ok()?
-                .get(index)
-                .map(|chart| chart.kind)
-        })
+    let Some(kind) = with_sheet(hwnd, |state| {
+        let index = state.chart_target()?;
+        state
+            .app
+            .charts(state.sheet)
+            .ok()?
+            .get(index)
+            .map(|chart| chart.kind)
     }) else {
         return;
     };
@@ -5737,20 +5436,17 @@ fn check_chart_kind(hwnd: HWND, popup: HMENU) {
 /// toggles — and uncheck the rest, in whichever menu is opening. `MF_BYCOMMAND` on a popup holding
 /// none of them finds nothing, so this needs no idea which menu it is.
 fn check_format(hwnd: HWND, popup: HMENU) {
-    // SAFETY: one borrow; nothing inside dispatches. `None` off the grid, where no currency item
-    // is ever shown.
-    let Some((chosen, grouped)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let current = state
-                .app
-                .format_at(state.sheet, state.selection.active)
-                .ok()
-                .flatten();
-            (
-                currency::chosen(current.as_ref()),
-                grind_sheet::format::is_grouped(current.as_ref()),
-            )
-        })
+    // `None` off the grid, where no currency item is ever shown.
+    let Some((chosen, grouped)) = with_sheet(hwnd, |state| {
+        let current = state
+            .app
+            .format_at(state.sheet, state.selection.active)
+            .ok()
+            .flatten();
+        (
+            currency::chosen(current.as_ref()),
+            grind_sheet::format::is_grouped(current.as_ref()),
+        )
     }) else {
         return;
     };
@@ -5767,8 +5463,7 @@ fn check_format(hwnd: HWND, popup: HMENU) {
     check(Command::GroupThousands, grouped);
     // The strip's five toggles, checked as the strip draws them pressed — so the menu and the strip
     // cannot disagree about whether the active cell is bold.
-    // SAFETY: one borrow; nothing inside dispatches.
-    let Some(style) = (unsafe { with_sheet(hwnd, |state| active_style(state)) }) else {
+    let Some(style) = with_sheet(hwnd, |state| active_style(state)) else {
         return;
     };
     for (command, control) in [
@@ -5809,12 +5504,9 @@ fn format_table_totals(hwnd: HWND) {
 /// selection is read in one borrow and the rule written in another (decision 7).
 fn add_rule(hwnd: HWND) {
     use grind_sheet::rule::{self, Look};
-    // SAFETY: one borrow, released before the prompt.
-    let Some((sheet, start, end)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            (state.sheet, start, end)
-        })
+    let Some((sheet, start, end)) = with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        (state.sheet, start, end)
     }) else {
         return;
     };
@@ -5838,67 +5530,55 @@ fn add_rule(hwnd: HWND) {
     else {
         return;
     };
-    // SAFETY: a fresh borrow, after both dialogs.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(
-                match rule::add_from_input(&state.app, sheet, &range, &condition, look) {
-                    Ok((_, index)) => notice::rule_added(index, look.label()),
-                    Err(error) => error,
-                },
-            ));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(
+            match rule::add_from_input(&state.app, sheet, &range, &condition, look) {
+                Ok((_, index)) => notice::rule_added(index, look.label()),
+                Err(error) => error,
+            },
+        ));
+    });
     refresh(hwnd);
 }
 
 /// Data ▸ Remove Conditional Format… — the sheet's rules in a chooser, in the order they are
 /// tried, the first touching the selection picked; the one chosen is taken away.
 fn remove_rule(hwnd: HWND) {
-    // SAFETY: one borrow, released before the chooser.
-    let Some((sheet, rows, initial)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            let (start, end) = state.selection.rect();
-            let rules = state.app.rules(state.sheet).unwrap_or_default();
-            let rows: Vec<String> = rules
-                .iter()
-                .enumerate()
-                .map(|(index, r)| {
-                    format!(
-                        "{}.  {}",
-                        index + 1,
-                        grind_sheet::rule::summary(r).replace('\t', "    ")
-                    )
-                })
-                .collect();
-            let initial = rules
-                .iter()
-                .position(|r| r.touches(start, end))
-                .unwrap_or(0);
-            (state.sheet, rows, initial)
-        })
+    let Some((sheet, rows, initial)) = with_sheet(hwnd, |state| {
+        let (start, end) = state.selection.rect();
+        let rules = state.app.rules(state.sheet).unwrap_or_default();
+        let rows: Vec<String> = rules
+            .iter()
+            .enumerate()
+            .map(|(index, r)| {
+                format!(
+                    "{}.  {}",
+                    index + 1,
+                    grind_sheet::rule::summary(r).replace('\t', "    ")
+                )
+            })
+            .collect();
+        let initial = rules
+            .iter()
+            .position(|r| r.touches(start, end))
+            .unwrap_or(0);
+        (state.sheet, rows, initial)
     }) else {
         return;
     };
     if rows.is_empty() {
-        // SAFETY: a fresh borrow.
-        unsafe {
-            with_sheet(hwnd, |state| state.say(Some(notice::no_rules())));
-        }
+        with_sheet(hwnd, |state| state.say(Some(notice::no_rules())));
         return refresh(hwnd);
     }
     let Some(picked) = dialog::choose(hwnd, "Remove Conditional Format", &rows, initial) else {
         return;
     };
-    // SAFETY: a fresh borrow, after the chooser.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(match state.app.remove_rule(sheet, picked) {
-                Ok(_) => notice::rule_removed(picked),
-                Err(error) => error.to_string(),
-            }));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(match state.app.remove_rule(sheet, picked) {
+            Ok(_) => notice::rule_removed(picked),
+            Err(error) => error.to_string(),
+        }));
+    });
     refresh(hwnd);
 }
 
@@ -5908,8 +5588,7 @@ fn remove_rule(hwnd: HWND) {
 /// across every sheet. The prompt runs a nested loop, so the word offered is read in one borrow
 /// and the search is a second (decision 7).
 fn find(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some(offered) = (unsafe { with_sheet(hwnd, |state| state.needle.clone()) }) else {
+    let Some(offered) = with_sheet(hwnd, |state| state.needle.clone()) else {
         return;
     };
     let Some(needle) = dialog::prompt(hwnd, "Find", "Find in every sheet:", &offered) else {
@@ -5918,10 +5597,7 @@ fn find(hwnd: HWND) {
     if needle.is_empty() {
         return;
     }
-    // SAFETY: a fresh borrow, taken after the dialog has closed.
-    unsafe {
-        with_sheet(hwnd, |state| state.needle = needle);
-    }
+    with_sheet(hwnd, |state| state.needle = needle);
     find_step(hwnd, find::Towards::Here);
 }
 
@@ -5929,30 +5605,27 @@ fn find(hwnd: HWND) {
 /// `grind_sheet::find::step` for the next hit, asked again each time since the document may have
 /// changed.
 fn find_step(hwnd: HWND, towards: find::Towards) {
-    // SAFETY: one borrow, and no dialog on either side of it.
-    let asked = unsafe {
-        with_sheet(hwnd, |state| {
-            if state.needle.is_empty() {
-                return false;
+    let asked = with_sheet(hwnd, |state| {
+        if state.needle.is_empty() {
+            return false;
+        }
+        let hits: Vec<(usize, Pos)> = state
+            .app
+            .find(&find::Search::new(state.needle.as_str()))
+            .map_or_default(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect());
+        let here = (state.sheet, state.selection.active);
+        let said = match find::step(&hits, here, towards) {
+            Some(index) => {
+                let (sheet, pos) = hits[index];
+                state.sheet = sheet;
+                state.selection = Selection::at(pos);
+                notice::found(index, hits.len(), &state.needle)
             }
-            let hits: Vec<(usize, Pos)> = state
-                .app
-                .find(&find::Search::new(state.needle.as_str()))
-                .map_or_default(|hits| hits.into_iter().map(|hit| (hit.sheet, hit.pos)).collect());
-            let here = (state.sheet, state.selection.active);
-            let said = match find::step(&hits, here, towards) {
-                Some(index) => {
-                    let (sheet, pos) = hits[index];
-                    state.sheet = sheet;
-                    state.selection = Selection::at(pos);
-                    notice::found(index, hits.len(), &state.needle)
-                }
-                None => notice::not_found(&state.needle),
-            };
-            state.say(Some(said));
-            true
-        })
-    };
+            None => notice::not_found(&state.needle),
+        };
+        state.say(Some(said));
+        true
+    });
     match asked {
         // Nothing searched for yet: F3 means "find", which is where the word comes from.
         Some(false) => find(hwnd),
@@ -5964,42 +5637,39 @@ fn find_step(hwnd: HWND, towards: find::Towards) {
 /// F7 — select the next misspelt word after the caret, wrapping as F3 does
 /// (`grind_text::find::step`), and open the spelling popup on it.
 fn text_next_misspelling(hwnd: HWND) {
-    // SAFETY: one borrow, released before the popup's nested message loop.
-    let found = unsafe {
-        with_text(hwnd, |text| {
-            let Some(choice) = text.checked else {
-                text.say(Some(notice::spelling_off()));
-                return None;
-            };
-            let all = text.app.misspellings(0..usize::MAX);
-            let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
-            let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
-            let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
-            else {
-                text.say(Some(notice::none_misspelt(&choice.describe())));
-                return None;
-            };
-            let wrong = all[index].clone();
-            text.place(wrong.caret(), false);
-            text.place(
-                Caret {
-                    block: wrong.block,
-                    offset: wrong.offset + wrong.len,
-                },
-                true,
-            );
-            text.caret_on = true;
-            text.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
-            Some(wrong)
-        })
-    }
+    let found = with_text(hwnd, |text| {
+        let Some(choice) = text.checked else {
+            text.say(Some(notice::spelling_off()));
+            return None;
+        };
+        let all = text.app.misspellings(0..usize::MAX);
+        let carets: Vec<Caret> = all.iter().map(grind_text::Misspelling::caret).collect();
+        let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
+        let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
+        else {
+            text.say(Some(notice::none_misspelt(&choice.describe())));
+            return None;
+        };
+        let wrong = all[index].clone();
+        text.place(wrong.caret(), false);
+        text.place(
+            Caret {
+                block: wrong.block,
+                offset: wrong.offset + wrong.len,
+            },
+            true,
+        );
+        text.caret_on = true;
+        text.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
+        Some(wrong)
+    })
     .flatten();
     text_refresh(hwnd);
     let Some(wrong) = found else {
         return;
     };
     // Under the word, where a right click on it would have opened the same popup.
-    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let geometry = with_text(hwnd, |text| text.caret_geometry()).flatten();
     let mut at = match geometry {
         Some((x, y, _, height)) => POINT { x, y: y + height },
         None => POINT { x: 0, y: 0 },
@@ -6015,8 +5685,7 @@ fn text_next_misspelling(hwnd: HWND) {
 /// other chooser here uses. Remembered for every text document; the document's own language is
 /// read and never written (`doc/spelling.md`).
 fn text_spelling_language(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog.
-    let Some(current) = (unsafe { with_text(hwnd, |text| text.spelling) }) else {
+    let Some(current) = with_text(hwnd, |text| text.spelling) else {
         return;
     };
     let settings = grind_spell::Setting::ALL;
@@ -6025,10 +5694,7 @@ fn text_spelling_language(hwnd: HWND) {
     let Some(choice) = dialog::choose(hwnd, "Spelling Language", &items, selected) else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog has closed.
-    unsafe {
-        with_text(hwnd, |text| text.set_spelling(settings[choice]));
-    }
+    with_text(hwnd, |text| text.set_spelling(settings[choice]));
     text_refresh(hwnd);
 }
 
@@ -6143,9 +5809,9 @@ fn spelling_popup(
     // across a nested message loop (decision 7).
     let offers: Vec<String> = match &wrong {
         // SAFETY: one borrow; `suggest` dispatches nothing.
-        Some(wrong) => offers_for(
-            unsafe { with_text(hwnd, |text| text.app.suggest(&wrong.word)) }.unwrap_or_default(),
-        ),
+        Some(wrong) => {
+            offers_for(with_text(hwnd, |text| text.app.suggest(&wrong.word)).unwrap_or_default())
+        }
         None => Vec::new(),
     };
     let picked = spelling_menu(
@@ -6158,34 +5824,28 @@ fn spelling_popup(
     match (picked, wrong) {
         (SpellPick::Command(command), _) => do_command(hwnd, command),
         (pick @ (SpellPick::Ignore | SpellPick::Add), Some(wrong)) => {
-            // SAFETY: a fresh borrow, taken after the popup has closed.
-            unsafe {
-                with_text(hwnd, |text| {
-                    let add = matches!(pick, SpellPick::Add);
-                    if let Some(said) = accept_word(text.speller.as_deref(), &wrong.word, add) {
-                        text.say(Some(said));
-                    }
-                });
-            }
+            with_text(hwnd, |text| {
+                let add = matches!(pick, SpellPick::Add);
+                if let Some(said) = accept_word(text.speller.as_deref(), &wrong.word, add) {
+                    text.say(Some(said));
+                }
+            });
             text_refresh(hwnd);
         }
         (SpellPick::Correct(with), Some(wrong)) => {
-            // SAFETY: a fresh borrow, taken after the popup has closed.
-            unsafe {
-                with_text(hwnd, |text| {
-                    match text.app.correct(wrong.caret(), &wrong.word, &with) {
-                        Ok(()) => {
-                            let end = Caret {
-                                block: wrong.block,
-                                offset: wrong.offset + with.chars().count(),
-                            };
-                            text.place(end, false);
-                            text.say(None);
-                        }
-                        Err(error) => text.say(Some(error.to_string())),
+            with_text(hwnd, |text| {
+                match text.app.correct(wrong.caret(), &wrong.word, &with) {
+                    Ok(()) => {
+                        let end = Caret {
+                            block: wrong.block,
+                            offset: wrong.offset + with.chars().count(),
+                        };
+                        text.place(end, false);
+                        text.say(None);
                     }
-                });
-            }
+                    Err(error) => text.say(Some(error.to_string())),
+                }
+            });
             text_refresh(hwnd);
         }
         _ => {}
@@ -6202,9 +5862,9 @@ fn sheet_spelling_popup(
 ) {
     let offers: Vec<String> = match &wrong {
         // SAFETY: one borrow; `suggest` dispatches nothing.
-        Some(wrong) => offers_for(
-            unsafe { with_sheet(hwnd, |state| state.app.suggest(&wrong.word)) }.unwrap_or_default(),
-        ),
+        Some(wrong) => {
+            offers_for(with_sheet(hwnd, |state| state.app.suggest(&wrong.word)).unwrap_or_default())
+        }
         None => Vec::new(),
     };
     let picked = spelling_menu(
@@ -6217,39 +5877,29 @@ fn sheet_spelling_popup(
     match (picked, wrong) {
         (SpellPick::Command(command), _) => do_command(hwnd, command),
         (pick @ (SpellPick::Ignore | SpellPick::Add), Some(wrong)) => {
-            // SAFETY: a fresh borrow, taken after the popup has closed.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    let add = matches!(pick, SpellPick::Add);
-                    if let Some(said) = accept_word(state.speller.as_deref(), &wrong.word, add) {
-                        state.say(Some(said));
-                    }
-                    state.spell_stop = None;
-                });
-            }
+            with_sheet(hwnd, |state| {
+                let add = matches!(pick, SpellPick::Add);
+                if let Some(said) = accept_word(state.speller.as_deref(), &wrong.word, add) {
+                    state.say(Some(said));
+                }
+                state.spell_stop = None;
+            });
             refresh(hwnd);
         }
         (SpellPick::Correct(with), Some(wrong)) => {
-            // SAFETY: a fresh borrow, taken after the popup has closed. `correct` notifies, and
-            // the observer posts rather than sends.
-            unsafe {
-                with_sheet(hwnd, |state| {
-                    match state.app.correct(
-                        wrong.sheet,
-                        wrong.pos,
-                        wrong.offset,
-                        &wrong.word,
-                        &with,
-                    ) {
-                        Ok(_) => {
-                            state.dirty = true;
-                            state.spell_stop = None;
-                            state.say(None);
-                        }
-                        Err(error) => state.say(Some(error.to_string())),
+            with_sheet(hwnd, |state| {
+                match state
+                    .app
+                    .correct(wrong.sheet, wrong.pos, wrong.offset, &wrong.word, &with)
+                {
+                    Ok(_) => {
+                        state.dirty = true;
+                        state.spell_stop = None;
+                        state.say(None);
                     }
-                });
-            }
+                    Err(error) => state.say(Some(error.to_string())),
+                }
+            });
             refresh(hwnd);
         }
         _ => {}
@@ -6259,59 +5909,53 @@ fn sheet_spelling_popup(
 /// F7 over the grid — the next misspelt word in reading order, across every sheet and wrapping
 /// as F3 does: its cell selected, and the spelling popup opened under it.
 fn sheet_next_misspelling(hwnd: HWND) {
-    // SAFETY: one borrow, released before the popup's nested message loop.
-    let found = unsafe {
-        with_sheet(hwnd, |state| {
-            let Some(choice) = state.checked else {
-                state.say(Some(notice::spelling_off()));
-                return None;
-            };
-            let all = state.app.misspellings(None, None).unwrap_or_default();
-            if all.is_empty() {
-                state.say(Some(notice::none_misspelt(&choice.describe())));
-                return None;
-            }
-            let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
-            let active = state.selection.active;
-            // From the word F7 last stopped on while its cell is still the active one, else from
-            // just before the active cell, so a cell's own first word is the next one.
-            let after = match &state.spell_stop {
-                Some(stop) if stop.sheet == state.sheet && stop.pos == active => key(stop),
-                _ => (state.sheet, active.row, active.col, usize::MAX),
-            };
-            let fresh = !matches!(&state.spell_stop,
+    let found = with_sheet(hwnd, |state| {
+        let Some(choice) = state.checked else {
+            state.say(Some(notice::spelling_off()));
+            return None;
+        };
+        let all = state.app.misspellings(None, None).unwrap_or_default();
+        if all.is_empty() {
+            state.say(Some(notice::none_misspelt(&choice.describe())));
+            return None;
+        }
+        let key = |m: &grind_sheet::Misspelling| (m.sheet, m.pos.row, m.pos.col, m.offset);
+        let active = state.selection.active;
+        // From the word F7 last stopped on while its cell is still the active one, else from
+        // just before the active cell, so a cell's own first word is the next one.
+        let after = match &state.spell_stop {
+            Some(stop) if stop.sheet == state.sheet && stop.pos == active => key(stop),
+            _ => (state.sheet, active.row, active.col, usize::MAX),
+        };
+        let fresh = !matches!(&state.spell_stop,
                 Some(stop) if stop.sheet == state.sheet && stop.pos == active);
-            let index = all
-                .iter()
-                .position(|m| {
-                    let k = key(m);
-                    if fresh {
-                        (k.0, k.1, k.2) >= (after.0, after.1, after.2)
-                    } else {
-                        k > after
-                    }
-                })
-                .unwrap_or(0);
-            let wrong = all[index].clone();
-            state.sheet = wrong.sheet;
-            state.selection = Selection::at(wrong.pos);
-            state.spell_stop = Some(wrong.clone());
-            state.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
-            Some(wrong)
-        })
-    }
+        let index = all
+            .iter()
+            .position(|m| {
+                let k = key(m);
+                if fresh {
+                    (k.0, k.1, k.2) >= (after.0, after.1, after.2)
+                } else {
+                    k > after
+                }
+            })
+            .unwrap_or(0);
+        let wrong = all[index].clone();
+        state.sheet = wrong.sheet;
+        state.selection = Selection::at(wrong.pos);
+        state.spell_stop = Some(wrong.clone());
+        state.say(Some(notice::misspelt(index, all.len(), &wrong.word)));
+        Some(wrong)
+    })
     .flatten();
     refresh(hwnd);
     let Some(wrong) = found else {
         return;
     };
     // Under the cell, where a right click on it would have opened the same popup.
-    // SAFETY: one borrow; nothing inside dispatches.
-    let cell = unsafe {
-        with_sheet(hwnd, |state| {
-            state.geom.cell_rect(wrong.pos.row, wrong.pos.col)
-        })
-    };
+    let cell = with_sheet(hwnd, |state| {
+        state.geom.cell_rect(wrong.pos.row, wrong.pos.col)
+    });
     let mut at = match cell {
         Some(rect) => POINT {
             x: rect.x.round() as i32,
@@ -6329,8 +5973,7 @@ fn sheet_next_misspelling(hwnd: HWND) {
 /// View ▸ Spelling Language… over the grid — Automatic, a dictionary by name, or Off, in the
 /// listbox every chooser here uses — remembered for every spreadsheet.
 fn sheet_spelling_language(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog.
-    let Some(current) = (unsafe { with_sheet(hwnd, |state| state.spelling) }) else {
+    let Some(current) = with_sheet(hwnd, |state| state.spelling) else {
         return;
     };
     let settings = grind_spell::Setting::ALL;
@@ -6339,10 +5982,7 @@ fn sheet_spelling_language(hwnd: HWND) {
     let Some(choice) = dialog::choose(hwnd, "Spelling Language", &items, selected) else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog has closed.
-    unsafe {
-        with_sheet(hwnd, |state| state.set_spelling(settings[choice]));
-    }
+    with_sheet(hwnd, |state| state.set_spelling(settings[choice]));
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -6362,11 +6002,8 @@ fn personal_dictionary(hwnd: HWND) {
                 }
             }
         };
-        // SAFETY: one borrow each; nothing inside dispatches.
-        unsafe {
-            let _ = with_sheet(hwnd, |state| act(&state.speller));
-            let _ = with_text(hwnd, |state| act(&state.speller));
-        }
+        let _ = with_sheet(hwnd, |state| act(&state.speller));
+        let _ = with_text(hwnd, |state| act(&state.speller));
     };
     let mut said = None;
     loop {
@@ -6422,19 +6059,16 @@ fn personal_dictionary(hwnd: HWND) {
 /// View ▸ Check Spelling (Shift+F7) over the grid: off, or back on to the language it was last
 /// on in — remembered, so off here is off in every spreadsheet until it is turned back on.
 fn sheet_toggle_spelling(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let next = match state.spelling {
-                grind_spell::Setting::Off => state.spelling_on,
-                _ => grind_spell::Setting::Off,
-            };
-            state.set_spelling(next);
-            if next == grind_spell::Setting::Off {
-                state.say(Some(notice::spelling_turned_off()));
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let next = match state.spelling {
+            grind_spell::Setting::Off => state.spelling_on,
+            _ => grind_spell::Setting::Off,
+        };
+        state.set_spelling(next);
+        if next == grind_spell::Setting::Off {
+            state.say(Some(notice::spelling_turned_off()));
+        }
+    });
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -6442,63 +6076,54 @@ fn sheet_toggle_spelling(hwnd: HWND) {
 /// View ▸ Check Spelling (Shift+F7) over a text document: off, or back on — the session's, as
 /// the text pane's Spelling Language… is.
 fn text_toggle_spelling(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_text(hwnd, |text| {
-            let next = match text.spelling {
-                grind_spell::Setting::Off => grind_spell::Setting::Automatic,
-                _ => grind_spell::Setting::Off,
-            };
-            text.set_spelling(next);
-        });
-    }
+    with_text(hwnd, |text| {
+        let next = match text.spelling {
+            grind_spell::Setting::Off => grind_spell::Setting::Automatic,
+            _ => grind_spell::Setting::Off,
+        };
+        text.set_spelling(next);
+    });
     build_menu(hwnd);
     text_refresh(hwnd);
 }
 
 /// View ▸ Check Grammar and Grammar Style Suggestions: change the remembered setting, apply it.
 fn text_set_grammar(hwnd: HWND, change: impl FnOnce(&mut grind_grammar::setting::Setting)) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_text(hwnd, |text| text.set_grammar(change));
-    }
+    with_text(hwnd, |text| text.set_grammar(change));
     build_menu(hwnd);
     text_refresh(hwnd);
 }
 
 /// Ctrl+F7 — select the next grammar finding after the caret, wrapping, and open its popup.
 fn text_next_grammar(hwnd: HWND) {
-    // SAFETY: one borrow, released before the popup's nested message loop.
-    let found = unsafe {
-        with_text(hwnd, |text| {
-            let all = text.grammar_flags(0..usize::MAX);
-            let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
-            let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
-            let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
-            else {
-                text.say(Some("No grammar findings".to_owned()));
-                return None;
-            };
-            let flag = all[index].clone();
-            text.place(flag.caret(), false);
-            text.place(
-                Caret {
-                    block: flag.block,
-                    offset: flag.finding.range.end,
-                },
-                true,
-            );
-            text.caret_on = true;
-            text.say(Some(flag.finding.message.clone()));
-            Some(flag)
-        })
-    }
+    let found = with_text(hwnd, |text| {
+        let all = text.grammar_flags(0..usize::MAX);
+        let carets: Vec<Caret> = all.iter().map(grind_text::grammar::Flag::caret).collect();
+        let (_, at) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
+        let Some(index) = grind_text::find::step(&carets, at, grind_text::find::Towards::Next)
+        else {
+            text.say(Some("No grammar findings".to_owned()));
+            return None;
+        };
+        let flag = all[index].clone();
+        text.place(flag.caret(), false);
+        text.place(
+            Caret {
+                block: flag.block,
+                offset: flag.finding.range.end,
+            },
+            true,
+        );
+        text.caret_on = true;
+        text.say(Some(flag.finding.message.clone()));
+        Some(flag)
+    })
     .flatten();
     text_refresh(hwnd);
     let Some(flag) = found else {
         return;
     };
-    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let geometry = with_text(hwnd, |text| text.caret_geometry()).flatten();
     let mut at = match geometry {
         Some((x, y, _, height)) => POINT { x, y: y + height },
         None => POINT { x: 0, y: 0 },
@@ -6513,8 +6138,7 @@ fn text_next_grammar(hwnd: HWND) {
 /// A popup over a grammar finding: its message (not a row to pick), its replacements, Ignore
 /// Rule, and `commands` under — the text pane's context menu and Ctrl+F7's.
 fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, commands: &[Command]) {
-    // SAFETY: one borrow, released before the popup.
-    let covered = unsafe { with_text(hwnd, |text| text.covered(&flag)) }.unwrap_or_default();
+    let covered = with_text(hwnd, |text| text.covered(&flag)).unwrap_or_default();
     let offers: Vec<String> = flag
         .finding
         .replacements
@@ -6567,13 +6191,10 @@ fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, command
         0 => {}
         id if id == ignore => {
             let rule = flag.finding.rule;
-            // SAFETY: a fresh borrow, taken after the popup has closed.
-            unsafe {
-                with_text(hwnd, |text| {
-                    text.set_grammar(|g| g.ignored.push(rule.clone()));
-                    text.say(Some(format!("{rule} is ignored")));
-                });
-            }
+            with_text(hwnd, |text| {
+                text.set_grammar(|g| g.ignored.push(rule.clone()));
+                text.say(Some(format!("{rule} is ignored")));
+            });
             text_refresh(hwnd);
         }
         id if (menu::GRAMMAR_FIRST_ID..ignore).contains(&id) => {
@@ -6583,22 +6204,19 @@ fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, command
             else {
                 return;
             };
-            // SAFETY: a fresh borrow, taken after the popup has closed.
-            unsafe {
-                with_text(hwnd, |text| {
-                    match text.app.correct(flag.caret(), &covered, &with) {
-                        Ok(()) => {
-                            let end = Caret {
-                                block: flag.block,
-                                offset: flag.finding.range.start + with.chars().count(),
-                            };
-                            text.place(end, false);
-                            text.say(None);
-                        }
-                        Err(error) => text.say(Some(error.to_string())),
+            with_text(hwnd, |text| {
+                match text.app.correct(flag.caret(), &covered, &with) {
+                    Ok(()) => {
+                        let end = Caret {
+                            block: flag.block,
+                            offset: flag.finding.range.start + with.chars().count(),
+                        };
+                        text.place(end, false);
+                        text.say(None);
                     }
-                });
-            }
+                    Err(error) => text.say(Some(error.to_string())),
+                }
+            });
             text_refresh(hwnd);
         }
         id => {
@@ -6613,8 +6231,7 @@ fn grammar_popup(hwnd: HWND, at: POINT, flag: grind_text::grammar::Flag, command
 /// step. Two prompts rather than a dialog of its own, since `dialog::prompt` is the one text
 /// question this shell has and a replace is two words; neither is asked with anything borrowed.
 fn replace(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompts.
-    let Some(offered) = (unsafe { with_sheet(hwnd, |state| state.needle.clone()) }) else {
+    let Some(offered) = with_sheet(hwnd, |state| state.needle.clone()) else {
         return;
     };
     let Some(what) = dialog::prompt(hwnd, "Replace", "Replace what:", &offered) else {
@@ -6627,31 +6244,28 @@ fn replace(hwnd: HWND) {
     else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after both dialogs have closed.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let said = match state.app.replace(
-                &find::Search::new(what.as_str()),
-                &with,
-                RecalcMode::Document,
-            ) {
-                Ok(done) => match done.recalc.filter(|recalc| recalc.spoiled > 0) {
-                    Some(recalc) => notice::recalc_skipped(recalc.spoiled),
-                    None if done.cells == 0 && done.refused.is_empty() => notice::not_found(&what),
-                    None => {
-                        let first = done.refused.first().map(|(hit, _)| hit.address());
-                        notice::replaced(
-                            done.cells,
-                            first.as_deref().map(|first| (first, done.refused.len())),
-                        )
-                    }
-                },
-                Err(error) => error.to_string(),
-            };
-            state.needle = what;
-            state.say(Some(said));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let said = match state.app.replace(
+            &find::Search::new(what.as_str()),
+            &with,
+            RecalcMode::Document,
+        ) {
+            Ok(done) => match done.recalc.filter(|recalc| recalc.spoiled > 0) {
+                Some(recalc) => notice::recalc_skipped(recalc.spoiled),
+                None if done.cells == 0 && done.refused.is_empty() => notice::not_found(&what),
+                None => {
+                    let first = done.refused.first().map(|(hit, _)| hit.address());
+                    notice::replaced(
+                        done.cells,
+                        first.as_deref().map(|first| (first, done.refused.len())),
+                    )
+                }
+            },
+            Err(error) => error.to_string(),
+        };
+        state.needle = what;
+        state.say(Some(said));
+    });
     refresh(hwnd);
 }
 
@@ -6690,29 +6304,26 @@ fn import_csv(hwnd: HWND, with_options: bool) {
     } else {
         String::new()
     };
-    // SAFETY: one borrow, taken after the dialog has closed.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let at = state.selection.active;
-            let options = match csv::Import::sniffed(&text).amended(&words) {
-                Ok(options) => options,
-                Err(why) => return state.say(Some(why)),
-            };
-            match state
-                .app
-                .import_csv(state.sheet, at, &text, &options, RecalcMode::Document)
-            {
-                Ok(outcome) => {
-                    let spoiled = outcome.recalc.map_or(0, |recalc| recalc.spoiled);
-                    state.say(match spoiled {
-                        0 => Some(notice::imported(outcome.cells, &a1::format(None, at))),
-                        n => Some(notice::recalc_skipped(n)),
-                    });
-                }
-                Err(error) => state.say(Some(error.to_string())),
+    with_sheet(hwnd, |state| {
+        let at = state.selection.active;
+        let options = match csv::Import::sniffed(&text).amended(&words) {
+            Ok(options) => options,
+            Err(why) => return state.say(Some(why)),
+        };
+        match state
+            .app
+            .import_csv(state.sheet, at, &text, &options, RecalcMode::Document)
+        {
+            Ok(outcome) => {
+                let spoiled = outcome.recalc.map_or(0, |recalc| recalc.spoiled);
+                state.say(match spoiled {
+                    0 => Some(notice::imported(outcome.cells, &a1::format(None, at))),
+                    n => Some(notice::recalc_skipped(n)),
+                });
             }
-        });
-    }
+            Err(error) => state.say(Some(error.to_string())),
+        }
+    });
     refresh(hwnd);
 }
 
@@ -6720,44 +6331,38 @@ fn import_csv(hwnd: HWND, with_options: bool) {
 /// **Writes a file and changes nothing**: no undo entry, no dirty flag; what comes out is what
 /// each cell shows (`App::export_csv`).
 fn export_csv(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
-    let suggested = unsafe {
-        with_sheet(hwnd, |state| {
-            let stem = state
-                .path
-                .as_deref()
-                .and_then(std::path::Path::file_stem)
-                .map(|stem| stem.to_string_lossy().into_owned());
-            format!("{}.csv", stem.unwrap_or_else(|| "Untitled".to_owned()))
-        })
-    }
+    let suggested = with_sheet(hwnd, |state| {
+        let stem = state
+            .path
+            .as_deref()
+            .and_then(std::path::Path::file_stem)
+            .map(|stem| stem.to_string_lossy().into_owned());
+        format!("{}.csv", stem.unwrap_or_else(|| "Untitled".to_owned()))
+    })
     .unwrap_or_else(|| "Untitled.csv".to_owned());
     let Some(path) = dialog::save_csv_path(hwnd, &suggested) else {
         return;
     };
     let dialect = csv::Dialect::for_name(&path.file_name().unwrap_or_default().to_string_lossy());
-    // SAFETY: one borrow, taken after the dialog has closed.
-    let written = unsafe {
-        with_sheet(hwnd, |state| {
-            let (mut start, mut end) = state.selection.rect();
-            if start == end {
-                let (rows, cols) = state.app.used_extent(state.sheet).unwrap_or((0, 0));
-                if rows == 0 || cols == 0 {
-                    return Err("There is nothing in this sheet to export".to_owned());
-                }
-                (start, end) = (Pos::new(0, 0), Pos::new(rows - 1, cols - 1));
+    let written = with_sheet(hwnd, |state| {
+        let (mut start, mut end) = state.selection.rect();
+        if start == end {
+            let (rows, cols) = state.app.used_extent(state.sheet).unwrap_or((0, 0));
+            if rows == 0 || cols == 0 {
+                return Err("There is nothing in this sheet to export".to_owned());
             }
-            let options = csv::Export {
-                dialect,
-                ..csv::Export::default()
-            };
-            state
-                .app
-                .export_csv(state.sheet, start, end, &options)
-                .map_err(|error| error.to_string())
-                .map(|text| (text, start, end))
-        })
-    };
+            (start, end) = (Pos::new(0, 0), Pos::new(rows - 1, cols - 1));
+        }
+        let options = csv::Export {
+            dialect,
+            ..csv::Export::default()
+        };
+        state
+            .app
+            .export_csv(state.sheet, start, end, &options)
+            .map_err(|error| error.to_string())
+            .map(|text| (text, start, end))
+    });
     let Some(written) = written else {
         return;
     };
@@ -6771,16 +6376,13 @@ fn export_csv(hwnd: HWND) {
             &format!("Could not write {}:\n\n{error}", path.display()),
         );
     }
-    // SAFETY: one borrow, and nothing inside it dispatches.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            state.say(Some(notice::exported(
-                &a1::format(None, start),
-                &a1::format(None, end),
-                &path.file_name().unwrap_or_default().to_string_lossy(),
-            )));
-        });
-    }
+    with_sheet(hwnd, |state| {
+        state.say(Some(notice::exported(
+            &a1::format(None, start),
+            &a1::format(None, end),
+            &path.file_name().unwrap_or_default().to_string_lossy(),
+        )));
+    });
     refresh(hwnd);
 }
 
@@ -6810,12 +6412,9 @@ fn context_on_tab(hwnd: HWND, lparam: LPARAM) -> bool {
     unsafe {
         let _ = ScreenToClient(hwnd, &raw mut at);
     }
-    // SAFETY: one borrow, nothing inside dispatches.
-    let tab = unsafe {
-        with_sheet(hwnd, |state| {
-            sheet_tab_at(state, f64::from(at.x), f64::from(at.y))
-        })
-    }
+    let tab = with_sheet(hwnd, |state| {
+        sheet_tab_at(state, f64::from(at.x), f64::from(at.y))
+    })
     .flatten();
     match tab {
         Some(crate::sheet::tabs::Target::Sheet(index)) => {
@@ -6830,55 +6429,44 @@ fn context_on_tab(hwnd: HWND, lparam: LPARAM) -> bool {
 /// Ctrl+PageDown's does.
 fn sheet_show(hwnd: HWND, index: usize) {
     commit_edit(hwnd, None);
-    // SAFETY: one borrow.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            if index < state.app.sheet_count() && index != state.sheet {
-                state.sheet = index;
-                state.selection = Selection::default();
-            }
-        });
-    }
+    with_sheet(hwnd, |state| {
+        if index < state.app.sheet_count() && index != state.sheet {
+            state.sheet = index;
+            state.selection = Selection::default();
+        }
+    });
     refresh(hwnd);
 }
 
 /// Move to another sheet, keeping the selection and the view — clamped, not wrapped:
 /// Ctrl+PageDown on the last sheet does nothing, as in Excel.
 fn sheet_step(hwnd: HWND, by: i64) {
-    // SAFETY: one borrow.
-    unsafe {
-        with_sheet(hwnd, |state| {
-            let last = state.app.sheet_count().saturating_sub(1) as i64;
-            let at = (state.sheet as i64 + by).clamp(0, last.max(0));
-            state.sheet = at as usize;
-        });
-    }
+    with_sheet(hwnd, |state| {
+        let last = state.app.sheet_count().saturating_sub(1) as i64;
+        let at = (state.sheet as i64 + by).clamp(0, last.max(0));
+        state.sheet = at as usize;
+    });
     refresh(hwnd);
 }
 
 fn sheet_add(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt — which runs a nested message loop.
-    let Some(suggested) = (unsafe { with_sheet(hwnd, |state| state.app.fresh_sheet_name()) })
-    else {
+    let Some(suggested) = with_sheet(hwnd, |state| state.app.fresh_sheet_name()) else {
         return;
     };
     let Some(name) = dialog::prompt(hwnd, "Add Sheet", "Name for the new sheet:", &suggested)
     else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    let refused = unsafe {
-        with_sheet(hwnd, |state| match state.app.add_sheet(&name) {
-            Ok(at) => {
-                state.sheet = at;
-                state.selection = Selection::default();
-                None
-            }
-            // The core's own sentence, not a second copy of the rule: an empty name and a
-            // duplicate are both refused by `check_sheet_name`, which says why.
-            Err(error) => Some(error.to_string()),
-        })
-    };
+    let refused = with_sheet(hwnd, |state| match state.app.add_sheet(&name) {
+        Ok(at) => {
+            state.sheet = at;
+            state.selection = Selection::default();
+            None
+        }
+        // The core's own sentence, not a second copy of the rule: an empty name and a
+        // duplicate are both refused by `check_sheet_name`, which says why.
+        Err(error) => Some(error.to_string()),
+    });
     if let Some(message) = refused.flatten() {
         dialog::error(hwnd, &message);
     }
@@ -6886,33 +6474,27 @@ fn sheet_add(hwnd: HWND) {
 }
 
 fn sheet_rename(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some((sheet, current)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            (
-                state.sheet,
-                state.app.sheet_name(state.sheet).unwrap_or_default(),
-            )
-        })
+    let Some((sheet, current)) = with_sheet(hwnd, |state| {
+        (
+            state.sheet,
+            state.app.sheet_name(state.sheet).unwrap_or_default(),
+        )
     }) else {
         return;
     };
     let Some(name) = dialog::prompt(hwnd, "Rename Sheet", "New name:", &current) else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    let refused = unsafe {
-        with_sheet(hwnd, |state| match state.app.rename_sheet(sheet, &name) {
-            // The answer is **how many references were rewritten**: a rename that carried three
-            // hundred formulas is something to be told about, and taken back in one step.
-            Ok(0) => None,
-            Ok(rewritten) => {
-                state.say(Some(notice::references_renamed(rewritten)));
-                None
-            }
-            Err(error) => Some(error.to_string()),
-        })
-    };
+    let refused = with_sheet(hwnd, |state| match state.app.rename_sheet(sheet, &name) {
+        // The answer is **how many references were rewritten**: a rename that carried three
+        // hundred formulas is something to be told about, and taken back in one step.
+        Ok(0) => None,
+        Ok(rewritten) => {
+            state.say(Some(notice::references_renamed(rewritten)));
+            None
+        }
+        Err(error) => Some(error.to_string()),
+    });
     if let Some(message) = refused.flatten() {
         dialog::error(hwnd, &message);
     }
@@ -6922,14 +6504,11 @@ fn sheet_rename(hwnd: HWND) {
 /// Delete the current sheet, after asking. The one destructive thing this milestone can do that
 /// undo alone would not make obvious, which is why it is the one that confirms.
 fn sheet_delete(hwnd: HWND) {
-    // SAFETY: one borrow, released before the question.
-    let Some((sheet, name)) = (unsafe {
-        with_sheet(hwnd, |state| {
-            (
-                state.sheet,
-                state.app.sheet_name(state.sheet).unwrap_or_default(),
-            )
-        })
+    let Some((sheet, name)) = with_sheet(hwnd, |state| {
+        (
+            state.sheet,
+            state.app.sheet_name(state.sheet).unwrap_or_default(),
+        )
     }) else {
         return;
     };
@@ -6944,17 +6523,14 @@ fn sheet_delete(hwnd: HWND) {
     ) {
         return;
     }
-    // SAFETY: a fresh borrow, taken after the question rather than across it.
-    let refused = unsafe {
-        with_sheet(hwnd, |state| match state.app.remove_sheet(sheet) {
-            Ok(()) => {
-                state.sheet = sheet.min(state.app.sheet_count().saturating_sub(1));
-                state.selection = Selection::default();
-                None
-            }
-            Err(error) => Some(error.to_string()),
-        })
-    };
+    let refused = with_sheet(hwnd, |state| match state.app.remove_sheet(sheet) {
+        Ok(()) => {
+            state.sheet = sheet.min(state.app.sheet_count().saturating_sub(1));
+            state.selection = Selection::default();
+            None
+        }
+        Err(error) => Some(error.to_string()),
+    });
     if let Some(message) = refused.flatten() {
         dialog::error(hwnd, &message);
     }
@@ -6965,8 +6541,7 @@ fn sheet_delete(hwnd: HWND) {
 
 /// Save to the path the document came from, or ask for one. `true` means it is on disk.
 fn save(hwnd: HWND) -> bool {
-    // SAFETY: one borrow, released before any dialog.
-    let path = unsafe { with_pane(hwnd, |pane| pane.path()) }.flatten();
+    let path = with_pane(hwnd, |pane| pane.path()).flatten();
     match path {
         Some(path) => write(hwnd, &path),
         None => save_as(hwnd),
@@ -6974,9 +6549,8 @@ fn save(hwnd: HWND) -> bool {
 }
 
 fn save_as(hwnd: HWND) -> bool {
-    // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
     let (suggested, kind) =
-        unsafe { with_pane(hwnd, |pane| (pane.suggested(), pane.kind())) }.unwrap_or((None, None));
+        with_pane(hwnd, |pane| (pane.suggested(), pane.kind())).unwrap_or((None, None));
     // Nothing to save: the welcome screen holds no document, and `menu::on_welcome` keeps this verb
     // off its menu bar — so this is only reachable by a stale accelerator, and saying nothing is
     // the right answer to one.
@@ -6993,9 +6567,8 @@ fn save_as(hwnd: HWND) -> bool {
 /// close going ahead would lose it. Which form is written is `Form::from_path`'s answer to the
 /// chosen extension, inside `grind_sheet::write_file`.
 fn write(hwnd: HWND, path: &Path) -> bool {
-    // SAFETY: one borrow. `save_file` only reads the document: it notifies nothing, opens nothing,
-    // dispatches nothing. No "Saved" banner: the title's `*` clearing is the confirmation.
-    let failed = unsafe { with_pane(hwnd, |pane| pane.save_file(path).err()) }.flatten();
+    // No "Saved" banner: the title's `*` clearing is the confirmation.
+    let failed = with_pane(hwnd, |pane| pane.save_file(path).err()).flatten();
     if let Some(message) = failed {
         dialog::error(
             hwnd,
@@ -7013,22 +6586,18 @@ fn write(hwnd: HWND, path: &Path) -> bool {
 /// is registered again, being bound to an `App`, not the window; registering after the file is
 /// read is why no "a load is not an edit" flag is needed.
 fn adopt(hwnd: HWND, pane: Pane) {
-    // SAFETY: one borrow. `set_observer` stores an `Arc` and dispatches nothing, and dropping the
-    // pane that was there releases its fonts and its document with no message in between.
-    unsafe {
-        with_pane(hwnd, |slot| {
-            let window = hwnd.0 as isize;
-            match &pane {
-                Pane::Sheet(sheet) => sheet.app.set_observer(Arc::new(Changed(window, None))),
-                Pane::Text(text) => text
-                    .app
-                    .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
-                // No document, so nothing to observe — and nothing that could mark a title.
-                Pane::Welcome(_) => {}
-            }
-            *slot = pane;
-        });
-    }
+    with_pane(hwnd, |slot| {
+        let window = hwnd.0 as isize;
+        match &pane {
+            Pane::Sheet(sheet) => sheet.app.set_observer(Arc::new(Changed(window, None))),
+            Pane::Text(text) => text
+                .app
+                .set_observer(Arc::new(Changed(window, Some(text.edits.clone())))),
+            // No document, so nothing to observe — and nothing that could mark a title.
+            Pane::Welcome(_) => {}
+        }
+        *slot = pane;
+    });
     // A window that has just become a spreadsheet needs the two `EDIT`s a spreadsheet edits
     // through; one that has just become a document or the welcome screen needs nothing and gets
     // nothing.
@@ -7045,8 +6614,7 @@ fn new_document(hwnd: HWND, kind: DocumentKind) {
     if !offer_to_save(hwnd) {
         return;
     }
-    // SAFETY: one borrow, for the theme the new pane starts in.
-    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    let theme = with_pane(hwnd, |pane| pane.theme()).unwrap_or_else(theme::current);
     if let Ok(pane) = opened(Some(kind), None, theme) {
         adopt(hwnd, pane);
     }
@@ -7058,8 +6626,7 @@ fn welcome_screen(hwnd: HWND) {
     if !offer_to_save(hwnd) {
         return;
     }
-    // SAFETY: one borrow, for the theme the new pane starts in.
-    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    let theme = with_pane(hwnd, |pane| pane.theme()).unwrap_or_else(theme::current);
     if let Ok(pane) = opened(None, None, theme) {
         adopt(hwnd, pane);
     }
@@ -7235,8 +6802,7 @@ fn open_document(hwnd: HWND) {
             return;
         }
     };
-    // SAFETY: one borrow, released before the document is read.
-    let theme = unsafe { with_pane(hwnd, |pane| pane.theme()) }.unwrap_or_else(theme::current);
+    let theme = with_pane(hwnd, |pane| pane.theme()).unwrap_or_else(theme::current);
     // Read into a *new* pane rather than over the live one, so that a file that turns out to be
     // unreadable leaves the window showing what it was showing.
     match opened(Some(kind), Some(path.clone()), theme) {
@@ -7263,11 +6829,9 @@ fn add_recent(path: &Path) {
 }
 
 fn offer_to_save(hwnd: HWND) -> bool {
-    // SAFETY: one borrow, released before the dialog — decision 7's rule, and the reason this is
-    // a function rather than three lines in each of its three callers.
-    let Some((dirty, name)) =
-        (unsafe { with_pane(hwnd, |pane| (pane.dirty(), pane.document_name())) })
-    else {
+    // Borrowed and released before the dialog, which is why this is a function rather than three
+    // lines in each of its three callers.
+    let Some((dirty, name)) = with_pane(hwnd, |pane| (pane.dirty(), pane.document_name())) else {
         return true;
     };
     if !dirty {
@@ -7455,14 +7019,12 @@ fn paint(hwnd: HWND) {
 
 /// Whether this window is showing the welcome screen rather than a document.
 fn is_welcome(hwnd: HWND) -> bool {
-    // SAFETY: one borrow, for one bit; nothing inside dispatches.
-    unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Welcome(_))) }.unwrap_or(false)
+    with_pane(hwnd, |pane| matches!(pane, Pane::Welcome(_))).unwrap_or(false)
 }
 
 /// Run `f` with the welcome screen's state, or `None` when the window is showing a document.
-unsafe fn with_welcome<T>(hwnd: HWND, f: impl FnOnce(&mut Welcome) -> T) -> Option<T> {
-    // SAFETY: the caller's, unchanged — see [`with_pane`].
-    unsafe { with_pane(hwnd, |pane| pane.welcome_mut().map(f)) }.flatten()
+fn with_welcome<T>(hwnd: HWND, f: impl FnOnce(&mut Welcome) -> T) -> Option<T> {
+    with_pane(hwnd, |pane| pane.welcome_mut().map(f)).flatten()
 }
 
 /// The welcome screen's [`refresh`]: re-measure, retitle, repaint. The scrollbars are flattened,
@@ -7471,16 +7033,13 @@ fn welcome_refresh(hwnd: HWND) {
     let rect = gdi::client_rect(hwnd);
     // SAFETY: `hwnd` is this window's.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-    // SAFETY: one borrow; `relayout` is arithmetic and dispatches nothing.
-    unsafe {
-        with_welcome(hwnd, |state| {
-            state.relayout(
-                f64::from(rect.right - rect.left),
-                f64::from(rect.bottom - rect.top),
-                dpi,
-            );
-        });
-    }
+    with_welcome(hwnd, |state| {
+        state.relayout(
+            f64::from(rect.right - rect.left),
+            f64::from(rect.bottom - rect.top),
+            dpi,
+        );
+    });
     let flat = SCROLLINFO {
         cbSize: u32::try_from(std::mem::size_of::<SCROLLINFO>()).expect("small"),
         fMask: SCROLLINFO_MASK(SIF_RANGE.0 | SIF_PAGE.0 | SIF_POS.0),
@@ -7490,9 +7049,8 @@ fn welcome_refresh(hwnd: HWND) {
         nPos: 0,
         nTrackPos: 0,
     };
-    // SAFETY: the borrow above is released; `info` is a live local read for the length of each
-    // call, and `SetWindowTextW` dispatches, which is why it is out here.
-    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    let title = with_pane(hwnd, |pane| pane.title());
+    // SAFETY: `flat` and `wide` are locals that outlive the calls they are read by.
     unsafe {
         SetScrollInfo(hwnd, SB_VERT, &raw const flat, true);
         SetScrollInfo(hwnd, SB_HORZ, &raw const flat, true);
@@ -7524,15 +7082,12 @@ fn draw_welcome_frame(dc: HDC, state: &Welcome) {
 
 /// The pointer moved over the welcome screen: which card it is on, repainted only when that changed.
 fn welcome_mouse_move(hwnd: HWND, x: f64, y: f64) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    let moved = unsafe {
-        with_welcome(hwnd, |state| {
-            let hover = state.page.hit(x, y);
-            let moved = hover != state.hover;
-            state.hover = hover;
-            moved
-        })
-    };
+    let moved = with_welcome(hwnd, |state| {
+        let hover = state.page.hit(x, y);
+        let moved = hover != state.hover;
+        state.hover = hover;
+        moved
+    });
     if moved == Some(true) {
         // SAFETY: the borrow above is released.
         unsafe {
@@ -7545,19 +7100,16 @@ fn welcome_mouse_move(hwnd: HWND, x: f64, y: f64) {
 /// off the card before letting go takes it back, which is what every button on this platform
 /// does and what the text pane's format strip already does here.
 fn welcome_button_down(hwnd: HWND, x: f64, y: f64) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_welcome(hwnd, |state| {
-            let hit = state.page.hit(x, y);
-            state.hover = hit;
-            state.pressed = hit;
-            // A click also moves the keyboard's focus onto the card, so Enter afterwards repeats
-            // what the pointer just did rather than whatever was focused before.
-            if let Some(at) = hit {
-                state.focus = at;
-            }
-        });
-    }
+    with_welcome(hwnd, |state| {
+        let hit = state.page.hit(x, y);
+        state.hover = hit;
+        state.pressed = hit;
+        // A click also moves the keyboard's focus onto the card, so Enter afterwards repeats
+        // what the pointer just did rather than whatever was focused before.
+        if let Some(at) = hit {
+            state.focus = at;
+        }
+    });
     // SAFETY: the borrow is released. Both of these dispatch.
     unsafe {
         let _ = SetCapture(hwnd);
@@ -7567,13 +7119,11 @@ fn welcome_button_down(hwnd: HWND, x: f64, y: f64) {
 }
 
 fn welcome_button_up(hwnd: HWND) {
-    // SAFETY: one borrow, released before the verb runs — two of the three open a nested message
-    // loop (a file dialog, a close question), which decision 7 forbids holding a borrow across.
-    let pressed = unsafe {
-        with_welcome(hwnd, |state| {
-            state.pressed.take().filter(|at| state.hover == Some(*at))
-        })
-    }
+    // Released before the verb runs: two of the three open a nested message loop (a file dialog, a
+    // close question).
+    let pressed = with_welcome(hwnd, |state| {
+        state.pressed.take().filter(|at| state.hover == Some(*at))
+    })
     .flatten();
     // SAFETY: the borrow above is released.
     unsafe {
@@ -7601,8 +7151,7 @@ fn welcome_key(hwnd: HWND, vk: u32) -> bool {
         Key::Tab if mods.shift => -1,
         Key::Down | Key::Tab => 1,
         Key::Return => {
-            // SAFETY: one borrow, released before the verb — which may open a file dialog.
-            let focus = unsafe { with_welcome(hwnd, |state| state.focus) };
+            let focus = with_welcome(hwnd, |state| state.focus);
             if let Some(at) = focus {
                 do_command(hwnd, welcome::Choice::ALL[at].command());
             }
@@ -7632,8 +7181,7 @@ fn welcome_key(hwnd: HWND, vk: u32) -> bool {
 /// Whether this window shows a document rather than a spreadsheet — asked at the top of each
 /// shared handler, since most messages are one pane's.
 fn is_text(hwnd: HWND) -> bool {
-    // SAFETY: one borrow, for one bit; nothing inside dispatches.
-    unsafe { with_pane(hwnd, |pane| matches!(pane, Pane::Text(_))) }.unwrap_or(false)
+    with_pane(hwnd, |pane| matches!(pane, Pane::Text(_))).unwrap_or(false)
 }
 
 /// Show the system caret at [`Text::caret_geometry`], creating it first: `CreateCaret` again
@@ -7641,8 +7189,7 @@ fn is_text(hwnd: HWND) -> bool {
 /// size. Windows blinks it at the user's `GetCaretBlinkTime`, which is why a system caret is worth
 /// having; recreating resets the blink phase each keystroke, as every editor's caret does.
 fn place_system_caret(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    let geometry = unsafe { with_text(hwnd, |text| text.caret_geometry()) }.flatten();
+    let geometry = with_text(hwnd, |text| text.caret_geometry()).flatten();
     let Some((x, y, width, height)) = geometry else {
         return;
     };
@@ -7661,21 +7208,18 @@ fn text_refresh(hwnd: HWND) {
     let rect = gdi::client_rect(hwnd);
     // SAFETY: `hwnd` is this window's.
     let dpi = unsafe { GetDpiForWindow(hwnd) }.max(96);
-    // SAFETY: one borrow; `relayout` measures text and dispatches nothing.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.reconsider_spelling();
-            text.relayout(
-                f64::from(rect.right - rect.left),
-                f64::from(rect.bottom - rect.top),
-                dpi,
-            );
-            text.reveal();
-            text_scrollbars(hwnd, text);
-        });
-    }
-    // SAFETY: the borrow above is released before the caption is rewritten, which dispatches.
-    let title = unsafe { with_pane(hwnd, |pane| pane.title()) };
+    with_text(hwnd, |text| {
+        text.reconsider_spelling();
+        text.relayout(
+            f64::from(rect.right - rect.left),
+            f64::from(rect.bottom - rect.top),
+            dpi,
+        );
+        text.reveal();
+        text_scrollbars(hwnd, text);
+    });
+    let title = with_pane(hwnd, |pane| pane.title());
+    // SAFETY: `wide` is a NUL-terminated local that outlives the call.
     unsafe {
         if let Some(title) = title
             && window_text(hwnd) != title
@@ -7707,11 +7251,13 @@ fn text_scrollbars(hwnd: HWND, text: &Text) {
     };
     let down = info(height, body.h, text.page.scroll);
     let across = info(width, body.w, text.scroll_x);
-    // SAFETY: both infos are live, fully initialised locals read for the length of the call.
-    unsafe {
-        SetScrollInfo(hwnd, SB_VERT, &raw const down, true);
-        SetScrollInfo(hwnd, SB_HORZ, &raw const across, true);
-    }
+    after_borrow(move || {
+        // SAFETY: both infos are fully initialised locals read for the length of the call.
+        unsafe {
+            SetScrollInfo(hwnd, SB_VERT, &raw const down, true);
+            SetScrollInfo(hwnd, SB_HORZ, &raw const across, true);
+        }
+    });
 }
 
 /// Move the view by a number of pixels down, or across, clamped to the pages.
@@ -7739,16 +7285,13 @@ fn text_scroll_by(hwnd: HWND, delta: f64, vertical: bool) {
 fn text_scroll(hwnd: HWND, wparam: WPARAM, vertical: bool) {
     let code = (wparam.0 & 0xffff) as i32;
     let thumb = ((wparam.0 >> 16) & 0xffff) as i32;
-    // SAFETY: one borrow, for three numbers; nothing inside dispatches.
-    let Some((at, page)) = (unsafe {
-        with_text(hwnd, |text| {
-            let body = text.page.body();
-            if vertical {
-                (text.page.scroll, body.h)
-            } else {
-                (text.scroll_x, body.w)
-            }
-        })
+    let Some((at, page)) = with_text(hwnd, |text| {
+        let body = text.page.body();
+        if vertical {
+            (text.page.scroll, body.h)
+        } else {
+            (text.scroll_x, body.w)
+        }
     }) else {
         return;
     };
@@ -7788,8 +7331,7 @@ fn text_wheel(hwnd: HWND, notches: f64, lines: u32) {
         }
         return;
     }
-    // SAFETY: one borrow, for one number; nothing inside dispatches.
-    let Some(page) = (unsafe { with_text(hwnd, |text| text.page.body().h) }) else {
+    let Some(page) = with_text(hwnd, |text| text.page.body().h) else {
         return;
     };
     // Zero means "do not scroll", which is a real setting; `WHEEL_PAGESCROLL` means a screenful.
@@ -7890,14 +7432,11 @@ fn text_type(hwnd: HWND, typed: &str) {
 /// Backspace and Delete: a selection, or as far as `unit` goes — by a character, at a block's
 /// edge the break between two blocks.
 fn text_erase(hwnd: HWND, unit: Unit, forward: bool) {
-    // SAFETY: one borrow. `erase` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            let shown = text.shown();
-            let result = text.editor.erase(&text.app, shown.set(), unit, forward);
-            text.edited(result);
-        });
-    }
+    with_text(hwnd, |text| {
+        let shown = text.shown();
+        let result = text.editor.erase(&text.app, shown.set(), unit, forward);
+        text.edited(result);
+    });
     refresh(hwnd);
 }
 
@@ -7913,13 +7452,10 @@ fn text_page_break(hwnd: HWND) {
 
 /// One edit through the editor, its refusal on the banner.
 fn text_edit(hwnd: HWND, edit: impl FnOnce(&mut Editor, &grind_text::App) -> Result<(), String>) {
-    // SAFETY: one borrow. Every edit notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            let result = edit(&mut text.editor, &text.app);
-            text.edited(result);
-        });
-    }
+    with_text(hwnd, |text| {
+        let result = edit(&mut text.editor, &text.app);
+        text.edited(result);
+    });
     refresh(hwnd);
 }
 
@@ -7945,14 +7481,11 @@ fn text_drop_selection(text: &mut Text) -> bool {
 fn text_button_down(hwnd: HWND, lparam: LPARAM) {
     let (x, y) = point(lparam);
     // The status bar's spelling language: Spelling Language…'s own chooser.
-    // SAFETY: one borrow; arithmetic.
-    if unsafe { with_text(hwnd, |text| text.page.status_picker().contains(x, y)) } == Some(true) {
+    if with_text(hwnd, |text| text.page.status_picker().contains(x, y)) == Some(true) {
         text_spelling_language(hwnd);
         return;
     }
-    // SAFETY: one borrow; the hit test is arithmetic over the page geometry and dispatches
-    // nothing.
-    let hit = unsafe { with_text(hwnd, |text| text.page.strip_hit(x, y)) }.flatten();
+    let hit = with_text(hwnd, |text| text.page.strip_hit(x, y)).flatten();
     if let Some(hit) = hit {
         // **Pressed here, done on release**, as every button on this platform does: a press can be
         // taken back by dragging off the control, so a mis-aimed click is not a formatting edit.
@@ -7993,27 +7526,24 @@ fn text_button_down(hwnd: HWND, lparam: LPARAM) {
 /// A drag in progress. Nothing happens when no button is down: a plain move over a document has
 /// to cost nothing, because it arrives on every pixel of travel.
 fn text_mouse_move(hwnd: HWND, x: f64, y: f64) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    let moved = unsafe {
-        with_text(hwnd, |text| {
-            // The strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not needed:
-            // the pointer cannot leave the window from inside the strip without passing the rest
-            // of it, and any point off a control clears the hover.
-            let hover = text.page.strip_hit(x, y);
-            let hovered = hover != text.hover;
-            text.hover = hover;
-            if !text.dragging {
-                return hovered;
+    let moved = with_text(hwnd, |text| {
+        // The strip's hover, repainted only when it *changes*. `WM_MOUSELEAVE` is not needed:
+        // the pointer cannot leave the window from inside the strip without passing the rest
+        // of it, and any point off a control clears the hover.
+        let hover = text.page.strip_hit(x, y);
+        let hovered = hover != text.hover;
+        text.hover = hover;
+        if !text.dragging {
+            return hovered;
+        }
+        match text.caret_at(x, y) {
+            Some(at) if at != text.editor.caret => {
+                text.place(at, true);
+                true
             }
-            match text.caret_at(x, y) {
-                Some(at) if at != text.editor.caret => {
-                    text.place(at, true);
-                    true
-                }
-                _ => hovered,
-            }
-        })
-    };
+            _ => hovered,
+        }
+    });
     if moved == Some(true) {
         // SAFETY: the borrow above has been released.
         unsafe {
@@ -8208,10 +7738,7 @@ fn text_command(hwnd: HWND, command: Command) {
 /// like the grid's own two, and the menu is rebuilt straight after for the same reason
 /// [`toggle_overlay`] rebuilds it.
 fn text_toggle_names(hwnd: HWND) {
-    // SAFETY: one borrow; nothing inside dispatches.
-    unsafe {
-        with_text(hwnd, |text| text.show_names = !text.show_names);
-    }
+    with_text(hwnd, |text| text.show_names = !text.show_names);
     build_menu(hwnd);
     refresh(hwnd);
 }
@@ -8223,18 +7750,15 @@ fn text_go_to(hwnd: HWND) {
     else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            grind_text::loc::parse(&address)
-                .map_err(|e| e.to_string())
-                .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
-                .map(|caret| {
-                    text.place(caret, false);
-                    text.caret_on = true;
-                })
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        grind_text::loc::parse(&address)
+            .map_err(|e| e.to_string())
+            .and_then(|loc| text.app.resolve_caret(&loc).map_err(|e| e.to_string()))
+            .map(|caret| {
+                text.place(caret, false);
+                text.caret_on = true;
+            })
+    });
     match outcome {
         Some(Err(message)) => dialog::error(hwnd, &message),
         Some(Ok(())) => refresh(hwnd),
@@ -8245,9 +7769,7 @@ fn text_go_to(hwnd: HWND) {
 /// File ▸ Page Setup… — the paper, how it lies and the margins, in words (`a5 landscape 15mm`),
 /// the page as it is offered to edit.
 fn text_page_setup(hwnd: HWND) {
-    // SAFETY: one borrow, for a value; nothing inside dispatches.
-    let Some(page) = (unsafe { with_text(hwnd, |text| text.app.page().unwrap_or_default()) })
-    else {
+    let Some(page) = with_text(hwnd, |text| text.app.page().unwrap_or_default()) else {
         return;
     };
     let offered = format!(
@@ -8272,8 +7794,7 @@ fn text_page_setup(hwnd: HWND) {
         Ok(page) => page,
         Err(why) => return dialog::error(hwnd, &why),
     };
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    let outcome = unsafe { with_text(hwnd, |text| text.app.set_page(page)) };
+    let outcome = with_text(hwnd, |text| text.app.set_page(page));
     match outcome {
         Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(())) => refresh(hwnd),
@@ -8285,8 +7806,7 @@ fn text_page_setup(hwnd: HWND) {
 /// caret. The prompt runs a nested loop, so the word is read in one borrow and the search is a
 /// second (decision 7). Case is ignored (`grind_text::find`).
 fn text_find(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some(offered) = (unsafe { with_text(hwnd, |text| text.needle.clone()) }) else {
+    let Some(offered) = with_text(hwnd, |text| text.needle.clone()) else {
         return;
     };
     let Some(needle) = dialog::prompt(hwnd, "Find", "Find in the document:", &offered) else {
@@ -8295,10 +7815,7 @@ fn text_find(hwnd: HWND) {
     if needle.is_empty() {
         return;
     }
-    // SAFETY: a fresh borrow, taken after the dialog has closed.
-    unsafe {
-        with_text(hwnd, |text| text.needle = needle);
-    }
+    with_text(hwnd, |text| text.needle = needle);
     text_find_step(hwnd, grind_text::find::Towards::Here);
 }
 
@@ -8306,30 +7823,27 @@ fn text_find(hwnd: HWND) {
 /// is selected so typing replaces it.
 fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
     use grind_text::find;
-    // SAFETY: one borrow, and no dialog on either side of it.
-    let asked = unsafe {
-        with_text(hwnd, |text| {
-            if text.needle.is_empty() {
-                return false;
+    let asked = with_text(hwnd, |text| {
+        if text.needle.is_empty() {
+            return false;
+        }
+        let hits = find::hits(&text.app, &text.needle);
+        // From the selection's start when there is one — usually the last hit — and the
+        // caret otherwise.
+        let (at, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
+        let said = match find::step(&hits, at, towards) {
+            Some(index) => {
+                let from = hits[index];
+                text.place(from, false);
+                text.place(find::end_of(from, &text.needle), true);
+                text.caret_on = true;
+                notice::text_found(index, hits.len(), &text.needle)
             }
-            let hits = find::hits(&text.app, &text.needle);
-            // From the selection's start when there is one — usually the last hit — and the
-            // caret otherwise.
-            let (at, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
-            let said = match find::step(&hits, at, towards) {
-                Some(index) => {
-                    let from = hits[index];
-                    text.place(from, false);
-                    text.place(find::end_of(from, &text.needle), true);
-                    text.caret_on = true;
-                    notice::text_found(index, hits.len(), &text.needle)
-                }
-                None => notice::text_not_found(&text.needle),
-            };
-            text.say(Some(said));
-            true
-        })
-    };
+            None => notice::text_not_found(&text.needle),
+        };
+        text.say(Some(said));
+        true
+    });
     match asked {
         // Nothing searched for yet: F3 means "find", which is where the word comes from.
         Some(false) => text_find(hwnd),
@@ -8342,8 +7856,7 @@ fn text_find_step(hwnd: HWND, towards: grind_text::find::Towards) {
 /// undo step. Two prompts, as the grid's is; neither is asked with anything borrowed. Exact in
 /// case, since it writes: only finding is lenient.
 fn text_replace(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompts.
-    let Some(offered) = (unsafe { with_text(hwnd, |text| text.needle.clone()) }) else {
+    let Some(offered) = with_text(hwnd, |text| text.needle.clone()) else {
         return;
     };
     let Some(what) = dialog::prompt(hwnd, "Replace", "Replace what:", &offered) else {
@@ -8356,25 +7869,21 @@ fn text_replace(hwnd: HWND) {
     else {
         return;
     };
-    // SAFETY: a fresh borrow, taken after both dialogs have closed.
-    unsafe {
-        with_text(hwnd, |text| {
-            let said = match text.app.replace(&what, &with) {
-                Ok(blocks) => notice::text_replaced(blocks, &what),
-                Err(error) => error.to_string(),
-            };
-            text.needle = what;
-            text.say(Some(said));
-        });
-    }
+    with_text(hwnd, |text| {
+        let said = match text.app.replace(&what, &with) {
+            Ok(blocks) => notice::text_replaced(blocks, &what),
+            Err(error) => error.to_string(),
+        };
+        text.needle = what;
+        text.say(Some(said));
+    });
     text_refresh(hwnd);
 }
 
 /// The outline dialog: every heading, indented by its depth, each a jump — straight to the block
 /// index, rather than round-tripping the `§2.1.3` address through `loc::parse`.
 fn text_outline(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog — which runs a nested message loop.
-    let headings = unsafe { with_text(hwnd, |text| text.app.outline()) }.unwrap_or_default();
+    let headings = with_text(hwnd, |text| text.app.outline()).unwrap_or_default();
     if headings.is_empty() {
         dialog::error(hwnd, "This document has no headings.");
         return;
@@ -8393,13 +7902,10 @@ fn text_outline(hwnd: HWND) {
         return;
     };
     let block = heading.index;
-    // SAFETY: a fresh borrow, taken after the dialog rather than across it.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.place(Caret { block, offset: 0 }, false);
-            text.caret_on = true;
-        });
-    }
+    with_text(hwnd, |text| {
+        text.place(Caret { block, offset: 0 }, false);
+        text.caret_on = true;
+    });
     refresh(hwnd);
 }
 
@@ -8435,8 +7941,7 @@ fn format_state(text: &Text) -> [bool; 5] {
 /// Toggle one emphasis across the selection — the strip, Ctrl+B/I/U and the Format menu all
 /// converge here: on across it, or off when every character has it (`Change::toggle`).
 fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
-    // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
-    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let style = with_text(hwnd, |text| text_style_here(text)).unwrap_or_default();
     text_format(hwnd, grind_text::format::Change::toggle(emphasis, &style));
 }
 
@@ -8444,27 +7949,24 @@ fn text_emphasise(hwnd: HWND, emphasis: markdown::Emphasis) {
 /// character typed (`Text::resume`): Bold, then type, is bold. `grind_text::format::apply` is the
 /// rule.
 fn text_format(hwnd: HWND, change: grind_text::format::Change) {
-    // SAFETY: one borrow. `set_char_style` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            let selection = text.has_selection().then(|| text.range());
-            let landed = grind_text::format::apply(
-                &text.app,
-                selection,
-                text.editor.caret,
-                text.editor.resume.as_ref(),
-                &change,
-            );
-            match landed {
-                Ok(grind_text::format::Landed::Written) => text.say(None),
-                Ok(grind_text::format::Landed::Pending(style)) => {
-                    text.editor.resume = Some(style);
-                    text.say(None);
-                }
-                Err(error) => text.say(Some(error.to_string())),
+    with_text(hwnd, |text| {
+        let selection = text.has_selection().then(|| text.range());
+        let landed = grind_text::format::apply(
+            &text.app,
+            selection,
+            text.editor.caret,
+            text.editor.resume.as_ref(),
+            &change,
+        );
+        match landed {
+            Ok(grind_text::format::Landed::Written) => text.say(None),
+            Ok(grind_text::format::Landed::Pending(style)) => {
+                text.editor.resume = Some(style);
+                text.say(None);
             }
-        });
-    }
+            Err(error) => text.say(Some(error.to_string())),
+        }
+    });
     refresh(hwnd);
 }
 
@@ -8484,7 +7986,7 @@ const FONT_CHOICES: [&str; 8] = [
 
 /// *Font* — `dialog::choose` over [`FONT_CHOICES`], [`grind_text::format::DEFAULT`] first.
 fn text_pick_family(hwnd: HWND) {
-    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let style = with_text(hwnd, |text| text_style_here(text)).unwrap_or_default();
     let mut items: Vec<String> = std::iter::once(grind_text::format::DEFAULT.to_owned())
         .chain(FONT_CHOICES.iter().map(|name| (*name).to_owned()))
         .collect();
@@ -8508,7 +8010,7 @@ fn text_pick_family(hwnd: HWND) {
 /// *Size* — `dialog::choose` over [`grind_text::format::sizes`], the same ladder
 /// `grind-text-gtk`'s drop-down offers.
 fn text_pick_size(hwnd: HWND) {
-    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let style = with_text(hwnd, |text| text_style_here(text)).unwrap_or_default();
     let items = grind_text::format::sizes(style.font_size.as_deref());
     let initial = style
         .font_size
@@ -8525,7 +8027,7 @@ fn text_pick_size(hwnd: HWND) {
 /// Either swatch — `grind_core::style::PALETTE` as the choices, *Automatic* first, over the same
 /// `dialog::choose` popup a colour name is one row of.
 fn text_pick_color(hwnd: HWND, highlight: bool) {
-    let style = unsafe { with_text(hwnd, |text| text_style_here(text)) }.unwrap_or_default();
+    let style = with_text(hwnd, |text| text_style_here(text)).unwrap_or_default();
     let current = if highlight {
         style.background
     } else {
@@ -8556,32 +8058,28 @@ fn text_pick_color(hwnd: HWND, highlight: bool) {
 /// document's own `Quotations` stays. A block's kind is asked of the caret, not a selection, as
 /// `App::set_kind` takes an index.
 fn text_set_kind(hwnd: HWND, kind: grind_text::BlockKind, style: Option<&str>) {
-    // SAFETY: one borrow. `set_kind`/`set_style` notify, and the observer posts rather than
-    // sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            let index = text.editor.caret.block;
-            let viewport = text.app.get_viewport(index..index + 1);
-            let Some(block) = viewport.get(index) else {
-                return;
-            };
-            let was = block.style.clone();
-            let wanted = grind_text::named_style_for(was.as_deref(), style);
-            let kind_changed = block.kind != kind;
-            if kind_changed && let Err(error) = text.app.set_kind(index, kind) {
-                text.say(Some(error.to_string()));
-                return;
+    with_text(hwnd, |text| {
+        let index = text.editor.caret.block;
+        let viewport = text.app.get_viewport(index..index + 1);
+        let Some(block) = viewport.get(index) else {
+            return;
+        };
+        let was = block.style.clone();
+        let wanted = grind_text::named_style_for(was.as_deref(), style);
+        let kind_changed = block.kind != kind;
+        if kind_changed && let Err(error) = text.app.set_kind(index, kind) {
+            text.say(Some(error.to_string()));
+            return;
+        }
+        if wanted != was {
+            match text.app.set_style(index..index + 1, wanted) {
+                Ok(_) => text.say(None),
+                Err(error) => text.say(Some(error.to_string())),
             }
-            if wanted != was {
-                match text.app.set_style(index..index + 1, wanted) {
-                    Ok(_) => text.say(None),
-                    Err(error) => text.say(Some(error.to_string())),
-                }
-            } else if kind_changed {
-                text.say(None);
-            }
-        });
-    }
+        } else if kind_changed {
+            text.say(None);
+        }
+    });
     refresh(hwnd);
 }
 
@@ -8633,31 +8131,24 @@ fn text_insert_picture(hwnd: HWND) {
         }
     };
     let mime = image::mime_of(&path);
-    // SAFETY: one borrow. `insert`/`insert_image` notify, and the observer posts rather than
-    // sends.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            grind_text::picture::insert_below(&text.app, text.editor.caret.block, &mime, data)
-                .map_err(|error| error.to_string())
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        grind_text::picture::insert_below(&text.app, text.editor.caret.block, &mime, data)
+            .map_err(|error| error.to_string())
+    });
     match outcome {
         // Past the picture, which is one caret position — so the next thing typed is a caption
         // rather than text wrapped around a frame nothing lays out yet.
         Some(Ok(at)) => {
-            // SAFETY: a fresh borrow, taken after the one above released.
-            unsafe {
-                with_text(hwnd, |text| {
-                    text.place(
-                        Caret {
-                            block: at,
-                            offset: 1,
-                        },
-                        false,
-                    );
-                    text.caret_on = true;
-                });
-            }
+            with_text(hwnd, |text| {
+                text.place(
+                    Caret {
+                        block: at,
+                        offset: 1,
+                    },
+                    false,
+                );
+                text.caret_on = true;
+            });
             refresh(hwnd);
         }
         Some(Err(message)) => dialog::error(hwnd, &message),
@@ -8669,24 +8160,18 @@ fn text_insert_picture(hwnd: HWND) {
 /// alternative text asked for in `dialog::alt_text`, written by `picture::set_alt`. Read first,
 /// dialog second, write third: the dialog runs a nested message loop (decision 7).
 fn text_alt_text(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog.
-    let here = unsafe {
-        with_text(hwnd, |text| {
-            let block = text.editor.caret.block;
-            let viewport = text.app.get_viewport(block..block + 1);
-            let (offset, image) =
-                grind_text::picture::at(viewport.get(block)?, text.editor.caret.offset)?;
-            Some((Caret { block, offset }, image.clone()))
-        })
-    }
+    let here = with_text(hwnd, |text| {
+        let block = text.editor.caret.block;
+        let viewport = text.app.get_viewport(block..block + 1);
+        let (offset, image) =
+            grind_text::picture::at(viewport.get(block)?, text.editor.caret.offset)?;
+        Some((Caret { block, offset }, image.clone()))
+    })
     .flatten();
     let Some((at, image)) = here else {
-        // SAFETY: one borrow.
-        unsafe {
-            with_text(hwnd, |text| {
-                text.say(Some("Put the caret beside a picture first.".to_owned()));
-            });
-        }
+        with_text(hwnd, |text| {
+            text.say(Some("Put the caret beside a picture first.".to_owned()));
+        });
         refresh(hwnd);
         return;
     };
@@ -8698,20 +8183,17 @@ fn text_alt_text(hwnd: HWND) {
     ) else {
         return;
     };
-    // SAFETY: a fresh borrow, after the dialog.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            let done = grind_text::picture::set_alt(&text.app, at, &title, &description);
-            if done.is_ok() {
-                text.say(Some(if title.trim().is_empty() {
-                    "The picture has no alt text.".to_owned()
-                } else {
-                    "Alt text saved.".to_owned()
-                }));
-            }
-            done
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        let done = grind_text::picture::set_alt(&text.app, at, &title, &description);
+        if done.is_ok() {
+            text.say(Some(if title.trim().is_empty() {
+                "The picture has no alt text.".to_owned()
+            } else {
+                "Alt text saved.".to_owned()
+            }));
+        }
+        done
+    });
     match outcome {
         Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(())) => refresh(hwnd),
@@ -8730,23 +8212,20 @@ fn text_insert_table(hwnd: HWND) {
     let Some((rows, columns)) = grind_text::table::parse_size(&answer) else {
         return dialog::error(hwnd, "A table size looks like 3x4 — rows, then columns.");
     };
-    // SAFETY: one borrow, after the dialog. `insert_table` notifies; the observer posts.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            grind_text::table::insert_below(&text.app, text.editor.caret.block, rows, columns).map(
-                |at| {
-                    text.place(
-                        Caret {
-                            block: at,
-                            offset: 0,
-                        },
-                        false,
-                    );
-                    text.caret_on = true;
-                },
-            )
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        grind_text::table::insert_below(&text.app, text.editor.caret.block, rows, columns).map(
+            |at| {
+                text.place(
+                    Caret {
+                        block: at,
+                        offset: 0,
+                    },
+                    false,
+                );
+                text.caret_on = true;
+            },
+        )
+    });
     match outcome {
         Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(())) => refresh(hwnd),
@@ -8764,22 +8243,19 @@ fn text_bookmark(hwnd: HWND) {
     if name.is_empty() {
         return;
     }
-    // SAFETY: one borrow, after the dialog.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            text.app
-                .set_bookmark(&name, Some(text.editor.caret.block))
-                .map(|moved| {
-                    text.show_names = true;
-                    let said = if moved {
-                        format!("#{name} moved here.")
-                    } else {
-                        format!("#{name} anchored here.")
-                    };
-                    text.say(Some(said));
-                })
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        text.app
+            .set_bookmark(&name, Some(text.editor.caret.block))
+            .map(|moved| {
+                text.show_names = true;
+                let said = if moved {
+                    format!("#{name} moved here.")
+                } else {
+                    format!("#{name} anchored here.")
+                };
+                text.say(Some(said));
+            })
+    });
     match outcome {
         Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(())) => {
@@ -8793,16 +8269,13 @@ fn text_bookmark(hwnd: HWND) {
 /// Format ▸ Paragraph Style Name… — `App::set_style` over the blocks the selection touches, an
 /// empty answer removing the name.
 fn text_paragraph_style(hwnd: HWND) {
-    // SAFETY: one borrow, released before the prompt.
-    let Some(current) = (unsafe {
-        with_text(hwnd, |text| {
-            let (from, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
-            text.app
-                .get_viewport(from.block..from.block + 1)
-                .get(0)
-                .and_then(|block| block.style.clone())
-                .unwrap_or_default()
-        })
+    let Some(current) = with_text(hwnd, |text| {
+        let (from, _) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
+        text.app
+            .get_viewport(from.block..from.block + 1)
+            .get(0)
+            .and_then(|block| block.style.clone())
+            .unwrap_or_default()
     }) else {
         return;
     };
@@ -8815,16 +8288,13 @@ fn text_paragraph_style(hwnd: HWND) {
         return;
     };
     let name = name.trim().to_owned();
-    // SAFETY: a fresh borrow, after the dialog.
-    let outcome = unsafe {
-        with_text(hwnd, |text| {
-            let (from, to) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
-            text.app.set_style(
-                from.block..to.block + 1,
-                (!name.is_empty()).then(|| name.clone()),
-            )
-        })
-    };
+    let outcome = with_text(hwnd, |text| {
+        let (from, to) = grind_text::caret::ordered(text.editor.anchor, text.editor.caret);
+        text.app.set_style(
+            from.block..to.block + 1,
+            (!name.is_empty()).then(|| name.clone()),
+        )
+    });
     match outcome {
         Some(Err(error)) => dialog::error(hwnd, &error.to_string()),
         Some(Ok(_)) => refresh(hwnd),
@@ -8863,21 +8333,18 @@ fn text_import_markdown(hwnd: HWND) {
             );
         }
     };
-    // SAFETY: one borrow, taken after the dialog has closed.
-    unsafe {
-        with_text(hwnd, |text| {
-            let block = text.editor.caret.block;
-            let resolve = grind_text::commonmark::beside(&path);
-            match text.app.import_markdown(block, &markdown, &resolve) {
-                Ok(count) => {
-                    text.place(Caret { block, offset: 0 }, false);
-                    text.caret_on = true;
-                    text.say(Some(format!("Imported {count} block(s) from Markdown.")));
-                }
-                Err(error) => text.say(Some(error.to_string())),
+    with_text(hwnd, |text| {
+        let block = text.editor.caret.block;
+        let resolve = grind_text::commonmark::beside(&path);
+        match text.app.import_markdown(block, &markdown, &resolve) {
+            Ok(count) => {
+                text.place(Caret { block, offset: 0 }, false);
+                text.caret_on = true;
+                text.say(Some(format!("Imported {count} block(s) from Markdown.")));
             }
-        });
-    }
+            Err(error) => text.say(Some(error.to_string())),
+        }
+    });
     refresh(hwnd);
 }
 
@@ -8885,38 +8352,32 @@ fn text_import_markdown(hwnd: HWND) {
 /// no selection, written as CommonMark. **Writes a file and changes nothing**: no undo entry, no
 /// dirty flag.
 fn text_export_markdown(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog.
-    let suggested = unsafe {
-        with_text(hwnd, |text| {
-            let stem = text
-                .path
-                .as_deref()
-                .or(text.imported.as_deref())
-                .and_then(Path::file_stem)
-                .map(|stem| stem.to_string_lossy().into_owned());
-            format!("{}.md", stem.unwrap_or_else(|| "Untitled".to_owned()))
-        })
-    }
+    let suggested = with_text(hwnd, |text| {
+        let stem = text
+            .path
+            .as_deref()
+            .or(text.imported.as_deref())
+            .and_then(Path::file_stem)
+            .map(|stem| stem.to_string_lossy().into_owned());
+        format!("{}.md", stem.unwrap_or_else(|| "Untitled".to_owned()))
+    })
     .unwrap_or_else(|| "Untitled.md".to_owned());
     let Some(path) = dialog::save_markdown_path(hwnd, &suggested) else {
         return;
     };
-    // SAFETY: one borrow, taken after the dialog has closed.
-    let written = unsafe {
-        with_text(hwnd, |text| {
-            let blocks = if text.has_selection() {
-                let blocks = text.editor.blocks();
-                *blocks.start()..*blocks.end() + 1
-            } else {
-                0..text.app.block_count()
-            };
-            // The pictures go in a directory beside it (`notes.images\`), named for their bytes.
-            let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
-            text.app
-                .export_markdown(blocks, &pictures)
-                .map_err(|error| error.to_string())
-        })
-    };
+    let written = with_text(hwnd, |text| {
+        let blocks = if text.has_selection() {
+            let blocks = text.editor.blocks();
+            *blocks.start()..*blocks.end() + 1
+        } else {
+            0..text.app.block_count()
+        };
+        // The pictures go in a directory beside it (`notes.images\`), named for their bytes.
+        let pictures = grind_text::commonmark::Pictures::beside(&path.display().to_string());
+        text.app
+            .export_markdown(blocks, &pictures)
+            .map_err(|error| error.to_string())
+    });
     let exported = match written {
         Some(Ok(exported)) => exported,
         Some(Err(why)) => return dialog::error(hwnd, &why),
@@ -8926,43 +8387,34 @@ fn text_export_markdown(hwnd: HWND) {
         Ok(said) => said,
         Err(error) => return dialog::error(hwnd, &format!("Could not write it:\n\n{error}")),
     };
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.say(Some(said));
-        });
-    }
+    with_text(hwnd, |text| {
+        text.say(Some(said));
+    });
     refresh(hwnd);
 }
 
 /// File ▸ Export PDF… — the document typeset and written as a PDF (`doc/pdf-export.md`); the
 /// notice bar is the export's own report, which names any family it had to substitute.
 fn text_export_pdf(hwnd: HWND) {
-    // SAFETY: one borrow, released before the dialog.
-    let stem = unsafe {
-        with_text(hwnd, |text| {
-            text.path
-                .as_deref()
-                .or(text.imported.as_deref())
-                .and_then(Path::file_stem)
-                .map(|stem| stem.to_string_lossy().into_owned())
-        })
-    }
+    let stem = with_text(hwnd, |text| {
+        text.path
+            .as_deref()
+            .or(text.imported.as_deref())
+            .and_then(Path::file_stem)
+            .map(|stem| stem.to_string_lossy().into_owned())
+    })
     .flatten()
     .unwrap_or_else(|| "Untitled".to_owned());
     let Some(path) = dialog::save_pdf_path(hwnd, &format!("{stem}.pdf")) else {
         return;
     };
-    // SAFETY: one borrow, taken after the dialog has closed.
-    let exported = unsafe {
-        with_text(hwnd, |text| {
-            let options = grind_print::Options {
-                paper: None,
-                title: Some(stem.clone()),
-            };
-            grind_print::export(&text.app, grind_print::fonts_for(&text.app), &options)
-        })
-    };
+    let exported = with_text(hwnd, |text| {
+        let options = grind_print::Options {
+            paper: None,
+            title: Some(stem.clone()),
+        };
+        grind_print::export(&text.app, grind_print::fonts_for(&text.app), &options)
+    });
     let (bytes, report) = match exported {
         Some(Ok(done)) => done,
         Some(Err(why)) => return dialog::error(hwnd, &why),
@@ -8974,16 +8426,13 @@ fn text_export_pdf(hwnd: HWND) {
             &format!("Could not write {}:\n\n{error}", path.display()),
         );
     }
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.say(Some(format!(
-                "Wrote {} — {}",
-                path.display(),
-                report.summary()
-            )));
-        });
-    }
+    with_text(hwnd, |text| {
+        text.say(Some(format!(
+            "Wrote {} — {}",
+            path.display(),
+            report.summary()
+        )));
+    });
     refresh(hwnd);
 }
 
@@ -8997,24 +8446,21 @@ fn text_typeset(
     grind_core::page::PageGeometry,
     String,
 )> {
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            let name = text
-                .path
-                .as_deref()
-                .or(text.imported.as_deref())
-                .and_then(Path::file_stem)
-                .map_or_else(
-                    || "Untitled".to_owned(),
-                    |s| s.to_string_lossy().into_owned(),
-                );
-            let options = grind_print::Options::default();
-            let (doc, setter) =
-                grind_print::typeset(&text.app, grind_print::fonts_for(&text.app), &options);
-            (doc, setter, text.app.page().unwrap_or_default(), name)
-        })
-    }
+    with_text(hwnd, |text| {
+        let name = text
+            .path
+            .as_deref()
+            .or(text.imported.as_deref())
+            .and_then(Path::file_stem)
+            .map_or_else(
+                || "Untitled".to_owned(),
+                |s| s.to_string_lossy().into_owned(),
+            );
+        let options = grind_print::Options::default();
+        let (doc, setter) =
+            grind_print::typeset(&text.app, grind_print::fonts_for(&text.app), &options);
+        (doc, setter, text.app.page().unwrap_or_default(), name)
+    })
 }
 
 /// File ▸ Print Preview — every page as it prints (`doc/pdf-export.md` §4); Print… in it prints.
@@ -9101,30 +8547,24 @@ fn text_print(hwnd: HWND) {
         let _ = DeleteDC(dc);
         ok
     };
-    // SAFETY: one borrow, no dialog.
-    unsafe {
-        with_text(hwnd, |text| {
-            text.say(Some(if printed {
-                format!("Sent {} page(s) to the printer.", doc.pages.len())
-            } else {
-                "The printer did not take the document.".to_owned()
-            }));
-        });
-    }
+    with_text(hwnd, |text| {
+        text.say(Some(if printed {
+            format!("Sent {} page(s) to the printer.", doc.pages.len())
+        } else {
+            "The printer did not take the document.".to_owned()
+        }));
+    });
     refresh(hwnd);
 }
 
 fn text_history(hwnd: HWND, undo: bool) {
-    // SAFETY: one borrow. `App::undo` notifies, and the observer posts rather than sends.
-    unsafe {
-        with_text(hwnd, |text| {
-            // Whatever the banner said was about the document as it was.
-            if text.editor.history(&text.app, undo) {
-                text.say(None);
-                text.reveal();
-            }
-        });
-    }
+    with_text(hwnd, |text| {
+        // Whatever the banner said was about the document as it was.
+        if text.editor.history(&text.app, undo) {
+            text.say(None);
+            text.reveal();
+        }
+    });
     refresh(hwnd);
 }
 
@@ -9132,45 +8572,38 @@ fn text_history(hwnd: HWND, undo: bool) {
 /// travels, one `\r\n` per block — what every program here reads. Formatting does not, there being
 /// no `CF_RTF` or `HTML Format` writer: a named gap.
 fn text_copy(hwnd: HWND, cut: bool) {
-    // SAFETY: one borrow, released before the clipboard is opened — `clipboard.rs` is the only
-    // file that opens it and it does so with nothing else borrowed.
-    let copied = unsafe {
-        with_text(hwnd, |text| {
-            if !text.has_selection() {
-                return None;
+    let copied = with_text(hwnd, |text| {
+        if !text.has_selection() {
+            return None;
+        }
+        let (from, to) = text.range();
+        let mut out = String::new();
+        for block in from.block..=to.block.min(text.app.block_count().saturating_sub(1)) {
+            let line: Vec<char> = text.block_text(block).chars().collect();
+            let start = if block == from.block {
+                from.offset.min(line.len())
+            } else {
+                0
+            };
+            let end = if block == to.block {
+                to.offset.min(line.len())
+            } else {
+                line.len()
+            };
+            if block > from.block {
+                out.push_str("\r\n");
             }
-            let (from, to) = text.range();
-            let mut out = String::new();
-            for block in from.block..=to.block.min(text.app.block_count().saturating_sub(1)) {
-                let line: Vec<char> = text.block_text(block).chars().collect();
-                let start = if block == from.block {
-                    from.offset.min(line.len())
-                } else {
-                    0
-                };
-                let end = if block == to.block {
-                    to.offset.min(line.len())
-                } else {
-                    line.len()
-                };
-                if block > from.block {
-                    out.push_str("\r\n");
-                }
-                out.extend(&line[start.min(end)..end]);
-            }
-            Some(out)
-        })
-    }
+            out.extend(&line[start.min(end)..end]);
+        }
+        Some(out)
+    })
     .flatten();
     let Some(text) = copied else { return };
     clipboard::set_text(hwnd, &text);
     if cut {
-        // SAFETY: a fresh borrow, taken after the clipboard call rather than across it.
-        unsafe {
-            with_text(hwnd, |pane| {
-                text_drop_selection(pane);
-            });
-        }
+        with_text(hwnd, |pane| {
+            text_drop_selection(pane);
+        });
         refresh(hwnd);
     }
 }

@@ -354,6 +354,7 @@ mod windows_impl {
         // Every label here stands on a ground already painted — the backdrop or a card — so GDI
         // must not fill a box behind it; its default is `OPAQUE`, which drew pale rectangles
         // behind the subtitle and the hint.
+        // SAFETY: `dc` is the paint call's live device context.
         unsafe {
             SetBkMode(dc, TRANSPARENT);
         }

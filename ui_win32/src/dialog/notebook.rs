@@ -123,14 +123,11 @@ pub(super) fn control(
             );
         }
     }
-    // SAFETY: one borrow, no dispatch.
-    unsafe {
-        with_modal(popup, |modal| {
-            if let Body::Tape(body) = &mut modal.body {
-                body.rich = is_rich;
-            }
-        });
-    }
+    with_modal(popup, |modal| {
+        if let Body::Tape(body) = &mut modal.body {
+            body.rich = is_rich;
+        }
+    });
     edit
 }
 
@@ -393,25 +390,22 @@ pub(super) fn click(popup: HWND, lparam: LPARAM) -> bool {
     let x = f64::from(lparam.0 as i16);
     let y = f64::from((lparam.0 >> 16) as i16);
     let client = gdi::client_rect(popup);
-    // SAFETY: one borrow, no dispatch inside it.
-    let Some(Some(control)) = (unsafe {
-        with_modal(popup, |modal| {
-            let frame = modal::frame(
-                f64::from(client.right),
-                f64::from(client.bottom),
-                modal.dpi,
-                !modal.title.is_empty(),
-            );
-            let layout = Layout::of(frame.body, modal.dpi);
-            let control = modal.control;
-            let Body::Tape(body) = &mut modal.body else {
-                return None;
-            };
-            let shown = layout.hit(x, y)?;
-            let row = *body.editor.rows().get(body.top + shown)?;
-            body.editor.click(row);
-            Some(control)
-        })
+    let Some(Some(control)) = with_modal(popup, |modal| {
+        let frame = modal::frame(
+            f64::from(client.right),
+            f64::from(client.bottom),
+            modal.dpi,
+            !modal.title.is_empty(),
+        );
+        let layout = Layout::of(frame.body, modal.dpi);
+        let control = modal.control;
+        let Body::Tape(body) = &mut modal.body else {
+            return None;
+        };
+        let shown = layout.hit(x, y)?;
+        let row = *body.editor.rows().get(body.top + shown)?;
+        body.editor.click(row);
+        Some(control)
     }) else {
         return false;
     };

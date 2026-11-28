@@ -366,6 +366,14 @@ That is also why this shell needs no "a load is not an edit" flag, where `ui_she
 the observer is registered on the `App` after the file has been read, so during a load there is
 nobody to tell.
 
+**The rule is checked, not trusted.** The window's state and each modal's live in a thread-local
+`RefCell` rather than behind a `GWLP_USERDATA` pointer, so a borrow taken while another is live
+is refused (and panics in a debug build) instead of aliasing. Driving the shell under Wine with
+that check in place found a third case: `SetScrollInfo` showing or hiding a bar resizes the
+client area and Windows sends `WM_SIZE` from inside the call, which `sync_scrollbars` made while
+borrowed. A call Windows answers synchronously now goes through `after_borrow`, run once the
+borrow is released.
+
 There is one more thing `dialog.rs` holds and the plan did not anticipate: a **text prompt**,
 for naming a sheet. `MessageBoxW` cannot ask for a string and this binary has no resources, so
 `DialogBoxIndirect` would mean building a `DLGTEMPLATE` by hand — more code than a window and
@@ -653,7 +661,7 @@ ui_win32/
   src/
     main.rs           *   argv, kind sniff, a message box for errors before a window exists
     args.rs           *   the command line as a pure function (W0)
-    win.rs           [W]* the class, the wndproc, the message loop, GWLP_USERDATA, the two
+    win.rs           [W]* the class, the wndproc, the message loop, the window's state, the two
                           child EDITs (name box and editor), the menu bar, the verbs, and the
                           windowless render path
     gdi.rs           [W]* RAII wrappers for fonts and brushes; the back buffer; and the DIB
@@ -1264,12 +1272,11 @@ whole reason it exists.
   in lock entries and cold-build seconds. If it is bad, `windows-sys` (raw FFI, no COM) is the
   fallback and the price is `IFileDialog` — decision 7 would revert to `GetOpenFileNameW` and
   the old-style dialog.
-- **`unsafe`, for the first time in this workspace.** There are exactly three `unsafe` blocks in
-  the repository today and all three are `std::env::set_var` in one test in
-  `core/src/locale.rs`. A window procedure storing a `Box` pointer in `GWLP_USERDATA` is the
-  standard Win32 arrangement and it is still unsafe. Mitigations: it is confined to the `[W]`
-  files, decision 7 is a written rule rather than a habit, and every GDI object gets an RAII
-  wrapper in `gdi.rs` because a leaked `HFONT` per keystroke is the classic version of this bug.
+- **`unsafe`, for the first time in this workspace.** Every Win32 call is `unsafe` in the
+  `windows` crate. Mitigations: it is confined to the `[W]` files, each block says why it is
+  sound, the window's state is reached through a checked `RefCell` rather than a raw pointer
+  (decision 7), and every GDI object gets an RAII wrapper in `gdi.rs` because a leaked `HFONT`
+  per keystroke is the classic version of this bug.
 - **Two panes double the surface.** Mitigation is `ui_tui`'s shape exactly: a `Shell` trait with
   three methods for the *message loop*, and no attempt at an abstraction over documents. The
   core's own `core/src/observer.rs` records why there is no `Editor` trait yet; this shell is
