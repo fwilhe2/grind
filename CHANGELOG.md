@@ -48,6 +48,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Fixes
 
+- Zooming the spreadsheet in the browser (Ctrl+wheel, Ctrl+plus and minus) changes the size the
+  cells are drawn at again, not only how many fit.
 - `PERCENTRANK` rounds to significant digits, as LibreOffice does: a small rank such as 0.00333
   no longer comes out as 0.003.
 

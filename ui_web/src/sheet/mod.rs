@@ -318,8 +318,16 @@ impl Ui {
         // is clipped at the document's width, and a number that no longer fits is `###`
         // (`hash_overflowing`).
         let total: f64 = shown.iter().map(|&col| widths.size(col)).sum();
-        if let Some(table) = self.dom.cols.parent_element() {
-            table.set_attribute("style", &format!("width:calc(3.5rem + {total:.1}px)"))?;
+        // The width alone: the table's style also carries the zoom (`zoom_to`).
+        if let Some(table) = self
+            .dom
+            .cols
+            .parent_element()
+            .and_then(|table| table.dyn_into::<HtmlElement>().ok())
+        {
+            table
+                .style()
+                .set_property("width", &format!("calc(3.5rem + {total:.1}px)"))?;
         }
 
         // Column headers. Rebuilt with the body, because a horizontal scroll
