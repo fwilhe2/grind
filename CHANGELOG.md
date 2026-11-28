@@ -15,6 +15,8 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- *Paste Transposed* turns the rows on the clipboard into columns as they land, in the
+  GNOME window, and `grind sheet paste --transpose` does the same.
 - Dragging a selection's fill handle continues what it starts: `1, 2` goes on as `3, 4, 5`,
   a date steps by a day, and dates a month apart or on months' last days go on by months.
   New cells take the format and style of the cells they continue, and the whole drag is one

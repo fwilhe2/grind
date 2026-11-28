@@ -2698,7 +2698,16 @@ fn actions() -> Vec<Verb> {
         // `win.` actions so the context menu and the palette reach them.
         verb("copy", &[], "Copy", "Selection", |ui| ui.grid.copy(false)),
         verb("cut", &[], "Cut", "Selection", |ui| ui.grid.copy(true)),
-        verb("paste", &[], "Paste", "Selection", |ui| ui.grid.paste()),
+        verb("paste", &[], "Paste", "Selection", |ui| {
+            ui.grid.paste(false);
+        }),
+        verb(
+            "paste-transposed",
+            &[],
+            "Paste Transposed",
+            "Selection",
+            |ui| ui.grid.paste(true),
+        ),
         verb("copy-value", &[], "Copy Value", "Selection", |ui| {
             ui.grid.copy_value();
         }),

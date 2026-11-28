@@ -1377,6 +1377,9 @@ pub(crate) enum Command {
         /// Tab-separated rows, one per line; "-" reads them from stdin
         #[arg(allow_hyphen_values = true)]
         rows: String,
+        /// Turn the rows into columns before they land, as Paste Special's Transpose does
+        #[arg(long)]
+        transpose: bool,
         /// Read a formula as a formula bar spells it — =SUM(B2:B4), Data.A1 — and store its
         /// OpenFormula form, =SUM([.B2:.B4]); a formula that will not convert is refused
         #[arg(long)]

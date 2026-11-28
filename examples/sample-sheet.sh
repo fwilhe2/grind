@@ -83,6 +83,8 @@ printf 'rent increase\nstarting July' | run set "$book" H2 -   # from stdin, new
 say "paste: tab-separated rows into a rectangle, in one undo step"
 printf 'Subscriptions\t45\nCharity\t25\n' | run paste "$book" A21 -
 sheet view "$book" A21:B22 --raw
+# Paste Special's Transpose: a row on the clipboard lands as a column.
+printf 'Q1\tQ2\tQ3\tQ4\n' | run paste "$book" P1 - --transpose
 
 say "formulas: OpenFormula syntax, stored verbatim"
 run set "$book" A8 'Total'

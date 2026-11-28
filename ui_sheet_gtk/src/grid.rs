@@ -188,8 +188,8 @@ impl Grid {
         self.imp().copy(cut);
     }
 
-    pub fn paste(&self) {
-        self.imp().paste();
+    pub fn paste(&self, transpose: bool) {
+        self.imp().paste(transpose);
     }
 
     /// Clear what is selected — Delete's twin, one undo step (`App::clear_range`).
@@ -622,6 +622,7 @@ pub fn cell_menu_model() -> gio::Menu {
     clipboard.append(Some("Copy"), Some("win.copy"));
     clipboard.append(Some("Copy Value"), Some("win.copy-value"));
     clipboard.append(Some("Paste"), Some("win.paste"));
+    clipboard.append(Some("Paste Transposed"), Some("win.paste-transposed"));
     model.append_section(None, &clipboard);
 
     let edits = gio::Menu::new();
@@ -2221,7 +2222,7 @@ mod imp {
                     return glib::Propagation::Stop;
                 }
                 Action::Paste => {
-                    self.paste();
+                    self.paste(false);
                     return glib::Propagation::Stop;
                 }
                 Action::CopyValue => {
@@ -2658,7 +2659,7 @@ mod imp {
         /// Read the clipboard and fill from the selection's top-left corner — asynchronously,
         /// since another process may own the data. Every cell goes through the typing rule in one
         /// `Action::Batch`, so a paste is one undo step.
-        pub fn paste(&self) {
+        pub fn paste(&self, transpose: bool) {
             let (start, _) = self.selection.get().rect();
             self.obj().clipboard().read_text_async(
                 gtk::gio::Cancellable::NONE,
@@ -2669,7 +2670,10 @@ mod imp {
                         let Ok(Some(text)) = result else { return };
                         // Display form back to canonical, cell by cell — the same step
                         // `commit` takes for a single cell (`grind_sheet::clip`).
-                        let rows = grind_sheet::clip::parse_rows(&text);
+                        let mut rows = grind_sheet::clip::parse_rows(&text);
+                        if transpose {
+                            rows = grind_sheet::clip::transpose(&rows);
+                        }
                         let imp = grid.imp();
                         let app = imp.app.borrow().clone();
                         let Some(app) = app else { return };

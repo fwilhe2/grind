@@ -31,7 +31,8 @@ stops ratcheting.
 
 - `enter` — `grind sheet set` (the typing rule: `=` a formula, `'` text, empty clears, `--recalc`
   recalculates the document in the same undo step)
-- `enter_range` — `grind sheet paste <anchor> <tsv>`, or `-` to read the rows from stdin
+- `enter_range` — `grind sheet paste <anchor> <tsv>`, or `-` to read the rows from stdin;
+  `--transpose` turns them into columns first (`clip::transpose`, *Paste Transposed*)
 - `import_csv` — `grind sheet import-csv <csv> [--at <anchor>]`, or `-` for stdin: the same
   paste with a parser in front of it. `--delimiter` (sniffed when absent, so a comma, semicolon
   or tab file all just open), `--locale` for `1.234,50`, `--text`, `--formulas`, `--dates`,

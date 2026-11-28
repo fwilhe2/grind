@@ -229,16 +229,20 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             file,
             anchor,
             rows,
+            transpose,
             display,
             recalc,
         } => {
             let app = load(file, cli)?;
             let (sheet, pos, _) = single(&app, anchor)?;
             let text = read_stdin_if_dash(rows)?;
-            let rows: Vec<Vec<String>> = text
+            let mut rows: Vec<Vec<String>> = text
                 .lines()
                 .map(|line| line.split('\t').map(|cell| typed(cell, *display)).collect())
                 .collect::<Result<_, _>>()?;
+            if *transpose {
+                rows = grind_sheet::clip::transpose(&rows);
+            }
             let outcome = app.enter_range(sheet, pos, &rows, mode(*recalc)).say()?;
             if let Some(note) = outcome.note(app.locale().as_ref()) {
                 eprintln!("grind: {note}");

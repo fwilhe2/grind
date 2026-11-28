@@ -61,6 +61,20 @@ pub fn parse_rows(text: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// Rows turned into columns — Paste Special's *Transpose*. A short row's missing cells become
+/// empty ones, so the result is a rectangle.
+#[must_use]
+pub fn transpose(rows: &[Vec<String>]) -> Vec<Vec<String>> {
+    let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+    (0..width)
+        .map(|col| {
+            rows.iter()
+                .map(|row| row.get(col).cloned().unwrap_or_default())
+                .collect()
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,6 +91,21 @@ mod tests {
         app.enter(0, Pos::new(1, 1), "2", RecalcMode::Document)
             .unwrap();
         app
+    }
+
+    #[test]
+    fn transposing_turns_rows_into_columns() {
+        let rows = |cells: &[&[&str]]| -> Vec<Vec<String>> {
+            cells
+                .iter()
+                .map(|row| row.iter().map(|c| (*c).to_owned()).collect())
+                .collect()
+        };
+        assert_eq!(
+            transpose(&rows(&[&["a", "b", "c"], &["1", "2"]])),
+            rows(&[&["a", "1"], &["b", "2"], &["c", ""]])
+        );
+        assert_eq!(transpose(&[]), Vec::<Vec<String>>::new());
     }
 
     #[test]

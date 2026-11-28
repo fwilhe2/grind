@@ -151,6 +151,7 @@ than as a cursor on a hidden row.
 | Clear a cell or a range | ● | ● | ● | ● | ● | ● |
 | Clear only the formula, keeping the value | ● | ● ᵍᶠ | ● ᵗᵘ | ● | ● | ● |
 | Paste a rectangle of tab-separated rows | ● | ● | ● | ● | ● | ● |
+| Paste transposed — rows landing as columns | ● | ● | ○ | ○ | ○ | ○ |
 | System clipboard (cut / copy / paste) | — | ● | ◐ ᵇ | ● | ● | ● |
 | Copy Value — the formatted result, not the formula | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | Fill down / fill right | ● | ● | ● | ● | ● | ● |
