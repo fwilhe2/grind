@@ -30,6 +30,10 @@ const APPS: [App; 3] = [
                 include_str!("../../sheet/src/app/charts.rs"),
             ),
             (
+                "sheet/src/app/fill.rs",
+                include_str!("../../sheet/src/app/fill.rs"),
+            ),
+            (
                 "sheet/src/app/formatting.rs",
                 include_str!("../../sheet/src/app/formatting.rs"),
             ),

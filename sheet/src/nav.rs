@@ -274,6 +274,36 @@ pub fn fill_lines(start: Pos, end: Pos, down: bool) -> Vec<(Pos, Pos, Pos)> {
     }
 }
 
+/// Where a fill-handle drag points, given the selection and the cell under the pointer: which way
+/// to fill and the last line. **One axis at a time**, the one the pointer left the selection
+/// furthest on, a tie going vertical. `None` while the pointer is inside the selection.
+#[must_use]
+pub fn fill_target(start: Pos, end: Pos, at: Pos) -> Option<(Dir, u32)> {
+    // Horizontals first, because `max_by_key` keeps the *last* of equal keys — which is how
+    // the tie goes to the vertical.
+    let (distance, dir, line) = [
+        (at.col.saturating_sub(end.col), Dir::Right, at.col),
+        (start.col.saturating_sub(at.col), Dir::Left, at.col),
+        (at.row.saturating_sub(end.row), Dir::Down, at.row),
+        (start.row.saturating_sub(at.row), Dir::Up, at.row),
+    ]
+    .into_iter()
+    .max_by_key(|(distance, ..)| *distance)?;
+    (distance > 0).then_some((dir, line))
+}
+
+/// What a fill from `start`..`end` to `line` covers, source included — the outline a
+/// handle drag paints, and the selection it leaves behind.
+#[must_use]
+pub fn fill_rect(start: Pos, end: Pos, dir: Dir, line: u32) -> (Pos, Pos) {
+    match dir {
+        Dir::Down => (start, Pos::new(line, end.col)),
+        Dir::Up => (Pos::new(line, start.col), end),
+        Dir::Right => (start, Pos::new(end.row, line)),
+        Dir::Left => (Pos::new(start.row, line), end),
+    }
+}
+
 /// Whether a cell of `sheet` holds anything, for [`moved`]'s `occupied`.
 ///
 /// ponytail: a data edge across a sparse million-row sheet is a million point reads; the fix is a
@@ -451,6 +481,41 @@ fn data_edge(from: Pos, dir: Dir, extent: Extent, occupied: &dyn Fn(Pos) -> bool
 
 #[cfg(test)]
 mod tests {
+    /// The handle drag: one axis, the furthest one, and nothing while still inside.
+    #[test]
+    fn a_handle_drag_fills_the_axis_it_travelled_furthest_on() {
+        // B2:C3 selected.
+        let (start, end) = (Pos::new(1, 1), Pos::new(2, 2));
+        assert_eq!(
+            fill_target(start, end, Pos::new(6, 2)),
+            Some((Dir::Down, 6))
+        );
+        assert_eq!(
+            fill_target(start, end, Pos::new(1, 9)),
+            Some((Dir::Right, 9))
+        );
+        assert_eq!(fill_target(start, end, Pos::new(0, 1)), Some((Dir::Up, 0)));
+        assert_eq!(
+            fill_target(start, end, Pos::new(2, 0)),
+            Some((Dir::Left, 0))
+        );
+        // Diagonal: three rows down beats one column right.
+        assert_eq!(
+            fill_target(start, end, Pos::new(5, 3)),
+            Some((Dir::Down, 5))
+        );
+        assert_eq!(
+            fill_target(start, end, Pos::new(3, 6)),
+            Some((Dir::Right, 6))
+        );
+        // A tie goes to the vertical, and inside the selection nothing happens.
+        assert_eq!(
+            fill_target(start, end, Pos::new(4, 4)),
+            Some((Dir::Down, 4))
+        );
+        assert_eq!(fill_target(start, end, Pos::new(2, 1)), None);
+    }
+
     #[test]
     fn a_merge_is_one_cell_to_the_arrow_keys() {
         // B2:D2 and a block B4:C5.

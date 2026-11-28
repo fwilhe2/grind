@@ -355,6 +355,19 @@ pub(super) fn run_sheet(command: &Command, cli: &Cli) -> Result<Report, Failure>
             finish(&app, cli, file, outcome.cells > 0)
         }
 
+        Command::Extend {
+            file,
+            range,
+            to,
+            recalc,
+        } => {
+            let app = load(file, cli)?;
+            let (sheet, start, end) = a1::resolve(&app, &a1::parse(range).say()?).say()?;
+            let (_, to, _) = single(&app, to)?;
+            let outcome = app.extend(sheet, start, end, to, mode(*recalc)).say()?;
+            finish(&app, cli, file, outcome.cells > 0)
+        }
+
         Command::Eval {
             file,
             address,

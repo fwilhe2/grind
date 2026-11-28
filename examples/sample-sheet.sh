@@ -131,6 +131,20 @@ run fill "$book" E2 E3:E7
 sheet get "$book" D5 --formula
 sheet get "$book" E5 --formula
 
+# A fill-handle drag continues what the range starts: 1, 2 goes on as 3, 4, …, and two dates on
+# months' last days go on by months, staying on them. Each new cell takes its seed's format.
+say "extend: a fill-handle drag, continuing a series"
+run set "$book" N1 'Week'
+run set "$book" N2 1
+run set "$book" N3 2
+run set "$book" O1 'Month end'
+run format "$book" O2:O3 date
+run set "$book" O2 2026-01-31
+run set "$book" O3 2026-02-28
+run extend "$book" N2:O3 N13
+sheet get "$book" N13
+sheet get "$book" O13
+
 # Beyond the Small Group: functions moved in one decision at a time, each with the evidence
 # for it written down (doc/small-group.md's second half, doc/function-coverage.md).
 say "functions beyond the Small Group: the classic band every real spreadsheet calls"

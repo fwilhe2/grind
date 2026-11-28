@@ -39,6 +39,8 @@ stops ratcheting.
 - `fill` — `grind sheet fill <source> <range>`, replicating one cell across a rectangle with its
   relative references shifted and its absolute ones left alone — "extend a calculation into
   the next cell"
+- `extend` — `grind sheet extend <range> <to>`, a fill-handle drag: each line of the range goes
+  on as a series where it defines one, and is repeated otherwise
 - `preview` — `grind sheet eval <address> <formula>`, which stores nothing and writes nothing
 - `check_formula` — `grind sheet eval`, which refuses what `set` would, with the same message
 - `overlay` — `grind sheet eval … --with ADDRESS=VALUE`, repeatable: a cell holding something

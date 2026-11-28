@@ -1153,6 +1153,49 @@ fn a_fill_shifts_relative_references_and_copies_plain_values() {
     assert_eq!(value_at(&app, 0, p(1, 3)).unwrap(), CellValue::Number(99.0));
 }
 
+/// A fill-handle drag: numbers with a step go on in both directions, a date that is a month-end
+/// stays one with its format, a formula is repeated shifted, and the whole drag is one undo step.
+#[test]
+fn extending_a_selection_continues_its_series() {
+    let app = App::new();
+    app.enter(0, p(0, 0), "1", RecalcMode::No).unwrap();
+    app.enter(0, p(1, 0), "2", RecalcMode::No).unwrap();
+    let date = grind_sheet::numfmt::preset(grind_sheet::numfmt::Kind::Date, 0, false, "");
+    app.set_format(0, p(0, 1), p(1, 1), Some(date)).unwrap();
+    app.enter(0, p(0, 1), "2026-01-31", RecalcMode::No).unwrap();
+    app.enter(0, p(1, 1), "2026-02-28", RecalcMode::No).unwrap();
+    app.enter(0, p(0, 2), "=[.A1]*10", RecalcMode::No).unwrap();
+    app.enter(0, p(1, 2), "note", RecalcMode::No).unwrap();
+
+    let outcome = app
+        .extend(0, p(0, 0), p(1, 2), p(4, 0), RecalcMode::Document)
+        .unwrap();
+    assert_eq!(outcome.cells, 9, "three rows of three columns");
+    let shown = |row, col| app.value_text(0, p(row, col)).unwrap();
+    assert_eq!([shown(2, 0), shown(3, 0), shown(4, 0)], ["3", "4", "5"]);
+    assert_eq!(
+        [shown(2, 1), shown(3, 1), shown(4, 1)],
+        ["2026-03-31", "2026-04-30", "2026-05-31"]
+    );
+    assert_eq!(app.input_text(0, p(2, 2)).unwrap(), "=A3*10");
+    assert_eq!(shown(2, 2), "30");
+    assert_eq!(shown(3, 2), "note");
+
+    assert!(app.undo());
+    assert_eq!(value_at(&app, 0, p(2, 0)).unwrap(), CellValue::Empty);
+
+    // Upwards from A3:A4 the series runs backwards; inside the selection nothing happens.
+    app.enter(0, p(2, 3), "10", RecalcMode::No).unwrap();
+    app.enter(0, p(3, 3), "20", RecalcMode::No).unwrap();
+    app.extend(0, p(2, 3), p(3, 3), p(0, 3), RecalcMode::No)
+        .unwrap();
+    assert_eq!([shown(0, 3), shown(1, 3)], ["-10", "0"]);
+    let none = app
+        .extend(0, p(2, 3), p(3, 3), p(3, 3), RecalcMode::No)
+        .unwrap();
+    assert_eq!(none.cells, 0);
+}
+
 #[test]
 fn value_text_is_a_formulas_result_not_its_source() {
     let app = App::new();

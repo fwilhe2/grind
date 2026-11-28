@@ -51,6 +51,7 @@ pub mod look;
 pub mod nav;
 pub mod place;
 mod reading;
+mod series;
 pub mod spell;
 pub mod summary;
 pub mod tracks;

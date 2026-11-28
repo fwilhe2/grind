@@ -15,6 +15,10 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
+- Dragging a selection's fill handle continues what it starts: `1, 2` goes on as `3, 4, 5`,
+  a date steps by a day, and dates a month apart or on months' last days go on by months.
+  New cells take the format and style of the cells they continue, and the whole drag is one
+  undo step. `grind sheet extend` does the same from the command line.
 - F4 cycles the `$` markers of a reference while typing a formula in every spreadsheet
   window, not only on GNOME.
 - A number format that shows figures in thousands or millions (`#,##0,` in Excel, a display

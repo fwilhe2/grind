@@ -31,13 +31,15 @@ and names what is worth building and what stays out.
 
 In the order they are built.
 
-1. **F4 in every window.** `formula::assist::cycle_absolute` is the core's; each shell binds
-   the key over its own edit line.
-2. **Filling a series.** A fill copies a value today. Two or more selected numbers or dates
-   define a step, and a fill continues it; one date steps by a day; a date that is the last day
-   of its month steps by a month and stays on month-ends. Text, formulas and anything without a
-   constant step are copied as before. Nothing is guessed from a single number, which Excel
-   copies too.
+1. **F4 in every window** — built. `formula::assist::cycle_absolute` is the core's; each shell
+   binds the key over its own edit line.
+2. **Filling a series** — built: `App::extend` (`sheet/src/series.rs`), the GNOME window's fill
+   handle and `grind sheet extend`. Two or more numbers with one difference between each pair
+   go on by it, rounded to their own decimals; one date steps by a day; dates on the same day of
+   each month go on by months (the month's last day when it is shorter), and dates on months'
+   last days stay on them. Anything else — text, formulas, an uneven line, one number — is
+   repeated, a formula's relative references shifted. Each new cell takes the format and style
+   of the cell it continues. Ctrl+D and Ctrl+R still copy: a series is the drag's, as in Excel.
 3. **Paste Special.** A pasted rectangle transposed; and a pasted number added to, subtracted
    from, multiplied into or divided into the cells under it — the talk's price rise. Each one
    undo step, with a CLI verb (R9).

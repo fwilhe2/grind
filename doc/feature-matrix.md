@@ -155,6 +155,7 @@ than as a cursor on a hidden row.
 | Copy Value — the formatted result, not the formula | ● | ● | ● ᵗᵘ | ● | ● | ● |
 | Fill down / fill right | ● | ● | ● | ● | ● | ● |
 | Fill one cell across a rectangle (references shifted) | ● | ● | ● | ● | ● | ● |
+| Drag the fill handle to continue a series — `1, 2` → `3, 4`, month-ends by month | ● | ● | ○ | ○ | ○ | ○ |
 | Recalculate | ● | ● | ● | ● | ● | ● ² |
 | Stale-value warning | ● | ● | ● | ● | ● | ● |
 | Evaluate a formula without storing it | ● | ● ᵈ | ● | ● ᵖᵃ | ● | ● |

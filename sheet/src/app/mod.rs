@@ -6,6 +6,7 @@
 //! history, the document and reading it are in the crate root.
 
 mod charts;
+mod fill;
 mod formatting;
 mod names;
 mod spelling;

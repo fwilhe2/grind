@@ -1485,6 +1485,23 @@ pub(crate) enum Command {
         recalc: bool,
     },
 
+    /// Extend a range the way dragging its fill handle does, continuing a series
+    ///
+    /// Each row or column of the range goes on as a series where it defines one: 1, 2 becomes
+    /// 3, 4, 5; one date steps by a day; dates on the same day of each month, or on each month's
+    /// last day, go on by months. Anything else is repeated, a formula's relative references
+    /// shifted. New cells take the number format and style of the cells they continue.
+    Extend {
+        file: PathBuf,
+        /// The range to continue, e.g. A1:A2
+        range: String,
+        /// The last cell to fill to, below, above or beside the range, e.g. A12
+        to: String,
+        /// Recalculate the document in the same undo step, unless that would spoil a cell
+        #[arg(long)]
+        recalc: bool,
+    },
+
     /// Evaluate a formula against the document without storing anything
     ///
     /// The address is where the formula would sit, which is what its relative references

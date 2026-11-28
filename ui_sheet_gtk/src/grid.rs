@@ -696,6 +696,7 @@ mod imp {
 
     use grind_sheet::RecalcMode;
     use grind_sheet::formula::display;
+    use grind_sheet::nav;
     use grind_sheet::style;
 
     use crate::geom::{Hit, Rect};
@@ -850,7 +851,7 @@ mod imp {
         pub chart_drag_rect: Cell<Option<Rect>>,
         /// Whether the drag in progress started on the fill handle.
         pub filling: Cell<bool>,
-        /// Where that drag is pointing ([`keymap::fill_target`]), painted as an outline
+        /// Where that drag is pointing ([`nav::fill_target`]), painted as an outline
         /// until the pointer is released and it becomes the fill.
         pub fill_to: Cell<Option<(Dir, u32)>>,
         pub on_selection: RefCell<Vec<SelectionHook>>,
@@ -2631,10 +2632,8 @@ mod imp {
             self.obj().queue_draw();
         }
 
-        /// The end of a fill-handle drag: the selection replicated into the cells dragged over,
-        /// and grown to cover them — the only fill that goes up or left. The source is the edge
-        /// facing the drag, each line its own, with [`Self::fill`]'s one-undo-entry-per-line
-        /// ceiling.
+        /// The end of a fill-handle drag: the selection extended into the cells dragged over
+        /// (`App::extend`), a series where it defines one, and grown to cover them.
         fn commit_fill(&self) {
             self.filling.set(false);
             let Some((dir, line)) = self.fill_to.take() else {
@@ -2643,32 +2642,12 @@ mod imp {
             let app = self.app.borrow().clone();
             let Some(app) = app else { return };
             let (start, end) = self.selection.get().rect();
-            let sheet = self.sheet.get();
-            let fill = |source: Pos, from: Pos, to: Pos| {
-                let _ = app.fill(sheet, source, from, to, RecalcMode::Document);
+            let (a, b) = nav::fill_rect(start, end, dir, line);
+            let to = match dir {
+                Dir::Down | Dir::Right => b,
+                Dir::Up | Dir::Left => a,
             };
-            match dir {
-                Dir::Down | Dir::Up => {
-                    let (src, from, to) = match dir {
-                        // `line < start.row` here, so the subtraction cannot wrap.
-                        Dir::Up => (start.row, line, start.row - 1),
-                        _ => (end.row, end.row + 1, line),
-                    };
-                    for col in start.col..=end.col {
-                        fill(Pos::new(src, col), Pos::new(from, col), Pos::new(to, col));
-                    }
-                }
-                Dir::Right | Dir::Left => {
-                    let (src, from, to) = match dir {
-                        Dir::Left => (start.col, line, start.col - 1),
-                        _ => (end.col, end.col + 1, line),
-                    };
-                    for row in start.row..=end.row {
-                        fill(Pos::new(row, src), Pos::new(row, from), Pos::new(row, to));
-                    }
-                }
-            }
-            let (a, b) = keymap::fill_rect(start, end, dir, line);
+            let _ = app.extend(self.sheet.get(), start, end, to, RecalcMode::Document);
             self.set_selection(Selection {
                 anchor: a,
                 active: b,
@@ -3588,7 +3567,7 @@ mod imp {
                 let (start, end) = self.selection.get().rect();
                 if let Hit::Cell { row, col } = self.geom().hit(x, y) {
                     self.fill_to
-                        .set(keymap::fill_target(start, end, Pos::new(row, col)));
+                        .set(nav::fill_target(start, end, Pos::new(row, col)));
                     self.obj().queue_draw();
                 }
                 return;
@@ -4040,7 +4019,7 @@ mod imp {
             }
             let (start, end) = f.selection.rect();
             if let Some((dir, line)) = self.fill_to.get() {
-                let (a, b) = keymap::fill_rect(start, end, dir, line);
+                let (a, b) = nav::fill_rect(start, end, dir, line);
                 let top_left = f.geom.cell_rect(a.row, a.col);
                 let bottom_right = f.geom.cell_rect(b.row, b.col);
                 outline(
