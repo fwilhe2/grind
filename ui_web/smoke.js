@@ -727,6 +727,20 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   await frame();
   check("and down", shown(), "14");
 
+  // F4 cycles the `$` markers of the reference at the caret (`assist::cycle_absolute`).
+  type("=A1+B2");
+  byId("formula").setSelectionRange(6, 6);
+  const f4 = () =>
+    byId("formula").dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key: "F4", bubbles: true, cancelable: true })
+    );
+  f4();
+  check("F4 makes the reference at the caret absolute", byId("formula").value, "=A1+$B$2");
+  f4();
+  check("and then fixes only its row", byId("formula").value, "=A1+B$2");
+  press("Escape");
+  await frame();
+
   // --- charts ---------------------------------------------------------------
   //
   // Drawn as SVG from the same `ChartData` and the same scale the GTK shell uses.

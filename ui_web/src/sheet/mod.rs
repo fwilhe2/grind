@@ -865,6 +865,13 @@ impl Ui {
             event.prevent_default();
             return;
         }
+        if self.editing.get() && plain && key == "F4" {
+            event.prevent_default();
+            if let Err(error) = self.cycle_absolute() {
+                web_sys::console::error_1(&error);
+            }
+            return;
+        }
         if !matches!(key.as_str(), "Shift" | "Control" | "Alt" | "Meta") {
             self.pointing.replace(None);
         }
@@ -936,6 +943,31 @@ impl Ui {
         self.request_repaint();
         self.refresh_assist()?;
         Ok(true)
+    }
+
+    /// F4: `B2` → `$B$2` → `B$2` → `$B2` → `B2`, on the reference being pointed at or the one
+    /// under the caret. The pointed reference keeps its cell; only its spelling changes.
+    fn cycle_absolute(&self) -> Result<(), JsValue> {
+        let text = self.dom.formula.value();
+        let units = self.dom.formula.selection_start()?.unwrap_or(0) as usize;
+        let pending = self.pointing.borrow().clone();
+        let at = pending
+            .as_ref()
+            .map_or_else(|| utf16::byte_of(&text, units), |(span, _)| span.end);
+        let Some((span, replacement)) = grind_sheet::formula::assist::cycle_absolute(&text, at)
+        else {
+            return Ok(());
+        };
+        let placed = span.start..span.start + replacement.len();
+        let mut next = text;
+        next.replace_range(span, &replacement);
+        self.dom.formula.set_value(&next);
+        let caret = utf16::units_before(&next, placed.end) as u32;
+        self.dom.formula.set_selection_range(caret, caret)?;
+        if let Some((_, cell)) = pending {
+            self.pointing.replace(Some((placed, cell)));
+        }
+        self.refresh_assist()
     }
 
     pub fn apply(&self, action: Action) -> Result<(), JsValue> {

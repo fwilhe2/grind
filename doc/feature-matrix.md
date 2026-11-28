@@ -162,7 +162,7 @@ than as a cursor on a hidden row.
 | Autocomplete while typing a formula | ● ᶜ | ● | ● | ● | ● | ● |
 | Signature hint for the call the caret is in | ● ᶜ | ● | ● | ● | ● | ● |
 | Point mode — arrow keys build a reference | — | ● | ● ᵖᵐ | ● ᵖᵐ | ● ᵖᵐ | ● |
-| F4 cycles a reference's `$` markers | — | ● | ● | ○ | ○ | ○ |
+| F4 cycles a reference's `$` markers | — | ● | ● | ● | ○ | ○ |
 | Friendly formulas — `Sum(Number: B2:B7)` | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | Explain a nested formula, unfolded | ● | ● | ● ᵉˣ | ● ᵉˣ | ● | ● |
 | Every function as a browsable list | ● | ● ᶠᵍ | ● ᶠᵍ | ● ᶠⁿ | ● | ● |

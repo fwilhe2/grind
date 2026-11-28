@@ -15,7 +15,7 @@ lands, and the release workflow publishes the section as it stands.
 
 ### Changes
 
-- F4 cycles the `$` markers of a reference while typing a formula in the terminal too.
+- F4 cycles the `$` markers of a reference while typing a formula in the terminal and the browser too.
 - A number format that shows figures in thousands or millions (`#,##0,` in Excel, a display
   factor in ODF) shows them that way instead of in full, in every window, in `TEXT` and in
   files saved again.
