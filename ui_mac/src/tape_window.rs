@@ -71,6 +71,8 @@ fn frame_of(rect: Rect) -> NSRect {
     NSRect::new(NSPoint::new(rect.x, rect.y), NSSize::new(rect.w, rect.h))
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// The window's one view: the rows drawn, and a click on one moves the caret there.
     #[unsafe(super(NSView))]
@@ -164,6 +166,8 @@ define_class!(
     }
 );
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The field's delegate: every selector its field editor would act on comes here first.
     #[unsafe(super(NSObject))]

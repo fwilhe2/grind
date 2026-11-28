@@ -110,6 +110,8 @@ struct Pending {
 /// accent, as a pointed range in every spreadsheet is drawn in a colour of its own.
 pub const POINTED: Rgb = (0xff, 0x95, 0x00);
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The cell editor's delegate: every selector its field editor would act on comes here
     /// first, and `sheet/state.rs` decides.
@@ -560,6 +562,7 @@ impl Pane {
         if let Some(edit) = &ended {
             edit.hint.removeFromSuperview();
             if edit.in_bar {
+                // SAFETY: clearing the weak reference before its target goes.
                 unsafe { edit.field.setDelegate(None) }
             } else {
                 edit.field.removeFromSuperview();

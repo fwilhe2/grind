@@ -36,6 +36,8 @@ const STATUS_W: f64 = 400.0;
 /// The spelling-language picker's width — `🇵🇹  Português`, the longest row, and its arrows.
 const PICK_W: f64 = 150.0;
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// The name box's target: what Return in the box does. A control holds its target weakly, so
     /// the pane keeps this alive.
@@ -70,6 +72,8 @@ define_class!(
     }
 );
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// The spelling picker's target: a row chosen is a setting chosen, remembered for every
     /// spreadsheet exactly as Edit ▸ Spelling ▸ *Spelling Language…* remembers it.
@@ -173,6 +177,8 @@ pub fn attach_page(
     window.addTitlebarAccessoryViewController(&controller);
 }
 
+// SAFETY: `NSTextField` is the real superclass and each `#[unsafe(method)]` below has the Rust
+// types of its selector's Objective-C signature.
 define_class!(
     /// The formula bar: a read-out of the active cell at rest, and an editor of it once clicked —
     /// the same edit the cell editor is (`editor.rs`), in this field rather than over the cell.

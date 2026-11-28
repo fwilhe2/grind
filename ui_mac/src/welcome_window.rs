@@ -68,6 +68,8 @@ fn palette() -> Palette {
     }
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// The welcome window's one view.
     #[unsafe(super(NSView))]

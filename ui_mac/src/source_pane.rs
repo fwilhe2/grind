@@ -97,6 +97,8 @@ fn ns_range(range: std::ops::Range<usize>) -> NSRange {
     NSRange::new(range.start, range.end - range.start)
 }
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The source pane's text view delegate.
     #[unsafe(super(NSObject))]

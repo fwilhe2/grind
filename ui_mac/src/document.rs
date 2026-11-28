@@ -162,6 +162,8 @@ mod mac {
         NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
     }
 
+    // SAFETY: `NSDocument` is the real superclass and each `#[unsafe(method)]` below has the Rust
+    // types of its selector's Objective-C signature.
     define_class!(
         /// One open document, in one window.
         #[unsafe(super(NSDocument))]
@@ -653,6 +655,8 @@ mod mac {
         window
     }
 
+    // SAFETY: `NSDocumentController` is the real superclass and each `#[unsafe(method)]` below has
+    // the Rust types of its selector's Objective-C signature.
     define_class!(
         /// The shared document controller — the first one made is the shared one, which is why
         /// `app.rs` makes it before anything asks for it.

@@ -29,6 +29,8 @@ const SCALE: f64 = 2.0;
 /// The room over the picture the kind control stands in.
 const KINDS_ROW: f64 = 32.0;
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// The kind control's target: the chart drawn as each kind, and the view showing one of them.
     #[unsafe(super(NSObject))]

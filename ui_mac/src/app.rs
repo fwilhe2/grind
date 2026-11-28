@@ -47,6 +47,8 @@ pub struct Launch {
     tape: RefCell<Option<Retained<NSWindow>>>,
 }
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     #[unsafe(super(NSObject))]
     #[thread_kind = MainThreadOnly]

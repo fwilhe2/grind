@@ -579,6 +579,8 @@ fn ns_range(range: std::ops::Range<usize>) -> NSRange {
     NSRange::new(range.start, range.end.saturating_sub(range.start))
 }
 
+// SAFETY: `NSView` is the real superclass, each `#[unsafe(method)]` below has the Rust types of its
+// selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The page, as the scroll view's document view.
     #[unsafe(super(NSView))]

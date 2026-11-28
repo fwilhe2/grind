@@ -28,6 +28,8 @@ const ADVICE_H: f64 = 32.0;
 const PICTURE_H: f64 = 150.0;
 const GAP: f64 = 8.0;
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The short field's delegate: the advice under it, said again as it changes.
     #[unsafe(super(NSObject))]

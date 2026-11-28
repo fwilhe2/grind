@@ -661,6 +661,8 @@ pub struct Choice {
     values: Vec<String>,
 }
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// A filter button's menu's target: a row hides or shows its value, Show All drops the
     /// field's condition — each one `App::set_filter`, one undo step.
@@ -719,6 +721,8 @@ const CHART_LEGENDS: [(&str, Option<ChartLegend>); 5] = [
     ("Legend on the Left", Some(ChartLegend::Start)),
 ];
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// A chart's context menu's target: the pane and which chart.
     #[unsafe(super(NSObject))]
@@ -897,6 +901,8 @@ pub(crate) fn shifted(event: &NSEvent) -> bool {
     event.modifierFlags().contains(NSEventModifierFlags::Shift)
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// The cells, as the scroll view's document view.
     #[unsafe(super(NSView))]
@@ -1585,6 +1591,8 @@ impl GridView {
     }
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// The column letters, floating over the grid's top margin. A click selects the column; one
     /// on a column's right edge picks it up to be dragged wider or narrower, and a double-click
@@ -1662,6 +1670,8 @@ impl ColumnHeader {
     }
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// The row numbers, floating over the grid's left margin. A click selects the row; one on a
     /// row's bottom edge picks it up to be dragged, and a double-click there gives the row back
@@ -1739,6 +1749,8 @@ impl RowHeader {
     }
 }
 
+// SAFETY: `NSView` is the real superclass and each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature.
 define_class!(
     /// Where the two bands meet, over both, so neither's labels show through it.
     #[unsafe(super(NSView))]

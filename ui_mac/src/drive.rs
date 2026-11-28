@@ -704,8 +704,8 @@ mod mac {
                     .ok_or_else(|| "there is no document".to_owned())
                     .and_then(|document| document.choose_place(text)),
                 Step::Save => match document {
-                    // SAFETY: `saveDocument:` is an action, and a nil sender is allowed.
                     Some(document) => {
+                        // SAFETY: `saveDocument:` is an action, and a nil sender is allowed.
                         unsafe { document.saveDocument(None) };
                         Ok(())
                     }

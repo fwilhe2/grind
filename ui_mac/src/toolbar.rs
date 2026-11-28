@@ -51,6 +51,8 @@ fn ns_color(value: Option<&str>, fallback: Retained<NSColor>) -> Retained<NSColo
     }
 }
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The toolbar's delegate, and the target of every control on it.
     #[unsafe(super(NSObject))]

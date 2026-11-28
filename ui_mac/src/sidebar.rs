@@ -66,6 +66,8 @@ pub struct List {
     pending: RefCell<Option<Retained<NSTimer>>>,
 }
 
+// SAFETY: `NSObject` is the real superclass, each `#[unsafe(method)]` below has the Rust types of
+// its selector's Objective-C signature, and each delegate method is the protocol's own.
 define_class!(
     /// The sidebar's data source and delegate.
     #[unsafe(super(NSObject))]

@@ -59,6 +59,8 @@ pub struct Held {
     parts: RefCell<Option<Parts>>,
 }
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// One window's find bar, and its controls' target.
     #[unsafe(super(NSObject))]

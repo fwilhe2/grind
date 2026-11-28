@@ -58,6 +58,8 @@ impl Banner {
     }
 }
 
+// SAFETY: `NSObject` is the real superclass and each `#[unsafe(method)]` below has the Rust types
+// of its selector's Objective-C signature.
 define_class!(
     /// The banner button's target. A control holds its target weakly, so the pane keeps this.
     #[unsafe(super(NSObject))]
