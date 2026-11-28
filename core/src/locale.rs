@@ -144,11 +144,16 @@ impl Locale {
 /// The app's locale when nothing more specific says otherwise: `GRIND_LOCALE`, then the XDG
 /// config file, then none at all — the separators an unmarked format already uses. A CLI flag
 /// or a picker's own entry outranks this; a caller with one of those just skips calling it.
+#[must_use]
 pub fn from_environment() -> Option<Locale> {
-    std::env::var("GRIND_LOCALE")
-        .ok()
-        .and_then(|tag| Locale::parse(&tag))
-        .or_else(from_config_file)
+    from_variables(|name| std::env::var_os(name))
+}
+
+/// [`from_environment`] over any set of variables, so a test need not change the process's.
+fn from_variables(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<Locale> {
+    var("GRIND_LOCALE")
+        .and_then(|tag| Locale::parse(tag.to_str()?))
+        .or_else(|| from_config_file(&var))
 }
 
 /// A POSIX locale name as the environment spells one — `de_DE.UTF-8`, `sv_SE@euro`, `fr` — as
@@ -178,12 +183,10 @@ pub fn from_desktop() -> Option<Locale> {
 /// `de-DE`. The old `sheet/locale` path is read when the new one is absent.
 ///
 /// ponytail: drop that fallback once there has been a release under the new name.
-fn from_config_file() -> Option<Locale> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
+fn from_config_file(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<Locale> {
+    let base = var("XDG_CONFIG_HOME")
         .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
-        })?;
+        .or_else(|| var("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))?;
     let tag = std::fs::read_to_string(base.join("grind/locale"))
         .or_else(|_| std::fs::read_to_string(base.join("sheet/locale")))
         .ok()?;
@@ -267,23 +270,16 @@ mod tests {
         std::fs::create_dir_all(dir.join("sheet")).unwrap();
         std::fs::write(dir.join("sheet/locale"), "fr-FR\n").unwrap();
 
-        // SAFETY: this test owns these two variables for its duration, restores them before
-        // returning, and nothing else in this binary reads them.
-        unsafe {
-            std::env::remove_var("GRIND_LOCALE");
-            std::env::set_var("XDG_CONFIG_HOME", &dir);
-        }
-        assert_eq!(from_environment(), Locale::parse("fr-FR"));
+        let config = dir.clone().into_os_string();
+        let without = |name: &str| (name == "XDG_CONFIG_HOME").then(|| config.clone());
+        assert_eq!(from_variables(without), Locale::parse("fr-FR"));
 
-        unsafe {
-            std::env::set_var("GRIND_LOCALE", "de-DE");
-        }
-        assert_eq!(from_environment(), Locale::parse("de-DE"));
-
-        unsafe {
-            std::env::remove_var("GRIND_LOCALE");
-            std::env::remove_var("XDG_CONFIG_HOME");
-        }
+        let with = |name: &str| match name {
+            "GRIND_LOCALE" => Some("de-DE".into()),
+            "XDG_CONFIG_HOME" => Some(config.clone()),
+            _ => None,
+        };
+        assert_eq!(from_variables(with), Locale::parse("de-DE"));
         std::fs::remove_dir_all(&dir).ok();
     }
 
