@@ -11,10 +11,11 @@
 //! a dialog Windows owns. Where nothing is registered (a `.fods`, a `.grind`), Windows asks on the
 //! first double-click and offers Grind.
 //!
-//! Everything is per-user (`HKEY_CURRENT_USER\Software\…`): no elevation, no installer. The window
-//! writes it whenever it starts from a different place ([`needed`]), since the `.exe` can be
-//! copied anywhere and an association naming its old place is a failing double-click.
-//! `--unregister` removes exactly what this file writes, which is why the list is data.
+//! Everything is per-user (`HKEY_CURRENT_USER\Software\…`): no elevation. The window writes it
+//! whenever it starts from a different place ([`needed`]), since the `.exe` can be copied
+//! anywhere and an association naming its old place is a failing double-click; the installer
+//! runs `--register` and `--unregister`. `--unregister` removes exactly what this file writes,
+//! which is why the list is data.
 //!
 //! The portable half — types, `ProgIDs`, every value and where it goes — is tested on Linux; the
 //! `cfg(windows)` block at the bottom only walks the lists.

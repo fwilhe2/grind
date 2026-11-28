@@ -46,6 +46,7 @@ def notes(body: list[str]) -> str:
 def downloads(version: str, repo: str) -> str:
     """Which file to download on each platform, linked; the names are release.yml's."""
     base = f"https://github.com/{repo}/releases/download/v{version}"
+    tap = f"{repo.split('/')[0]}/grind"
 
     def link(label: str, name: str) -> str:
         return f"[{label}]({base}/{name})"
@@ -70,9 +71,15 @@ def downloads(version: str, repo: str) -> str:
 
     return f"""## Download
 
-**macOS**, Apple silicon and Intel: {link(f"Grind-{version}.pkg", f"Grind-{version}.pkg")} puts Grind in your own Applications folder. It is not notarized, so macOS refuses it the first time: open System Settings ▸ Privacy & Security and choose *Open Anyway*. To drag it in yourself instead: {link(f"Grind-{version}.dmg", f"Grind-{version}.dmg")}.
+**macOS**, Apple silicon and Intel: {link(f"Grind-{version}.pkg", f"Grind-{version}.pkg")} puts Grind in your own Applications folder. It is not notarized, so macOS refuses it the first time: open System Settings ▸ Privacy & Security and choose *Open Anyway*. To drag it in yourself instead: {link(f"Grind-{version}.dmg", f"Grind-{version}.dmg")}. With Homebrew, which `brew upgrade` keeps up to date: `brew install --cask {tap}/grind-app`.
 
-**Windows**, x64 and Arm: {link(f"grind-win32-{version}-x86_64.exe", f"grind-win32-{version}-x86_64.exe")} is the whole app, no installer. It is not signed, so SmartScreen asks first: *More info* ▸ *Run anyway*.
+**Windows**, x64 and Arm: {link(f"grind-{version}-x86_64.msi", f"grind-{version}-x86_64.msi")} installs Grind for you alone, no administrator needed: the app in the Start menu and in *Open with*, and `grind` and `grind-tui` on your `PATH`. Running a later release's installer updates it; *Installed apps* removes it. It is not signed, so SmartScreen asks first: *More info* ▸ *Run anyway*. To install or update from PowerShell, without asking:
+
+```powershell
+iwr {base}/grind-{version}-x86_64.msi -OutFile $env:TEMP\\grind.msi; msiexec /i $env:TEMP\\grind.msi /qn
+```
+
+The app alone, nothing to install: {link(f"grind-win32-{version}-x86_64.exe", f"grind-win32-{version}-x86_64.exe")}.
 
 **Linux**, x86_64 and Arm: one package per program, Debian and Ubuntu take the `.deb`, Fedora the `.rpm`. Download the ones you want and install them together.
 
@@ -90,7 +97,13 @@ cd "$(mktemp -d)" && curl -fL --remote-name-all "$u"/grind{{,-cli,-tui,-sheet-gt
 sudo dnf install "$u/grind-$v-1.noarch.rpm" "$u"/grind-{{cli,tui,sheet-gtk,text-gtk}}-$v-1.$(uname -m).rpm
 ```
 
-**Only the command line**, no spreadsheet or word processor: `grind` and `grind-tui` in one archive, nothing to install (the Linux ones run on any distribution):
+**Only the command line**, no spreadsheet or word processor: `grind` and `grind-tui`, with Homebrew on macOS and Linux, kept up to date by `brew upgrade`:
+
+```sh
+brew install {tap}/grind
+```
+
+Or in one archive, nothing to install (the Linux ones run on any distribution):
 
 | Linux | macOS | Windows |
 |---|---|---|

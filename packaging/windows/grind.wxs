@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-FileCopyrightText: 2026 Florian Wilhelm <fwilhelm.wgt+github@gmail.com>
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!--
+  Grind for Windows, as a Windows Installer package: the window, `grind` and `grind-tui`, for
+  the current user only, like the shell's own file associations — no administrator, nothing
+  another account sees. Built and checked by `.github/scripts/win-msi.ps1`.
+
+  The UpgradeCode is the product's identity and never changes: installing any later package
+  removes the one before it, and an earlier one is refused.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Grind" Manufacturer="Florian Wilhelm" Version="$(Version)"
+           UpgradeCode="01071e58-5739-409e-8ef1-36b799bcf365" Scope="perUser" Language="1033">
+    <SummaryInformation Description="Grind, an ODF-native office suite" />
+
+    <!-- A `-dev` build carries its release's number, so the same number must upgrade too. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer Grind is installed already." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="grind.ico" SourceFile="$(Data)/grind.ico" />
+    <Property Id="ARPPRODUCTICON" Value="grind.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/fwilhe2/grind" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/fwilhe2/grind/issues" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserPrograms" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Grind" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- A per-user component keeps a value under HKCU as its key path, and removes the folders it
+         made in the profile itself. -->
+    <Component Id="Programs" Directory="INSTALLFOLDER" Guid="d652b7a7-781e-49de-9d80-ab9b2c41c192">
+      <RegistryValue Root="HKCU" Key="Software\Grind\Installer" Name="Folder" Type="string"
+                     Value="[INSTALLFOLDER]" KeyPath="yes" />
+      <File Id="GrindWin32" Source="$(Bin)/grind-win32.exe" KeyPath="no" />
+      <File Id="Grind" Source="$(Bin)/grind.exe" KeyPath="no" />
+      <File Id="GrindTui" Source="$(Bin)/grind-tui.exe" KeyPath="no" />
+      <!-- `grind` and `grind-tui` in a new terminal. -->
+      <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set"
+                   System="no" Permanent="no" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveUserPrograms" Directory="UserPrograms" On="uninstall" />
+    </Component>
+
+    <Component Id="StartMenu" Directory="ProgramMenuFolder" Guid="ee2ce25e-ca98-4aef-a832-922dc5f73519">
+      <Shortcut Id="GrindShortcut" Name="Grind" Description="Spreadsheets and text documents"
+                Target="[INSTALLFOLDER]grind-win32.exe" WorkingDirectory="INSTALLFOLDER" />
+      <RegistryValue Root="HKCU" Key="Software\Grind\Installer" Name="Shortcut" Type="integer"
+                     Value="1" KeyPath="yes" />
+    </Component>
+
+    <!-- "Open with" for every type the window opens, written by the window itself so there is
+         one list of them; the default program for a type is never changed. Not undone on an
+         upgrade, which registers the same path again. -->
+    <CustomAction Id="Register" FileRef="GrindWin32" ExeCommand="--register --quiet"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <CustomAction Id="Unregister" FileRef="GrindWin32" ExeCommand="--unregister --quiet"
+                  Execute="deferred" Impersonate="yes" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="Unregister" Before="RemoveFiles"
+              Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+      <Custom Action="Register" After="InstallFiles" Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

@@ -20,6 +20,12 @@ lands, and the release workflow publishes the section as it stands.
 - An Ansible role installs the latest released desktop apps and the `grind` command on
   Debian, Ubuntu, Fedora, RHEL and openSUSE, and upgrades them when a new release comes out
   (`ansible-galaxy collection install 'git+https://github.com/fwilhe2/grind.git#/packaging/ansible,main'`).
+- A Windows installer, `grind-X.Y.Z-x86_64.msi`: Grind in the Start menu and in *Open with*,
+  `grind` and `grind-tui` on your `PATH`, for you alone and without an administrator. The next
+  release's installer updates it in place, and *Installed apps* removes all of it.
+- Homebrew installs grind on macOS and Linux and `brew upgrade` keeps it current:
+  `brew install fwilhe2/grind/grind` for the `grind` command and `grind-tui`,
+  `brew install --cask fwilhe2/grind/grind-app` for the Mac app.
 - A GitHub Action puts the `grind` command on the path of a workflow, on Linux, macOS and
   Windows, x64 and Arm, the latest release or a pinned one: `uses: fwilhe2/grind@main`.
 - More of Excel's functions recalculate instead of showing `#NAME?`: `RANK.EQ`, `RANK.AVG`,

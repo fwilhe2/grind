@@ -777,7 +777,7 @@ ever is — a test holds the first for every type. So whatever opens a double-cl
 user's one click in a dialog Windows owns. Where nothing handles a type at all — a `.fods` or a
 `.grind`, usually — Windows asks on the first double-click and Grind is in the list.
 
-**No installer, so the window registers itself.** Everything is per-user
+**The window registers itself**, with or without the installer. Everything is per-user
 (`HKEY_CURRENT_USER\Software\…`: no elevation, nothing another account sees), and every start of
 the window checks each ProgID's command against this executable's own path and writes the offer
 only when one is missing or names another copy (`assoc::needed`) — so an ordinary launch touches
@@ -788,6 +788,19 @@ frame is a CI step, not a person. `--register` does it and exits, for a script;
 `--unregister` removes exactly what `--register` writes — whole keys where the key is ours, one
 value where it is shared (`.xlsx\OpenWithProgids` belongs to everybody who opens one) — which a
 second test holds in both directions.
+
+**The installer** (`packaging/windows/grind.wxs`, built and checked by
+`.github/scripts/win-msi.ps1` in `release.yml`) is a Windows Installer package for the current
+user, as the associations are: the window, `grind` and `grind-tui` in
+`%LOCALAPPDATA%\Programs\Grind`, that folder on the user's `PATH`, a Start menu entry, and an
+entry in Installed apps. It runs `--register --quiet` after copying the files and
+`--unregister --quiet` before removing them, so the list of types stays `assoc.rs`'s; `--quiet`
+reports to stderr instead of a message box, which would wait forever under `msiexec /qn`. Its
+UpgradeCode never changes, so any later package replaces the installed one (a major upgrade,
+which skips `--unregister`: the path is the same) and an earlier one is refused. The release
+job installs an older build, upgrades it, reinstalls the same version, is refused the downgrade,
+and uninstalls, checking files, `PATH`, shortcut and registry at each step. x64 only, as the
+window is; Windows on Arm runs it emulated.
 
 **Measured under Wine**, with the caveat that matters: every value lands where the table says,
 a pre-existing `.xlsx` default (`Excel.Sheet.12`) survives registration and `--unregister`, a

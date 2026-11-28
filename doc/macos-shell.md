@@ -298,7 +298,8 @@ right-click no longer bypasses Gatekeeper. And Homebrew's main cask repository h
 un-notarized software since 2026-09-01.
 
 So M10 ships an ad-hoc-signed DMG from the runner, plus a Homebrew tap of the project's own with
-the Open Anyway step written down. **Developer ID and notarization are a later decision that
+the Open Anyway step written down ([fwilhe2/homebrew-grind](https://github.com/fwilhe2/homebrew-grind):
+the `grind-app` cask, and the `grind` formula for the command line on macOS and Linux). **Developer ID and notarization are a later decision that
 costs no code**: a certificate and a notary key as CI secrets, and two more steps in the same job.
 The day they are added, the `spctl` assertion in M10 flips from "rejected, as expected" to
 "accepted", and the test says so.
@@ -365,8 +366,6 @@ test); the `[M]` unit tests are the ones that need no application — CoreText's
 
 The Mac column of `doc/feature-matrix.md` is what the shell does. Beyond its gaps:
 
-* **The Homebrew tap.** A cask points at a published DMG, and nothing is published yet: the
-  DMG is a workflow artifact.
 * **F4's `$` cycle** while a formula is edited.
 * **A cell's font family** from the font panel: a `CellStyle` carries none.
 * **The UX pass over a screen-sharing session** (`mac-session.yml`), which needs its secrets set.
