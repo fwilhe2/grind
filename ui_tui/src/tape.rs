@@ -29,6 +29,7 @@ The tape — a scratch calculator:
   dd  delete the line    u / Ctrl+r  undo / redo    Esc  stop typing (a new line goes on to the next)
   :extract <number> <name> [n]   move a number in this line into a named line before it
   :promote <file>   :promote! <file>   write the tape as a spreadsheet (:w is the same)
+  :open <file>   read a tape written so back, over this one (u brings this one back)
   :q  :q!   :new [sheet|text]   :welcome
 ";
 
@@ -343,6 +344,21 @@ impl TapePane {
                     Err(e) => self.status = e.to_string(),
                 }
             }
+            "open" | "o" => {
+                if args.is_empty() {
+                    self.status = ":open <file>".into();
+                    return;
+                }
+                match Tape::open_file(&PathBuf::from(args)) {
+                    Ok(opened) => {
+                        self.tape.replace(opened);
+                        self.cursor = self.tape.len().saturating_sub(1);
+                        self.saved = true;
+                        self.status = format!("opened {args}; u brings the tape before it back");
+                    }
+                    Err(e) => self.status = format!("{args}: {e}"),
+                }
+            }
             "extract" | "x" => {
                 let words: Vec<&str> = args.split_whitespace().collect();
                 let (number, name, nth) = match words.as_slice() {
@@ -560,6 +576,25 @@ mod tests {
         press(&mut p, KeyCode::Esc);
         assert_eq!(values(&p), ["0.19", "1428"]);
         assert_eq!(p.cursor, 1);
+    }
+
+    /// `:open` puts a saved tape in this one's place; `u` brings this one back.
+    #[test]
+    fn a_saved_tape_opens_over_this_one_and_u_takes_it_back() {
+        let path = std::env::temp_dir().join(format!("grind-tui-tape-{}.fods", std::process::id()));
+        let mut saved = Tape::new(None);
+        saved.push("a = 20").unwrap();
+        saved.push("a + 1").unwrap();
+        saved.save(&path).unwrap();
+
+        let mut p = pane();
+        typed(&mut p, "2 + 2");
+        press(&mut p, KeyCode::Esc);
+        p.run(&format!("open {}", path.display()));
+        assert_eq!(values(&p), ["20", "21"]);
+        press(&mut p, KeyCode::Char('u'));
+        assert_eq!(values(&p), ["4"]);
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

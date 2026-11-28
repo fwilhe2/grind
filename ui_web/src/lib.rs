@@ -70,6 +70,9 @@ const IMAGE_TYPES: &str = "image/*";
 const MARKDOWN_TYPES: &str = ".md,.markdown,.mdown,.txt,text/markdown";
 const CSV_TYPES: &str = ".csv,.tsv,.tab,.txt,text/csv";
 
+/// What a tape is saved as: a spreadsheet, in any of the three forms.
+const TAPE_TYPES: &str = ".fods,.ods,.grind";
+
 thread_local! {
     /// The live shell, so an animation-frame callback can find its way back. The page owns
     /// it until the tab closes; nothing ever takes it out again.
@@ -439,6 +442,8 @@ enum Pick {
     Image,
     /// Markdown to read into the open text document, before the caret's block.
     Markdown,
+    /// A saved tape, over the tape dialog's.
+    Tape,
 }
 
 impl Shell {
@@ -713,6 +718,7 @@ impl Shell {
             "sheet.calculations" => self.find_calculations(),
             "sheet.tape" => self.tape.open(self.sheet.app.locale()),
             "sheet.tape-open" => self.open_tape_sheet(),
+            "sheet.tape-load" => self.raise_picker(Pick::Tape, TAPE_TYPES),
             _ => match self.mode.get() {
                 Mode::Sheet => self.sheet.run(id),
                 Mode::Text => self.text.run(id),
@@ -1045,6 +1051,15 @@ impl Shell {
     }
 
     /// The same read, for markdown to go into the open text document.
+    async fn load_tape(self: Rc<Self>, file: File) {
+        let name = file.name();
+        let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
+            return self.set_message(format!("Could not read {name}"));
+        };
+        self.tape
+            .load(&name, &js_sys::Uint8Array::new(&buffer).to_vec());
+    }
+
     async fn load_markdown(self: Rc<Self>, file: File) {
         let name = file.name();
         let Ok(buffer) = JsFuture::from(file.array_buffer()).await else {
@@ -2127,6 +2142,7 @@ fn wire_toolbar(shell: &Rc<Shell>) -> Result<(), JsValue> {
         // Keeps the focus: it belongs in the dialog's entry.
         ("tape-button", "sheet.tape", true),
         ("tape-open", "sheet.tape-open", false),
+        ("tape-load", "sheet.tape-load", false),
         ("sheet-add", "sheet.add", false),
         ("numbers", "doc.locale", false),
         // Keeps the focus: it belongs in the palette the flag opens.
@@ -2501,12 +2517,14 @@ fn wire_file_input(shell: &Rc<Shell>) -> Result<(), JsValue> {
         let Some(file) = shell.dom.file_input.files().and_then(|files| files.get(0)) else {
             return;
         };
-        // Reading a file is a promise; nothing else in this shell is async.
-        match shell.pick.get() {
+        // Reading a file is a promise; nothing else in this shell is async. A pick is spent on
+        // the file it picked: the next one is a document unless a picker says otherwise.
+        match shell.pick.replace(Pick::Document) {
             Pick::Document => spawn_local(shell.clone().load(file)),
             Pick::Csv | Pick::CsvWith => spawn_local(shell.clone().load_csv(file)),
             Pick::Image => spawn_local(shell.clone().load_image(file)),
             Pick::Markdown => spawn_local(shell.clone().load_markdown(file)),
+            Pick::Tape => spawn_local(shell.clone().load_tape(file)),
         }
     })
 }

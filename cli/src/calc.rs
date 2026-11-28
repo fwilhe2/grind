@@ -229,7 +229,7 @@ fn command(tape: &mut Tape, line: &str, saved: &mut bool) -> Step {
             }
             match Tape::open_file(Path::new(file)) {
                 Ok(opened) => {
-                    *tape = opened;
+                    tape.replace(opened);
                     *saved = true;
                     Step::Show(rows(tape))
                 }

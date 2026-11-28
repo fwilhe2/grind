@@ -315,6 +315,39 @@ impl TapeEditor {
         }
     }
 
+    /// A saved tape over this one ([`Tape::replace`]), the caret in the blank row at its end, and
+    /// the note saying so — or why the file is not one, the tape untouched. `true` when it opened.
+    pub fn open_file(&mut self, path: &std::path::Path) -> bool {
+        let name = path.file_name().map_or_else(
+            || path.display().to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
+        self.opened(&name, Tape::open_file(path))
+    }
+
+    /// [`TapeEditor::open_file`] from bytes, `name` only for the note.
+    pub fn open_bytes(&mut self, name: &str, bytes: &[u8]) -> bool {
+        self.opened(name, Tape::open_bytes(bytes))
+    }
+
+    fn opened(&mut self, name: &str, read: crate::Result<Tape>) -> bool {
+        match read {
+            Ok(opened) => {
+                self.tape.replace(opened);
+                self.book = Notebook::default();
+                self.landed(Row::Blank(self.tape.len()));
+                if self.note.is_empty() {
+                    self.note = format!("Opened {name}; Undo brings back the lines it replaced");
+                }
+                true
+            }
+            Err(error) => {
+                self.note = format!("{name}: {error}");
+                false
+            }
+        }
+    }
+
     pub fn redo(&mut self) {
         if self.tape.redo() {
             self.reset();
@@ -380,6 +413,32 @@ mod tests {
 
     fn texts(t: &Tape) -> Vec<String> {
         t.lines().into_iter().map(|l| l.text).collect()
+    }
+
+    /// A saved tape opened in an editor: its lines, the caret at the end, the note saying so;
+    /// Undo brings back the lines before. A spreadsheet that is not one leaves them be.
+    #[test]
+    fn an_editor_opens_a_saved_tape_and_undo_takes_it_back() {
+        let saved = tape(&["a = 2", "a * 21"]);
+        let app = crate::App::new();
+        app.open_document(saved.promote().unwrap()).unwrap();
+        let bytes = app.save_bytes(grind_core::Form::Flat).unwrap();
+
+        let mut editor = TapeEditor::new(tape(&["1 + 1"]));
+        assert!(editor.open_bytes("answer.fods", &bytes));
+        assert_eq!(texts(editor.tape()), ["a = 2", "a*21"]);
+        assert_eq!(editor.row(), Row::Blank(2));
+        assert!(editor.note().starts_with("Opened answer.fods"));
+        editor.undo();
+        assert_eq!(texts(editor.tape()), ["1+1"]);
+
+        assert!(!editor.open_bytes("other.fods", b"not a spreadsheet"));
+        assert!(
+            editor.note().starts_with("other.fods: "),
+            "{}",
+            editor.note()
+        );
+        assert_eq!(texts(editor.tape()), ["1+1"]);
     }
 
     #[test]

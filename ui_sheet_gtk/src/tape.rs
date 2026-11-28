@@ -119,6 +119,8 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
     ));
     let save = gtk::Button::from_icon_name("document-save-as-symbolic");
     save.set_tooltip_text(Some("Save as Spreadsheet…"));
+    let reopen = gtk::Button::from_icon_name("document-open-symbolic");
+    reopen.set_tooltip_text(Some("Open a Saved Tape…"));
 
     let header = adw::HeaderBar::new();
     header.set_title_widget(Some(&adw::WindowTitle::new("Scratch Calculator", "")));
@@ -126,6 +128,7 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
     header.pack_start(&redo);
     header.pack_end(&open);
     header.pack_end(&save);
+    header.pack_end(&reopen);
     let view = adw::ToolbarView::builder().content(&toasts).build();
     view.add_top_bar(&header);
     view.add_bottom_bar(&bottom);
@@ -240,6 +243,11 @@ pub fn new(locale: Option<Locale>, open_as_sheet: Rc<dyn Fn(Document)>) -> Rc<Ta
         #[weak]
         this,
         move |_| this.save()
+    ));
+    reopen.connect_clicked(glib::clone!(
+        #[weak]
+        this,
+        move |_| this.open_saved()
     ));
 
     let keys = gtk::ShortcutController::new();
@@ -509,6 +517,46 @@ impl TapeDialog {
                     );
                     match extracted {
                         Ok(()) => this.refresh(),
+                        Err(error) => this.say(&error.to_string()),
+                    }
+                }
+            ),
+        );
+    }
+
+    /// A tape saved as a spreadsheet, over this one; Undo brings these lines back.
+    fn open_saved(self: &Rc<Self>) {
+        let filter = gtk::FileFilter::new();
+        filter.set_name(Some("Saved Tape"));
+        for pattern in ["*.fods", "*.ods", "*.grind"] {
+            filter.add_pattern(pattern);
+        }
+        let filters = gio::ListStore::new::<gtk::FileFilter>();
+        filters.append(&filter);
+        let dialog = gtk::FileDialog::builder()
+            .title("Open a Saved Tape")
+            .filters(&filters)
+            .build();
+        let parent = self.dialog.root().and_downcast::<gtk::Window>();
+        dialog.open(
+            parent.as_ref(),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |result| {
+                    let Some(path) = result.ok().and_then(|file| file.path()) else {
+                        return;
+                    };
+                    match Tape::open_file(&path) {
+                        Ok(opened) => {
+                            this.tape.borrow_mut().replace(opened);
+                            this.refresh();
+                            this.say(&format!(
+                                "Opened {}",
+                                path.file_name().unwrap_or_default().to_string_lossy()
+                            ));
+                        }
                         Err(error) => this.say(&error.to_string()),
                     }
                 }

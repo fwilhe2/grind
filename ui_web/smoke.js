@@ -1098,6 +1098,19 @@ const RICH = `<?xml version="1.0" encoding="UTF-8"?>
   check("which becomes a line there", tapeValues(), ["0.07", "5", "1284"]);
   byId("tape-undo").click();
   check("and undo takes it back", tapeValues(), ["0.07", "1284"]);
+  await press_button("tape-load");
+  check("Open saved tape asks for a spreadsheet", byId("file-input").accept, ".fods,.ods,.grind");
+  const savedTape = fs.readFileSync(path.join(here, "../examples/tapes/recipe.fods"));
+  Object.defineProperty(byId("file-input"), "files", {
+    value: [new File([savedTape], "recipe.fods", { type: "text/xml" })],
+    configurable: true,
+  });
+  byId("file-input").dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+  await frame();
+  await frame();
+  check("a saved tape opens over this one", tapeValues().slice(0, 3), ["4", "10", "2.5"]);
+  byId("tape-undo").click();
+  check("and undo brings this one back", tapeValues(), ["0.07", "1284"]);
   byId("tape-close").click();
   await command("Scratch calculator");
   check("closing keeps the tape", tapeValues(), ["0.07", "1284"]);

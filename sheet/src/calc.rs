@@ -71,7 +71,7 @@ pub struct Tape {
 }
 
 /// What an undo step restores.
-type State = (ExprList, Vec<Vec<Option<Currency>>>);
+type State = (ExprList, Vec<Vec<Option<Currency>>>, Option<Locale>);
 
 /// A line as read: its name, its canonical formula, and its literals' currencies.
 type Read = (Option<String>, String, Vec<Option<Currency>>);
@@ -475,11 +475,20 @@ impl Tape {
         true
     }
 
-    fn restore(&mut self, (list, money): State) -> State {
+    fn restore(&mut self, (list, money, locale): State) -> State {
         (
             std::mem::replace(&mut self.list, list),
             std::mem::replace(&mut self.money, money),
+            std::mem::replace(&mut self.locale, locale),
         )
+    }
+
+    /// Every line of this tape for `opened`'s, its locale with them — a saved tape opened over
+    /// this one ([`Tape::open_file`]). One step, so Undo brings back the lines it replaced.
+    pub fn replace(&mut self, opened: Tape) {
+        let before = self.restore((opened.list, opened.money, opened.locale));
+        self.undo.push(before);
+        self.redo.clear();
     }
 
     /// The tape as a spreadsheet: line n is row n, its label (name, or `#n`) in A and its number
@@ -750,7 +759,7 @@ impl Tape {
         let (mut list, mut money) = (self.list.clone(), self.money.clone());
         money.resize(list.entries().len(), Vec::new());
         f(&mut list, &mut money)?;
-        let before = self.restore((list, money));
+        let before = self.restore((list, money, self.locale.clone()));
         if let Some((i, why)) = self
             .kinds()
             .into_iter()
@@ -1715,6 +1724,21 @@ mod read_back {
         let back = Tape::from_sheet(&doc).unwrap();
         assert_eq!(back.lines()[2].text, "SUM(#1:#2)");
         assert_eq!(back.lines()[2].value, "3");
+    }
+
+    /// Opening a saved tape over one being typed is one step: Undo brings the typed lines back,
+    /// in their own locale.
+    #[test]
+    fn a_tape_opened_over_another_is_undone_in_one_step() {
+        let mut t = tape(None, &["1 + 1"]);
+        let opened =
+            Tape::from_sheet(&tape(Some("de-DE"), &["a = 1,5"]).promote().unwrap()).unwrap();
+        t.replace(opened);
+        assert_eq!(shown(&t), [("a = 1,5".to_owned(), "1,5".to_owned())]);
+        assert!(t.undo());
+        assert_eq!(shown(&t), [("1+1".to_owned(), "2".to_owned())]);
+        assert!(t.redo());
+        assert_eq!(t.lines()[0].text, "a = 1,5");
     }
 
     #[test]

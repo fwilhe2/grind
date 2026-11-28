@@ -39,6 +39,7 @@ use crate::theme::{Rgb, Theme};
 const ID_UNDO: i32 = 220;
 const ID_REDO: i32 = 221;
 const ID_OPEN: i32 = 222;
+const ID_LOAD: i32 = 223;
 
 /// What the modal holds while the tape is up.
 pub(super) struct TapeBody {
@@ -69,6 +70,7 @@ pub fn scratch(owner: HWND, tape: Tape) -> (Tape, bool) {
             buttons: vec![
                 (ID_UNDO, "Undo", Role::Leading),
                 (ID_REDO, "Redo", Role::Leading),
+                (ID_LOAD, "Open Tape…", Role::Leading),
                 (IDCANCEL.0, "Close", Role::Answer),
                 (ID_OPEN, "Open as Spreadsheet", Role::Default),
             ],
@@ -431,6 +433,22 @@ pub(super) fn command(popup: HWND, id: i32, code: u32) -> bool {
         }
         if id as usize == ID_EDIT && code == EN_CHANGE {
             typed(popup);
+            return true;
+        }
+        if id == ID_LOAD {
+            // The picker is its own modal over this one; the tape is touched only once it answers.
+            if let Some(path) = super::open_tape_path(popup) {
+                let control = with_modal(popup, |modal| {
+                    if let Body::Tape(body) = &mut modal.body {
+                        body.editor.open_file(&path);
+                    }
+                    modal.control
+                });
+                sync(popup);
+                if let Some(control) = control {
+                    let _ = SetFocus(Some(control));
+                }
+            }
             return true;
         }
         if id != ID_UNDO && id != ID_REDO {

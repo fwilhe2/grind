@@ -78,6 +78,28 @@ impl TapeDialog {
         self.dialog.close();
     }
 
+    /// A saved tape over this one, or why the file is not one; Undo brings these lines back.
+    pub fn load(&self, name: &str, bytes: &[u8]) {
+        let opened = match Tape::open_bytes(bytes) {
+            Ok(opened) => opened,
+            Err(error) => return self.say(&format!("{name}: {error}")),
+        };
+        let len = {
+            let mut tape = self.tape.borrow_mut();
+            match tape.as_mut() {
+                Some(tape) => tape.replace(opened),
+                None => *tape = Some(opened),
+            }
+            tape.as_ref().map_or(0, Tape::len)
+        };
+        *self.book.borrow_mut() = Notebook::default();
+        self.refresh(true);
+        self.say(&format!(
+            "Opened {name}; Undo brings back the lines it replaced."
+        ));
+        self.focus(Row::Blank(len));
+    }
+
     /// The tape as a spreadsheet, or why not, said in the dialog.
     pub fn promote(&self) -> Option<grind_sheet::Document> {
         let promoted = self.tape.borrow().as_ref()?.promote();

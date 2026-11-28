@@ -169,6 +169,21 @@ fn image_filters() -> Vec<(Vec<u16>, Vec<u16>)> {
     )]
 }
 
+/// Ask for a saved tape: a spreadsheet in any of its three forms. `None` means the user cancelled.
+pub fn open_tape_path(owner: HWND) -> Option<PathBuf> {
+    let filters = vec![(gdi::wide("Saved tape"), gdi::wide("*.fods;*.ods;*.grind"))];
+    let specs = specs(&filters);
+    // SAFETY: every buffer outlives the dialog, which is modal. **A nested message loop.**
+    unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let _ = dialog.SetFileTypes(&specs);
+        let _ = dialog.SetTitle(PCWSTR(gdi::wide("Open a Saved Tape").as_ptr()));
+        dialog.Show(Some(owner)).ok()?;
+        item_path(&dialog.GetResult().ok()?)
+    }
+}
+
 /// Ask for a picture to insert. `None` means the user cancelled.
 pub fn open_image_path(owner: HWND) -> Option<PathBuf> {
     let filters = image_filters();

@@ -26,7 +26,8 @@ lands, and the release workflow publishes the section as it stands.
 - `grind calc --open` reads a tape saved with `--save` back into the scratch calculator,
   even after LibreOffice opened and saved it, and adds the lines given after it; `:open` does
   the same at the interactive tape. A spreadsheet that is not a saved tape is refused with
-  what makes it not one.
+  what makes it not one. Every window's scratch calculator opens one too (*Open Tape…*, or
+  `:open` in the terminal version), and Undo brings back the lines it replaced.
 - A Windows installer, `grind-X.Y.Z-x86_64.msi`: Grind in the Start menu and in *Open with*,
   `grind` and `grind-tui` on your `PATH`, for you alone and without an administrator. The next
   release's installer updates it in place, and *Installed apps* removes all of it.

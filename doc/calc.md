@@ -209,6 +209,11 @@ goes is the core's. A client with one edit control for the caret's row keeps a `
 it holds that row's text, caret and offers, answers each key, and the client copies its text
 into the control after every call.
 
+**Every tape in a window opens a saved one** (*Open Tape…* in the GNOME, browser, Windows and
+Mac dialogs, `:open <file>` in the terminal's pane): §6's reading, put over the tape as one step
+(`Tape::replace`), so Undo brings back the lines it replaced. `TapeEditor::open_file` and
+`open_bytes` also say in the editor's note that it opened, or why the file is not a tape.
+
 The interactive tape takes a plain line to append, and `:list`, `:edit N <line>`,
 `:insert N <line>`, `:del N`, `:extract N <number> <name> [K]`, `:undo`, `:redo`,
 `:save <file> [!]`, `:open <file> [!]`, `:help` and `:q`. A line that does not read is status 2. A refused save or
@@ -229,8 +234,6 @@ Calculator…*, in its modal's frame (`doc/windows-shell.md` §4). **The Mac she
 - **A formula filled down a column**, on a sheet: extracting from one copy rewrites only that
   copy. The workbench says to refuse with the count; that check is not here yet.
 - **Array formulas and covered cells**, on a sheet: not refused by name.
-- **Opening a saved tape in a window.** The CLI reads one back (§6); no graphical client has
-  the command yet.
 - **Dates and times** on a tape: `2026-11-27` is a subtraction there, as in a formula.
 - **Tests not run here**: `promoted_tapes_are_valid_odf` skips without `jing` on `PATH`.
   `scripts/claude-vm.sh` has it.

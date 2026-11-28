@@ -16,8 +16,8 @@ use objc2::runtime::{AnyObject, ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
     NSBackingStoreType, NSButton, NSColor, NSControl, NSControlTextEditingDelegate, NSEvent,
-    NSFont, NSForegroundColorAttributeName, NSGraphicsContext, NSTextField, NSTextFieldDelegate,
-    NSTextView, NSView, NSWindow, NSWindowStyleMask,
+    NSFont, NSForegroundColorAttributeName, NSGraphicsContext, NSModalResponseOK, NSOpenPanel,
+    NSTextField, NSTextFieldDelegate, NSTextView, NSView, NSWindow, NSWindowStyleMask,
 };
 use objc2_core_graphics::CGContext;
 use objc2_foundation::{
@@ -119,6 +119,23 @@ define_class!(
         #[unsafe(method(tapeRedo:))]
         fn tape_redo(&self, _sender: Option<&AnyObject>) {
             self.ivars().editor.borrow_mut().redo();
+            self.sync();
+        }
+
+        /// A saved tape over this one; the note says it opened, or why the file is not one.
+        #[unsafe(method(tapeLoad:))]
+        fn tape_load(&self, _sender: Option<&AnyObject>) {
+            let panel = NSOpenPanel::openPanel(self.mtm());
+            panel.setCanChooseDirectories(false);
+            panel.setAllowsMultipleSelection(false);
+            panel.setPrompt(Some(&NSString::from_str("Open")));
+            if panel.runModal() != NSModalResponseOK {
+                return;
+            }
+            let Some(path) = panel.URL().and_then(|url| url.to_file_path()) else {
+                return;
+            };
+            self.ivars().editor.borrow_mut().open_file(&path);
             self.sync();
         }
 
@@ -383,6 +400,7 @@ pub fn show(
     };
     let undo = button("Undo", sel!(tapeUndo:));
     let redo = button("Redo", sel!(tapeRedo:));
+    let load = button("Open Tape…", sel!(tapeLoad:));
     let close = button("Close", sel!(tapeClose:));
     let opening = button("Open as Spreadsheet", sel!(tapeOpen:));
     let y = footer.y + (footer.h - 32.0) / 2.0;
@@ -393,6 +411,10 @@ pub fn show(
     redo.setFrame(NSRect::new(
         NSPoint::new(footer.x + 86.0, y),
         NSSize::new(80.0, 32.0),
+    ));
+    load.setFrame(NSRect::new(
+        NSPoint::new(footer.x + 172.0, y),
+        NSSize::new(110.0, 32.0),
     ));
     let right = footer.x + footer.w;
     opening.setFrame(NSRect::new(
